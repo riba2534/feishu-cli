@@ -1,0 +1,44 @@
+# 编译产物
+feishu-cli
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# 测试文件
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# 依赖
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 配置文件（包含敏感信息）
+.env
+*.env.local
+config.yaml
+config.local.yaml
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+*.log
+
+# 导出的资源文件
+assets/
+*.md.bak
