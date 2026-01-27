@@ -15,25 +15,73 @@ const maxRecursionDepth = 100
 
 // BlockToMarkdown converts Feishu blocks to Markdown
 type BlockToMarkdown struct {
-	blocks     []*larkdocx.Block
-	blockMap   map[string]*larkdocx.Block
-	options    ConvertOptions
-	imageCount int
+	blocks        []*larkdocx.Block
+	blockMap      map[string]*larkdocx.Block
+	childBlockIDs map[string]bool // 子块 ID 集合，这些块不应独立处理
+	options       ConvertOptions
+	imageCount    int
 }
 
 // NewBlockToMarkdown creates a new converter
 func NewBlockToMarkdown(blocks []*larkdocx.Block, options ConvertOptions) *BlockToMarkdown {
 	blockMap := make(map[string]*larkdocx.Block)
+	childBlockIDs := make(map[string]bool) // 记录容器块的子块 ID
+
+	// 第一遍：构建 blockMap
 	for _, block := range blocks {
 		if block.BlockId != nil {
 			blockMap[*block.BlockId] = block
 		}
 	}
 
+	// 递归收集子块 ID
+	var collectChildren func(blockID string)
+	collectChildren = func(blockID string) {
+		block := blockMap[blockID]
+		if block == nil {
+			return
+		}
+		if block.Children != nil {
+			for _, childID := range block.Children {
+				childBlockIDs[childID] = true
+				collectChildren(childID)
+			}
+		}
+	}
+
+	// 第二遍：只收集特定容器块的子块（跳过 Page 块）
+	for _, block := range blocks {
+		if block.BlockType == nil {
+			continue
+		}
+		blockType := BlockType(*block.BlockType)
+
+		// 只处理容器块的子块（不包括 Page）
+		switch blockType {
+		case BlockTypeTable:
+			// Table 的 cells 是子块
+			if block.Table != nil && block.Table.Cells != nil {
+				for _, cellID := range block.Table.Cells {
+					childBlockIDs[cellID] = true
+					collectChildren(cellID)
+				}
+			}
+		case BlockTypeCallout, BlockTypeQuoteContainer, BlockTypeGrid:
+			// 这些容器块的子块需要跳过
+			if block.Children != nil {
+				for _, childID := range block.Children {
+					childBlockIDs[childID] = true
+					collectChildren(childID)
+				}
+			}
+		}
+	}
+
 	return &BlockToMarkdown{
-		blocks:   blocks,
-		blockMap: blockMap,
-		options:  options,
+		blocks:        blocks,
+		blockMap:      blockMap,
+		childBlockIDs: childBlockIDs,
+		options:       options,
 	}
 }
 
@@ -49,6 +97,11 @@ func (c *BlockToMarkdown) Convert() (string, error) {
 
 		// Skip page block
 		if *block.BlockType == int(BlockTypePage) {
+			continue
+		}
+
+		// 跳过子块（它们会通过父块处理）
+		if block.BlockId != nil && c.childBlockIDs[*block.BlockId] {
 			continue
 		}
 
@@ -83,6 +136,15 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 
 	switch blockType {
 	case BlockTypePage:
+		return "", nil
+	case BlockTypeTableCell:
+		// TableCell 块由 Table 块处理，跳过独立处理
+		return "", nil
+	case BlockTypeGridColumn:
+		// GridColumn 块由 Grid 块处理，跳过独立处理
+		return "", nil
+	case BlockTypeAddOns:
+		// AddOns/SyncedBlock 块暂不支持，跳过
 		return "", nil
 	case BlockTypeText:
 		return c.convertText(block)

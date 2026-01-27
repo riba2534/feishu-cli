@@ -258,6 +258,74 @@ func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex in
 	return nil
 }
 
+// BatchUpdateBlocksOptions contains options for batch updating blocks
+type BatchUpdateBlocksOptions struct {
+	DocumentRevisionID int
+	ClientToken        string
+	UserIDType         string
+}
+
+// BatchUpdateBlocksResult contains the result of batch updating blocks
+type BatchUpdateBlocksResult struct {
+	BlockIDs         []string `json:"block_ids"`
+	DocumentRevision int      `json:"document_revision_id"`
+}
+
+// BatchUpdateBlocks batch updates blocks in a document
+func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateBlocksOptions) (*BatchUpdateBlocksResult, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	// Default values
+	if opts.DocumentRevisionID == 0 {
+		opts.DocumentRevisionID = -1
+	}
+	if opts.UserIDType == "" {
+		opts.UserIDType = "open_id"
+	}
+
+	// Parse requests
+	var requests []*larkdocx.UpdateBlockRequest
+	if err := json.Unmarshal([]byte(requestsJSON), &requests); err != nil {
+		return nil, fmt.Errorf("解析请求 JSON 失败: %w", err)
+	}
+
+	reqBuilder := larkdocx.NewBatchUpdateDocumentBlockReqBuilder().
+		DocumentId(documentID).
+		DocumentRevisionId(opts.DocumentRevisionID).
+		UserIdType(opts.UserIDType).
+		Body(larkdocx.NewBatchUpdateDocumentBlockReqBodyBuilder().
+			Requests(requests).
+			Build())
+
+	if opts.ClientToken != "" {
+		reqBuilder.ClientToken(opts.ClientToken)
+	}
+
+	resp, err := client.Docx.DocumentBlock.BatchUpdate(Context(), reqBuilder.Build())
+	if err != nil {
+		return nil, fmt.Errorf("批量更新块失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("批量更新块失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	result := &BatchUpdateBlocksResult{}
+	for _, block := range resp.Data.Blocks {
+		if block.BlockId != nil {
+			result.BlockIDs = append(result.BlockIDs, *block.BlockId)
+		}
+	}
+	if resp.Data.DocumentRevisionId != nil {
+		result.DocumentRevision = *resp.Data.DocumentRevisionId
+	}
+
+	return result, nil
+}
+
 // GetBlockChildren retrieves children of a block
 func GetBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, error) {
 	client, err := GetClient()

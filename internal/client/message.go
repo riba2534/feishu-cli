@@ -291,6 +291,132 @@ type ReadUsersResult struct {
 	HasMore   bool
 }
 
+// ChatInfo contains chat information
+type ChatInfo struct {
+	ChatID      string `json:"chat_id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	OwnerID     string `json:"owner_id,omitempty"`
+	External    bool   `json:"external,omitempty"`
+}
+
+// SearchChatsOptions contains options for searching chats
+type SearchChatsOptions struct {
+	UserIDType string
+	Query      string
+	PageToken  string
+	PageSize   int
+}
+
+// SearchChatsResult contains the result of searching chats
+type SearchChatsResult struct {
+	Items     []*ChatInfo
+	PageToken string
+	HasMore   bool
+}
+
+// SearchChats searches for chats
+func SearchChats(opts SearchChatsOptions) (*SearchChatsResult, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	// Default user ID type
+	if opts.UserIDType == "" {
+		opts.UserIDType = "open_id"
+	}
+
+	reqBuilder := larkim.NewListChatReqBuilder().
+		UserIdType(opts.UserIDType)
+
+	if opts.PageSize > 0 {
+		reqBuilder.PageSize(opts.PageSize)
+	}
+	if opts.PageToken != "" {
+		reqBuilder.PageToken(opts.PageToken)
+	}
+
+	resp, err := client.Im.Chat.List(Context(), reqBuilder.Build())
+	if err != nil {
+		return nil, fmt.Errorf("搜索群聊失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("搜索群聊失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	result := &SearchChatsResult{}
+	for _, chat := range resp.Data.Items {
+		info := &ChatInfo{}
+		if chat.ChatId != nil {
+			info.ChatID = *chat.ChatId
+		}
+		if chat.Name != nil {
+			info.Name = *chat.Name
+		}
+		if chat.Description != nil {
+			info.Description = *chat.Description
+		}
+		if chat.OwnerId != nil {
+			info.OwnerID = *chat.OwnerId
+		}
+		if chat.External != nil {
+			info.External = *chat.External
+		}
+
+		// Filter by query if specified
+		if opts.Query == "" || containsIgnoreCase(info.Name, opts.Query) || containsIgnoreCase(info.Description, opts.Query) {
+			result.Items = append(result.Items, info)
+		}
+	}
+
+	if resp.Data.PageToken != nil {
+		result.PageToken = *resp.Data.PageToken
+	}
+	if resp.Data.HasMore != nil {
+		result.HasMore = *resp.Data.HasMore
+	}
+
+	return result, nil
+}
+
+// containsIgnoreCase checks if s contains substr (case insensitive)
+func containsIgnoreCase(s, substr string) bool {
+	if substr == "" {
+		return true
+	}
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsIgnoreCaseHelper(s, substr))
+}
+
+func containsIgnoreCaseHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if equalIgnoreCase(s[i:i+len(substr)], substr) {
+			return true
+		}
+	}
+	return false
+}
+
+func equalIgnoreCase(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		ca, cb := a[i], b[i]
+		if ca >= 'A' && ca <= 'Z' {
+			ca += 32
+		}
+		if cb >= 'A' && cb <= 'Z' {
+			cb += 32
+		}
+		if ca != cb {
+			return false
+		}
+	}
+	return true
+}
+
 // GetReadUsers gets the list of users who have read a message
 func GetReadUsers(messageID string, userIDType string, pageSize int, pageToken string) (*ReadUsersResult, error) {
 	client, err := GetClient()

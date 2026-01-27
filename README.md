@@ -54,7 +54,7 @@ skills/
 ### 使用 go install（推荐）
 
 ```bash
-go install github.com/riba2534/feishu-cli@latest
+go install github.com/riba2534/feishu-cli@main
 ```
 
 ### 从源码编译
@@ -122,13 +122,15 @@ feishu-cli msg send --receive-id-type email --receive-id user@example.com --text
 feishu-cli [命令] [子命令] [选项]
 
 命令:
-  doc       文档操作（创建、获取、编辑、导入导出）
+  doc       文档操作（创建、获取、编辑、导入导出、高亮块、画板）
   wiki      知识库操作（节点增删改查）
+  user      用户操作（获取用户信息）
+  board     画板操作（下载图片、导入图表、创建节点）
   file      文件管理（列出、创建、移动、复制、删除）
   media     素材操作（上传、下载）
   comment   评论操作（列出、添加）
   perm      权限操作（添加、更新）
-  msg       消息操作（发送、获取、删除、转发）
+  msg       消息操作（发送、获取、删除、转发、搜索群聊、历史消息）
   calendar  日历操作（日程增删改查）
   task      任务操作（增删改查、完成）
   search    搜索操作（消息、应用）
@@ -154,14 +156,37 @@ feishu-cli doc blocks <document_id>
 ### 编辑文档
 
 ```bash
-# 添加内容
+# 添加内容（JSON 格式）
 feishu-cli doc add <document_id> --content '[{"block_type":2,"text":{"elements":[{"text_run":{"content":"Hello"}}]}}]'
+
+# 添加内容（Markdown 格式）
+feishu-cli doc add <document_id> README.md --content-type markdown
+feishu-cli doc add <document_id> --content "# 标题\n正文内容" --content-type markdown
+
+# 获取所有块（自动分页）
+feishu-cli doc blocks <document_id> --all
+
+# 批量更新块
+feishu-cli doc batch-update <document_id> '[{"block_id":"xxx","update_text_elements":{"elements":[...]}}]' --source-type content
 
 # 更新块
 feishu-cli doc update <document_id> <block_id> --content '{"update_text_elements":{...}}'
 
 # 删除块
 feishu-cli doc delete <document_id> <parent_block_id> --start 1 --end 3
+```
+
+### 高亮块和画板
+
+```bash
+# 添加高亮块（Callout）
+feishu-cli doc add-callout <document_id> "提示内容" --callout-type info
+feishu-cli doc add-callout <document_id> "警告内容" --callout-type warning
+feishu-cli doc add-callout <document_id> "错误内容" --callout-type error
+feishu-cli doc add-callout <document_id> "成功内容" --callout-type success
+
+# 添加画板到文档
+feishu-cli doc add-board <document_id>
 ```
 
 ## Markdown 转换
@@ -200,6 +225,29 @@ feishu-cli wiki delete <node_token>
 feishu-cli wiki move <node_token> --target-space <target_space_id>
 ```
 
+## 用户操作
+
+```bash
+# 获取用户信息
+feishu-cli user info <user_id>
+feishu-cli user info <user_id> --user-id-type user_id
+feishu-cli user info <user_id> -o json
+```
+
+## 画板操作
+
+```bash
+# 下载画板图片
+feishu-cli board image <whiteboard_id> output.png
+
+# 导入图表到画板
+feishu-cli board import <whiteboard_id> diagram.puml --syntax plantuml
+feishu-cli board import <whiteboard_id> diagram.mmd --syntax mermaid
+
+# 创建画板节点
+feishu-cli board create-notes <whiteboard_id> nodes.json
+```
+
 ## 文件管理
 
 ```bash
@@ -218,6 +266,13 @@ feishu-cli msg send --receive-id-type email --receive-id user@example.com --text
 
 # 发送到群组
 feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx --text "群消息"
+
+# 搜索群聊
+feishu-cli msg search-chats
+feishu-cli msg search-chats --query "关键词" --page-size 20
+
+# 获取会话历史消息
+feishu-cli msg history --container-id <chat_id> --container-id-type chat
 
 # 其他操作
 feishu-cli msg get <message_id>

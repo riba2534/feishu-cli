@@ -62,6 +62,17 @@ feishu-cli/
 │   ├── delete_message.go         # 删除消息
 │   ├── forward_message.go        # 转发消息
 │   ├── read_users.go             # 获取消息已读用户
+│   ├── search_chats.go           # 搜索群聊
+│   ├── get_message_history.go    # 获取会话历史
+│   ├── user.go                   # 用户命令组
+│   ├── get_user_info.go          # 获取用户信息
+│   ├── board.go                  # 画板命令组
+│   ├── get_board_image.go        # 下载画板图片
+│   ├── import_diagram.go         # 导入图表到画板
+│   ├── create_board_notes.go     # 创建画板节点
+│   ├── add_callout.go            # 添加高亮块
+│   ├── add_board.go              # 添加画板到文档
+│   ├── batch_update_blocks.go    # 批量更新块
 │   ├── calendar.go               # 日历命令组
 │   ├── list_calendars.go         # 列出日历
 │   ├── create_event.go           # 创建日程
@@ -92,7 +103,9 @@ feishu-cli/
 │   │   ├── message.go            # 消息 API
 │   │   ├── calendar.go           # 日历 API
 │   │   ├── task.go               # 任务 API
-│   │   └── search.go             # 搜索 API
+│   │   ├── search.go             # 搜索 API
+│   │   ├── user.go               # 用户 API
+│   │   └── board.go              # 画板 API
 │   ├── converter/                # Markdown 转换器
 │   │   ├── block_to_markdown.go  # Block → Markdown
 │   │   ├── markdown_to_block.go  # Markdown → Block
@@ -136,10 +149,24 @@ go vet ./...
 ./feishu-cli doc create --title "测试"
 ./feishu-cli doc get <doc_id>
 ./feishu-cli doc blocks <doc_id>                     # 获取文档所有块
+./feishu-cli doc blocks <doc_id> --all               # 获取所有块（自动分页）
 ./feishu-cli doc export <doc_id> -o output.md
 ./feishu-cli doc import input.md --title "导入的文档"
-./feishu-cli doc add <doc_id> -c '[{"block_type":2,"text":{"elements":[{"text_run":{"content":"文本"}}]}}]'  # 添加块（需要 JSON 格式）
+./feishu-cli doc add <doc_id> -c '[{"block_type":2,"text":{"elements":[{"text_run":{"content":"文本"}}]}}]'  # JSON 格式
+./feishu-cli doc add <doc_id> README.md --content-type markdown  # Markdown 格式
+./feishu-cli doc add-callout <doc_id> "提示内容" --callout-type info  # 添加高亮块
+./feishu-cli doc add-board <doc_id>                  # 添加画板
+./feishu-cli doc batch-update <doc_id> '[...]' --source-type content  # 批量更新
 ./feishu-cli doc delete <doc_id> --start 1 --end 3   # 删除块
+
+# === 用户操作 ===
+./feishu-cli user info <user_id>                     # 获取用户信息
+./feishu-cli user info <user_id> --user-id-type user_id -o json
+
+# === 画板操作 ===
+./feishu-cli board image <whiteboard_id> output.png  # 下载画板图片
+./feishu-cli board import <whiteboard_id> diagram.puml --syntax plantuml  # 导入图表
+./feishu-cli board create-notes <whiteboard_id> nodes.json  # 创建画板节点
 
 # === 知识库操作 ===
 ./feishu-cli wiki get <node_token>              # 获取知识库节点信息
@@ -169,6 +196,9 @@ go vet ./...
 # === 消息操作 ===
 ./feishu-cli msg send --receive-id-type email --receive-id user@example.com --text "Hello"  # 简单文本
 ./feishu-cli msg send --receive-id-type email --receive-id user@example.com --msg-type post --content-file msg.json  # 富文本
+./feishu-cli msg search-chats                     # 搜索群聊
+./feishu-cli msg search-chats --query "关键词" --page-size 20
+./feishu-cli msg history --container-id <chat_id> --container-id-type chat  # 会话历史
 ./feishu-cli msg get <message_id>                 # 获取消息详情
 ./feishu-cli msg list --container-id <chat_id>    # 列出会话消息
 ./feishu-cli msg delete <message_id>              # 删除消息
@@ -251,6 +281,9 @@ app_secret: "xxx"
 - 日历 API 使用 CalendarEvent，时间格式为 RFC3339（如 `2024-01-01T10:00:00+08:00`）
 - 任务 API 使用 Task V2 版本
 - 搜索 API 需要 User Access Token，不能使用 App Access Token
+- Callout 块只需设置 BackgroundColor（1-7 对应不同颜色），不能同时设置 EmojiId
+- 画板 API 使用通用 HTTP 请求方式（client.Get/Post），非专用 SDK 方法
+- 用户信息 API 需要 `contact:user.base:readonly` 权限
 
 ## Claude Code 技能
 
@@ -315,6 +348,10 @@ export FEISHU_APP_SECRET=<your_app_secret>
 | 评论 | `drive:drive.comment:write` | 评论读写 |
 | 权限管理 | `drive:permission:member:create` | 添加协作者 |
 | 消息 | `im:message`, `im:message:send_as_bot` | 发送消息 |
+| 群聊搜索 | `im:chat:readonly` | 搜索群聊 |
+| 会话历史 | `im:message:readonly` | 获取历史消息 |
+| 用户信息 | `contact:user.base:readonly` | 获取用户信息 |
+| 画板操作 | `board:board` | 画板读写 |
 | 日历 | `calendar:calendar:readonly`, `calendar:calendar` | 日历管理（需单独申请） |
 | 任务 | `task:task:read`, `task:task:write` | 任务管理（需单独申请） |
 | 搜索 | 需要 User Access Token | 用户授权 |
@@ -330,15 +367,26 @@ export FEISHU_APP_SECRET=<your_app_secret>
 
 ## 功能测试验证
 
-以下功能已通过测试验证（2026-01-21）：
+以下功能已通过测试验证（2026-01-27）：
 
 ```
-✅ doc create/get/blocks/export/import
+✅ doc create/get/blocks/blocks --all/export/import
+✅ doc add (JSON/Markdown)
+✅ doc add-callout (info/warning/error/success)
+✅ doc add-board
+✅ doc batch-update
 ✅ wiki get/export
+✅ user info（需要 contact:user.base:readonly 权限）
+✅ board image（下载画板图片）
 ✅ file list/mkdir/move/copy
 ✅ media upload/download
 ✅ comment list/add
 ✅ perm add
 ✅ msg send/get (text/post)
+✅ msg search-chats
+✅ msg history（需要 im:message:readonly 权限）
 ✅ task create/complete/delete
+
+⚠️ board import（API 返回 404，可能需要特殊权限）
+⚠️ board create-notes（API 格式问题）
 ```

@@ -267,6 +267,11 @@ func (c *MarkdownToBlock) convertListItem(node *ast.ListItem, isOrdered bool) (*
 
 	elements := c.extractTextElements(node)
 
+	// 过滤空列表项（飞书 API 不接受空内容的列表块）
+	if len(elements) == 0 || !hasNonEmptyContent(elements) {
+		return nil, nil
+	}
+
 	if isOrdered {
 		blockType := int(BlockTypeOrdered)
 		return &larkdocx.Block{
@@ -561,15 +566,26 @@ func (c *MarkdownToBlock) createDividerBlock() *larkdocx.Block {
 func (c *MarkdownToBlock) convertTable(node *east.Table) (*larkdocx.Block, error) {
 	// Count rows and columns
 	var rows, cols int
+	var cellContents []string
 	for row := node.FirstChild(); row != nil; row = row.NextSibling() {
-		if _, ok := row.(*east.TableHeader); ok {
+		if header, ok := row.(*east.TableHeader); ok {
 			cols = row.ChildCount()
 			rows++
-		} else if _, ok := row.(*east.TableRow); ok {
+			for cell := header.FirstChild(); cell != nil; cell = cell.NextSibling() {
+				if tc, ok := cell.(*east.TableCell); ok {
+					cellContents = append(cellContents, c.getNodeText(tc))
+				}
+			}
+		} else if tr, ok := row.(*east.TableRow); ok {
 			if cols == 0 {
 				cols = row.ChildCount()
 			}
 			rows++
+			for cell := tr.FirstChild(); cell != nil; cell = cell.NextSibling() {
+				if tc, ok := cell.(*east.TableCell); ok {
+					cellContents = append(cellContents, c.getNodeText(tc))
+				}
+			}
 		}
 	}
 
@@ -577,34 +593,38 @@ func (c *MarkdownToBlock) convertTable(node *east.Table) (*larkdocx.Block, error
 		return nil, nil
 	}
 
-	// Build cells array (row-major order)
-	var cells []string
-	for row := node.FirstChild(); row != nil; row = row.NextSibling() {
-		if header, ok := row.(*east.TableHeader); ok {
-			for cell := header.FirstChild(); cell != nil; cell = cell.NextSibling() {
-				if tc, ok := cell.(*east.TableCell); ok {
-					text := c.getNodeText(tc)
-					cells = append(cells, text)
+	// 飞书 API 对表格创建的限制：
+	// 1. 通过 CreateBlock API 批量创建时，表格 cells 必须为空
+	// 2. 表格内容无法在创建时一次性填充
+	// 3. 将表格内容转换为带格式的文本，保留信息
+	var textContent strings.Builder
+	textContent.WriteString(fmt.Sprintf("┌ 表格 (%d×%d) ┐\n", rows, cols))
+	for i := 0; i < rows; i++ {
+		for j := 0; j < cols; j++ {
+			idx := i*cols + j
+			if idx < len(cellContents) {
+				content := cellContents[idx]
+				if j > 0 {
+					textContent.WriteString(" | ")
 				}
-			}
-		} else if tr, ok := row.(*east.TableRow); ok {
-			for cell := tr.FirstChild(); cell != nil; cell = cell.NextSibling() {
-				if tc, ok := cell.(*east.TableCell); ok {
-					text := c.getNodeText(tc)
-					cells = append(cells, text)
-				}
+				textContent.WriteString(content)
 			}
 		}
+		textContent.WriteString("\n")
 	}
+	textContent.WriteString("└────────────┘")
 
-	blockType := int(BlockTypeTable)
+	placeholder := textContent.String()
+	blockType := int(BlockTypeText)
 	return &larkdocx.Block{
 		BlockType: &blockType,
-		Table: &larkdocx.Table{
-			Cells: cells,
-			Property: &larkdocx.TableProperty{
-				RowSize:    &rows,
-				ColumnSize: &cols,
+		Text: &larkdocx.Text{
+			Elements: []*larkdocx.TextElement{
+				{
+					TextRun: &larkdocx.TextRun{
+						Content: &placeholder,
+					},
+				},
 			},
 		},
 	}, nil
@@ -742,6 +762,19 @@ func (c *MarkdownToBlock) getNodeTextWithDepth(node ast.Node, depth int) string 
 		}
 	}
 	return buf.String()
+}
+
+// hasNonEmptyContent checks if text elements have non-empty content
+func hasNonEmptyContent(elements []*larkdocx.TextElement) bool {
+	for _, e := range elements {
+		if e.TextRun != nil && e.TextRun.Content != nil {
+			content := strings.TrimSpace(*e.TextRun.Content)
+			if content != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // languageNameToCode converts language name to Feishu language code
