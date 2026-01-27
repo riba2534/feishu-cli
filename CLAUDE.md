@@ -264,9 +264,9 @@ go vet ./...
 ./feishu-cli sheet create --title "新表格"           # 创建电子表格
 ./feishu-cli sheet get <spreadsheet_token>           # 获取表格信息
 ./feishu-cli sheet list-sheets <spreadsheet_token>   # 列出工作表
-./feishu-cli sheet read <token> "Sheet1!A1:C10"      # 读取单元格
-./feishu-cli sheet write <token> "Sheet1!A1:B2" --data '[["姓名","年龄"],["张三",25]]'  # 写入数据
-./feishu-cli sheet append <token> "Sheet1!A:B" --data '[["新行","数据"]]'  # 追加数据
+./feishu-cli sheet read <token> "Sheet1!A1:C10"      # 读取单元格（V2 API）
+./feishu-cli sheet write <token> "Sheet1!A1:B2" --data '[["姓名","年龄"],["张三",25]]'  # 写入数据（V2 API）
+./feishu-cli sheet append <token> "Sheet1!A:B" --data '[["新行","数据"]]'  # 追加数据（V2 API）
 ./feishu-cli sheet add-sheet <token> --title "新工作表"   # 添加工作表
 ./feishu-cli sheet delete-sheet <token> <sheet_id>   # 删除工作表
 ./feishu-cli sheet add-rows <token> <sheet_id> -n 5  # 添加 5 行
@@ -281,6 +281,14 @@ go vet ./...
 ./feishu-cli sheet filter create <token> <sheet_id> "A1:C10"  # 创建筛选
 ./feishu-cli sheet protect <token> <sheet_id> --dimension ROWS --start 0 --end 5  # 创建保护
 ./feishu-cli sheet image add <token> <sheet_id> --token img_xxx --range "A1:A1"  # 添加浮动图片
+
+# === 电子表格操作（V3 API 新版单元格） ===
+./feishu-cli sheet read-plain <token> <sheet_id> "sheet!A1:C10"  # 获取纯文本内容
+./feishu-cli sheet read-rich <token> <sheet_id> "sheet!A1:C10"   # 获取富文本内容
+./feishu-cli sheet write-rich <token> <sheet_id> --data-file data.json  # 写入富文本
+./feishu-cli sheet insert <token> <sheet_id> "sheet!A1:B2" --data '[["a","b"]]' --simple  # 插入数据
+./feishu-cli sheet append-rich <token> <sheet_id> "sheet!A1:B2" --data '[["a"]]' --simple  # 追加富文本
+./feishu-cli sheet clear <token> <sheet_id> "sheet!A1:B3"  # 清除单元格内容
 ```
 
 ## 配置方式
@@ -342,8 +350,12 @@ app_secret: "xxx"
 - 画板 API 使用通用 HTTP 请求方式（client.Get/Post），非专用 SDK 方法
 - 用户信息 API 需要 `contact:user.base:readonly` 权限
 - 电子表格 V3 API 用于表格管理（创建/获取/工作表），V2 API 用于单元格读写
+- 电子表格新版 V3 单元格 API 支持富文本读写（三维数组格式，包含类型信息）
+- V3 单元格 API 元素类型：text、value、date_time、mention_user、mention_document、image、file、link、reminder、formula
+- V3 单元格写入限制：单次最多 10 个范围、5000 个单元格、50000 字符/单元格
 - 电子表格范围格式：`SheetID!A1:C10`，支持整列 `A:C` 和整行 `1:3`
 - 电子表格单元格数据使用 JSON 二维数组：`[["A1","B1"],["A2","B2"]]`
+- V3 富文本数据使用三维数组：`[[[[{"type":"text","text":{"text":"Hello"}}]]]]`
 
 ## Claude Code 技能
 
@@ -357,6 +369,7 @@ app_secret: "xxx"
 | `/feishu-cli-export` | 导出文档为 Markdown | `/feishu-cli-export <doc_id> [path]` |
 | `/feishu-cli-import` | 从 Markdown 导入创建文档 | `/feishu-cli-import <file.md>` |
 | `/feishu-cli-wiki` | 知识库操作（获取节点、列出空间、导出文档） | `/feishu-cli-wiki get <node_token>` |
+| `/feishu-cli-sheet` | 电子表格操作（V2/V3 API、富文本、行列操作） | `/feishu-cli-sheet <token>` |
 | `/feishu-cli-file` | 云空间文件管理（列出、创建、移动、复制、删除） | `/feishu-cli-file list [folder_token]` |
 | `/feishu-cli-comment` | 文档评论操作（列出、添加评论） | `/feishu-cli-comment list <file_token>` |
 | `/feishu-cli-media` | 素材管理（上传图片、下载素材） | `/feishu-cli-media upload <file>` |
@@ -477,6 +490,12 @@ export FEISHU_APP_SECRET=<your_app_secret>
 ✅ sheet find/replace（查找替换，范围需要 sheetId! 前缀）
 
 ✅ Mermaid 图表导入（20个图表类型全部验证通过）
+
+✅ sheet read-plain/read-rich（V3 API 纯文本/富文本读取，支持多范围批量获取）
+✅ sheet write-rich（V3 API 富文本写入，支持文本样式）
+✅ sheet insert（V3 API 插入数据，支持 --simple 简单模式）
+✅ sheet append-rich（V3 API 追加富文本，支持 --simple 简单模式）
+✅ sheet clear（V3 API 清除单元格内容，最多 10 个范围）
 
 ⚠️ sheet filter create（需要完整的 col+condition 参数）
 ⚠️ sheet protect（V2 API 返回 "invalid operation"）

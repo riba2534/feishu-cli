@@ -1,0 +1,12 @@
+{
+  "name": "feishu-cli-sheet",
+  "description": "飞书电子表格操作：创建、读写、V3 富文本 API、行列操作、样式设置、筛选保护",
+  "version": "1.0.0",
+  "triggers": [
+    "/feishu-cli-sheet",
+    "feishu sheet",
+    "电子表格",
+    "spreadsheet",
+    "表格操作"
+  ]
+}

@@ -1656,6 +1656,434 @@ func DeleteProtectedRange(ctx context.Context, spreadsheetToken string, protectI
 	return nil
 }
 
+// ==================== V3 新版单元格 API ====================
+
+// CellElement 单元格元素（V3 API）
+type CellElement struct {
+	Type            string           `json:"type"`
+	Text            *TextElement     `json:"text,omitempty"`
+	MentionUser     *MentionUserElem `json:"mention_user,omitempty"`
+	MentionDocument *MentionDocElem  `json:"mention_document,omitempty"`
+	Value           *ValueElement    `json:"value,omitempty"`
+	DateTime        *DateTimeElement `json:"date_time,omitempty"`
+	Image           *ImageElement    `json:"image,omitempty"`
+	File            *FileElement     `json:"file,omitempty"`
+	Link            *LinkElement     `json:"link,omitempty"`
+	Reminder        *ReminderElement `json:"reminder,omitempty"`
+	Formula         *FormulaElement  `json:"formula,omitempty"`
+}
+
+// TextElement 文本元素
+type TextElement struct {
+	Text         string        `json:"text"`
+	SegmentStyle *SegmentStyle `json:"segment_style,omitempty"`
+}
+
+// SegmentStyle 局部样式
+type SegmentStyle struct {
+	Style        *TextStyleV3 `json:"style,omitempty"`
+	AffectedText string       `json:"affected_text,omitempty"`
+}
+
+// TextStyleV3 文本样式（V3）
+type TextStyleV3 struct {
+	Bold          bool   `json:"bold,omitempty"`
+	Italic        bool   `json:"italic,omitempty"`
+	StrikeThrough bool   `json:"strike_through,omitempty"`
+	Underline     bool   `json:"underline,omitempty"`
+	ForeColor     string `json:"fore_color,omitempty"`
+	FontSize      int    `json:"font_size,omitempty"`
+}
+
+// MentionUserElem 提及用户元素
+type MentionUserElem struct {
+	Name          string        `json:"name,omitempty"`
+	UserID        string        `json:"user_id"`
+	Notify        bool          `json:"notify,omitempty"`
+	SegmentStyles *SegmentStyle `json:"segment_styles,omitempty"`
+}
+
+// MentionDocElem 提及文档元素
+type MentionDocElem struct {
+	Title         string        `json:"title,omitempty"`
+	ObjectType    string        `json:"object_type"`
+	Token         string        `json:"token"`
+	Link          string        `json:"link,omitempty"`
+	SegmentStyles *SegmentStyle `json:"segment_styles,omitempty"`
+}
+
+// ValueElement 数值元素
+type ValueElement struct {
+	Value string `json:"value"`
+}
+
+// DateTimeElement 日期时间元素
+type DateTimeElement struct {
+	DateTime string `json:"date_time"`
+}
+
+// ImageElement 图片元素
+type ImageElement struct {
+	ImageToken string `json:"image_token"`
+}
+
+// FileElement 附件元素
+type FileElement struct {
+	FileToken    string        `json:"file_token"`
+	Name         string        `json:"name,omitempty"`
+	SegmentStyle *SegmentStyle `json:"segment_style,omitempty"`
+}
+
+// LinkElement 链接元素
+type LinkElement struct {
+	Text          string          `json:"text,omitempty"`
+	Link          string          `json:"link"`
+	SegmentStyles []*SegmentStyle `json:"segment_styles,omitempty"`
+}
+
+// ReminderElement 提醒元素
+type ReminderElement struct {
+	NotifyDateTime string   `json:"notify_date_time"`
+	NotifyUserID   []string `json:"notify_user_id,omitempty"`
+	NotifyText     string   `json:"notify_text,omitempty"`
+	NotifyStrategy int      `json:"notify_strategy"`
+}
+
+// FormulaElement 公式元素
+type FormulaElement struct {
+	Formula       string `json:"formula"`
+	FormulaValue  string `json:"formula_value,omitempty"`
+	AffectedRange string `json:"affected_range,omitempty"`
+}
+
+// CellRangeV3 V3 API 单元格范围数据
+type CellRangeV3 struct {
+	Range  string            `json:"range"`
+	Values [][][]*CellElement `json:"values"` // 三维数组：行 -> 列 -> 元素
+}
+
+// ValueRangeV3 V3 API 值范围
+type ValueRangeV3 struct {
+	Range  string            `json:"range"`
+	Values [][][]*CellElement `json:"values"`
+}
+
+// WriteCellsV3 写入单元格数据 (V3 API)
+// POST /open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/:sheet_id/values/batch_update
+func WriteCellsV3(ctx context.Context, spreadsheetToken, sheetID string, valueRanges []*ValueRangeV3, userIDType string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/batch_update", spreadsheetToken, sheetID)
+	if userIDType != "" {
+		path += "?user_id_type=" + userIDType
+	}
+
+	reqBody := map[string]interface{}{
+		"value_ranges": valueRanges,
+	}
+
+	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	if err != nil {
+		return fmt.Errorf("V3 写入单元格失败: %w", err)
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return fmt.Errorf("V3 写入单元格失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
+	return nil
+}
+
+// InsertCellsV3 插入数据 (V3 API)
+// POST /open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/:sheet_id/values/:range/insert
+func InsertCellsV3(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, values [][][]*CellElement, userIDType string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/%s/insert",
+		spreadsheetToken, sheetID, url.PathEscape(rangeStr))
+	if userIDType != "" {
+		path += "?user_id_type=" + userIDType
+	}
+
+	reqBody := map[string]interface{}{
+		"values": values,
+	}
+
+	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	if err != nil {
+		return fmt.Errorf("V3 插入数据失败: %w", err)
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return fmt.Errorf("V3 插入数据失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
+	return nil
+}
+
+// AppendCellsV3 追加数据 (V3 API)
+// POST /open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/:sheet_id/values/:range/append
+func AppendCellsV3(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, values [][][]*CellElement, userIDType string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/%s/append",
+		spreadsheetToken, sheetID, url.PathEscape(rangeStr))
+	if userIDType != "" {
+		path += "?user_id_type=" + userIDType
+	}
+
+	reqBody := map[string]interface{}{
+		"values": values,
+	}
+
+	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	if err != nil {
+		return fmt.Errorf("V3 追加数据失败: %w", err)
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return fmt.Errorf("V3 追加数据失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
+	return nil
+}
+
+// ReadCellsPlainV3 获取纯文本内容 (V3 API)
+// POST /open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/:sheet_id/values/batch_get_plain
+func ReadCellsPlainV3(ctx context.Context, spreadsheetToken, sheetID string, ranges []string) ([]*CellRange, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/batch_get_plain",
+		spreadsheetToken, sheetID)
+
+	reqBody := map[string]interface{}{
+		"ranges": ranges,
+	}
+
+	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("V3 获取纯文本失败: %w", err)
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			ValueRanges []struct {
+				Range  string     `json:"range"`
+				Values [][]string `json:"values"`
+			} `json:"value_ranges"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("V3 获取纯文本失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
+	var result []*CellRange
+	for _, vr := range apiResp.Data.ValueRanges {
+		// 转换 [][]string 为 [][]interface{}
+		values := make([][]interface{}, len(vr.Values))
+		for i, row := range vr.Values {
+			values[i] = make([]interface{}, len(row))
+			for j, cell := range row {
+				values[i][j] = cell
+			}
+		}
+		result = append(result, &CellRange{
+			Range:  vr.Range,
+			Values: values,
+		})
+	}
+
+	return result, nil
+}
+
+// ReadCellsRichV3 获取富文本内容 (V3 API)
+// POST /open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/:sheet_id/values/batch_get
+func ReadCellsRichV3(ctx context.Context, spreadsheetToken, sheetID string, ranges []string, dateTimeRenderOption, valueRenderOption, userIDType string) ([]*CellRangeV3, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/batch_get",
+		spreadsheetToken, sheetID)
+
+	// 添加查询参数
+	params := url.Values{}
+	if dateTimeRenderOption != "" {
+		params.Set("datetime_render_option", dateTimeRenderOption)
+	}
+	if valueRenderOption != "" {
+		params.Set("value_render_option", valueRenderOption)
+	}
+	if userIDType != "" {
+		params.Set("user_id_type", userIDType)
+	}
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	reqBody := map[string]interface{}{
+		"ranges": ranges,
+	}
+
+	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("V3 获取富文本失败: %w", err)
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			ValueRanges []*CellRangeV3 `json:"value_ranges"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("V3 获取富文本失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
+	return apiResp.Data.ValueRanges, nil
+}
+
+// ClearCellsV3 清除单元格内容 (V3 API)
+// POST /open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/:sheet_id/values/batch_clear
+func ClearCellsV3(ctx context.Context, spreadsheetToken, sheetID string, ranges []string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/batch_clear",
+		spreadsheetToken, sheetID)
+
+	reqBody := map[string]interface{}{
+		"ranges": ranges,
+	}
+
+	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	if err != nil {
+		return fmt.Errorf("V3 清除单元格失败: %w", err)
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return fmt.Errorf("V3 清除单元格失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
+	return nil
+}
+
+// ConvertSimpleToV3Values 将简单二维数组转换为 V3 格式的三维数组
+func ConvertSimpleToV3Values(values [][]interface{}) [][][]*CellElement {
+	result := make([][][]*CellElement, len(values))
+	for i, row := range values {
+		result[i] = make([][]*CellElement, len(row))
+		for j, cell := range row {
+			// 每个单元格是一个元素数组
+			result[i][j] = []*CellElement{
+				ConvertToV3Element(cell),
+			}
+		}
+	}
+	return result
+}
+
+// ConvertToV3Element 将单个值转换为 V3 元素
+func ConvertToV3Element(value interface{}) *CellElement {
+	switch v := value.(type) {
+	case string:
+		return &CellElement{
+			Type: "text",
+			Text: &TextElement{Text: v},
+		}
+	case float64:
+		return &CellElement{
+			Type:  "value",
+			Value: &ValueElement{Value: fmt.Sprintf("%v", v)},
+		}
+	case int:
+		return &CellElement{
+			Type:  "value",
+			Value: &ValueElement{Value: fmt.Sprintf("%d", v)},
+		}
+	case bool:
+		if v {
+			return &CellElement{
+				Type: "text",
+				Text: &TextElement{Text: "TRUE"},
+			}
+		}
+		return &CellElement{
+			Type: "text",
+			Text: &TextElement{Text: "FALSE"},
+		}
+	default:
+		return &CellElement{
+			Type: "text",
+			Text: &TextElement{Text: fmt.Sprintf("%v", v)},
+		}
+	}
+}
+
 // ==================== 辅助函数 ====================
 
 // ParseSheetRange 解析范围字符串，返回 sheetID 和范围

@@ -71,6 +71,7 @@ skills/
 ├── feishu-cli-export/    # 导出为 Markdown
 ├── feishu-cli-import/    # 从 Markdown 导入
 ├── feishu-cli-wiki/      # 知识库操作
+├── feishu-cli-sheet/     # 电子表格（V2/V3 API、富文本）
 ├── feishu-cli-file/      # 云空间文件管理
 ├── feishu-cli-media/     # 素材上传/下载
 ├── feishu-cli-comment/   # 文档评论
@@ -88,6 +89,7 @@ skills/
 | 文档 | 创建、获取、编辑、删除文档及块内容 |
 | 知识库 | 获取、创建、更新、移动、删除节点 |
 | Markdown | 飞书文档 ↔ Markdown 双向转换 |
+| **电子表格** | 创建、读写、行列操作、样式、筛选、V3 富文本 API |
 | 文件 | 列出、创建、移动、复制、删除云空间文件 |
 | 素材 | 上传和下载图片、文件 |
 | 权限 | 添加/更新协作者权限 |
@@ -174,6 +176,7 @@ feishu-cli [命令] [子命令] [选项]
 命令:
   doc       文档操作（创建、获取、编辑、导入导出、高亮块、画板）
   wiki      知识库操作（节点增删改查）
+  sheet     电子表格（V2/V3 API、富文本、行列操作、样式）
   user      用户操作（获取用户信息）
   board     画板操作（下载图片、导入图表、创建节点）
   file      文件管理（列出、创建、移动、复制、删除）
@@ -322,6 +325,127 @@ feishu-cli board import <whiteboard_id> diagram.mmd --syntax mermaid
 
 # 创建画板节点
 feishu-cli board create-notes <whiteboard_id> nodes.json
+```
+
+## 电子表格操作
+
+### 基本操作
+
+```bash
+# 创建电子表格
+feishu-cli sheet create --title "销售数据"
+
+# 获取表格信息
+feishu-cli sheet get <spreadsheet_token>
+
+# 列出工作表
+feishu-cli sheet list-sheets <spreadsheet_token>
+```
+
+### 单元格读写（V2 API）
+
+```bash
+# 读取单元格
+feishu-cli sheet read <spreadsheet_token> "Sheet1!A1:C10"
+
+# 写入单元格
+feishu-cli sheet write <spreadsheet_token> "Sheet1!A1:B2" \
+  --data '[["姓名","年龄"],["张三",25]]'
+
+# 追加数据
+feishu-cli sheet append <spreadsheet_token> "Sheet1!A:B" \
+  --data '[["新行1","数据1"],["新行2","数据2"]]'
+```
+
+### 富文本操作（V3 API）
+
+V3 API 支持富文本内容，包括 @用户、@文档、图片、链接、公式等元素类型。
+
+```bash
+# 获取纯文本内容（批量）
+feishu-cli sheet read-plain <token> <sheet_id> "sheet!A1:C10" "sheet!E1:E5"
+
+# 获取富文本内容（返回结构化数据）
+feishu-cli sheet read-rich <token> <sheet_id> "sheet!A1:C10" -o json
+
+# 写入富文本（从文件）
+feishu-cli sheet write-rich <token> <sheet_id> --data-file data.json
+
+# 插入数据（在指定位置上方插入行）
+feishu-cli sheet insert <token> <sheet_id> "sheet!A2:B2" \
+  --data '[["新数据1","新数据2"]]' --simple
+
+# 追加富文本数据
+feishu-cli sheet append-rich <token> <sheet_id> "sheet!A1:B1" \
+  --data '[["追加数据"]]' --simple
+
+# 清除单元格内容（保留样式）
+feishu-cli sheet clear <token> <sheet_id> "sheet!A1:B3"
+```
+
+**V3 富文本数据格式示例：**
+
+```json
+[
+  {
+    "range": "Sheet1!A1:B2",
+    "values": [
+      [
+        [{"type": "text", "text": {"text": "标题"}}],
+        [{"type": "value", "value": {"value": "100"}}]
+      ],
+      [
+        [{"type": "text", "text": {"text": "内容", "segment_style": {"style": {"bold": true}}}}],
+        [{"type": "formula", "formula": {"formula": "=SUM(A1:A10)"}}]
+      ]
+    ]
+  }
+]
+```
+
+**支持的元素类型：**
+- `text` - 文本（支持局部样式：粗体、斜体、颜色等）
+- `value` - 数值
+- `date_time` - 日期时间
+- `mention_user` - @用户
+- `mention_document` - @文档
+- `image` - 图片
+- `file` - 附件
+- `link` - 链接
+- `formula` - 公式
+- `reminder` - 提醒
+
+### 行列操作
+
+```bash
+feishu-cli sheet add-rows <token> <sheet_id> -n 5       # 添加 5 行
+feishu-cli sheet add-cols <token> <sheet_id> -n 3       # 添加 3 列
+feishu-cli sheet insert-rows <token> <sheet_id> --start 2 --count 3  # 插入行
+feishu-cli sheet delete-rows <token> <sheet_id> --start 0 --end 5
+feishu-cli sheet delete-cols <token> <sheet_id> --start 0 --end 3
+```
+
+### 格式和样式
+
+```bash
+# 合并单元格
+feishu-cli sheet merge <token> "Sheet1!A1:C3"
+feishu-cli sheet unmerge <token> "Sheet1!A1:C3"
+
+# 设置样式
+feishu-cli sheet style <token> "Sheet1!A1:C3" --bold --bg-color "#FFFF00"
+
+# 查找替换
+feishu-cli sheet find <token> <sheet_id> "关键词"
+feishu-cli sheet replace <token> <sheet_id> "旧值" "新值"
+```
+
+### 工作表管理
+
+```bash
+feishu-cli sheet add-sheet <token> --title "新工作表"
+feishu-cli sheet delete-sheet <token> <sheet_id>
+feishu-cli sheet copy-sheet <token> <sheet_id> --title "副本"
 ```
 
 ## 文件管理
