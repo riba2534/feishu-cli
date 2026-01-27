@@ -123,6 +123,5 @@ func init() {
 	getMessageHistoryCmd.Flags().Int("page-size", 50, "分页大小 (1-50)")
 	getMessageHistoryCmd.Flags().String("page-token", "", "分页标记")
 	getMessageHistoryCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
-	_ = getMessageHistoryCmd.MarkFlagRequired("container-id-type")
-	_ = getMessageHistoryCmd.MarkFlagRequired("container-id")
+	mustMarkFlagRequired(getMessageHistoryCmd, "container-id-type", "container-id")
 }

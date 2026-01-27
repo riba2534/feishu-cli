@@ -51,5 +51,5 @@ var deleteCommentCmd = &cobra.Command{
 func init() {
 	commentCmd.AddCommand(deleteCommentCmd)
 	deleteCommentCmd.Flags().String("type", "", "文件类型（必填: doc/docx/sheet/bitable）")
-	_ = deleteCommentCmd.MarkFlagRequired("type")
+	mustMarkFlagRequired(deleteCommentCmd, "type")
 }

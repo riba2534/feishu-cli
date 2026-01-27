@@ -7,7 +7,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
+
+// mustMarkFlagRequired 标记 flag 为必填，如果失败则 panic
+// 用于 init() 函数中，确保配置错误在启动时被发现
+func mustMarkFlagRequired(cmd *cobra.Command, flags ...string) {
+	for _, flag := range flags {
+		if err := cmd.MarkFlagRequired(flag); err != nil {
+			panic(fmt.Sprintf("标记必填 flag '%s' 失败: %v", flag, err))
+		}
+	}
+}
 
 // printJSON 安全地打印 JSON 格式的数据
 // 如果序列化失败，会返回错误而不是静默忽略

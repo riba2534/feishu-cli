@@ -55,5 +55,5 @@ var updateWikiNodeCmd = &cobra.Command{
 func init() {
 	wikiCmd.AddCommand(updateWikiNodeCmd)
 	updateWikiNodeCmd.Flags().String("title", "", "新标题（必填）")
-	_ = updateWikiNodeCmd.MarkFlagRequired("title")
+	mustMarkFlagRequired(updateWikiNodeCmd, "title")
 }

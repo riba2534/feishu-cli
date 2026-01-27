@@ -88,7 +88,5 @@ func init() {
 	addPermissionCmd.Flags().String("member-id", "", "成员标识")
 	addPermissionCmd.Flags().String("perm", "", "权限级别（view/edit/full_access）")
 	addPermissionCmd.Flags().Bool("notification", false, "发送通知给成员")
-	_ = addPermissionCmd.MarkFlagRequired("member-type")
-	_ = addPermissionCmd.MarkFlagRequired("member-id")
-	_ = addPermissionCmd.MarkFlagRequired("perm")
+	mustMarkFlagRequired(addPermissionCmd, "member-type", "member-id", "perm")
 }

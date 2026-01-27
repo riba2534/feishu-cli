@@ -79,5 +79,5 @@ func init() {
 	createDocumentCmd.Flags().StringP("title", "t", "", "文档标题（必填）")
 	createDocumentCmd.Flags().StringP("folder", "f", "", "目标文件夹 token")
 	createDocumentCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = createDocumentCmd.MarkFlagRequired("title")
+	mustMarkFlagRequired(createDocumentCmd, "title")
 }

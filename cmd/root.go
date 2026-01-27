@@ -30,10 +30,13 @@ var rootCmd = &cobra.Command{
 
 命令模块:
   doc       文档操作（创建、获取、编辑、导入导出、添加高亮块/画板）
+  wiki      知识库操作（获取节点、列出空间、导出文档）
+  file      云空间文件管理（列出、创建、移动、复制、删除）
   user      用户操作（获取用户信息）
   board     画板操作（下载图片、导入图表、创建节点）
   media     素材操作（上传、下载）
-  perm      权限操作（添加权限）
+  comment   评论操作（列出、添加、删除评论）
+  perm      权限操作（添加、更新权限）
   msg       消息操作（发送消息、搜索群聊、会话历史）
   task      任务操作（创建、查看、更新、完成）
   calendar  日历操作（日历、日程管理）
@@ -67,7 +70,7 @@ var rootCmd = &cobra.Command{
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Skip config initialization for commands that don't need it
 		switch cmd.Name() {
-		case "init", "help", "completion", "version", "doc", "media", "perm", "msg", "config", "calendar", "task", "search", "user", "board":
+		case "init", "help", "completion", "version", "doc", "wiki", "file", "media", "comment", "perm", "msg", "config", "calendar", "task", "search", "user", "board":
 			return nil
 		}
 

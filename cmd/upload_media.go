@@ -83,5 +83,5 @@ func init() {
 	uploadMediaCmd.Flags().String("parent-node", "", "父节点 token（文档ID）")
 	uploadMediaCmd.Flags().String("name", "", "文件名（默认使用原文件名）")
 	uploadMediaCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = uploadMediaCmd.MarkFlagRequired("parent-node")
+	mustMarkFlagRequired(uploadMediaCmd, "parent-node")
 }

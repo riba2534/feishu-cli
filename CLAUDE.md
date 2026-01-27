@@ -300,6 +300,9 @@ app_secret: "xxx"
 | `/feishu-cli-file` | 云空间文件管理（列出、创建、移动、复制、删除） | `/feishu-cli-file list [folder_token]` |
 | `/feishu-cli-comment` | 文档评论操作（列出、添加评论） | `/feishu-cli-comment list <file_token>` |
 | `/feishu-cli-media` | 素材管理（上传图片、下载素材） | `/feishu-cli-media upload <file>` |
+| `/feishu-cli-msg` | 消息发送（text/post/image/interactive 等多种类型） | `/feishu-cli-msg <receive_id>` |
+| `/feishu-cli-perm` | 权限管理（添加/更新协作者权限） | `/feishu-cli-perm <doc_token>` |
+| `/feishu-cli-plantuml` | PlantUML 生成（飞书画板安全子集） | `/feishu-cli-plantuml <描述>` |
 | `/feishu-cli-calendar` | 日历和日程管理 | `/feishu-cli-calendar list` |
 | `/feishu-cli-task` | 任务管理 | `/feishu-cli-task list` |
 | `/feishu-cli-search` | 搜索功能（需要 User Access Token） | `/feishu-cli-search messages "关键词"` |
@@ -320,9 +323,12 @@ app_secret: "xxx"
 5. **文件管理**: 列出文件 → 创建/移动/复制/删除
 6. **评论管理**: 查看评论 → 添加/删除审查意见
 7. **素材管理**: 上传图片 → 引用到文档 / 下载文档素材
-8. **日历管理**: 列出日历 → 创建/查看/更新/删除日程
-9. **任务管理**: 创建任务 → 查看/更新/完成/删除任务
-10. **搜索功能**: 搜索消息/应用（需要 User Access Token）
+8. **消息发送**: 确定接收者 → 选择消息类型 → 构造内容 → 发送
+9. **权限管理**: 收集文档信息 → 确定协作者 → 选择权限级别 → 授权
+10. **PlantUML**: 分析需求 → 选择图类型 → 生成安全子集代码
+11. **日历管理**: 列出日历 → 创建/查看/更新/删除日程
+12. **任务管理**: 创建任务 → 查看/更新/完成/删除任务
+13. **搜索功能**: 搜索消息/应用（需要 User Access Token）
 
 ## 配置凭证
 

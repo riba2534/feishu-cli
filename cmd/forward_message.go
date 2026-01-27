@@ -73,6 +73,5 @@ func init() {
 	forwardMessageCmd.Flags().String("receive-id", "", "接收者 ID")
 	forwardMessageCmd.Flags().String("receive-id-type", "", "接收者 ID 类型（email/open_id/user_id/union_id/chat_id）")
 	forwardMessageCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = forwardMessageCmd.MarkFlagRequired("receive-id")
-	_ = forwardMessageCmd.MarkFlagRequired("receive-id-type")
+	mustMarkFlagRequired(forwardMessageCmd, "receive-id", "receive-id-type")
 }

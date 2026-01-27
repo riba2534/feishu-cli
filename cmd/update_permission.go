@@ -79,7 +79,5 @@ func init() {
 	updatePermissionCmd.Flags().String("member-type", "", "成员类型（email/openid/userid 等）")
 	updatePermissionCmd.Flags().String("member-id", "", "成员标识")
 	updatePermissionCmd.Flags().String("perm", "", "新权限级别（view/edit/full_access）")
-	_ = updatePermissionCmd.MarkFlagRequired("member-type")
-	_ = updatePermissionCmd.MarkFlagRequired("member-id")
-	_ = updatePermissionCmd.MarkFlagRequired("perm")
+	mustMarkFlagRequired(updatePermissionCmd, "member-type", "member-id", "perm")
 }

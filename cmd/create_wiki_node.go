@@ -75,6 +75,5 @@ func init() {
 	createWikiNodeCmd.Flags().String("parent-node", "", "父节点 Token（可选）")
 	createWikiNodeCmd.Flags().String("node-type", "docx", "节点类型：docx/doc/sheet（默认 docx）")
 	createWikiNodeCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = createWikiNodeCmd.MarkFlagRequired("space-id")
-	_ = createWikiNodeCmd.MarkFlagRequired("title")
+	mustMarkFlagRequired(createWikiNodeCmd, "space-id", "title")
 }

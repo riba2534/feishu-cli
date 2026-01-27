@@ -121,5 +121,5 @@ func init() {
 	createTaskCmd.Flags().String("origin-href", "", "任务来源链接")
 	createTaskCmd.Flags().String("origin-platform", "", "任务来源平台名称")
 	createTaskCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = createTaskCmd.MarkFlagRequired("summary")
+	mustMarkFlagRequired(createTaskCmd, "summary")
 }

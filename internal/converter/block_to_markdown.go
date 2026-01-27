@@ -456,10 +456,6 @@ func (c *BlockToMarkdown) convertTable(block *larkdocx.Block) (string, error) {
 	return sb.String(), nil
 }
 
-func (c *BlockToMarkdown) getCellText(block *larkdocx.Block) string {
-	return c.getCellTextWithDepth(block, 0)
-}
-
 func (c *BlockToMarkdown) getCellTextWithDepth(block *larkdocx.Block, depth int) string {
 	// 递归深度检查
 	if depth > maxRecursionDepth {
@@ -683,10 +679,6 @@ func (c *BlockToMarkdown) convertGridWithDepth(block *larkdocx.Block, depth int)
 	}
 
 	return sb.String(), nil
-}
-
-func (c *BlockToMarkdown) convertGridColumn(block *larkdocx.Block) (string, error) {
-	return c.convertGridColumnWithDepth(block, 0)
 }
 
 func (c *BlockToMarkdown) convertGridColumnWithDepth(block *larkdocx.Block, depth int) (string, error) {

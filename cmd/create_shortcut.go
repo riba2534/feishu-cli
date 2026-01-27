@@ -72,6 +72,5 @@ func init() {
 	createShortcutCmd.Flags().String("target", "", "目标文件夹 Token（必填）")
 	createShortcutCmd.Flags().String("type", "", "文件类型（必填）")
 	createShortcutCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = createShortcutCmd.MarkFlagRequired("target")
-	_ = createShortcutCmd.MarkFlagRequired("type")
+	mustMarkFlagRequired(createShortcutCmd, "target", "type")
 }

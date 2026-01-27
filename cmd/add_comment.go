@@ -60,6 +60,5 @@ func init() {
 	addCommentCmd.Flags().String("type", "", "文件类型（必填: doc/docx/sheet/bitable）")
 	addCommentCmd.Flags().String("text", "", "评论内容（必填）")
 	addCommentCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = addCommentCmd.MarkFlagRequired("type")
-	_ = addCommentCmd.MarkFlagRequired("text")
+	mustMarkFlagRequired(addCommentCmd, "type", "text")
 }

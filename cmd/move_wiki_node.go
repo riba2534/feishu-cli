@@ -83,5 +83,5 @@ func init() {
 	moveWikiNodeCmd.Flags().String("target-space", "", "目标知识空间 ID（必填）")
 	moveWikiNodeCmd.Flags().String("target-parent", "", "目标父节点 Token（可选）")
 	moveWikiNodeCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = moveWikiNodeCmd.MarkFlagRequired("target-space")
+	mustMarkFlagRequired(moveWikiNodeCmd, "target-space")
 }

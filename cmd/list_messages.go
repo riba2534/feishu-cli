@@ -114,5 +114,5 @@ func init() {
 	listMessagesCmd.Flags().Int("page-size", 20, "每页数量（最大 50）")
 	listMessagesCmd.Flags().String("page-token", "", "分页标记")
 	listMessagesCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = listMessagesCmd.MarkFlagRequired("container-id")
+	mustMarkFlagRequired(listMessagesCmd, "container-id")
 }

@@ -72,5 +72,5 @@ func init() {
 	fileCmd.AddCommand(deleteFileCmd)
 	deleteFileCmd.Flags().String("type", "", "文件类型（必填）")
 	deleteFileCmd.Flags().BoolP("force", "f", false, "跳过确认直接删除")
-	_ = deleteFileCmd.MarkFlagRequired("type")
+	mustMarkFlagRequired(deleteFileCmd, "type")
 }

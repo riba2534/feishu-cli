@@ -80,5 +80,5 @@ func init() {
 	listCommentsCmd.Flags().String("type", "", "文件类型（必填: doc/docx/sheet/bitable）")
 	listCommentsCmd.Flags().Int("page-size", 50, "每页数量")
 	listCommentsCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = listCommentsCmd.MarkFlagRequired("type")
+	mustMarkFlagRequired(listCommentsCmd, "type")
 }

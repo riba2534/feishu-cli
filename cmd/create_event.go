@@ -113,8 +113,5 @@ func init() {
 	createEventCmd.Flags().StringP("location", "l", "", "地点")
 	createEventCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 
-	_ = createEventCmd.MarkFlagRequired("calendar-id")
-	_ = createEventCmd.MarkFlagRequired("summary")
-	_ = createEventCmd.MarkFlagRequired("start")
-	_ = createEventCmd.MarkFlagRequired("end")
+	mustMarkFlagRequired(createEventCmd, "calendar-id", "summary", "start", "end")
 }

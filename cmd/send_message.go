@@ -121,6 +121,5 @@ func init() {
 	sendMessageCmd.Flags().String("content-file", "", "消息内容 JSON 文件")
 	sendMessageCmd.Flags().StringP("text", "t", "", "简单文本消息")
 	sendMessageCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = sendMessageCmd.MarkFlagRequired("receive-id-type")
-	_ = sendMessageCmd.MarkFlagRequired("receive-id")
+	mustMarkFlagRequired(sendMessageCmd, "receive-id-type", "receive-id")
 }

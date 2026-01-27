@@ -76,6 +76,5 @@ func init() {
 	copyFileCmd.Flags().String("type", "", "文件类型（必填）")
 	copyFileCmd.Flags().String("name", "", "新文件名称")
 	copyFileCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	_ = copyFileCmd.MarkFlagRequired("target")
-	_ = copyFileCmd.MarkFlagRequired("type")
+	mustMarkFlagRequired(copyFileCmd, "target", "type")
 }

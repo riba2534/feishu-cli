@@ -63,6 +63,5 @@ func init() {
 	fileCmd.AddCommand(moveFileCmd)
 	moveFileCmd.Flags().String("target", "", "目标文件夹 Token（必填）")
 	moveFileCmd.Flags().String("type", "", "文件类型（必填）")
-	_ = moveFileCmd.MarkFlagRequired("target")
-	_ = moveFileCmd.MarkFlagRequired("type")
+	mustMarkFlagRequired(moveFileCmd, "target", "type")
 }
