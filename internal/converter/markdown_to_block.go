@@ -23,6 +23,86 @@ import (
 // 飞书 API 限制单个表格最多 9 行（包括表头）
 const maxTableRows = 9
 
+// 表格列宽配置（单位：像素）
+const (
+	minColumnWidth     = 80  // 最小列宽
+	maxColumnWidth     = 400 // 最大列宽
+	defaultDocWidth    = 700 // 飞书文档默认可用宽度
+	charWidthChinese   = 14  // 中文字符宽度
+	charWidthEnglish   = 8   // 英文/数字字符宽度
+	columnPadding      = 16  // 列内边距
+)
+
+// calculateColumnWidths 根据单元格内容计算每列的宽度
+func calculateColumnWidths(headerContents []string, dataRows [][]string, cols int) []int {
+	if cols == 0 {
+		return nil
+	}
+
+	// 计算每列的最大内容宽度
+	maxWidths := make([]int, cols)
+
+	// 计算单个字符串的显示宽度
+	calcTextWidth := func(s string) int {
+		width := 0
+		for _, r := range s {
+			if r > 127 { // 非 ASCII 字符（中文等）
+				width += charWidthChinese
+			} else {
+				width += charWidthEnglish
+			}
+		}
+		return width + columnPadding
+	}
+
+	// 处理表头
+	for i, content := range headerContents {
+		if i < cols {
+			w := calcTextWidth(content)
+			if w > maxWidths[i] {
+				maxWidths[i] = w
+			}
+		}
+	}
+
+	// 处理数据行
+	for _, row := range dataRows {
+		for i, content := range row {
+			if i < cols {
+				w := calcTextWidth(content)
+				if w > maxWidths[i] {
+					maxWidths[i] = w
+				}
+			}
+		}
+	}
+
+	// 应用最小/最大限制
+	totalWidth := 0
+	for i := range maxWidths {
+		if maxWidths[i] < minColumnWidth {
+			maxWidths[i] = minColumnWidth
+		}
+		if maxWidths[i] > maxColumnWidth {
+			maxWidths[i] = maxColumnWidth
+		}
+		totalWidth += maxWidths[i]
+	}
+
+	// 如果总宽度小于文档宽度，按比例扩展
+	if totalWidth < defaultDocWidth && cols > 0 {
+		extra := (defaultDocWidth - totalWidth) / cols
+		for i := range maxWidths {
+			maxWidths[i] += extra
+			if maxWidths[i] > maxColumnWidth {
+				maxWidths[i] = maxColumnWidth
+			}
+		}
+	}
+
+	return maxWidths
+}
+
 // MarkdownToBlock converts Markdown to Feishu blocks
 type MarkdownToBlock struct {
 	source   []byte
@@ -734,6 +814,9 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 		return nil
 	}
 
+	// 计算列宽（根据内容自动调整）
+	columnWidths := calculateColumnWidths(headerContents, dataRows, cols)
+
 	// 如果表格不超过限制，直接返回单个表格
 	if totalRows <= maxTableRows {
 		var cellContents []string
@@ -751,9 +834,10 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 			BlockType: &blockType,
 			Table: &larkdocx.Table{
 				Property: &larkdocx.TableProperty{
-					RowSize:    &rows,
-					ColumnSize: &cols,
-					HeaderRow:  &headerRow,
+					RowSize:     &rows,
+					ColumnSize:  &cols,
+					ColumnWidth: columnWidths,
+					HeaderRow:   &headerRow,
 				},
 			},
 		}
@@ -800,9 +884,10 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 			BlockType: &blockType,
 			Table: &larkdocx.Table{
 				Property: &larkdocx.TableProperty{
-					RowSize:    &rows,
-					ColumnSize: &cols,
-					HeaderRow:  &headerRow,
+					RowSize:     &rows,
+					ColumnSize:  &cols,
+					ColumnWidth: columnWidths,
+					HeaderRow:   &headerRow,
 				},
 			},
 		}

@@ -32,11 +32,20 @@ feishu-cli doc import doc.md --title "技术文档" --verbose
 - 10 行表格 → 拆分为 2 个表格（9行 + 2行）
 - 20 行表格 → 拆分为 3 个表格（9行 + 9行 + 4行）
 
+### 表格智能处理（2026-01-28 更新）
+
+- **列宽自动计算**：根据内容自动计算列宽（中文 14px，英文 8px，最小 80px，最大 400px）
+- **空行问题修复**：飞书 API 创建表格时会自动在单元格内创建空文本块，现已改为更新现有块而非创建新块
+
+### Mermaid 导入优化（2026-01-28 更新）
+
+- **服务端错误重试**：500 错误时自动重试 3 次，指数退避（2s, 4s, 6s）
+
 ### 已验证的大规模导入
 
 - **10,000+ 行 Markdown** ✓
-- **77 个 Mermaid 图表** → 全部成功转换为飞书画板 ✓
-- **236 个表格**（含大表格拆分）→ 全部成功 ✓
+- **127 个 Mermaid 图表** → 全部成功转换为飞书画板 ✓
+- **170+ 个表格**（含大表格拆分、列宽自动计算）→ 全部成功 ✓
 
 ## 技术栈
 
@@ -356,6 +365,8 @@ app_secret: "xxx"
 - 电子表格范围格式：`SheetID!A1:C10`，支持整列 `A:C` 和整行 `1:3`
 - 电子表格单元格数据使用 JSON 二维数组：`[["A1","B1"],["A2","B2"]]`
 - V3 富文本数据使用三维数组：`[[[[{"type":"text","text":{"text":"Hello"}}]]]]`
+- **表格单元格**：飞书 API 创建表格时会自动在每个单元格内创建空的 Text 块，填充内容时应更新现有块而非创建新块（否则会出现空行）
+- **表格列宽**：通过 `TableProperty.ColumnWidth` 设置，单位为像素，数组长度需与列数一致
 
 ## Claude Code 技能
 
@@ -515,3 +526,30 @@ export FEISHU_APP_SECRET=<your_app_secret>
 - API 路径：`/open-apis/board/v1/whiteboards/{id}/nodes/plantuml`
 - `diagram_type` 映射：0=auto, 1=mindmap, 2=sequence, 3=activity, 4=class, 5=er, 6=flowchart, 7=usecase, 8=component
 - `syntax_type`：1=PlantUML, 2=Mermaid
+
+### 表格导入修复记录（2026-01-28）
+
+**问题 1**：表格列宽过窄，内容显示拥挤
+
+**修复**（`internal/converter/markdown_to_block.go`）：
+- 添加 `calculateColumnWidths` 函数，根据内容自动计算列宽
+- 中文字符 14px，英文/数字 8px，加上 16px 内边距
+- 最小 80px，最大 400px，总宽度不足时按比例扩展
+
+**问题 2**：表格显示空行（只有一行数据但显示两行）
+
+**原因**：飞书 API 创建表格时自动在每个单元格内创建空的 Text 块，`FillTableCells` 又创建了新的 Text 块导致重复
+
+**修复**（`internal/client/docx.go`）：
+- 先调用 `GetBlockChildren` 检查单元格是否已有子块
+- 如果有，使用 `UpdateBlock` 更新现有块的内容
+- 如果没有或更新失败，才创建新块
+
+### Mermaid 导入重试机制（2026-01-28）
+
+**问题**：部分 Mermaid 图表导入时服务端返回 500 错误
+
+**修复**（`cmd/import_markdown.go`）：
+- 添加重试机制，最多重试 3 次
+- 指数退避：2 秒、4 秒、6 秒
+- 仅对 500 服务端错误重试，其他错误直接返回

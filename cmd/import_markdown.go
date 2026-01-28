@@ -266,14 +266,32 @@ var importMarkdownCmd = &cobra.Command{
 					continue
 				}
 
-				// 导入 mermaid 图表到画板
+				// 导入 mermaid 图表到画板（带重试机制处理服务端 500 错误）
 				opts := client.ImportDiagramOptions{
 					SourceType: "content",
 					Syntax:     "mermaid",
 				}
-				_, err = client.ImportDiagram(boardResult.WhiteboardID, seg.content, opts)
-				if err != nil {
-					fmt.Printf("⚠ Mermaid 图表 %d 导入失败: %v\n", mermaidIdx, err)
+
+				var importErr error
+				maxRetries := 3
+				for retry := 0; retry < maxRetries; retry++ {
+					_, importErr = client.ImportDiagram(boardResult.WhiteboardID, seg.content, opts)
+					if importErr == nil {
+						break
+					}
+					// 检查是否是服务端 500 错误（临时性错误，值得重试）
+					if strings.Contains(importErr.Error(), "500") || strings.Contains(importErr.Error(), "internal error") {
+						if verbose && retry < maxRetries-1 {
+							fmt.Printf("  ⚠ 服务端错误，%d 秒后重试 (%d/%d)...\n", (retry+1)*2, retry+1, maxRetries-1)
+						}
+						time.Sleep(time.Duration((retry+1)*2) * time.Second)
+						continue
+					}
+					// 非 500 错误，不重试
+					break
+				}
+				if importErr != nil {
+					fmt.Printf("⚠ Mermaid 图表 %d 导入失败: %v\n", mermaidIdx, importErr)
 					continue
 				}
 

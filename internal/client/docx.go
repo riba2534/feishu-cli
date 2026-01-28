@@ -392,15 +392,16 @@ func AddBoard(documentID string, parentID string, index int) (*AddBoardResult, e
 	return result, nil
 }
 
-// FillTableCells fills table cells with content by creating text blocks inside each cell
+// FillTableCells fills table cells with content by updating existing text blocks or creating new ones
 // cellIDs: cell block IDs from the created table
 // contents: cell content strings (in row-major order)
+// Note: Feishu API automatically creates an empty text block in each cell when creating a table,
+// so we need to update the existing block instead of creating a new one to avoid duplicate rows.
 func FillTableCells(documentID string, cellIDs []string, contents []string) error {
 	if len(cellIDs) == 0 || len(contents) == 0 {
 		return nil
 	}
 
-	// Table cells are container blocks, we need to create text blocks inside them
 	for i, cellID := range cellIDs {
 		if i >= len(contents) {
 			break
@@ -410,7 +411,56 @@ func FillTableCells(documentID string, cellIDs []string, contents []string) erro
 			continue
 		}
 
-		// Create a text block inside the cell
+		var err error
+		maxRetries := 3
+
+		// Get existing children of the cell (Feishu auto-creates an empty text block)
+		children, childErr := GetBlockChildren(documentID, cellID)
+		if childErr == nil && len(children) > 0 {
+			// Update the first existing text block instead of creating a new one
+			existingBlockID := ""
+			if children[0].BlockId != nil {
+				existingBlockID = *children[0].BlockId
+			}
+
+			if existingBlockID != "" {
+				// Update the existing text block
+				updateContent := map[string]interface{}{
+					"update_text_elements": map[string]interface{}{
+						"elements": []map[string]interface{}{
+							{
+								"text_run": map[string]interface{}{
+									"content": content,
+								},
+							},
+						},
+					},
+				}
+
+				for attempt := 0; attempt < maxRetries; attempt++ {
+					err = UpdateBlock(documentID, existingBlockID, updateContent)
+					if err == nil {
+						break
+					}
+					if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate") {
+						sleepTime := time.Duration(1<<attempt) * time.Second
+						time.Sleep(sleepTime)
+						continue
+					}
+					break
+				}
+				if err == nil {
+					// Successfully updated, skip to next cell
+					if i%10 == 9 {
+						time.Sleep(100 * time.Millisecond)
+					}
+					continue
+				}
+				// If update failed, fall through to create new block
+			}
+		}
+
+		// Create a new text block if no existing block to update
 		blockType := 2 // Text block
 		textBlock := &larkdocx.Block{
 			BlockType: &blockType,
@@ -425,22 +475,16 @@ func FillTableCells(documentID string, cellIDs []string, contents []string) erro
 			},
 		}
 
-		// Create the text block as a child of the cell with retry for rate limiting
-		var err error
-		maxRetries := 3
 		for attempt := 0; attempt < maxRetries; attempt++ {
 			_, err = CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, 0)
 			if err == nil {
 				break
 			}
-			// Check if it's a rate limiting error (429)
 			if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate") {
-				// Exponential backoff: 1s, 2s, 4s
 				sleepTime := time.Duration(1<<attempt) * time.Second
 				time.Sleep(sleepTime)
 				continue
 			}
-			// For other errors, don't retry
 			break
 		}
 		if err != nil {
