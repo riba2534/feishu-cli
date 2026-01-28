@@ -192,6 +192,8 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 		return c.convertIframe(block)
 	case BlockTypeMindNote:
 		return c.convertMindNote(block)
+	case BlockTypeWikiCatalog:
+		return c.convertWikiCatalog(block)
 	default:
 		// Unknown block type - output as comment
 		return fmt.Sprintf("<!-- Unknown block type: %d -->\n", blockType), nil
@@ -649,6 +651,12 @@ func (c *BlockToMarkdown) convertMindNote(block *larkdocx.Block) (string, error)
 	}
 
 	return fmt.Sprintf("[思维导图/MindNote](feishu://mindnote/%s)\n", token), nil
+}
+
+func (c *BlockToMarkdown) convertWikiCatalog(block *larkdocx.Block) (string, error) {
+	// WikiCatalog (block_type=42) 是知识库目录块
+	// 它本身不包含实际内容，子节点信息需要通过 wiki nodes API 获取
+	return "[Wiki 目录 - 使用 'wiki nodes <space_id> --parent <node_token>' 获取子节点列表]\n", nil
 }
 
 func (c *BlockToMarkdown) convertGrid(block *larkdocx.Block) (string, error) {

@@ -316,23 +316,24 @@ app_secret: "xxx"
 
 ## 块类型映射
 
-| block_type | 名称 | Markdown |
-|------------|------|----------|
-| 1 | Page | 根节点 |
-| 2 | Text | 段落 |
-| 3-11 | Heading1-9 | `#` ~ `######` |
-| 12 | Bullet | `- item` |
-| 13 | Ordered | `1. item` |
-| 14 | Code | ` ```lang ``` ` |
-| 15 | Quote | `> text` |
-| 16 | Equation | `$$formula$$` |
-| 17 | Todo | `- [x]` / `- [ ]` |
-| 19 | Callout | `> [!NOTE]` |
-| 21 | Diagram | Mermaid |
-| 22 | Divider | `---` |
-| 27 | Image | `![](url)` |
-| 31 | Table | Markdown 表格 |
-| 43 | Board | 画板 |
+| block_type | 名称 | Markdown | 说明 |
+|------------|------|----------|------|
+| 1 | Page | 根节点 | 文档根节点 |
+| 2 | Text | 段落 | 普通文本 |
+| 3-11 | Heading1-9 | `#` ~ `######` | 标题 |
+| 12 | Bullet | `- item` | 无序列表 |
+| 13 | Ordered | `1. item` | 有序列表 |
+| 14 | Code | ` ```lang ``` ` | 代码块 |
+| 15 | Quote | `> text` | 引用 |
+| 16 | Equation | `$$formula$$` | 公式 |
+| 17 | Todo | `- [x]` / `- [ ]` | 待办事项 |
+| 19 | Callout | `> [!NOTE]` | 高亮块 |
+| 21 | Diagram | Mermaid | 图表（自动转画板） |
+| 22 | Divider | `---` | 分隔线 |
+| 27 | Image | `![](url)` | 图片 |
+| 31 | Table | Markdown 表格 | 表格 |
+| 42 | WikiCatalog | `[Wiki 目录]` | **知识库目录块**，表示有子节点 |
+| 43 | Board | 画板 | 画板 |
 
 ## 开发规范
 

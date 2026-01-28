@@ -47,7 +47,10 @@ URL 格式示例:
 		}
 
 		// 解析 node_token（支持 URL 或直接 token）
-		nodeToken := extractWikiToken(args[0])
+		nodeToken, err := extractWikiToken(args[0])
+		if err != nil {
+			return err
+		}
 
 		node, err := client.GetWikiNode(nodeToken)
 		if err != nil {
@@ -80,15 +83,21 @@ URL 格式示例:
 }
 
 // extractWikiToken 从 URL 或直接的 token 中提取 node_token
-func extractWikiToken(input string) string {
+func extractWikiToken(input string) (string, error) {
 	// 尝试匹配 wiki URL
 	re := regexp.MustCompile(`/wiki/([a-zA-Z0-9]+)`)
 	matches := re.FindStringSubmatch(input)
+	token := input
 	if len(matches) > 1 {
-		return matches[1]
+		token = matches[1]
 	}
-	// 直接返回输入（假设是 token）
-	return input
+
+	// 验证 token 格式
+	if !isValidToken(token) {
+		return "", fmt.Errorf("无效的节点 token: %s", token)
+	}
+
+	return token, nil
 }
 
 func init() {

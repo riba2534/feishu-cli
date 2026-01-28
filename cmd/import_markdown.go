@@ -100,6 +100,16 @@ var importMarkdownCmd = &cobra.Command{
 		folder, _ := cmd.Flags().GetString("folder")
 		verbose, _ := cmd.Flags().GetBool("verbose")
 
+		// 检查文件大小限制（100MB）
+		const maxFileSize = 100 * 1024 * 1024
+		fileInfo, err := os.Stat(filePath)
+		if err != nil {
+			return fmt.Errorf("获取文件信息失败: %w", err)
+		}
+		if fileInfo.Size() > maxFileSize {
+			return fmt.Errorf("文件超过最大限制 %d MB", maxFileSize/(1024*1024))
+		}
+
 		// Read markdown file
 		content, err := os.ReadFile(filePath)
 		if err != nil {

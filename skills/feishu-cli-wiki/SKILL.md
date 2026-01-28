@@ -144,11 +144,66 @@ feishu-cli wiki export <token1> -o /tmp/doc1.md
 feishu-cli wiki export <token2> -o /tmp/doc2.md
 ```
 
+## 识别目录节点
+
+知识库文档可能是**目录节点**（包含子节点），通过以下方式识别：
+
+### 1. 使用 `wiki get` 查看节点信息
+
+```bash
+feishu-cli wiki get <node_token>
+```
+
+输出中的 `has_child` 字段表示是否有子节点：
+```
+知识库节点信息:
+  空间 ID:     xxx
+  节点 Token:  xxx
+  文档 Token:  xxx
+  文档类型:    docx
+  节点类型:    origin
+  标题:        目录节点示例
+  有子节点:    true    <-- 表示这是目录节点
+```
+
+### 2. 导出时识别目录节点
+
+当导出目录节点时，如果文档内容显示为：
+```markdown
+<!-- Unknown block type: 42 -->
+```
+
+说明这是一个**Wiki 目录块**（block_type=42），表示该节点是知识库目录，子文档列表存储在知识库元数据中，而非文档内容中。
+
+### 3. 获取子节点列表
+
+对于目录节点，使用以下命令获取子节点：
+
+```bash
+# 1. 先获取节点信息，记录 space_id
+feishu-cli wiki get <node_token>
+
+# 2. 列出该节点下的子节点
+feishu-cli wiki nodes <space_id> --parent <node_token>
+```
+
+**示例工作流**：
+```bash
+# 获取知识库节点
+feishu-cli wiki get WvHQwCaDKiJZAjkm354cvZNjnxd
+# 输出：有子节点: true, 空间 ID: 7540365701802885139
+
+# 获取子节点列表
+feishu-cli wiki nodes 7540365701802885139 --parent WvHQwCaDKiJZAjkm354cvZNjnxd
+# 输出：列出所有子节点及其文档类型
+```
+
 ## 注意事项
 
 1. **知识库 vs 普通文档**：知识库使用 `node_token`，普通文档使用 `document_id`
 2. **权限要求**：需要应用具有 `wiki:wiki:readonly` 权限
 3. **中间文件**：导出的 Markdown 默认存放在 `/tmp` 目录
+4. **目录节点**：目录节点的内容可能为空或只包含 `WikiCatalog` 块（type=42），实际内容在子节点中
 
 ## 图片处理（重要）
 

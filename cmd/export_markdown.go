@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"regexp"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -11,9 +12,14 @@ import (
 )
 
 var exportMarkdownCmd = &cobra.Command{
-	Use:   "export <document_id>",
+	Use:   "export <document_id|url>",
 	Short: "导出文档为 Markdown",
 	Long: `将飞书文档导出为 Markdown 格式。
+
+支持通过文档 ID 或 URL 导出：
+  feishu-cli doc export ABC123def456
+  feishu-cli doc export https://xxx.feishu.cn/docx/ABC123def456
+  feishu-cli doc export https://xxx.larkoffice.com/docx/ABC123def456
 
 示例:
   feishu-cli doc export ABC123def456
@@ -25,7 +31,10 @@ var exportMarkdownCmd = &cobra.Command{
 			return err
 		}
 
-		documentID := args[0]
+		documentID, err := extractDocToken(args[0])
+		if err != nil {
+			return err
+		}
 		output, _ := cmd.Flags().GetString("output")
 		downloadImages, _ := cmd.Flags().GetBool("download-images")
 		assetsDir, _ := cmd.Flags().GetString("assets-dir")
@@ -61,6 +70,24 @@ var exportMarkdownCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// extractDocToken 从 URL 或直接的 token 中提取 document_id
+func extractDocToken(input string) (string, error) {
+	// 尝试匹配 docx URL
+	re := regexp.MustCompile(`/docx/([a-zA-Z0-9]+)`)
+	matches := re.FindStringSubmatch(input)
+	token := input
+	if len(matches) > 1 {
+		token = matches[1]
+	}
+
+	// 验证 token 格式
+	if !isValidToken(token) {
+		return "", fmt.Errorf("无效的文档 token: %s", token)
+	}
+
+	return token, nil
 }
 
 func init() {

@@ -44,7 +44,10 @@ var moveWikiNodeCmd = &cobra.Command{
 			return err
 		}
 
-		nodeToken := extractWikiToken(args[0])
+		nodeToken, err := extractWikiToken(args[0])
+		if err != nil {
+			return err
+		}
 		targetSpace, _ := cmd.Flags().GetString("target-space")
 		targetParent, _ := cmd.Flags().GetString("target-parent")
 		output, _ := cmd.Flags().GetString("output")

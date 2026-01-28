@@ -30,7 +30,10 @@ var updateWikiNodeCmd = &cobra.Command{
 			return err
 		}
 
-		nodeToken := extractWikiToken(args[0])
+		nodeToken, err := extractWikiToken(args[0])
+		if err != nil {
+			return err
+		}
 		title, _ := cmd.Flags().GetString("title")
 
 		// 先获取节点信息以获取 space_id

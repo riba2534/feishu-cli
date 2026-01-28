@@ -103,3 +103,18 @@ func safeOutputPath(baseName string, ext string) string {
 
 	return safeName
 }
+
+// isValidToken 验证飞书 token 格式
+// 飞书 token 通常由字母和数字组成，长度在 10-50 之间
+func isValidToken(token string) bool {
+	if len(token) < 5 || len(token) > 100 {
+		return false
+	}
+	// 只允许字母、数字和部分特殊字符
+	for _, r := range token {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
+}

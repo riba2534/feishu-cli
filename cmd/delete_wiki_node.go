@@ -32,7 +32,10 @@ var deleteWikiNodeCmd = &cobra.Command{
 			return err
 		}
 
-		nodeToken := extractWikiToken(args[0])
+		nodeToken, err := extractWikiToken(args[0])
+		if err != nil {
+			return err
+		}
 		force, _ := cmd.Flags().GetBool("force")
 
 		// 先获取节点信息以获取 obj_token 和 obj_type

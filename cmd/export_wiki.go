@@ -51,7 +51,10 @@ var exportWikiCmd = &cobra.Command{
 		}
 
 		// 解析 node_token
-		nodeToken := extractWikiToken(args[0])
+		nodeToken, err := extractWikiToken(args[0])
+		if err != nil {
+			return err
+		}
 
 		// 1. 获取节点信息
 		fmt.Printf("正在获取节点信息: %s\n", nodeToken)

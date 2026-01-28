@@ -122,8 +122,13 @@ func GetAllBlocks(documentID string) ([]*larkdocx.Block, error) {
 	var allBlocks []*larkdocx.Block
 	pageToken := ""
 	pageSize := 500
+	pageCount := 0
+	const maxPages = 1000 // 防止无限分页
 
 	for {
+		if pageCount >= maxPages {
+			return nil, fmt.Errorf("超过最大分页限制 %d，文档可能有异常", maxPages)
+		}
 		blocks, nextToken, err := ListBlocks(documentID, pageToken, pageSize)
 		if err != nil {
 			return nil, err
@@ -135,6 +140,7 @@ func GetAllBlocks(documentID string) ([]*larkdocx.Block, error) {
 			break
 		}
 		pageToken = nextToken
+		pageCount++
 	}
 
 	return allBlocks, nil
