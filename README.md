@@ -18,11 +18,33 @@
 
 ### 安装
 
-```bash
-# 使用 go install（推荐）
-go install github.com/riba2534/feishu-cli@latest
+**方式一：下载预编译二进制文件（推荐）**
 
-# 或从源码编译
+从 [Releases](https://github.com/riba2534/feishu-cli/releases/latest) 页面下载对应平台的压缩包：
+
+| 平台 | 文件 |
+|------|------|
+| Linux x64 | `feishu-cli_*_linux_amd64.tar.gz` |
+| Linux ARM64 | `feishu-cli_*_linux_arm64.tar.gz` |
+| macOS Intel | `feishu-cli_*_darwin_amd64.tar.gz` |
+| macOS Apple Silicon | `feishu-cli_*_darwin_arm64.tar.gz` |
+| Windows x64 | `feishu-cli_*_windows_amd64.zip` |
+
+```bash
+# Linux/macOS 示例
+tar -xzf feishu-cli_*_linux_amd64.tar.gz
+sudo mv feishu-cli_*/feishu-cli /usr/local/bin/
+```
+
+**方式二：使用 go install**
+
+```bash
+go install github.com/riba2534/feishu-cli@latest
+```
+
+**方式三：从源码编译**
+
+```bash
 git clone https://github.com/riba2534/feishu-cli.git
 cd feishu-cli && go build -o feishu-cli .
 ```
