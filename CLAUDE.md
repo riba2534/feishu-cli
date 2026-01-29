@@ -347,6 +347,67 @@ app_secret: "xxx"
 3. **代码注释**: 关键逻辑使用中文注释
 4. **提交信息**: 遵循 Conventional Commits 规范
 
+## 发布 Release 规范
+
+### 发布流程
+
+1. **打 tag**：使用语义化版本号，格式 `vX.Y.Z`
+2. **构建多平台二进制**：通过 `make build-all` 编译，自动注入版本号和构建时间
+3. **上传到 GitHub Release**：使用 `gh release create` 上传所有二进制文件
+
+### 完整发布命令
+
+```bash
+# 1. 确保代码已提交且在 main 分支
+git checkout main
+git pull origin main
+
+# 2. 打 tag（示例：v1.4.0）
+git tag v1.4.0
+git push origin v1.4.0
+
+# 3. 构建所有平台二进制（自动注入版本号和构建时间）
+make build-all
+
+# 4. 创建 GitHub Release 并上传二进制文件
+gh release create v1.4.0 \
+  bin/feishu-cli-linux-amd64 \
+  bin/feishu-cli-linux-arm64 \
+  bin/feishu-cli-darwin-amd64 \
+  bin/feishu-cli-darwin-arm64 \
+  bin/feishu-cli-windows-amd64.exe \
+  --title "v1.4.0" \
+  --notes "Release notes here" \
+  --latest
+```
+
+### 版本号规则
+
+| 类型 | 示例 | 说明 |
+|------|------|------|
+| Major | v2.0.0 | 不兼容的 API 变更 |
+| Minor | v1.4.0 | 新增功能，向后兼容 |
+| Patch | v1.3.1 | Bug 修复，向后兼容 |
+
+### 构建产物
+
+`make build-all` 生成以下文件（均通过 `-ldflags` 注入 `Version` 和 `BuildTime`）：
+
+| 文件名 | 平台 |
+|--------|------|
+| `bin/feishu-cli-linux-amd64` | Linux x86_64 |
+| `bin/feishu-cli-linux-arm64` | Linux ARM64 |
+| `bin/feishu-cli-darwin-amd64` | macOS x86_64 |
+| `bin/feishu-cli-darwin-arm64` | macOS Apple Silicon |
+| `bin/feishu-cli-windows-amd64.exe` | Windows x86_64 |
+
+### 注意事项
+
+- **必须使用 `make build-all`** 构建，不要直接 `go build`，否则版本号和构建时间不会注入
+- tag 必须以 `v` 开头，与 `Makefile` 中 `git describe --tags` 一致
+- 发布前确认 `feishu-cli --version` 输出正确的版本号和构建时间
+- Release notes 应包含本次发布的主要变更（新功能、Bug 修复、破坏性变更）
+
 ## SDK 注意事项
 
 - `larkdocx.Heading1-9`、`Bullet`、`Ordered`、`Code`、`Quote`、`Todo` 都使用 `*Text` 类型
