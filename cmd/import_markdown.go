@@ -646,8 +646,14 @@ func processTableTask(documentID string, task tableTask, verbose bool) tableResu
 			return tableResult{task: task, success: false, err: err}
 		}
 
-		// 填充单元格内容
-		if err := client.FillTableCells(documentID, cellIDs, task.tableData.CellContents); err != nil {
+		// 填充单元格内容（优先使用富文本元素以保留链接等样式）
+		var fillErr error
+		if len(task.tableData.CellElements) > 0 {
+			fillErr = client.FillTableCellsRich(documentID, cellIDs, task.tableData.CellElements, task.tableData.CellContents)
+		} else {
+			fillErr = client.FillTableCells(documentID, cellIDs, task.tableData.CellContents)
+		}
+		if err := fillErr; err != nil {
 			if isRateLimitError(err) && retry < maxRetries {
 				continue
 			}

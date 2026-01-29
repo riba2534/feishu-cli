@@ -546,19 +546,12 @@ func (c *MarkdownToBlock) extractTextElementsSkipCheckbox(node ast.Node) []*lark
 			}
 
 		case *ast.Emphasis:
-			text := c.getNodeText(child)
-			if text != "" {
-				bold := child.Level == 2
-				italic := child.Level == 1
-				elements = append(elements, &larkdocx.TextElement{
-					TextRun: &larkdocx.TextRun{
-						Content: &text,
-						TextElementStyle: &larkdocx.TextElementStyle{
-							Bold:   &bold,
-							Italic: &italic,
-						},
-					},
-				})
+			childElems := c.extractChildElements(child)
+			bold := child.Level == 2
+			italic := child.Level == 1
+			for _, elem := range childElems {
+				applyTextStyle(elem, bold, italic, false)
+				elements = append(elements, elem)
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -578,17 +571,10 @@ func (c *MarkdownToBlock) extractTextElementsSkipCheckbox(node ast.Node) []*lark
 			return ast.WalkSkipChildren, nil
 
 		case *east.Strikethrough:
-			text := c.getNodeText(child)
-			if text != "" {
-				strikethrough := true
-				elements = append(elements, &larkdocx.TextElement{
-					TextRun: &larkdocx.TextRun{
-						Content: &text,
-						TextElementStyle: &larkdocx.TextElementStyle{
-							Strikethrough: &strikethrough,
-						},
-					},
-				})
+			childElems := c.extractChildElements(child)
+			for _, elem := range childElems {
+				applyTextStyle(elem, false, false, true)
+				elements = append(elements, elem)
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -596,25 +582,7 @@ func (c *MarkdownToBlock) extractTextElementsSkipCheckbox(node ast.Node) []*lark
 			text := c.getNodeText(child)
 			url := string(child.Destination)
 			if text != "" {
-				// 飞书不支持页内锚点链接（以 # 开头），将其转换为普通文本
-				if strings.HasPrefix(url, "#") {
-					elements = append(elements, &larkdocx.TextElement{
-						TextRun: &larkdocx.TextRun{
-							Content: &text,
-						},
-					})
-				} else {
-					elements = append(elements, &larkdocx.TextElement{
-						TextRun: &larkdocx.TextRun{
-							Content: &text,
-							TextElementStyle: &larkdocx.TextElementStyle{
-								Link: &larkdocx.Link{
-									Url: &url,
-								},
-							},
-						},
-					})
-				}
+				elements = append(elements, createLinkElement(text, url))
 			}
 			return ast.WalkSkipChildren, nil
 		}
@@ -749,7 +717,8 @@ func (c *MarkdownToBlock) createDividerBlock() *larkdocx.Block {
 type TableData struct {
 	Rows         int
 	Cols         int
-	CellContents []string
+	CellContents []string                  // 纯文本内容（兼容）
+	CellElements [][]*larkdocx.TextElement // 富文本元素（保留链接等样式）
 	HasHeader    bool
 }
 
@@ -777,10 +746,12 @@ func (c *MarkdownToBlock) convertTableWithData(node *east.Table) *ConvertTableRe
 
 // convertTableWithDataMultiple 将大表格拆分成多个小表格（每个最多 9 行）
 func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*ConvertTableResult {
-	// Count rows and columns, collect all cell contents
+	// Count rows and columns, collect all cell contents (plain text + rich elements)
 	var cols int
 	var headerContents []string
-	var dataRows [][]string // 每行的单元格内容
+	var headerElements [][]*larkdocx.TextElement
+	var dataRows [][]string                    // 纯文本，用于列宽计算
+	var dataRowElements [][][]*larkdocx.TextElement // 富文本元素，保留链接等样式
 	hasHeader := false
 
 	for row := node.FirstChild(); row != nil; row = row.NextSibling() {
@@ -790,6 +761,7 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 			for cell := header.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				if tc, ok := cell.(*east.TableCell); ok {
 					headerContents = append(headerContents, c.getNodeText(tc))
+					headerElements = append(headerElements, c.extractChildElements(tc))
 				}
 			}
 		} else if tr, ok := row.(*east.TableRow); ok {
@@ -797,12 +769,15 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 				cols = row.ChildCount()
 			}
 			var rowContents []string
+			var rowElements [][]*larkdocx.TextElement
 			for cell := tr.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				if tc, ok := cell.(*east.TableCell); ok {
 					rowContents = append(rowContents, c.getNodeText(tc))
+					rowElements = append(rowElements, c.extractChildElements(tc))
 				}
 			}
 			dataRows = append(dataRows, rowContents)
+			dataRowElements = append(dataRowElements, rowElements)
 		}
 	}
 
@@ -817,16 +792,31 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 	// 计算列宽（根据内容自动调整）
 	columnWidths := calculateColumnWidths(headerContents, dataRows, cols)
 
-	// 如果表格不超过限制，直接返回单个表格
-	if totalRows <= maxTableRows {
+	// 构建 TableData 的辅助函数
+	buildTableData := func(rows, cols int, hasHeader bool, chunkDataRows [][]string, chunkDataElements [][][]*larkdocx.TextElement) *TableData {
 		var cellContents []string
+		var cellElements [][]*larkdocx.TextElement
 		if hasHeader {
 			cellContents = append(cellContents, headerContents...)
+			cellElements = append(cellElements, headerElements...)
 		}
-		for _, row := range dataRows {
+		for _, row := range chunkDataRows {
 			cellContents = append(cellContents, row...)
 		}
+		for _, row := range chunkDataElements {
+			cellElements = append(cellElements, row...)
+		}
+		return &TableData{
+			Rows:         rows,
+			Cols:         cols,
+			CellContents: cellContents,
+			CellElements: cellElements,
+			HasHeader:    hasHeader,
+		}
+	}
 
+	// 如果表格不超过限制，直接返回单个表格
+	if totalRows <= maxTableRows {
 		blockType := int(BlockTypeTable)
 		headerRow := hasHeader
 		rows := totalRows
@@ -843,13 +833,8 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 		}
 
 		return []*ConvertTableResult{{
-			Block: block,
-			TableData: &TableData{
-				Rows:         rows,
-				Cols:         cols,
-				CellContents: cellContents,
-				HasHeader:    hasHeader,
-			},
+			Block:     block,
+			TableData: buildTableData(rows, cols, hasHeader, dataRows, dataRowElements),
 		}}
 	}
 
@@ -867,15 +852,11 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 			end = len(dataRows)
 		}
 		chunkDataRows := dataRows[i:end]
+		chunkDataElements := dataRowElements[i:end]
 
-		var cellContents []string
 		rows := len(chunkDataRows)
 		if hasHeader {
-			cellContents = append(cellContents, headerContents...)
 			rows++
-		}
-		for _, row := range chunkDataRows {
-			cellContents = append(cellContents, row...)
 		}
 
 		blockType := int(BlockTypeTable)
@@ -893,13 +874,8 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 		}
 
 		results = append(results, &ConvertTableResult{
-			Block: block,
-			TableData: &TableData{
-				Rows:         rows,
-				Cols:         cols,
-				CellContents: cellContents,
-				HasHeader:    hasHeader,
-			},
+			Block:     block,
+			TableData: buildTableData(rows, cols, hasHeader, chunkDataRows, chunkDataElements),
 		})
 	}
 
@@ -936,20 +912,13 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 			}
 
 		case *ast.Emphasis:
-			// Handle emphasis (italic/bold)
-			text := c.getNodeText(child)
-			if text != "" {
-				bold := child.Level == 2
-				italic := child.Level == 1
-				elements = append(elements, &larkdocx.TextElement{
-					TextRun: &larkdocx.TextRun{
-						Content: &text,
-						TextElementStyle: &larkdocx.TextElementStyle{
-							Bold:   &bold,
-							Italic: &italic,
-						},
-					},
-				})
+			// 递归提取子元素，保留内部链接等信息，然后叠加粗体/斜体样式
+			childElems := c.extractChildElements(child)
+			bold := child.Level == 2
+			italic := child.Level == 1
+			for _, elem := range childElems {
+				applyTextStyle(elem, bold, italic, false)
+				elements = append(elements, elem)
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -969,17 +938,11 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 			return ast.WalkSkipChildren, nil
 
 		case *east.Strikethrough:
-			text := c.getNodeText(child)
-			if text != "" {
-				strikethrough := true
-				elements = append(elements, &larkdocx.TextElement{
-					TextRun: &larkdocx.TextRun{
-						Content: &text,
-						TextElementStyle: &larkdocx.TextElementStyle{
-							Strikethrough: &strikethrough,
-						},
-					},
-				})
+			// 递归提取子元素，保留内部链接等信息，然后叠加删除线样式
+			childElems := c.extractChildElements(child)
+			for _, elem := range childElems {
+				applyTextStyle(elem, false, false, true)
+				elements = append(elements, elem)
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -987,25 +950,7 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 			text := c.getNodeText(child)
 			url := string(child.Destination)
 			if text != "" {
-				// 飞书不支持页内锚点链接（以 # 开头），将其转换为普通文本
-				if strings.HasPrefix(url, "#") {
-					elements = append(elements, &larkdocx.TextElement{
-						TextRun: &larkdocx.TextRun{
-							Content: &text,
-						},
-					})
-				} else {
-					elements = append(elements, &larkdocx.TextElement{
-						TextRun: &larkdocx.TextRun{
-							Content: &text,
-							TextElementStyle: &larkdocx.TextElementStyle{
-								Link: &larkdocx.Link{
-									Url: &url,
-								},
-							},
-						},
-					})
-				}
+				elements = append(elements, createLinkElement(text, url))
 			}
 			return ast.WalkSkipChildren, nil
 		}
@@ -1038,6 +983,109 @@ func (c *MarkdownToBlock) getNodeTextWithDepth(node ast.Node, depth int) string 
 		}
 	}
 	return buf.String()
+}
+
+// extractChildElements 递归提取子节点的 TextElement，保留链接等内联信息。
+// 用于 Emphasis/Strikethrough 内部可能包含 Link 等节点的场景。
+func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextElement {
+	var elements []*larkdocx.TextElement
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		switch n := child.(type) {
+		case *ast.Text:
+			text := string(n.Segment.Value(c.source))
+			if text != "" {
+				elements = append(elements, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{Content: &text},
+				})
+			}
+		case *ast.String:
+			text := string(n.Value)
+			if text != "" {
+				elements = append(elements, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{Content: &text},
+				})
+			}
+		case *ast.Link:
+			text := c.getNodeText(n)
+			url := string(n.Destination)
+			if text != "" {
+				elements = append(elements, createLinkElement(text, url))
+			}
+		case *ast.CodeSpan:
+			text := c.getNodeText(n)
+			if text != "" {
+				inlineCode := true
+				elements = append(elements, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{
+						Content:          &text,
+						TextElementStyle: &larkdocx.TextElementStyle{InlineCode: &inlineCode},
+					},
+				})
+			}
+		case *ast.Emphasis:
+			childElems := c.extractChildElements(n)
+			bold := n.Level == 2
+			italic := n.Level == 1
+			for _, elem := range childElems {
+				applyTextStyle(elem, bold, italic, false)
+				elements = append(elements, elem)
+			}
+		case *east.Strikethrough:
+			childElems := c.extractChildElements(n)
+			for _, elem := range childElems {
+				applyTextStyle(elem, false, false, true)
+				elements = append(elements, elem)
+			}
+		default:
+			// 未知内联节点，递归提取子元素
+			childElems := c.extractChildElements(child)
+			elements = append(elements, childElems...)
+		}
+	}
+	return elements
+}
+
+// applyTextStyle 向 TextElement 叠加样式（不覆盖已有样式）
+func applyTextStyle(elem *larkdocx.TextElement, bold, italic, strikethrough bool) {
+	if elem == nil || elem.TextRun == nil {
+		return
+	}
+	if elem.TextRun.TextElementStyle == nil {
+		elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
+	}
+	s := elem.TextRun.TextElementStyle
+	if bold {
+		s.Bold = &bold
+	}
+	if italic {
+		s.Italic = &italic
+	}
+	if strikethrough {
+		s.Strikethrough = &strikethrough
+	}
+}
+
+// isValidLinkURL 检查 URL 是否为飞书 API 支持的链接格式
+// 飞书 API 不接受相对路径、锚点链接等非 HTTP(S) URL
+func isValidLinkURL(url string) bool {
+	return strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
+}
+
+// createLinkElement 创建链接 TextElement，自动过滤无效 URL
+func createLinkElement(text, url string) *larkdocx.TextElement {
+	if !isValidLinkURL(url) {
+		return &larkdocx.TextElement{
+			TextRun: &larkdocx.TextRun{Content: &text},
+		}
+	}
+	return &larkdocx.TextElement{
+		TextRun: &larkdocx.TextRun{
+			Content: &text,
+			TextElementStyle: &larkdocx.TextElementStyle{
+				Link: &larkdocx.Link{Url: &url},
+			},
+		},
+	}
 }
 
 // hasNonEmptyContent checks if text elements have non-empty content

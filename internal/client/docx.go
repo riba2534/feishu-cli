@@ -548,6 +548,153 @@ func FillTableCells(documentID string, cellIDs []string, contents []string) erro
 	return nil
 }
 
+// FillTableCellsRich fills table cells with rich text elements (preserving links, styles, etc.)
+// cellIDs: cell block IDs from the created table
+// cellElements: each cell's text elements (in row-major order)
+// fallbackContents: plain text fallback for cells without elements
+func FillTableCellsRich(documentID string, cellIDs []string, cellElements [][]*larkdocx.TextElement, fallbackContents []string) error {
+	if len(cellIDs) == 0 {
+		return nil
+	}
+
+	for i, cellID := range cellIDs {
+		// 确定本单元格的 elements
+		var elements []*larkdocx.TextElement
+		if i < len(cellElements) {
+			elements = cellElements[i]
+		}
+
+		// 如果没有富文本元素，使用纯文本回退
+		if len(elements) == 0 {
+			if i < len(fallbackContents) && fallbackContents[i] != "" {
+				content := fallbackContents[i]
+				elements = []*larkdocx.TextElement{
+					{TextRun: &larkdocx.TextRun{Content: &content}},
+				}
+			} else {
+				continue // 空单元格跳过
+			}
+		}
+
+		var err error
+		maxRetries := 3
+
+		// Get existing children of the cell (Feishu auto-creates an empty text block)
+		children, childErr := GetBlockChildren(documentID, cellID)
+		if childErr == nil && len(children) > 0 {
+			existingBlockID := ""
+			if children[0].BlockId != nil {
+				existingBlockID = *children[0].BlockId
+			}
+
+			if existingBlockID != "" {
+				// 构建 elements JSON
+				elementsJSON := buildElementsJSON(elements)
+				updateContent := map[string]interface{}{
+					"update_text_elements": map[string]interface{}{
+						"elements": elementsJSON,
+					},
+				}
+
+				for attempt := 0; attempt < maxRetries; attempt++ {
+					err = UpdateBlock(documentID, existingBlockID, updateContent)
+					if err == nil {
+						break
+					}
+					if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate") {
+						sleepTime := time.Duration(1<<attempt) * time.Second
+						time.Sleep(sleepTime)
+						continue
+					}
+					break
+				}
+				if err == nil {
+					if i%5 == 4 {
+						time.Sleep(200 * time.Millisecond)
+					}
+					continue
+				}
+				// If update failed, fall through to create new block
+			}
+		}
+
+		// Create a new text block if no existing block to update
+		blockType := 2 // Text block
+		textBlock := &larkdocx.Block{
+			BlockType: &blockType,
+			Text:      &larkdocx.Text{Elements: elements},
+		}
+
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			_, err = CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, 0)
+			if err == nil {
+				break
+			}
+			if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate") {
+				sleepTime := time.Duration(1<<attempt) * time.Second
+				time.Sleep(sleepTime)
+				continue
+			}
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("填充单元格 %d 失败: %w", i, err)
+		}
+
+		if i%5 == 4 {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+
+	return nil
+}
+
+// buildElementsJSON 将 TextElement 转换为 UpdateBlock API 所需的 JSON 格式
+func buildElementsJSON(elements []*larkdocx.TextElement) []map[string]interface{} {
+	var result []map[string]interface{}
+	for _, elem := range elements {
+		if elem == nil || elem.TextRun == nil || elem.TextRun.Content == nil {
+			continue
+		}
+
+		textRunMap := map[string]interface{}{
+			"content": *elem.TextRun.Content,
+		}
+
+		if style := elem.TextRun.TextElementStyle; style != nil {
+			styleMap := map[string]interface{}{}
+			if style.Bold != nil && *style.Bold {
+				styleMap["bold"] = true
+			}
+			if style.Italic != nil && *style.Italic {
+				styleMap["italic"] = true
+			}
+			if style.Strikethrough != nil && *style.Strikethrough {
+				styleMap["strikethrough"] = true
+			}
+			if style.Underline != nil && *style.Underline {
+				styleMap["underline"] = true
+			}
+			if style.InlineCode != nil && *style.InlineCode {
+				styleMap["inline_code"] = true
+			}
+			if style.Link != nil && style.Link.Url != nil {
+				styleMap["link"] = map[string]interface{}{
+					"url": *style.Link.Url,
+				}
+			}
+			if len(styleMap) > 0 {
+				textRunMap["text_element_style"] = styleMap
+			}
+		}
+
+		result = append(result, map[string]interface{}{
+			"text_run": textRunMap,
+		})
+	}
+	return result
+}
+
 // GetTableCellIDs retrieves cell block IDs from a table block
 func GetTableCellIDs(documentID string, tableBlockID string) ([]string, error) {
 	block, err := GetBlock(documentID, tableBlockID)
