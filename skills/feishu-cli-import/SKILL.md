@@ -171,7 +171,7 @@ Bob --> Alice: Hi
 - **10,000+ 行 Markdown** ✓
 - **127 个 Mermaid 图表** → 全部成功转换为飞书画板 ✓
 - **170+ 个表格**（含大表格拆分、列宽自动计算）→ 全部成功 ✓
-- **7 种图表类型** → flowchart/sequenceDiagram/classDiagram/stateDiagram/erDiagram/gantt/pie 全部成功 ✓
+- **8 种图表类型** → flowchart/sequenceDiagram/classDiagram/stateDiagram/erDiagram/gantt/pie/mindmap 全部成功 ✓
 - **88 个 Mermaid 图表逐个测试** → 82/88 成功，6 个失败（3 个服务端瞬时错误 + 2 个花括号语法 + 1 个提取异常）
 
 ### 三阶段并发管道架构（2026-01-29）
