@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
@@ -21,6 +22,7 @@ type BlockToMarkdown struct {
 	childBlockIDs map[string]bool // 子块 ID 集合，这些块不应独立处理
 	options       ConvertOptions
 	imageCount    int
+	headingSeqs   []string // 标题自动编号状态，按深度索引（depth-1）
 }
 
 // NewBlockToMarkdown creates a new converter
@@ -94,9 +96,16 @@ func NewBlockToMarkdown(blocks []*larkdocx.Block, options ConvertOptions) *Block
 	}
 }
 
+// isListBlockType 判断是否为列表块类型
+func isListBlockType(bt BlockType) bool {
+	return bt == BlockTypeBullet || bt == BlockTypeOrdered || bt == BlockTypeTodo
+}
+
 // Convert converts all blocks to Markdown
 func (c *BlockToMarkdown) Convert() (string, error) {
 	var sb strings.Builder
+
+	var prevBlockType BlockType
 
 	// Process blocks in order
 	for _, block := range c.blocks {
@@ -114,6 +123,20 @@ func (c *BlockToMarkdown) Convert() (string, error) {
 			continue
 		}
 
+		currentBlockType := BlockType(*block.BlockType)
+
+		// 列表类型切换时插入额外空行
+		if prevBlockType != 0 {
+			prevIsList := isListBlockType(prevBlockType)
+			currIsList := isListBlockType(currentBlockType)
+			if (prevIsList && !currIsList) || (!prevIsList && currIsList) {
+				sb.WriteString("\n")
+			} else if prevIsList && currIsList && prevBlockType != currentBlockType {
+				// Bullet → Ordered 或 Ordered → Bullet 切换
+				sb.WriteString("\n")
+			}
+		}
+
 		md, err := c.convertBlock(block, 0)
 		if err != nil {
 			return "", err
@@ -121,10 +144,17 @@ func (c *BlockToMarkdown) Convert() (string, error) {
 		if md != "" {
 			sb.WriteString(md)
 			sb.WriteString("\n")
+			prevBlockType = currentBlockType
 		}
 	}
 
-	return strings.TrimRight(sb.String(), "\n") + "\n", nil
+	output := strings.TrimRight(sb.String(), "\n") + "\n"
+
+	// 规范化连续空行（最多保留一个空行，即两个换行符）
+	reBlankLines := regexp.MustCompile(`\n{3,}`)
+	output = reBlankLines.ReplaceAllString(output, "\n\n")
+
+	return output, nil
 }
 
 func (c *BlockToMarkdown) convertBlock(block *larkdocx.Block, indent int) (string, error) {
@@ -153,7 +183,18 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 		// GridColumn 块由 Grid 块处理，跳过独立处理
 		return "", nil
 	case BlockTypeAddOns:
-		// AddOns/SyncedBlock 块暂不支持，跳过
+		// AddOns/SyncedBlock 展开子块内容
+		if block.Children != nil {
+			var sb strings.Builder
+			for _, childID := range block.Children {
+				childBlock := c.blockMap[childID]
+				if childBlock != nil {
+					text, _ := c.convertBlockWithDepth(childBlock, indent, depth+1)
+					sb.WriteString(text)
+				}
+			}
+			return sb.String(), nil
+		}
 		return "", nil
 	case BlockTypeText:
 		return c.convertText(block)
@@ -203,6 +244,8 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 		return c.convertMindNote(block)
 	case BlockTypeWikiCatalog:
 		return c.convertWikiCatalog(block)
+	case BlockTypeISV:
+		return c.convertISV(block)
 	default:
 		// Unknown block type - output as comment
 		return fmt.Sprintf("<!-- Unknown block type: %d -->\n", blockType), nil
@@ -216,54 +259,107 @@ func (c *BlockToMarkdown) convertText(block *larkdocx.Block) (string, error) {
 	return c.convertTextElements(block.Text.Elements) + "\n", nil
 }
 
+// getHeadingTextAndStyle 从 heading 块中提取 elements 和 TextStyle
+func getHeadingTextAndStyle(block *larkdocx.Block, blockType BlockType) ([]*larkdocx.TextElement, *larkdocx.TextStyle) {
+	switch blockType {
+	case BlockTypeHeading1:
+		if block.Heading1 != nil {
+			return block.Heading1.Elements, block.Heading1.Style
+		}
+	case BlockTypeHeading2:
+		if block.Heading2 != nil {
+			return block.Heading2.Elements, block.Heading2.Style
+		}
+	case BlockTypeHeading3:
+		if block.Heading3 != nil {
+			return block.Heading3.Elements, block.Heading3.Style
+		}
+	case BlockTypeHeading4:
+		if block.Heading4 != nil {
+			return block.Heading4.Elements, block.Heading4.Style
+		}
+	case BlockTypeHeading5:
+		if block.Heading5 != nil {
+			return block.Heading5.Elements, block.Heading5.Style
+		}
+	case BlockTypeHeading6:
+		if block.Heading6 != nil {
+			return block.Heading6.Elements, block.Heading6.Style
+		}
+	case BlockTypeHeading7:
+		if block.Heading7 != nil {
+			return block.Heading7.Elements, block.Heading7.Style
+		}
+	case BlockTypeHeading8:
+		if block.Heading8 != nil {
+			return block.Heading8.Elements, block.Heading8.Style
+		}
+	case BlockTypeHeading9:
+		if block.Heading9 != nil {
+			return block.Heading9.Elements, block.Heading9.Style
+		}
+	}
+	return nil, nil
+}
+
 func (c *BlockToMarkdown) convertHeading(block *larkdocx.Block, blockType BlockType) (string, error) {
 	level := int(blockType) - int(BlockTypeHeading1) + 1
+	elements, style := getHeadingTextAndStyle(block, blockType)
+
+	// Heading 7-9 可选降级为粗体段落
+	if level > 6 && c.options.DegradeDeepHeadings {
+		text := c.convertTextElements(elements)
+		return fmt.Sprintf("**%s**\n", text), nil
+	}
+
 	if level > 6 {
 		level = 6
 	}
 
-	var elements []*larkdocx.TextElement
-	switch blockType {
-	case BlockTypeHeading1:
-		if block.Heading1 != nil {
-			elements = block.Heading1.Elements
-		}
-	case BlockTypeHeading2:
-		if block.Heading2 != nil {
-			elements = block.Heading2.Elements
-		}
-	case BlockTypeHeading3:
-		if block.Heading3 != nil {
-			elements = block.Heading3.Elements
-		}
-	case BlockTypeHeading4:
-		if block.Heading4 != nil {
-			elements = block.Heading4.Elements
-		}
-	case BlockTypeHeading5:
-		if block.Heading5 != nil {
-			elements = block.Heading5.Elements
-		}
-	case BlockTypeHeading6:
-		if block.Heading6 != nil {
-			elements = block.Heading6.Elements
-		}
-	case BlockTypeHeading7:
-		if block.Heading7 != nil {
-			elements = block.Heading7.Elements
-		}
-	case BlockTypeHeading8:
-		if block.Heading8 != nil {
-			elements = block.Heading8.Elements
-		}
-	case BlockTypeHeading9:
-		if block.Heading9 != nil {
-			elements = block.Heading9.Elements
-		}
+	text := c.convertTextElements(elements)
+
+	// 标题自动编号：根据 TextStyle.Sequence 字段
+	seqPrefix := c.computeHeadingSeq(level, style)
+	if seqPrefix != "" {
+		text = seqPrefix + text
 	}
 
-	text := c.convertTextElements(elements)
 	return fmt.Sprintf("%s %s\n", strings.Repeat("#", level), text), nil
+}
+
+// computeHeadingSeq 计算标题编号前缀
+func (c *BlockToMarkdown) computeHeadingSeq(level int, style *larkdocx.TextStyle) string {
+	if style == nil || style.Sequence == nil {
+		return ""
+	}
+	seq := *style.Sequence
+	if seq == "" {
+		return ""
+	}
+
+	// 确保 headingSeqs 长度足够
+	for len(c.headingSeqs) < level {
+		c.headingSeqs = append(c.headingSeqs, "")
+	}
+	// 截断更深层级的编号（当遇到较浅标题时重置子标题编号）
+	c.headingSeqs = c.headingSeqs[:level]
+
+	if seq == "auto" {
+		// 自动递增：取当前层级的上一个编号 +1
+		prev := c.headingSeqs[level-1]
+		if prev == "" {
+			c.headingSeqs[level-1] = "1"
+		} else {
+			n := 0
+			fmt.Sscanf(prev, "%d", &n)
+			c.headingSeqs[level-1] = fmt.Sprintf("%d", n+1)
+		}
+	} else {
+		// 手动指定编号
+		c.headingSeqs[level-1] = seq
+	}
+
+	return c.headingSeqs[level-1] + ". "
 }
 
 func (c *BlockToMarkdown) convertBullet(block *larkdocx.Block, indent, depth int) (string, error) {
@@ -293,7 +389,15 @@ func (c *BlockToMarkdown) convertOrdered(block *larkdocx.Block, indent, depth in
 	}
 	text := c.convertTextElements(block.Ordered.Elements)
 	prefix := strings.Repeat("  ", indent)
-	result := fmt.Sprintf("%s1. %s\n", prefix, text)
+
+	seq := "1"
+	if block.Ordered.Style != nil && block.Ordered.Style.Sequence != nil {
+		s := *block.Ordered.Style.Sequence
+		if s != "auto" && s != "" {
+			seq = s
+		}
+	}
+	result := fmt.Sprintf("%s%s. %s\n", prefix, seq, text)
 
 	// 递归处理嵌套子列表
 	if block.Children != nil {
@@ -318,7 +422,8 @@ func (c *BlockToMarkdown) convertCode(block *larkdocx.Block) (string, error) {
 		language = languageCodeToName(*block.Code.Style.Language)
 	}
 
-	text := c.convertTextElements(block.Code.Elements)
+	// 代码块使用纯文本提取，不添加 Markdown 格式标记
+	text := c.convertTextElementsRaw(block.Code.Elements)
 	return fmt.Sprintf("```%s\n%s\n```\n", language, text), nil
 }
 
@@ -367,8 +472,23 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 		token = *block.Image.Token
 	}
 
+	// 提取 alt 文本（从子块中获取）
+	alt := "image"
+	if block.Children != nil {
+		for _, childID := range block.Children {
+			childBlock := c.blockMap[childID]
+			if childBlock != nil && childBlock.Text != nil {
+				extracted := c.convertTextElementsRaw(childBlock.Text.Elements)
+				if extracted != "" {
+					alt = extracted
+				}
+				break
+			}
+		}
+	}
+
 	if token == "" {
-		return "![image]()\n", nil
+		return fmt.Sprintf("![%s]()\n", alt), nil
 	}
 
 	if c.options.DownloadImages {
@@ -386,21 +506,21 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 		tmpURL, urlErr := client.GetMediaTempURL(token)
 		if urlErr == nil {
 			if dlErr := client.DownloadFromURL(tmpURL, localPath); dlErr == nil {
-				return fmt.Sprintf("![image](%s)\n", localPath), nil
+				return fmt.Sprintf("![%s](%s)\n", alt, localPath), nil
 			}
 		}
 
 		// 方式二：SDK 直接下载
 		if sdkErr := client.DownloadMedia(token, localPath); sdkErr == nil {
-			return fmt.Sprintf("![image](%s)\n", localPath), nil
+			return fmt.Sprintf("![%s](%s)\n", alt, localPath), nil
 		}
 
 		// 全部失败，保留 token 引用（可能因权限不足）
-		return fmt.Sprintf("![image](feishu://media/%s)\n", token), nil
+		return fmt.Sprintf("![%s](feishu://media/%s)\n", alt, token), nil
 	}
 
 	// Just use token reference
-	return fmt.Sprintf("![image](feishu://media/%s)\n", token), nil
+	return fmt.Sprintf("![%s](feishu://media/%s)\n", alt, token), nil
 }
 
 func (c *BlockToMarkdown) convertTable(block *larkdocx.Block) (string, error) {
@@ -515,6 +635,8 @@ func (c *BlockToMarkdown) getCellTextWithDepth(block *larkdocx.Block, depth int)
 		// 替换残留的换行符为 <br>，避免破坏 markdown 表格结构
 		result = strings.ReplaceAll(result, "\n", "<br>")
 		result = strings.ReplaceAll(result, "\r", "")
+		// 转义管道符，避免破坏 Markdown 表格结构
+		result = strings.ReplaceAll(result, `|`, `\|`)
 		return result
 	}
 	return ""
@@ -547,20 +669,26 @@ func (c *BlockToMarkdown) convertCalloutWithDepth(block *larkdocx.Block, depth i
 		case 5: // Green
 			calloutType = "SUCCESS"
 		case 6: // Blue
-			calloutType = "INFO"
+			calloutType = "NOTE"
+		case 7: // Purple
+			calloutType = "IMPORTANT"
 		}
 	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("> [!%s]\n", calloutType))
 
-	// Process child blocks
+	// Process child blocks（跳过空文本子块）
 	if block.Children != nil {
 		for _, childID := range block.Children {
 			childBlock := c.blockMap[childID]
 			if childBlock != nil {
 				text, _ := c.convertBlockWithDepth(childBlock, 0, depth+1)
-				for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+				text = strings.TrimRight(text, "\n")
+				if text == "" {
+					continue
+				}
+				for _, line := range strings.Split(text, "\n") {
 					sb.WriteString("> " + line + "\n")
 				}
 			}
@@ -671,13 +799,15 @@ func (c *BlockToMarkdown) convertIframe(block *larkdocx.Block) (string, error) {
 		return "", nil
 	}
 
-	// Iframe blocks embed external content
-	url := ""
+	iframeURL := ""
 	if block.Iframe.Component != nil && block.Iframe.Component.Url != nil {
-		url = *block.Iframe.Component.Url
+		iframeURL = *block.Iframe.Component.Url
+	}
+	if iframeURL == "" {
+		return "", nil
 	}
 
-	return fmt.Sprintf("[Embedded Content](%s)\n", url), nil
+	return fmt.Sprintf(`<iframe src="%s" sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups" allowfullscreen frameborder="0" style="width:100%%; min-height:400px;"></iframe>`+"\n", iframeURL), nil
 }
 
 func (c *BlockToMarkdown) convertMindNote(block *larkdocx.Block) (string, error) {
@@ -697,6 +827,34 @@ func (c *BlockToMarkdown) convertWikiCatalog(block *larkdocx.Block) (string, err
 	// WikiCatalog (block_type=42) 是知识库目录块
 	// 它本身不包含实际内容，子节点信息需要通过 wiki nodes API 获取
 	return "[Wiki 目录 - 使用 'wiki nodes <space_id> --parent <node_token>' 获取子节点列表]\n", nil
+}
+
+func (c *BlockToMarkdown) convertISV(block *larkdocx.Block) (string, error) {
+	if block.Isv == nil {
+		return "", nil
+	}
+
+	typeID := ""
+	if block.Isv.ComponentTypeId != nil {
+		typeID = *block.Isv.ComponentTypeId
+	}
+
+	componentID := ""
+	if block.Isv.ComponentId != nil {
+		componentID = *block.Isv.ComponentId
+	}
+
+	switch typeID {
+	case ISVTypeTextDrawing:
+		// TextDrawing 是 Mermaid 绘图块，Open API 不暴露源码
+		return fmt.Sprintf("```mermaid\n%%%% Feishu TextDrawing (component: %s)\n%%%% Mermaid source code is not accessible via Open API\n```\n", componentID), nil
+	case ISVTypeTimeline:
+		// Timeline 是时间线块，Open API 不暴露源数据
+		return fmt.Sprintf("```mermaid\n%%%% Feishu Timeline (component: %s)\n%%%% Timeline data is not accessible via Open API\ntimeline\n    title Timeline\n```\n", componentID), nil
+	default:
+		// 其他 ISV 块类型
+		return fmt.Sprintf("[ISV 应用块 (type: %s, id: %s)]\n", typeID, componentID), nil
+	}
 }
 
 func (c *BlockToMarkdown) convertGrid(block *larkdocx.Block) (string, error) {
@@ -788,6 +946,9 @@ func (c *BlockToMarkdown) convertQuoteContainerWithDepth(block *larkdocx.Block, 
 }
 
 func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) string {
+	// 先合并相邻同样式元素
+	elements = mergeAdjacentElements(elements)
+
 	var result strings.Builder
 
 	for _, elem := range elements {
@@ -805,10 +966,17 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 			if elem.TextRun.TextElementStyle != nil {
 				style := elem.TextRun.TextElementStyle
 
-				// Handle inline code first (innermost)
+				// Handle inline code first (innermost) — 不转义内部文本
 				if style.InlineCode != nil && *style.InlineCode {
 					text = "`" + text + "`"
 				} else {
+					hasLink := style.Link != nil && style.Link.Url != nil
+
+					// 对非链接、非行内代码的纯文本转义特殊字符
+					if !hasLink {
+						text = escapeMarkdown(text)
+					}
+
 					// Apply text formatting styles (not applicable to inline code)
 					if style.Bold != nil && *style.Bold {
 						text = "**" + text + "**"
@@ -831,8 +999,19 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 					if decoded, err := url.QueryUnescape(linkURL); err == nil && decoded != linkURL {
 						linkURL = decoded
 					}
+					// URL 中的括号编码，避免破坏 Markdown 链接语法
+					linkURL = strings.ReplaceAll(linkURL, "(", "%28")
+					linkURL = strings.ReplaceAll(linkURL, ")", "%29")
 					text = fmt.Sprintf("[%s](%s)", text, linkURL)
 				}
+
+				// 高亮颜色导出（最外层包装）
+				if c.options.Highlight {
+					text = c.wrapHighlightSpan(style, text)
+				}
+			} else {
+				// 无样式的纯文本也需要转义
+				text = escapeMarkdown(text)
 			}
 
 			result.WriteString(text)
@@ -853,7 +1032,10 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 			}
 			// 优先使用 API 返回的 URL（包含正确的域名和 wiki/docx 路径）
 			if elem.MentionDoc.Url != nil && *elem.MentionDoc.Url != "" {
-				result.WriteString(fmt.Sprintf("[%s](%s)", title, *elem.MentionDoc.Url))
+				docURL := *elem.MentionDoc.Url
+				docURL = strings.ReplaceAll(docURL, "(", "%28")
+				docURL = strings.ReplaceAll(docURL, ")", "%29")
+				result.WriteString(fmt.Sprintf("[%s](%s)", title, docURL))
 			} else {
 				token := ""
 				if elem.MentionDoc.Token != nil {
@@ -873,6 +1055,161 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 	}
 
 	return result.String()
+}
+
+// wrapHighlightSpan 将带颜色的文本包装为 HTML span 标签
+func (c *BlockToMarkdown) wrapHighlightSpan(style *larkdocx.TextElementStyle, text string) string {
+	if style == nil {
+		return text
+	}
+	textColor := ""
+	bgColor := ""
+	if style.TextColor != nil && *style.TextColor != 0 {
+		if c, ok := fontColorMap[*style.TextColor]; ok {
+			textColor = c
+		}
+	}
+	if style.BackgroundColor != nil && *style.BackgroundColor != 0 {
+		if c, ok := fontBgColorMap[*style.BackgroundColor]; ok {
+			bgColor = c
+		}
+	}
+	if textColor == "" && bgColor == "" {
+		return text
+	}
+	var styles []string
+	if textColor != "" {
+		styles = append(styles, "color: "+textColor)
+	}
+	if bgColor != "" {
+		styles = append(styles, "background-color: "+bgColor)
+	}
+	return fmt.Sprintf(`<span style="%s">%s</span>`, strings.Join(styles, "; "), text)
+}
+
+// escapeMarkdown 转义 Markdown 特殊字符，避免纯文本被误解析
+func escapeMarkdown(text string) string {
+	replacer := strings.NewReplacer(
+		`\`, `\\`,
+		`*`, `\*`,
+		`_`, `\_`,
+		`[`, `\[`,
+		`]`, `\]`,
+		`#`, `\#`,
+		`~`, `\~`,
+		"`", "\\`",
+		`$`, `\$`,
+		`|`, `\|`,
+		`>`, `\>`,
+	)
+	return replacer.Replace(text)
+}
+
+// convertTextElementsRaw 将文本元素提取为纯文本，不添加任何 Markdown 标记
+// 用于代码块等不应包含格式化标记的场景
+func (c *BlockToMarkdown) convertTextElementsRaw(elements []*larkdocx.TextElement) string {
+	var result strings.Builder
+
+	for _, elem := range elements {
+		if elem == nil {
+			continue
+		}
+		if elem.TextRun != nil && elem.TextRun.Content != nil {
+			result.WriteString(*elem.TextRun.Content)
+		}
+		if elem.MentionUser != nil && elem.MentionUser.UserId != nil {
+			result.WriteString(*elem.MentionUser.UserId)
+		}
+		if elem.MentionDoc != nil && elem.MentionDoc.Title != nil {
+			result.WriteString(*elem.MentionDoc.Title)
+		}
+		if elem.Equation != nil && elem.Equation.Content != nil {
+			result.WriteString(*elem.Equation.Content)
+		}
+	}
+
+	return result.String()
+}
+
+// mergeAdjacentElements 合并相邻的同样式 TextElement，减少冗余标记
+func mergeAdjacentElements(elements []*larkdocx.TextElement) []*larkdocx.TextElement {
+	if len(elements) <= 1 {
+		return elements
+	}
+
+	var merged []*larkdocx.TextElement
+	for _, elem := range elements {
+		if elem == nil || elem.TextRun == nil || elem.TextRun.Content == nil {
+			merged = append(merged, elem)
+			continue
+		}
+
+		if len(merged) > 0 {
+			last := merged[len(merged)-1]
+			if last != nil && last.TextRun != nil && last.TextRun.Content != nil && textStyleEqual(last.TextRun.TextElementStyle, elem.TextRun.TextElementStyle) {
+				// 合并内容
+				combined := *last.TextRun.Content + *elem.TextRun.Content
+				last.TextRun.Content = &combined
+				continue
+			}
+		}
+		merged = append(merged, elem)
+	}
+	return merged
+}
+
+// textStyleEqual 判断两个 TextElementStyle 是否完全相同
+func textStyleEqual(a, b *larkdocx.TextElementStyle) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return ptrBoolEq(a.Bold, b.Bold) &&
+		ptrBoolEq(a.Italic, b.Italic) &&
+		ptrBoolEq(a.Strikethrough, b.Strikethrough) &&
+		ptrBoolEq(a.Underline, b.Underline) &&
+		ptrBoolEq(a.InlineCode, b.InlineCode) &&
+		linkEqual(a.Link, b.Link) &&
+		ptrIntEq(a.TextColor, b.TextColor) &&
+		ptrIntEq(a.BackgroundColor, b.BackgroundColor)
+}
+
+func ptrBoolEq(a, b *bool) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+func ptrIntEq(a, b *int) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+func linkEqual(a, b *larkdocx.Link) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Url == nil && b.Url == nil {
+		return true
+	}
+	if a.Url == nil || b.Url == nil {
+		return false
+	}
+	return *a.Url == *b.Url
 }
 
 // languageCodeToName converts Feishu language code to language name

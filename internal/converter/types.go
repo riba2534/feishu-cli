@@ -82,8 +82,46 @@ type ImageInfo struct {
 
 // ConvertOptions holds conversion options
 type ConvertOptions struct {
-	DownloadImages bool
-	AssetsDir      string
-	UploadImages   bool
-	DocumentID     string
+	DownloadImages      bool
+	AssetsDir           string
+	UploadImages        bool
+	DocumentID          string
+	DegradeDeepHeadings bool // 为 true 时，Heading 7-9 输出为粗体段落而非 ######
+	FrontMatter         bool // 为 true 时，导出时添加 YAML front matter
+	Highlight           bool // 为 true 时，导出文本颜色和背景色为 HTML span
+}
+
+// ISV 块类型 ID 常量（飞书团队互动应用）
+const (
+	ISVTypeTextDrawing = "blk_631fefbbae02400430b8f9f4" // Mermaid 绘图
+	ISVTypeTimeline    = "blk_6358a421bca0001c22536e4c" // 时间线
+)
+
+// fontColorMap 将飞书字体颜色枚举值映射为 CSS 颜色
+var fontColorMap = map[int]string{
+	1: "#ef4444", // Red
+	2: "#f97316", // Orange
+	3: "#eab308", // Yellow
+	4: "#22c55e", // Green
+	5: "#3b82f6", // Blue
+	6: "#a855f7", // Purple
+	7: "#6b7280", // Gray
+}
+
+// fontBgColorMap 将飞书字体背景色枚举值映射为 CSS 颜色
+var fontBgColorMap = map[int]string{
+	1:  "#fef2f2", // LightRed
+	2:  "#fff7ed", // LightOrange
+	3:  "#fefce8", // LightYellow
+	4:  "#f0fdf4", // LightGreen
+	5:  "#eff6ff", // LightBlue
+	6:  "#faf5ff", // LightPurple
+	7:  "#f9fafb", // LightGray
+	8:  "#fecaca", // DarkRed
+	9:  "#fed7aa", // DarkOrange
+	10: "#fef08a", // DarkYellow
+	11: "#bbf7d0", // DarkGreen
+	12: "#bfdbfe", // DarkBlue
+	13: "#e9d5ff", // DarkPurple
+	14: "#e5e7eb", // DarkGray
 }

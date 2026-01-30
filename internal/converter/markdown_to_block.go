@@ -206,13 +206,11 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 			return ast.WalkSkipChildren, nil
 
 		case *ast.Blockquote:
-			quoteBlocks, err := c.convertBlockquote(node)
+			quoteNodes, err := c.convertBlockquote(node)
 			if err != nil {
 				return ast.WalkStop, err
 			}
-			for _, block := range quoteBlocks {
-				result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: block})
-			}
+			result.BlockNodes = append(result.BlockNodes, quoteNodes...)
 			return ast.WalkSkipChildren, nil
 
 		case *east.Table:
@@ -594,53 +592,109 @@ func (c *MarkdownToBlock) extractTextElementsSkipCheckbox(node ast.Node) []*lark
 	return elements
 }
 
-func (c *MarkdownToBlock) convertBlockquote(node *ast.Blockquote) ([]*larkdocx.Block, error) {
+func (c *MarkdownToBlock) convertBlockquote(node *ast.Blockquote) ([]*BlockNode, error) {
 	// Check for callout syntax [!TYPE]
+	// goldmark 可能将 [!NOTE] 拆分为多个 Text 节点，需要合并后匹配
 	var calloutType string
+	calloutRe := regexp.MustCompile(`^\[!(\w+)\]`)
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		if para, ok := child.(*ast.Paragraph); ok {
-			if txt, ok := para.FirstChild().(*ast.Text); ok {
-				text := string(txt.Segment.Value(c.source))
-				if match := regexp.MustCompile(`^\[!(\w+)\]`).FindStringSubmatch(text); match != nil {
-					calloutType = match[1]
+			// 合并段落首行所有文本节点
+			var firstLineText string
+			for inline := para.FirstChild(); inline != nil; inline = inline.NextSibling() {
+				if txt, ok := inline.(*ast.Text); ok {
+					firstLineText += string(txt.Segment.Value(c.source))
+					if txt.SoftLineBreak() {
+						break
+					}
+				} else {
 					break
 				}
+			}
+			if match := calloutRe.FindStringSubmatch(firstLineText); match != nil {
+				calloutType = match[1]
+				break
 			}
 		}
 	}
 
 	if calloutType != "" {
-		block, err := c.convertCallout(node, calloutType)
+		calloutNode, err := c.convertCallout(node, calloutType)
 		if err != nil {
 			return nil, err
 		}
-		return []*larkdocx.Block{block}, nil
+		return []*BlockNode{calloutNode}, nil
 	}
 
-	// 提取引用内容，按行拆分（处理 SoftLineBreak），每行创建一个 Quote 块
-	blockType := int(BlockTypeQuote)
-	var blocks []*larkdocx.Block
+	// 使用 QuoteContainer 容器块，支持嵌套结构
+	containerBlockType := int(BlockTypeQuoteContainer)
+	containerBlock := &larkdocx.Block{
+		BlockType:      &containerBlockType,
+		QuoteContainer: &larkdocx.QuoteContainer{},
+	}
+
+	var children []*BlockNode
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-		lines := c.extractQuoteLines(child)
-		for _, line := range lines {
-			if len(line) > 0 {
-				blocks = append(blocks, &larkdocx.Block{
-					BlockType: &blockType,
-					Quote:     &larkdocx.Text{Elements: line},
-				})
+		switch n := child.(type) {
+		case *ast.Paragraph:
+			// 按行拆分段落内容
+			lines := c.extractQuoteLines(n)
+			textBlockType := int(BlockTypeText)
+			for _, line := range lines {
+				if len(line) > 0 {
+					children = append(children, &BlockNode{
+						Block: &larkdocx.Block{
+							BlockType: &textBlockType,
+							Text:      &larkdocx.Text{Elements: line},
+						},
+					})
+				}
+			}
+		case *ast.List:
+			listNodes, err := c.convertList(n)
+			if err == nil {
+				children = append(children, listNodes...)
+			}
+		case *ast.FencedCodeBlock:
+			block, err := c.convertCodeBlock(n)
+			if err == nil && block != nil {
+				children = append(children, &BlockNode{Block: block})
+			}
+		case *ast.Blockquote:
+			// 嵌套引用
+			nestedNodes, err := c.convertBlockquote(n)
+			if err == nil {
+				children = append(children, nestedNodes...)
+			}
+		default:
+			// 其他节点，提取文本
+			lines := c.extractQuoteLines(child)
+			textBlockType := int(BlockTypeText)
+			for _, line := range lines {
+				if len(line) > 0 {
+					children = append(children, &BlockNode{
+						Block: &larkdocx.Block{
+							BlockType: &textBlockType,
+							Text:      &larkdocx.Text{Elements: line},
+						},
+					})
+				}
 			}
 		}
 	}
 
-	// 如果没有提取到任何内容，创建一个空的 Quote 块
-	if len(blocks) == 0 {
-		blocks = append(blocks, &larkdocx.Block{
-			BlockType: &blockType,
-			Quote:     &larkdocx.Text{Elements: []*larkdocx.TextElement{}},
+	// 如果没有子块，创建一个空文本子块
+	if len(children) == 0 {
+		textBlockType := int(BlockTypeText)
+		children = append(children, &BlockNode{
+			Block: &larkdocx.Block{
+				BlockType: &textBlockType,
+				Text:      &larkdocx.Text{Elements: []*larkdocx.TextElement{}},
+			},
 		})
 	}
 
-	return blocks, nil
+	return []*BlockNode{{Block: containerBlock, Children: children}}, nil
 }
 
 // extractQuoteLines 从 AST 节点提取文本元素，按 SoftLineBreak 拆分为多行
@@ -739,29 +793,185 @@ func (c *MarkdownToBlock) extractQuoteLines(node ast.Node) [][]*larkdocx.TextEle
 	return lines
 }
 
-func (c *MarkdownToBlock) convertCallout(node *ast.Blockquote, calloutType string) (*larkdocx.Block, error) {
+func (c *MarkdownToBlock) convertCallout(node *ast.Blockquote, calloutType string) (*BlockNode, error) {
 	// Map callout type to background color
 	var bgColor int
 	switch strings.ToUpper(calloutType) {
-	case "WARNING", "CAUTION":
+	case "WARNING":
 		bgColor = 2 // Red
+	case "CAUTION":
+		bgColor = 3 // Orange
 	case "TIP":
 		bgColor = 4 // Yellow
 	case "SUCCESS":
 		bgColor = 5 // Green
 	case "INFO", "NOTE":
 		bgColor = 6 // Blue
+	case "IMPORTANT":
+		bgColor = 7 // Purple
 	default:
 		bgColor = 6 // Default blue
 	}
 
 	blockType := int(BlockTypeCallout)
-	return &larkdocx.Block{
+	calloutBlock := &larkdocx.Block{
 		BlockType: &blockType,
 		Callout: &larkdocx.Callout{
 			BackgroundColor: &bgColor,
 		},
-	}, nil
+	}
+
+	// 提取 Callout 子块内容（跳过 [!TYPE] 首行）
+	var children []*BlockNode
+	firstPara := true
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		if firstPara {
+			if para, ok := child.(*ast.Paragraph); ok {
+				firstPara = false
+				// 跳过 [!TYPE] 标记，提取剩余内容
+				elements := c.extractCalloutParaElements(para, calloutType)
+				if len(elements) > 0 && hasNonEmptyContent(elements) {
+					textBlockType := int(BlockTypeText)
+					children = append(children, &BlockNode{
+						Block: &larkdocx.Block{
+							BlockType: &textBlockType,
+							Text:      &larkdocx.Text{Elements: elements},
+						},
+					})
+				}
+				continue
+			}
+			firstPara = false
+		}
+
+		// 处理后续子节点
+		switch n := child.(type) {
+		case *ast.Paragraph:
+			elements := c.extractTextElements(n)
+			if len(elements) > 0 {
+				textBlockType := int(BlockTypeText)
+				children = append(children, &BlockNode{
+					Block: &larkdocx.Block{
+						BlockType: &textBlockType,
+						Text:      &larkdocx.Text{Elements: elements},
+					},
+				})
+			}
+		case *ast.List:
+			listNodes, err := c.convertList(n)
+			if err == nil {
+				children = append(children, listNodes...)
+			}
+		case *ast.FencedCodeBlock:
+			block, err := c.convertCodeBlock(n)
+			if err == nil && block != nil {
+				children = append(children, &BlockNode{Block: block})
+			}
+		default:
+			// 其他块级节点，提取文本
+			elements := c.extractTextElements(child)
+			if len(elements) > 0 && hasNonEmptyContent(elements) {
+				textBlockType := int(BlockTypeText)
+				children = append(children, &BlockNode{
+					Block: &larkdocx.Block{
+						BlockType: &textBlockType,
+						Text:      &larkdocx.Text{Elements: elements},
+					},
+				})
+			}
+		}
+	}
+
+	return &BlockNode{Block: calloutBlock, Children: children}, nil
+}
+
+// extractCalloutParaElements 提取 Callout 首段落的文本元素，跳过 [!TYPE] 标记
+func (c *MarkdownToBlock) extractCalloutParaElements(para *ast.Paragraph, calloutType string) []*larkdocx.TextElement {
+	elements := c.extractTextElements(para)
+	if len(elements) == 0 {
+		return nil
+	}
+
+	// goldmark 可能将 [!NOTE] 拆分为多个 TextElement（如 "[" + "!NOTE" + "]"），
+	// 需要先合并文本再匹配，然后按匹配长度移除对应的元素。
+	prefix := "[!" + strings.ToUpper(calloutType) + "]"
+
+	// 先尝试单元素匹配
+	for i, elem := range elements {
+		if elem.TextRun != nil && elem.TextRun.Content != nil {
+			content := *elem.TextRun.Content
+			if idx := strings.Index(content, prefix); idx >= 0 {
+				remaining := strings.TrimSpace(content[idx+len(prefix):])
+				if remaining == "" {
+					elements = append(elements[:i], elements[i+1:]...)
+				} else {
+					elements[i].TextRun.Content = &remaining
+				}
+				return elements
+			}
+		}
+	}
+
+	// 单元素未找到，尝试跨元素合并匹配
+	var concat string
+	for _, elem := range elements {
+		if elem.TextRun != nil && elem.TextRun.Content != nil {
+			concat += *elem.TextRun.Content
+		}
+	}
+
+	if idx := strings.Index(concat, prefix); idx >= 0 {
+		// 确定需要跳过的字节数
+		skipBytes := idx + len(prefix)
+		consumed := 0
+		cutIdx := 0
+		for cutIdx < len(elements) {
+			elem := elements[cutIdx]
+			if elem.TextRun != nil && elem.TextRun.Content != nil {
+				consumed += len(*elem.TextRun.Content)
+			}
+			cutIdx++
+			if consumed >= skipBytes {
+				break
+			}
+		}
+
+		// cutIdx 之前的元素全部移除
+		remaining := elements[cutIdx:]
+
+		// 如果最后一个被消费的元素有多余内容，保留尾部
+		if consumed > skipBytes {
+			lastElem := elements[cutIdx-1]
+			if lastElem.TextRun != nil && lastElem.TextRun.Content != nil {
+				tail := (*lastElem.TextRun.Content)[len(*lastElem.TextRun.Content)-(consumed-skipBytes):]
+				tail = strings.TrimSpace(tail)
+				if tail != "" {
+					tailElem := &larkdocx.TextElement{
+						TextRun: &larkdocx.TextRun{Content: &tail, TextElementStyle: lastElem.TextRun.TextElementStyle},
+					}
+					remaining = append([]*larkdocx.TextElement{tailElem}, remaining...)
+				}
+			}
+		}
+
+		// 移除剩余元素中的前导空白和换行
+		for len(remaining) > 0 {
+			first := remaining[0]
+			if first.TextRun != nil && first.TextRun.Content != nil {
+				trimmed := strings.TrimLeft(*first.TextRun.Content, " \t\n\r")
+				if trimmed == "" {
+					remaining = remaining[1:]
+					continue
+				}
+				first.TextRun.Content = &trimmed
+			}
+			break
+		}
+
+		return remaining
+	}
+
+	return elements
 }
 
 func (c *MarkdownToBlock) convertImage(node *ast.Image) (*larkdocx.Block, error) {
@@ -995,6 +1205,105 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 	return results
 }
 
+// inlineMathRegex 匹配行内公式 $...$，不匹配 $$ 或 \$
+var inlineMathRegex = regexp.MustCompile(`(?:^|[^\\$])\$([^$\n]+?)\$`)
+
+// isPlainTextRun 判断是否为完全无样式的纯文本元素（可安全合并）
+func isPlainTextRun(elem *larkdocx.TextElement) bool {
+	if elem == nil || elem.TextRun == nil || elem.TextRun.Content == nil {
+		return false
+	}
+	if elem.TextRun.TextElementStyle == nil {
+		return true
+	}
+	style := elem.TextRun.TextElementStyle
+	if (style.Bold != nil && *style.Bold) ||
+		(style.Italic != nil && *style.Italic) ||
+		(style.Strikethrough != nil && *style.Strikethrough) ||
+		(style.Underline != nil && *style.Underline) ||
+		(style.InlineCode != nil && *style.InlineCode) ||
+		style.Link != nil {
+		return false
+	}
+	return true
+}
+
+// mergeAdjacentPlainTextRuns 合并相邻的无样式纯文本元素
+// goldmark 的 GFM 扩展可能将连续文本拆分为多个 Text 节点，
+// 合并后才能正确匹配跨节点的 $...$ 行内公式。
+func mergeAdjacentPlainTextRuns(elements []*larkdocx.TextElement) []*larkdocx.TextElement {
+	if len(elements) <= 1 {
+		return elements
+	}
+	var merged []*larkdocx.TextElement
+	for _, elem := range elements {
+		if isPlainTextRun(elem) && len(merged) > 0 && isPlainTextRun(merged[len(merged)-1]) {
+			combined := *merged[len(merged)-1].TextRun.Content + *elem.TextRun.Content
+			merged[len(merged)-1].TextRun.Content = &combined
+			continue
+		}
+		merged = append(merged, elem)
+	}
+	return merged
+}
+
+// splitInlineMath 将包含行内 $...$ 公式的文本元素拆分为文本+公式+文本
+func splitInlineMath(elements []*larkdocx.TextElement) []*larkdocx.TextElement {
+	// 先合并相邻纯文本元素，避免 goldmark 拆分导致 $...$ 被截断
+	elements = mergeAdjacentPlainTextRuns(elements)
+
+	var result []*larkdocx.TextElement
+	for _, elem := range elements {
+		if !isPlainTextRun(elem) {
+			result = append(result, elem)
+			continue
+		}
+
+		text := *elem.TextRun.Content
+		// 查找所有 $...$ 匹配
+		matches := inlineMathRegex.FindAllStringSubmatchIndex(text, -1)
+		if len(matches) == 0 {
+			result = append(result, elem)
+			continue
+		}
+
+		pos := 0
+		for _, match := range matches {
+			// match[0]:match[1] 是完整匹配, match[2]:match[3] 是公式内容
+			// 完整匹配可能包含前导字符（[^\\$] 消耗了一个字符）
+			dollarStart := match[0]
+			for dollarStart < match[1] && text[dollarStart] != '$' {
+				dollarStart++
+			}
+
+			// 前导文本
+			if dollarStart > pos {
+				prefix := text[pos:dollarStart]
+				result = append(result, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{Content: &prefix, TextElementStyle: elem.TextRun.TextElementStyle},
+				})
+			}
+
+			// 公式内容
+			formula := text[match[2]:match[3]]
+			result = append(result, &larkdocx.TextElement{
+				Equation: &larkdocx.Equation{Content: &formula},
+			})
+
+			pos = match[1]
+		}
+
+		// 剩余文本
+		if pos < len(text) {
+			remaining := text[pos:]
+			result = append(result, &larkdocx.TextElement{
+				TextRun: &larkdocx.TextRun{Content: &remaining, TextElementStyle: elem.TextRun.TextElementStyle},
+			})
+		}
+	}
+	return result
+}
+
 func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextElement {
 	var elements []*larkdocx.TextElement
 
@@ -1082,6 +1391,9 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 		return ast.WalkContinue, nil
 	})
 
+	// 行内公式 $...$ 后处理
+	elements = splitInlineMath(elements)
+
 	return elements
 }
 
@@ -1124,27 +1436,53 @@ func (c *MarkdownToBlock) getNodeTextWithDepth(node ast.Node, depth int) string 
 // 用于 Emphasis/Strikethrough 内部可能包含 Link 等节点的场景。
 func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextElement {
 	var elements []*larkdocx.TextElement
+	inUnderline := false // 跟踪 <u>...</u> 状态
+
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch n := child.(type) {
 		case *ast.Text:
 			text := string(n.Segment.Value(c.source))
 			if text != "" {
-				elements = append(elements, &larkdocx.TextElement{
+				elem := &larkdocx.TextElement{
 					TextRun: &larkdocx.TextRun{Content: &text},
-				})
+				}
+				if inUnderline {
+					underline := true
+					if elem.TextRun.TextElementStyle == nil {
+						elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
+					}
+					elem.TextRun.TextElementStyle.Underline = &underline
+				}
+				elements = append(elements, elem)
 			}
 		case *ast.String:
 			text := string(n.Value)
 			if text != "" {
-				elements = append(elements, &larkdocx.TextElement{
+				elem := &larkdocx.TextElement{
 					TextRun: &larkdocx.TextRun{Content: &text},
-				})
+				}
+				if inUnderline {
+					underline := true
+					if elem.TextRun.TextElementStyle == nil {
+						elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
+					}
+					elem.TextRun.TextElementStyle.Underline = &underline
+				}
+				elements = append(elements, elem)
 			}
 		case *ast.Link:
 			text := c.getNodeText(n)
 			url := string(n.Destination)
 			if text != "" {
-				elements = append(elements, createLinkElement(text, url))
+				elem := createLinkElement(text, url)
+				if inUnderline && elem.TextRun != nil {
+					underline := true
+					if elem.TextRun.TextElementStyle == nil {
+						elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
+					}
+					elem.TextRun.TextElementStyle.Underline = &underline
+				}
+				elements = append(elements, elem)
 			}
 		case *ast.CodeSpan:
 			text := c.getNodeText(n)
@@ -1163,12 +1501,26 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 			italic := n.Level == 1
 			for _, elem := range childElems {
 				applyTextStyle(elem, bold, italic, false)
+				if inUnderline && elem.TextRun != nil {
+					underline := true
+					if elem.TextRun.TextElementStyle == nil {
+						elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
+					}
+					elem.TextRun.TextElementStyle.Underline = &underline
+				}
 				elements = append(elements, elem)
 			}
 		case *east.Strikethrough:
 			childElems := c.extractChildElements(n)
 			for _, elem := range childElems {
 				applyTextStyle(elem, false, false, true)
+				if inUnderline && elem.TextRun != nil {
+					underline := true
+					if elem.TextRun.TextElementStyle == nil {
+						elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
+					}
+					elem.TextRun.TextElementStyle.Underline = &underline
+				}
 				elements = append(elements, elem)
 			}
 		case *ast.AutoLink:
@@ -1178,25 +1530,49 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 				label = linkURL
 			}
 			if linkURL != "" {
-				elements = append(elements, createLinkElement(label, linkURL))
+				elem := createLinkElement(label, linkURL)
+				if inUnderline && elem.TextRun != nil {
+					underline := true
+					if elem.TextRun.TextElementStyle == nil {
+						elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
+					}
+					elem.TextRun.TextElementStyle.Underline = &underline
+				}
+				elements = append(elements, elem)
 			}
 		case *ast.RawHTML:
-			// 处理 <br> 标签，转换为换行符（用于表格单元格多行内容）
+			// 处理 HTML 标签
 			var htmlBuf bytes.Buffer
 			for i := 0; i < n.Segments.Len(); i++ {
 				seg := n.Segments.At(i)
 				htmlBuf.Write(c.source[seg.Start:seg.Stop])
 			}
 			raw := strings.TrimSpace(strings.ToLower(htmlBuf.String()))
-			if raw == "<br>" || raw == "<br/>" || raw == "<br />" {
+			switch {
+			case raw == "<br>" || raw == "<br/>" || raw == "<br />":
 				newline := "\n"
 				elements = append(elements, &larkdocx.TextElement{
 					TextRun: &larkdocx.TextRun{Content: &newline},
 				})
+			case raw == "<u>":
+				inUnderline = true
+			case raw == "</u>":
+				inUnderline = false
 			}
 		default:
 			// 未知内联节点，递归提取子元素
 			childElems := c.extractChildElements(child)
+			if inUnderline {
+				for _, elem := range childElems {
+					if elem.TextRun != nil {
+						underline := true
+						if elem.TextRun.TextElementStyle == nil {
+							elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
+						}
+						elem.TextRun.TextElementStyle.Underline = &underline
+					}
+				}
+			}
 			elements = append(elements, childElems...)
 		}
 	}

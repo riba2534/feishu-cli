@@ -795,3 +795,238 @@ func TestBlockToMd_MixedContent(t *testing.T) {
 		t.Error("缺少代码块")
 	}
 }
+
+// intPtr 辅助函数
+func intPtr(i int) *int {
+	return &i
+}
+
+// TestBlockToMd_ISVBlock 测试 ISV 块导出
+func TestBlockToMd_ISVBlock(t *testing.T) {
+	tests := []struct {
+		name       string
+		typeID     string
+		compID     string
+		expectContains string
+	}{
+		{
+			"TextDrawing",
+			ISVTypeTextDrawing,
+			"comp123",
+			"```mermaid",
+		},
+		{
+			"Timeline",
+			ISVTypeTimeline,
+			"comp456",
+			"timeline",
+		},
+		{
+			"Unknown ISV",
+			"blk_unknown",
+			"comp789",
+			"ISV 应用块",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			blockType := int(BlockTypeISV)
+			block := &larkdocx.Block{
+				BlockId:   strPtr("isv1"),
+				BlockType: &blockType,
+				Isv: &larkdocx.Isv{
+					ComponentTypeId: strPtr(tt.typeID),
+					ComponentId:     strPtr(tt.compID),
+				},
+			}
+
+			pageType := int(BlockTypePage)
+			blocks := []*larkdocx.Block{
+				{BlockId: strPtr("page"), BlockType: &pageType, Children: []string{"isv1"}},
+				block,
+			}
+			conv := NewBlockToMarkdown(blocks, ConvertOptions{})
+			result, err := conv.Convert()
+			if err != nil {
+				t.Fatalf("转换失败: %v", err)
+			}
+			if !strings.Contains(result, tt.expectContains) {
+				t.Errorf("ISV %s 输出不包含 %q:\n%s", tt.name, tt.expectContains, result)
+			}
+		})
+	}
+}
+
+// TestBlockToMd_HeadingAutoSeq 测试标题自动编号
+func TestBlockToMd_HeadingAutoSeq(t *testing.T) {
+	// 构造带 Sequence="auto" 的标题块
+	createSeqHeading := func(id string, level int, content string, seq string) *larkdocx.Block {
+		block := createHeadingBlock(id, level, content)
+		// 需要设置 Style.Sequence
+		headingText := &larkdocx.Text{
+			Style: &larkdocx.TextStyle{
+				Sequence: strPtr(seq),
+			},
+			Elements: []*larkdocx.TextElement{
+				{
+					TextRun: &larkdocx.TextRun{
+						Content: strPtr(content),
+					},
+				},
+			},
+		}
+		switch level {
+		case 1:
+			block.Heading1 = headingText
+		case 2:
+			block.Heading2 = headingText
+		case 3:
+			block.Heading3 = headingText
+		}
+		return block
+	}
+
+	pageType := int(BlockTypePage)
+	blocks := []*larkdocx.Block{
+		{BlockId: strPtr("page"), BlockType: &pageType, Children: []string{"h1", "h2", "h3"}},
+		createSeqHeading("h1", 1, "第一章", "auto"),
+		createSeqHeading("h2", 1, "第二章", "auto"),
+		createSeqHeading("h3", 1, "第三章", "5"), // 手动编号
+	}
+
+	conv := NewBlockToMarkdown(blocks, ConvertOptions{})
+	result, err := conv.Convert()
+	if err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+
+	if !strings.Contains(result, "# 1. 第一章") {
+		t.Errorf("第一章编号不正确:\n%s", result)
+	}
+	if !strings.Contains(result, "# 2. 第二章") {
+		t.Errorf("第二章编号不正确:\n%s", result)
+	}
+	if !strings.Contains(result, "# 5. 第三章") {
+		t.Errorf("第三章编号不正确:\n%s", result)
+	}
+}
+
+// TestBlockToMd_HighlightColor 测试文本高亮颜色导出
+func TestBlockToMd_HighlightColor(t *testing.T) {
+	textColor := 1 // Red
+	bgColor := 5   // LightBlue
+
+	blockType := int(BlockTypeText)
+	block := &larkdocx.Block{
+		BlockId:   strPtr("t1"),
+		BlockType: &blockType,
+		Text: &larkdocx.Text{
+			Elements: []*larkdocx.TextElement{
+				{
+					TextRun: &larkdocx.TextRun{
+						Content: strPtr("红色文本"),
+						TextElementStyle: &larkdocx.TextElementStyle{
+							TextColor: &textColor,
+						},
+					},
+				},
+				{
+					TextRun: &larkdocx.TextRun{
+						Content: strPtr("蓝底文本"),
+						TextElementStyle: &larkdocx.TextElementStyle{
+							BackgroundColor: &bgColor,
+						},
+					},
+				},
+				{
+					TextRun: &larkdocx.TextRun{
+						Content: strPtr("双色文本"),
+						TextElementStyle: &larkdocx.TextElementStyle{
+							TextColor:       &textColor,
+							BackgroundColor: &bgColor,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	pageType := int(BlockTypePage)
+	blocks := []*larkdocx.Block{
+		{BlockId: strPtr("page"), BlockType: &pageType, Children: []string{"t1"}},
+		block,
+	}
+
+	// 不开启 highlight 时，不应有 span
+	t.Run("without_highlight", func(t *testing.T) {
+		conv := NewBlockToMarkdown(blocks, ConvertOptions{Highlight: false})
+		result, err := conv.Convert()
+		if err != nil {
+			t.Fatalf("转换失败: %v", err)
+		}
+		if strings.Contains(result, "<span") {
+			t.Errorf("不开启 highlight 时不应包含 span:\n%s", result)
+		}
+	})
+
+	// 开启 highlight
+	t.Run("with_highlight", func(t *testing.T) {
+		conv := NewBlockToMarkdown(blocks, ConvertOptions{Highlight: true})
+		result, err := conv.Convert()
+		if err != nil {
+			t.Fatalf("转换失败: %v", err)
+		}
+
+		// 红色文本
+		if !strings.Contains(result, `color: #ef4444`) {
+			t.Errorf("红色文本颜色丢失:\n%s", result)
+		}
+		// 蓝底文本
+		if !strings.Contains(result, `background-color: #eff6ff`) {
+			t.Errorf("蓝底背景色丢失:\n%s", result)
+		}
+		// 双色文本应同时包含 color 和 background-color
+		if !strings.Contains(result, `color: #ef4444; background-color: #eff6ff`) {
+			t.Errorf("双色文本样式不正确:\n%s", result)
+		}
+	})
+}
+
+// TestBlockToMd_HighlightNoColor 测试无颜色时不输出 span
+func TestBlockToMd_HighlightNoColor(t *testing.T) {
+	zeroColor := 0
+	blockType := int(BlockTypeText)
+	block := &larkdocx.Block{
+		BlockId:   strPtr("t1"),
+		BlockType: &blockType,
+		Text: &larkdocx.Text{
+			Elements: []*larkdocx.TextElement{
+				{
+					TextRun: &larkdocx.TextRun{
+						Content: strPtr("普通文本"),
+						TextElementStyle: &larkdocx.TextElementStyle{
+							TextColor:       &zeroColor,
+							BackgroundColor: &zeroColor,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	pageType := int(BlockTypePage)
+	blocks := []*larkdocx.Block{
+		{BlockId: strPtr("page"), BlockType: &pageType, Children: []string{"t1"}},
+		block,
+	}
+
+	conv := NewBlockToMarkdown(blocks, ConvertOptions{Highlight: true})
+	result, err := conv.Convert()
+	if err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+	if strings.Contains(result, "<span") {
+		t.Errorf("颜色值为 0 时不应输出 span:\n%s", result)
+	}
+}

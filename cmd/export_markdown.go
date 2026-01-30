@@ -45,17 +45,33 @@ var exportMarkdownCmd = &cobra.Command{
 			return fmt.Errorf("获取块失败: %w", err)
 		}
 
+		frontMatter, _ := cmd.Flags().GetBool("front-matter")
+		highlight, _ := cmd.Flags().GetBool("highlight")
+
 		// Convert to Markdown
 		options := converter.ConvertOptions{
 			DownloadImages: downloadImages,
 			AssetsDir:      assetsDir,
 			DocumentID:     documentID,
+			FrontMatter:    frontMatter,
+			Highlight:      highlight,
 		}
 
 		conv := converter.NewBlockToMarkdown(blocks, options)
 		markdown, err := conv.Convert()
 		if err != nil {
 			return fmt.Errorf("转换为 Markdown 失败: %w", err)
+		}
+
+		// 添加 Front Matter
+		if frontMatter {
+			docTitle := ""
+			doc, docErr := client.GetDocument(documentID)
+			if docErr == nil && doc != nil && doc.Title != nil {
+				docTitle = *doc.Title
+			}
+			fm := fmt.Sprintf("---\ntitle: %q\ndocument_id: %s\n---\n\n", docTitle, documentID)
+			markdown = fm + markdown
 		}
 
 		// Output
@@ -95,4 +111,6 @@ func init() {
 	exportMarkdownCmd.Flags().StringP("output", "o", "", "输出文件路径")
 	exportMarkdownCmd.Flags().Bool("download-images", false, "下载图片到本地目录")
 	exportMarkdownCmd.Flags().String("assets-dir", "./assets", "下载资源的保存目录")
+	exportMarkdownCmd.Flags().Bool("front-matter", false, "添加 YAML front matter (标题和文档 ID)")
+	exportMarkdownCmd.Flags().Bool("highlight", false, "保留文本颜色和背景色 (输出为 HTML span)")
 }

@@ -201,8 +201,35 @@ func TestConvert_Blockquote(t *testing.T) {
 		t.Fatal("blocks 为空")
 	}
 
-	if blocks[0].BlockType == nil || *blocks[0].BlockType != int(BlockTypeQuote) {
-		t.Errorf("BlockType = %v, 期望 %d", blocks[0].BlockType, int(BlockTypeQuote))
+	// 普通引用现在生成 QuoteContainer 块
+	if blocks[0].BlockType == nil || *blocks[0].BlockType != int(BlockTypeQuoteContainer) {
+		t.Errorf("BlockType = %v, 期望 %d (QuoteContainer)", blocks[0].BlockType, int(BlockTypeQuoteContainer))
+	}
+}
+
+func TestConvert_BlockquoteNested(t *testing.T) {
+	markdown := "> 引用段落\n> - 列表项1\n> - 列表项2"
+
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	result, err := converter.ConvertWithTableData()
+
+	if err != nil {
+		t.Fatalf("ConvertWithTableData() 返回错误: %v", err)
+	}
+
+	if len(result.BlockNodes) == 0 {
+		t.Fatal("BlockNodes 为空")
+	}
+
+	// 应该生成 QuoteContainer 块
+	node := result.BlockNodes[0]
+	if node.Block.BlockType == nil || *node.Block.BlockType != int(BlockTypeQuoteContainer) {
+		t.Errorf("BlockType = %v, 期望 %d (QuoteContainer)", node.Block.BlockType, int(BlockTypeQuoteContainer))
+	}
+
+	// QuoteContainer 应有子块
+	if len(node.Children) == 0 {
+		t.Error("QuoteContainer 应有子块")
 	}
 }
 
@@ -427,10 +454,10 @@ func TestConvert_Callout(t *testing.T) {
 		{"NOTE", "> [!NOTE]\n> 这是一个提示", 6},       // Blue
 		{"INFO", "> [!INFO]\n> 这是信息", 6},         // Blue
 		{"WARNING", "> [!WARNING]\n> 这是警告", 2},   // Red
-		{"CAUTION", "> [!CAUTION]\n> 这是警示", 2},   // Red
+		{"CAUTION", "> [!CAUTION]\n> 这是警示", 3},   // Orange
 		{"TIP", "> [!TIP]\n> 这是技巧", 4},           // Yellow
 		{"SUCCESS", "> [!SUCCESS]\n> 这是成功", 5},   // Green
-		{"IMPORTANT", "> [!IMPORTANT]\n> 重要", 7}, // Purple
+		{"IMPORTANT", "> [!IMPORTANT]\n> 重要", 7},   // Purple
 	}
 
 	for _, tt := range tests {
@@ -518,7 +545,7 @@ func TestConvert_MixedContent(t *testing.T) {
 			hasCode = true
 		case int(BlockTypeDivider):
 			hasDivider = true
-		case int(BlockTypeQuote):
+		case int(BlockTypeQuote), int(BlockTypeQuoteContainer):
 			hasQuote = true
 		}
 	}

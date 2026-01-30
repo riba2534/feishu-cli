@@ -28,7 +28,7 @@ func syncPrintf(format string, a ...any) {
 
 // segment 表示 Markdown 中的一个片段
 type segment struct {
-	kind    string // "markdown"、"mermaid" 或 "plantuml"
+	kind    string // "markdown"、"mermaid"、"plantuml" 或 "equation"
 	content string
 }
 
@@ -71,6 +71,32 @@ func parseMarkdownSegments(markdown string) []segment {
 			}
 			buf = append(buf, line)
 			i++
+			continue
+		}
+
+		// 检查块级公式 $$ 开始
+		if trimmed == "$$" {
+			// 先保存之前的普通内容
+			if len(buf) > 0 {
+				segments = append(segments, segment{kind: "markdown", content: strings.Join(buf, "\n")})
+				buf = nil
+			}
+
+			// 收集公式内容
+			i++
+			var equationLines []string
+			for i < len(lines) && strings.TrimSpace(lines[i]) != "$$" {
+				equationLines = append(equationLines, lines[i])
+				i++
+			}
+			// 跳过结束的 $$
+			if i < len(lines) {
+				i++
+			}
+
+			if len(equationLines) > 0 {
+				segments = append(segments, segment{kind: "equation", content: strings.Join(equationLines, "\n")})
+			}
 			continue
 		}
 
@@ -541,6 +567,38 @@ func phase1CreateBlocks(
 					tableData:    result.TableDatas[tableDataIdx],
 				})
 				tableDataIdx++
+			}
+
+		} else if seg.kind == "equation" {
+			// 块级公式：飞书 API 不支持创建 Equation 块（type=16），
+			// 降级为包含行内 Equation 元素的 Text 块，保留公式语义
+			textBlockType := 2 // BlockTypeText
+			equationContent := seg.content
+			equationBlocks := []*larkdocx.Block{
+				{
+					BlockType: &textBlockType,
+					Text: &larkdocx.Text{
+						Elements: []*larkdocx.TextElement{
+							{
+								Equation: &larkdocx.Equation{
+									Content: &equationContent,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			createdBlocks, err := client.CreateBlock(documentID, documentID, equationBlocks, -1)
+			if err != nil {
+				if verbose {
+					fmt.Printf("  ⚠ 公式块创建失败: %v\n", err)
+				}
+			} else {
+				stats.totalBlocks += len(createdBlocks)
+				if verbose {
+					fmt.Printf("  [公式] 创建 %d 个块（行内公式）\n", len(createdBlocks))
+				}
 			}
 
 		} else if seg.kind == "mermaid" || seg.kind == "plantuml" {
