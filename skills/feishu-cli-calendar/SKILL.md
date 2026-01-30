@@ -211,11 +211,22 @@ feishu-cli cal list
 feishu-cli cal list-events CAL_ID
 ```
 
+## 错误处理
+
+| 错误 | 原因 | 解决 |
+|------|------|------|
+| `Access denied` | 权限不足 | 检查应用是否开通日历权限 |
+| `invalid calendar_id` | 日历 ID 无效 | 先用 `calendar list` 获取有效 ID |
+| `invalid event_id` | 日程 ID 无效 | 先用 `list-events` 获取有效 ID |
+| `invalid time format` | 时间格式错误 | 使用 RFC3339 格式（含时区） |
+| `rate limit` | API 限流 | 等待几秒后重试 |
+
 ## 注意事项
 
 1. **日历 ID**：创建日程前需要先通过 `calendar list` 获取日历 ID
 2. **时间格式**：必须使用 RFC3339 格式，包含时区信息
 3. **权限要求**：需要应用具有日历相关权限
+4. **创建日历**：当前 CLI 不支持创建新日历，只能使用已有日历创建日程
 
 ## 权限要求（重要）
 

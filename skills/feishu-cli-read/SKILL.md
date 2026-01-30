@@ -44,6 +44,10 @@ allowed-tools: Bash, Read, Grep
 
    **重要**：务必使用 `--download-images` 参数下载文档中的图片到本地。
 
+   **可选参数**：
+   - `--front-matter`：在 Markdown 顶部添加 YAML front matter（含标题和文档 ID）
+   - `--highlight`：保留文本颜色和背景色（输出为 HTML `<span>` 标签）
+
 3. **读取文本内容**
    - 使用 Read 工具读取导出的 Markdown 文件
    - 分析文档结构和文本内容
@@ -250,9 +254,27 @@ feishu-cli wiki export <token> --debug
 sleep 5 && feishu-cli wiki export <token>
 ```
 
+## 导出格式说明
+
+导出的 Markdown 支持以下飞书特有块类型的转换：
+
+| 飞书块类型 | Markdown 表现 |
+|-----------|--------------|
+| Callout 高亮块 | `> [!NOTE]`、`> [!WARNING]` 等 6 种 GitHub-style alert |
+| 块级/行内公式 | `$formula$`（LaTeX 格式） |
+| 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` 链接 |
+| ISV 块 (Mermaid) | 画板链接 |
+| QuoteContainer | `>` 引用语法（支持嵌套） |
+| AddOns/SyncedBlock | 透明展开子块内容 |
+| Iframe | `<iframe>` HTML 标签 |
+
+使用 `--highlight` 参数时，带颜色的文本输出为 `<span style="color:...">` 标签。
+
 ## 注意事项
 
 1. **务必下载图片**：不下载图片只能看到 `feishu://media/<token>` 引用，无法理解图片内容
 2. **逐个读取图片**：使用 Read 工具读取每张图片，Claude 会自动理解图片内容
 3. **整合分析**：将图片描述与文档文本结合，提供完整的内容摘要
 4. **识别目录节点**：目录节点的内容是子节点列表，不是实际文档内容
+5. **公式内容**：导出的 LaTeX 公式保持原文，可直接被 Markdown 渲染器显示
+6. **Callout 类型**：支持 NOTE/WARNING/TIP/CAUTION/IMPORTANT/SUCCESS 六种高亮块类型

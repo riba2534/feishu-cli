@@ -10,6 +10,18 @@ allowed-tools: Bash, Read, Write
 
 生成适配飞书画板的 PlantUML 图表，严格使用安全子集语法。
 
+## PlantUML vs Mermaid 选择
+
+本项目同时支持 PlantUML 和 Mermaid，选择建议：
+
+| 场景 | 推荐 | 原因 |
+|------|------|------|
+| 流程图、时序图、类图、ER 图、甘特图、饼图、思维导图、状态图 | **Mermaid** | 飞书原生支持更好，成功率更高 |
+| 用例图、组件图、活动图（复杂分支） | **PlantUML** | Mermaid 不支持这些图类型 |
+| 需要精确控制图表布局 | **PlantUML** | 语法更灵活 |
+
+**默认推荐 Mermaid**，仅在 Mermaid 不支持的图类型时才使用 PlantUML。
+
 ## 图类型判断
 
 根据用户描述自动选择图类型：
@@ -29,8 +41,8 @@ allowed-tools: Bash, Read, Write
 
 ### 必须遵守
 
-- 使用 `@startuml` / `@enduml` 包裹
-- **不要使用行首缩进**（飞书画板解析问题）
+- 使用 `@startuml` / `@enduml` 包裹（思维导图用 `@startmindmap` / `@endmindmap`）
+- **不要使用行首缩进**——飞书画板将缩进的行视为独立行，导致解析失败。所有代码必须顶格书写（package/class 内部内容除外）
 - 避免 `skinparam` 样式指令
 - 避免 `!define` 预处理/宏指令
 - 避免颜色、字体、对齐控制
@@ -192,4 +204,9 @@ amount : decimal
 ### ArchiMate 不支持
 
 飞书画板 PlantUML 版本较旧，ArchiMate sprite 不完整。建议改用组件图。
+
+## 权限要求
+
+- `board:board` - 画板读写（PlantUML 通过画板 API 导入）
+- `docx:document` - 文档读写（通过 Markdown 导入时需要）
 

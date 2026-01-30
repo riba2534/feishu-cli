@@ -51,7 +51,7 @@ feishu-cli task create --summary "测试任务" --output json
 | `--description` | `-d` | 任务描述 | 否 |
 | `--due` | | 截止时间 | 否 |
 | `--origin-href` | | 任务来源链接 | 否 |
-| `--origin-platform` | | 任务来源平台名称（默认 feishu-cli） | 否 |
+| `--origin-platform` | | 任务来源平台名称 | 否（默认 `feishu-cli`） |
 | `--output` | `-o` | 输出格式（json） | 否 |
 
 **截止时间格式**：
@@ -228,4 +228,13 @@ feishu-cli task complete <task_id>
 - `task create` ✅ - 创建任务正常
 - `task complete` ✅ - 完成任务正常
 - `task delete` ✅ - 删除任务正常
-- `task list/get` ⚠️ - 需要开通 `task:task:read` 权限
+- `task list` ✅ - 列出任务正常（需 `task:task:read` 权限）
+- `task get` ✅ - 获取任务详情正常（需 `task:task:read` 权限）
+
+## 错误处理
+
+| 错误 | 原因 | 解决 |
+|------|------|------|
+| `Access denied` | 权限不足 | 确认应用已开通 `task:task:read` 和 `task:task:write` 权限 |
+| `task not found` | 任务不存在 | 检查 task_id 是否正确（UUID 格式） |
+| `invalid parameter` | 参数错误 | 检查 --due 时间格式、--summary 是否为空 |

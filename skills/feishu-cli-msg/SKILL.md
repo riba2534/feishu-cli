@@ -133,6 +133,25 @@ feishu-cli msg send \
    - 复杂内容：创建 JSON 文件后使用 `--content-file`
 4. **发送消息**：执行命令并检查结果
 
+## 权限要求
+
+| 权限 | 说明 |
+|------|------|
+| `im:message` | 消息读写 |
+| `im:message:send_as_bot` | 以机器人身份发送消息 |
+| `im:chat:readonly` | 搜索群聊（用于 `search-chats`） |
+| `im:message:readonly` | 获取历史消息（用于 `history`） |
+
+## 错误处理
+
+| 错误 | 原因 | 解决 |
+|------|------|------|
+| `content format of a post type is incorrect` | post 类型 JSON 格式错误 | 确保格式为 `{"zh_cn":{"title":"标题","content":[[...]]}}` |
+| `invalid receive_id` | 接收者 ID 无效 | 检查 --receive-id-type 和 --receive-id 是否匹配 |
+| `bot has no permission` | 机器人无权限 | 确认应用有 `im:message:send_as_bot` 权限 |
+| `rate limit exceeded` | API 限流 | 等待几秒后重试 |
+| `user not found` | 用户不存在 | 检查邮箱或 ID 是否正确 |
+
 ## 常见问题
 
 ### post 类型 content format 错误

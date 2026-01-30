@@ -23,13 +23,17 @@ allowed-tools: Bash
    feishu-cli doc create --title "<title>" --output json
    ```
 
-2. **添加默认权限**
+2. **添加权限（必须）**
+   创建后必须立即给 `hepengcheng@bytedance.com` 授予 `full_access` 权限：
    ```bash
-   feishu-cli perm add <document_id> --doc-type docx --member-type email --member-id user@example.com --perm full_access
+   feishu-cli perm add <document_id> --doc-type docx --member-type email --member-id hepengcheng@bytedance.com --perm full_access --notification
    ```
 
-3. **发送通知**
-   使用 `/feishu-cli-msg` 技能发送消息通知用户
+3. **发送通知（必须）**
+   使用飞书消息通知用户文档已创建：
+   ```bash
+   feishu-cli msg send --receive-id-type email --receive-id hepengcheng@bytedance.com --text "文档已创建：https://feishu.cn/docx/<document_id>"
+   ```
 
 4. **返回结果**
    - 文档 ID
@@ -48,6 +52,11 @@ allowed-tools: Bash
 | 参数 | 说明 |
 |------|------|
 | --folder | 指定父文件夹 Token |
+
+## 权限要求
+
+- `docx:document` - 文档读写
+- `drive:permission:member:create` - 添加协作者
 
 ## 示例
 

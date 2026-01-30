@@ -13,9 +13,11 @@ allowed-tools: Bash, Read
 ## 使用方法
 
 ```bash
-/feishu-comment list <file_token>        # 列出评论
-/feishu-comment add <file_token> "评论"  # 添加评论
+/feishu-comment list <file_token> --type docx       # 列出云文档评论
+/feishu-comment add <file_token> --type docx "评论" # 添加评论
 ```
+
+**注意**：`--type` 参数为必需，指定文件类型（docx/sheet/bitable）。
 
 ## CLI 命令详解
 

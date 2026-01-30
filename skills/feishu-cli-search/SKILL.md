@@ -225,4 +225,39 @@ A: 检查以下几点：
 4. 用户是否有权限访问相关消息
 
 ### Q: Token 过期怎么办？
-A: 使用 Refresh Token 刷新获取新的 User Access Token。
+A: User Access Token 有效期约 2 小时。使用 Refresh Token 刷新：
+
+```bash
+# 通过飞书开放平台 API 刷新 Token
+curl -X POST "https://open.feishu.cn/open-apis/authen/v1/oidc/refresh_access_token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "grant_type": "refresh_token",
+    "refresh_token": "<your_refresh_token>",
+    "app_id": "<app_id>",
+    "app_secret": "<app_secret>"
+  }'
+```
+
+Refresh Token 有效期 30 天，过期后需要用户重新授权。
+
+## 搜索结果结构
+
+消息搜索返回的每条结果包含：
+
+| 字段 | 说明 |
+|------|------|
+| `message_id` | 消息唯一 ID |
+| `content` | 消息内容 |
+| `sender` | 发送者信息（user_id、name） |
+| `chat_id` | 所在会话 ID |
+| `create_time` | 发送时间（Unix 时间戳） |
+| `message_type` | 消息类型（text/image/file 等） |
+
+应用搜索返回的每条结果包含：
+
+| 字段 | 说明 |
+|------|------|
+| `app_id` | 应用 ID |
+| `name` | 应用名称 |
+| `description` | 应用描述 |

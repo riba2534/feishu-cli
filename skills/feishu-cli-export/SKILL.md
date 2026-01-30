@@ -58,6 +58,8 @@ allowed-tools: Bash, Read
 | output_path | 输出文件路径 | `/tmp/<id>.md` |
 | --download-images | 下载文档中的图片 | 否 |
 | --assets-dir | 图片保存目录 | `./assets` |
+| --front-matter | 添加 YAML front matter（标题和文档 ID） | 否 |
+| --highlight | 保留文本颜色和背景色（输出为 HTML `<span>` 标签） | 否 |
 
 ## 支持的 URL 格式
 
@@ -94,7 +96,35 @@ allowed-tools: Bash, Read
 
 # 导出并下载图片
 /feishu-export <document_id> --download-images
+
+# 导出并添加 YAML front matter
+/feishu-export <document_id> -o doc.md --front-matter
+
+# 导出并保留文本高亮颜色
+/feishu-export <document_id> -o doc.md --highlight
 ```
+
+### Front Matter 输出格式
+
+使用 `--front-matter` 时，导出的 Markdown 文件顶部会添加：
+
+```yaml
+---
+title: "文档标题"
+document_id: ABC123def456
+---
+```
+
+### 高亮颜色输出格式
+
+使用 `--highlight` 时，带颜色的文本会输出为 HTML `<span>` 标签：
+
+```html
+<span style="color: #ef4444">红色文本</span>
+<span style="background-color: #eff6ff">蓝色高亮背景</span>
+```
+
+支持的颜色：7 种字体颜色（红/橙/黄/绿/蓝/紫/灰）+ 14 种背景色（浅/深各 7 种）。
 
 ## 图片处理（重要）
 
@@ -187,6 +217,71 @@ sleep 5 && feishu-cli doc export <doc_id>
 | 表格导出 | 表格内单元格内容可能显示为 `<!-- Unknown block type: 32 -->`，这是块类型 32（表格单元格）的已知转换问题 |
 | 目录节点 | 知识库目录节点导出内容为 `[Wiki 目录...]`，需单独获取子节点 |
 
+## 导出块类型支持
+
+| 飞书块类型 | 导出结果 | 说明 |
+|-----------|---------|------|
+| 标题 (Heading 1-6) | `# ~ ######` | |
+| 标题 (Heading 7-9) | `######` 或粗体段落 | 超出 H6 时降级 |
+| 段落 (Text) | 普通文本 | |
+| 无序列表 (Bullet) | `- item` | 支持无限深度嵌套 |
+| 有序列表 (Ordered) | `1. item` | 保留原始编号序列 |
+| 任务列表 (Todo) | `- [x]` / `- [ ]` | |
+| 代码块 (Code) | ` ```lang ``` ` | 使用原始文本，无转义 |
+| 引用 (Quote) | `> text` | |
+| 引用容器 (QuoteContainer) | `> text` | 支持嵌套引用 |
+| **Callout 高亮块** | `> [!TYPE]` | 6 种类型 |
+| **公式 (Equation)** | `$formula$` | 块级公式 |
+| **行内公式** | `$formula$` | 段落内嵌公式 |
+| 分割线 (Divider) | `---` | |
+| 表格 (Table) | Markdown 表格 | 管道符自动转义 |
+| 图片 (Image) | `\[Image: url\]` | |
+| 链接 | `[text](url)` | URL 特殊字符自动编码 |
+| 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` | |
+| **ISV 块** | 画板链接或 HTML 注释 | Mermaid 绘图/时间线 |
+| **Iframe** | `<iframe>` HTML 标签 | 嵌入内容 |
+| **AddOns/SyncedBlock** | 展开子块内容 | 透明展开 |
+| Wiki 目录 | `[Wiki 目录...]` | |
+
+### Callout 高亮块导出
+
+Callout 块（飞书高亮块）导出为 GitHub-style alert 语法：
+
+```markdown
+> [!NOTE]
+> 这是一个提示信息。
+
+> [!WARNING]
+> 这是一个警告信息。
+```
+
+支持 6 种 Callout 类型（按背景色映射）：
+
+| 背景色 | 导出类型 | 说明 |
+|--------|---------|------|
+| 2 (红色) | `[!WARNING]` | 警告 |
+| 3 (橙色) | `[!CAUTION]` | 警示 |
+| 4 (黄色) | `[!TIP]` | 技巧 |
+| 5 (绿色) | `[!SUCCESS]` | 成功 |
+| 6 (蓝色) | `[!NOTE]` | 提示 |
+| 7 (紫色) | `[!IMPORTANT]` | 重要 |
+
+Callout 内部子块（段落、列表等）会在引用语法内逐行展示。
+
+### 公式导出
+
+- **块级公式**：独立行 `$formula$`
+- **行内公式**：段落内嵌 `$E = mc^2$`
+- 公式内容保持 LaTeX 原文，不做转义
+
+### 特殊字符处理
+
+导出时自动处理以下 Markdown 特殊字符：
+- 普通文本中的 `* _ [ ] # ~ $ > |` 会自动添加 `\` 转义
+- 代码块内的文本不做转义（使用原始文本）
+- 表格单元格中的 `|` 会转义为 `\|`
+- URL 中的括号 `(` `)` 会编码为 `%28` `%29`
+
 ## 已验证功能
 
 以下导出功能已通过测试验证：
@@ -195,6 +290,13 @@ sleep 5 && feishu-cli doc export <doc_id>
 - 标题、段落、列表（含嵌套列表）、代码块、引用、分割线 ✅
 - 任务列表（Todo）✅
 - **图片下载** ✅（使用 `--download-images`）
+- **Callout 高亮块**（6 种类型）✅
+- **公式**（块级 + 行内）✅
+- **Front Matter** ✅（使用 `--front-matter`）
+- **文本高亮颜色** ✅（使用 `--highlight`）
+- **ISV 块**（Mermaid 绘图）✅
+- **AddOns/SyncedBlock 展开** ✅
+- **特殊字符转义** ✅
 - 表格结构 ⚠️（内容可能丢失）
 - 飞书画板 → 画板链接 ✅
 
@@ -205,5 +307,8 @@ sleep 5 && feishu-cli doc export <doc_id>
 | Mermaid/PlantUML 代码块 → 飞书画板 | 飞书画板 → 画板链接 |
 | 大表格 → 自动拆分为多个表格 | 多个表格 → 分开的表格 |
 | 缩进列表 → 嵌套父子块 | 嵌套列表 → 缩进 Markdown |
+| `> [!NOTE]` → Callout 高亮块 | Callout 高亮块 → `> [!NOTE]` |
+| `$formula$` → 行内公式 | 行内/块级公式 → `$formula$` |
+| `<u>下划线</u>` → 下划线样式 | 下划线样式 → `<u>下划线</u>` |
 
 **注意**：Mermaid/PlantUML 图表导入后会转换为飞书画板，导出时生成的是画板链接而非原始图表代码。

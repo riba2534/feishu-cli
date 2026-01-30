@@ -251,6 +251,8 @@ feishu-cli sheet copy-sheet <token> <sheet_id> --title "副本"
 | `invalid sheet ID` | 工作表不存在 | 先用 `list-sheets` 确认 |
 | `write limit exceeded` | 超出写入限制 | 分批写入，每次不超过 5000 单元格 |
 | `parse error` | JSON 格式错误 | 检查 `--data` 参数 JSON 格式 |
+| `invalid operation` | 不支持的操作 | 参见已知问题 |
+| `rate limit` | API 限流 | 等待几秒后重试 |
 
 ### 最佳实践
 
@@ -259,3 +261,30 @@ feishu-cli sheet copy-sheet <token> <sheet_id> --title "副本"
 3. **批量操作**：V3 API 支持一次请求多个范围
 4. **使用 --simple 模式**：`insert` 和 `append-rich` 支持 `--simple` 简化输入
 5. **范围格式**：始终使用 `SheetID!A1:B2` 格式，避免歧义
+
+## 已知问题
+
+| 问题 | 说明 | 状态 |
+|------|------|------|
+| `sheet filter` | 需要完整的 col + condition 参数，参数格式复杂 | API 限制 |
+| `sheet protect` | V2 API 返回 `invalid operation`，保护工作表功能不可用 | 待修复 |
+
+## 权限要求
+
+- `sheets:spreadsheet` - 电子表格读写
+
+## V3 数据格式补充说明
+
+V3 API 的数据为三层嵌套数组：`行 → 列 → 单元格元素`。
+
+```
+values[行索引][列索引] = [元素1, 元素2, ...]  // 单元格内可包含多个元素
+```
+
+示例：2 行 2 列的数据：
+```json
+[
+  [ [{"type":"text","text":{"text":"A1"}}], [{"type":"text","text":{"text":"B1"}}] ],
+  [ [{"type":"text","text":{"text":"A2"}}], [{"type":"text","text":{"text":"B2"}}] ]
+]
+```
