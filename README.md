@@ -124,6 +124,22 @@ Bob --> Alice: Hi
 
 **支持的 Mermaid 图表类型**：flowchart、sequenceDiagram、classDiagram、stateDiagram-v2、erDiagram、gantt、pie、mindmap
 
+````markdown
+```mermaid
+mindmap
+  root((项目架构))
+    前端
+      React
+      Vue
+    后端
+      Go
+      Java
+    基础设施
+      Kubernetes
+      Docker
+```
+````
+
 **PlantUML**：支持时序图、活动图、类图、用例图、组件图、ER 图、思维导图等（` ```plantuml ` 或 ` ```puml `）
 
 ### 智能表格
