@@ -15,21 +15,23 @@ var uploadMediaCmd = &cobra.Command{
 	Long: `上传素材文件（图片、视频等）到飞书云空间。
 
 参数:
-  --parent-type   父节点类型（默认: doc_image）
+  --parent-type   父节点类型（默认: docx_image）
   --parent-node   父节点 token，即文档 ID（必填）
   --name          文件名（默认使用原文件名）
   --output, -o    输出格式（json）
 
 父节点类型:
-  doc_image      文档图片
-  doc_file       文档文件
+  docx_image     新版文档图片（推荐）
+  docx_file      新版文档文件
+  doc_image      旧版文档图片
+  doc_file       旧版文档文件
 
 示例:
   # 上传图片到文档
-  feishu-cli media upload image.png --parent-type doc_image --parent-node DOC_ID
+  feishu-cli media upload image.png --parent-type docx_image --parent-node DOC_ID
 
   # 上传文件
-  feishu-cli media upload document.pdf --parent-type doc_file --parent-node DOC_ID
+  feishu-cli media upload document.pdf --parent-type docx_file --parent-node DOC_ID
 
   # 指定文件名
   feishu-cli media upload photo.jpg --parent-node DOC_ID --name "封面图.jpg"`,
@@ -45,7 +47,7 @@ var uploadMediaCmd = &cobra.Command{
 		fileName, _ := cmd.Flags().GetString("name")
 
 		if parentType == "" {
-			parentType = "doc_image"
+			parentType = "docx_image"
 		}
 
 		if parentNode == "" {
@@ -79,7 +81,7 @@ var uploadMediaCmd = &cobra.Command{
 
 func init() {
 	mediaCmd.AddCommand(uploadMediaCmd)
-	uploadMediaCmd.Flags().String("parent-type", "doc_image", "父节点类型（doc_image/doc_file）")
+	uploadMediaCmd.Flags().String("parent-type", "docx_image", "父节点类型（docx_image/docx_file/doc_image/doc_file）")
 	uploadMediaCmd.Flags().String("parent-node", "", "父节点 token（文档ID）")
 	uploadMediaCmd.Flags().String("name", "", "文件名（默认使用原文件名）")
 	uploadMediaCmd.Flags().StringP("output", "o", "", "输出格式（json）")

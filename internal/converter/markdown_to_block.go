@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
-	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -106,9 +104,10 @@ func calculateColumnWidths(headerContents []string, dataRows [][]string, cols in
 
 // MarkdownToBlock converts Markdown to Feishu blocks
 type MarkdownToBlock struct {
-	source   []byte
-	options  ConvertOptions
-	basePath string // base path for resolving relative image paths
+	source     []byte
+	options    ConvertOptions
+	basePath   string // base path for resolving relative image paths
+	imageStats ImageStats
 }
 
 // NewMarkdownToBlock creates a new converter
@@ -144,8 +143,9 @@ func FlattenBlockNodes(nodes []*BlockNode) []*larkdocx.Block {
 
 // ConvertResult contains converted blocks and table data
 type ConvertResult struct {
-	BlockNodes []*BlockNode  // 支持嵌套层级的块树
-	TableDatas []*TableData  // Table data in order of appearance, used for filling content
+	BlockNodes []*BlockNode // 支持嵌套层级的块树
+	TableDatas []*TableData // Table data in order of appearance, used for filling content
+	ImageStats ImageStats   // 图片处理统计
 }
 
 // ConvertWithTableData converts Markdown to Feishu blocks and returns table data for content filling
@@ -236,6 +236,7 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 		return nil, err
 	}
 
+	result.ImageStats = c.imageStats
 	return result, nil
 }
 
@@ -980,35 +981,26 @@ func (c *MarkdownToBlock) convertImage(node *ast.Image) (*larkdocx.Block, error)
 	// feishu://media/ 是飞书内部媒体引用，token 绑定源文档不可跨文档复用。
 	// 导出时应使用 --download-images 下载实际文件，导入时自动上传。
 	if strings.HasPrefix(dest, "feishu://media/") {
+		c.imageStats.Skipped++
 		return c.createImagePlaceholder(dest), nil
 	}
 
-	// Handle local file
-	if c.options.UploadImages && !strings.HasPrefix(dest, "http://") && !strings.HasPrefix(dest, "https://") {
-		// Resolve relative path
-		imagePath := dest
-		if !filepath.IsAbs(imagePath) {
-			imagePath = filepath.Join(c.basePath, dest)
-		}
-
-		// Upload image
-		token, err := client.UploadMedia(imagePath, "doc_image", c.options.DocumentID, "")
-		if err != nil {
-			// If upload fails, create placeholder
-			return c.createImagePlaceholder(dest), nil
-		}
-
-		blockType := int(BlockTypeImage)
-		return &larkdocx.Block{
-			BlockType: &blockType,
-			Image: &larkdocx.Image{
-				Token: &token,
-			},
-		}, nil
+	if !c.options.UploadImages {
+		c.imageStats.Skipped++
+		return c.createImagePlaceholder(dest), nil
 	}
 
-	// For URLs or when not uploading, create placeholder
-	return c.createImagePlaceholder(dest), nil
+	// 飞书 Open API 限制：DocX 文档无法通过 API 插入带图片的 Image 块。
+	// Drive upload API 不支持 DocX block ID 作为 parent_node（返回 "parent node not exist"），
+	// 且 replace_image 在 token 通过 documentID 上传时返回 "relation mismatch"。
+	// 因此创建空 Image 块作为占位符，用户可在飞书网页端手动添加图片。
+	// 参考：https://github.com/cso1z/Feishu-MCP/issues/32
+	c.imageStats.Skipped++
+	blockType := int(BlockTypeImage)
+	return &larkdocx.Block{
+		BlockType: &blockType,
+		Image:     &larkdocx.Image{},
+	}, nil
 }
 
 func (c *MarkdownToBlock) createImagePlaceholder(url string) *larkdocx.Block {
@@ -1384,6 +1376,23 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 			}
 			if linkURL != "" {
 				elements = append(elements, createLinkElement(label, linkURL))
+			}
+			return ast.WalkSkipChildren, nil
+
+		case *ast.Image:
+			// 内联图片：网络 URL 转为可点击链接，本地路径转为文本占位符
+			dest := string(child.Destination)
+			alt := c.getNodeText(child)
+			if alt == "" {
+				alt = dest
+			}
+			if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
+				elements = append(elements, createLinkElement(fmt.Sprintf("[图片: %s]", alt), dest))
+			} else {
+				placeholder := fmt.Sprintf("[Image: %s]", dest)
+				elements = append(elements, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{Content: &placeholder},
+				})
 			}
 			return ast.WalkSkipChildren, nil
 		}

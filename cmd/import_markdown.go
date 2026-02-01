@@ -245,6 +245,7 @@ type importStats struct {
 	tableTotal      int
 	tableSuccess    int
 	tableFailed     int
+	imageSkipped    int
 	fallbackSuccess int
 	fallbackFailed  int
 	phase1Duration  time.Duration
@@ -426,6 +427,7 @@ var importMarkdownCmd = &cobra.Command{
 				"table_total":      stats.tableTotal,
 				"table_success":    stats.tableSuccess,
 				"table_failed":     stats.tableFailed,
+				"image_skipped":    stats.imageSkipped,
 				"duration_seconds": totalDuration.Seconds(),
 				"phase1_seconds":   stats.phase1Duration.Seconds(),
 				"phase2_seconds":   stats.phase2Duration.Seconds(),
@@ -437,6 +439,9 @@ var importMarkdownCmd = &cobra.Command{
 			fmt.Println("导入完成!")
 			fmt.Printf("  文档ID: %s\n", documentID)
 			fmt.Printf("  添加块数: %d\n", stats.totalBlocks)
+			if stats.imageSkipped > 0 {
+				fmt.Printf("  图片: %d 张 (已创建空占位块，飞书 API 暂不支持通过 Open API 插入图片)\n", stats.imageSkipped)
+			}
 			if stats.tableTotal > 0 {
 				fmt.Printf("  表格: %d/%d 成功\n", stats.tableSuccess, stats.tableTotal)
 			}
@@ -489,6 +494,9 @@ func phase1CreateBlocks(
 			if err != nil {
 				return nil, nil, fmt.Errorf("转换 Markdown 失败 (段落 %d): %w", segIdx+1, err)
 			}
+
+			// 累加图片跳过统计（飞书 API 不支持通过 Open API 插入图片，仅创建空占位块）
+			stats.imageSkipped += result.ImageStats.Skipped
 
 			if len(result.BlockNodes) == 0 {
 				continue

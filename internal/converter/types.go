@@ -91,6 +91,11 @@ type ConvertOptions struct {
 	Highlight           bool // 为 true 时，导出文本颜色和背景色为 HTML span
 }
 
+// ImageStats 记录图片处理统计
+type ImageStats struct {
+	Skipped int // 跳过（API 不支持插入图片）数
+}
+
 // ISV 块类型 ID 常量（飞书团队互动应用）
 const (
 	ISVTypeTextDrawing = "blk_631fefbbae02400430b8f9f4" // Mermaid 绘图
