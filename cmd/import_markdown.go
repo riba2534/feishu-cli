@@ -516,7 +516,7 @@ func phase1CreateBlocks(
 			// 记录表格块的索引
 			var tableIndices []int
 			for i, block := range topLevelBlocks {
-				if block.BlockType != nil && *block.BlockType == 31 { // BlockTypeTable
+				if block.BlockType != nil && *block.BlockType == int(converter.BlockTypeTable) {
 					tableIndices = append(tableIndices, i)
 				}
 			}

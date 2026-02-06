@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -96,35 +97,22 @@ var addContentCmd = &cobra.Command{
 			contentData = source
 		}
 
-		// Parse content based on type
-		var blocks []*larkdocx.Block
-
-		if contentType == "markdown" {
-			// Convert Markdown to blocks
-			opts := converter.ConvertOptions{
-				DocumentID:   documentID,
-				UploadImages: uploadImages,
-			}
-			conv := converter.NewMarkdownToBlock([]byte(contentData), opts, basePath)
-			convertedBlocks, err := conv.Convert()
-			if err != nil {
-				return fmt.Errorf("转换 Markdown 失败: %w", err)
-			}
-			blocks = convertedBlocks
-		} else {
-			// Parse as JSON
-			if err := json.Unmarshal([]byte(contentData), &blocks); err != nil {
-				return fmt.Errorf("解析内容 JSON 失败: %w", err)
-			}
-		}
-
-		if len(blocks) == 0 {
-			return fmt.Errorf("没有内容可添加")
-		}
-
 		// If no block ID specified, use document root
 		if blockID == "" {
 			blockID = documentID
+		}
+
+		if contentType == "markdown" {
+			return addContentMarkdown(documentID, blockID, contentData, basePath, uploadImages, index, output)
+		}
+
+		// JSON 模式
+		var blocks []*larkdocx.Block
+		if err := json.Unmarshal([]byte(contentData), &blocks); err != nil {
+			return fmt.Errorf("解析内容 JSON 失败: %w", err)
+		}
+		if len(blocks) == 0 {
+			return fmt.Errorf("没有内容可添加")
 		}
 
 		createdBlocks, err := client.CreateBlock(documentID, blockID, blocks, index)
@@ -133,20 +121,178 @@ var addContentCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			if err := printJSON(createdBlocks); err != nil {
-				return err
-			}
-		} else {
-			fmt.Printf("成功添加 %d 个块！\n", len(createdBlocks))
-			for i, block := range createdBlocks {
-				if block.BlockId != nil {
-					fmt.Printf("  [%d] 块ID: %s\n", i+1, *block.BlockId)
-				}
+			return printJSON(createdBlocks)
+		}
+		fmt.Printf("成功添加 %d 个块！\n", len(createdBlocks))
+		for i, block := range createdBlocks {
+			if block.BlockId != nil {
+				fmt.Printf("  [%d] 块ID: %s\n", i+1, *block.BlockId)
 			}
 		}
-
 		return nil
 	},
+}
+
+// addContentMarkdown 处理 Markdown 模式的内容添加，支持嵌套结构、分批创建、表格 429 重试
+func addContentMarkdown(documentID, blockID, contentData, basePath string, uploadImages bool, index int, output string) error {
+	opts := converter.ConvertOptions{
+		DocumentID:   documentID,
+		UploadImages: uploadImages,
+	}
+	conv := converter.NewMarkdownToBlock([]byte(contentData), opts, basePath)
+	result, err := conv.ConvertWithTableData()
+	if err != nil {
+		return fmt.Errorf("转换 Markdown 失败: %w", err)
+	}
+
+	if len(result.BlockNodes) == 0 {
+		return fmt.Errorf("没有内容可添加")
+	}
+
+	// 提取顶层块，记录带有嵌套子块的节点
+	var topLevelBlocks []*larkdocx.Block
+	nodeChildrenMap := map[int][]*converter.BlockNode{} // 顶层索引 -> 嵌套子节点
+
+	for i, node := range result.BlockNodes {
+		topLevelBlocks = append(topLevelBlocks, node.Block)
+		if len(node.Children) > 0 {
+			nodeChildrenMap[i] = node.Children
+		}
+	}
+
+	// 记录表格块的索引
+	var tableIndices []int
+	for i, block := range topLevelBlocks {
+		if block.BlockType != nil && *block.BlockType == int(converter.BlockTypeTable) {
+			tableIndices = append(tableIndices, i)
+		}
+	}
+
+	// 批量添加顶层块（飞书 API 限制每次最多 50 个块）
+	const batchSize = 50
+	var createdBlockIDs []string
+	totalCreated := 0
+	currentIndex := index
+
+	for i := 0; i < len(topLevelBlocks); i += batchSize {
+		end := i + batchSize
+		if end > len(topLevelBlocks) {
+			end = len(topLevelBlocks)
+		}
+		batch := topLevelBlocks[i:end]
+
+		createdBlocks, err := client.CreateBlock(documentID, blockID, batch, currentIndex)
+		if err != nil {
+			return fmt.Errorf("添加内容失败: %w", err)
+		}
+		totalCreated += len(createdBlocks)
+
+		// 递增插入位置，避免多批次插入时顺序反转
+		if currentIndex >= 0 {
+			currentIndex += len(createdBlocks)
+		}
+
+		for _, block := range createdBlocks {
+			if block.BlockId != nil {
+				createdBlockIDs = append(createdBlockIDs, *block.BlockId)
+			}
+		}
+	}
+
+	// 递归创建嵌套子块（如嵌套列表）
+	for idx, children := range nodeChildrenMap {
+		if idx < len(createdBlockIDs) {
+			parentID := createdBlockIDs[idx]
+			nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
+			if nestedErr != nil {
+				fmt.Fprintf(os.Stderr, "[Warning] 嵌套子块创建失败: %v\n", nestedErr)
+			}
+			totalCreated += nestedCount
+		}
+	}
+
+	// 填充表格内容（带 429 重试）
+	tableSuccess := 0
+	tableFailed := 0
+	if len(tableIndices) > 0 && len(result.TableDatas) > 0 {
+		tableDataIdx := 0
+		for _, tableIdx := range tableIndices {
+			if tableIdx >= len(createdBlockIDs) || tableDataIdx >= len(result.TableDatas) {
+				break
+			}
+			tableBlockID := createdBlockIDs[tableIdx]
+			if tableBlockID == "" {
+				tableDataIdx++
+				tableFailed++
+				continue
+			}
+			td := result.TableDatas[tableDataIdx]
+			tableDataIdx++
+
+			if fillTableWithRetry(documentID, tableBlockID, td) {
+				tableSuccess++
+			} else {
+				tableFailed++
+			}
+		}
+	}
+
+	// 输出结果
+	if output == "json" {
+		return printJSON(map[string]any{
+			"document_id":   documentID,
+			"blocks":        totalCreated,
+			"table_total":   tableSuccess + tableFailed,
+			"table_success": tableSuccess,
+			"table_failed":  tableFailed,
+		})
+	}
+
+	fmt.Printf("成功添加 %d 个块！\n", totalCreated)
+	tableTotal := tableSuccess + tableFailed
+	if tableTotal > 0 {
+		fmt.Printf("  表格: %d/%d 成功\n", tableSuccess, tableTotal)
+	}
+	return nil
+}
+
+// fillTableWithRetry 填充单个表格内容，带 429 重试（最多 5 次，指数退避）
+func fillTableWithRetry(documentID, tableBlockID string, td *converter.TableData) bool {
+	const maxRetries = 5
+
+	for retry := 0; retry <= maxRetries; retry++ {
+		if retry > 0 {
+			delay := time.Duration(retry) * 2 * time.Second
+			time.Sleep(delay)
+		}
+
+		cellIDs, err := client.GetTableCellIDs(documentID, tableBlockID)
+		if err != nil {
+			if isRateLimitError(err) && retry < maxRetries {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "[Warning] 获取表格 %s 单元格失败: %v\n", tableBlockID, err)
+			return false
+		}
+
+		var fillErr error
+		if len(td.CellElements) > 0 {
+			fillErr = client.FillTableCellsRich(documentID, cellIDs, td.CellElements, td.CellContents)
+		} else {
+			fillErr = client.FillTableCells(documentID, cellIDs, td.CellContents)
+		}
+		if fillErr != nil {
+			if isRateLimitError(fillErr) && retry < maxRetries {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "[Warning] 填充表格 %s 内容失败: %v\n", tableBlockID, fillErr)
+			return false
+		}
+
+		return true
+	}
+
+	return false
 }
 
 func init() {
