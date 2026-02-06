@@ -419,7 +419,7 @@ $$
 
 - API 端点：`/open-apis/board/v1/whiteboards/{id}/nodes/plantuml`
 - `syntax_type`：1 = PlantUML，2 = Mermaid
-- `diagram_type` 映射：0=auto, 1=mindmap, 2=sequence, 3=activity, 4=class, 5=er, 6=flowchart, 7=usecase, 8=component
+- `diagram_type` 映射：0=auto, 1=mindmap, 2=sequence, 3=activity, 4=class, 5=er, 6=flowchart, 7=state, 8=component
 
 ---
 

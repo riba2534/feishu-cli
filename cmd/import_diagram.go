@@ -18,7 +18,7 @@ var importDiagramCmd = &cobra.Command{
   <source>           图表代码或文件路径（必填）
   --source-type      源类型：file/content，默认 file
   --syntax           图表语法：plantuml/mermaid，默认 plantuml
-  --diagram-type     图表类型：auto/mindmap/sequence/activity/class/er/flowchart/usecase/component，默认 auto
+  --diagram-type     图表类型：auto/mindmap/sequence/activity/class/er/flowchart/state/component，默认 auto
   --style            样式类型：board/classic，默认 board
   --output, -o       输出格式 (json)
 
@@ -95,7 +95,7 @@ func init() {
 	boardCmd.AddCommand(importDiagramCmd)
 	importDiagramCmd.Flags().String("source-type", "file", "源类型 (file/content)")
 	importDiagramCmd.Flags().String("syntax", "plantuml", "图表语法 (plantuml/mermaid)")
-	importDiagramCmd.Flags().String("diagram-type", "auto", "图表类型 (auto/mindmap/sequence/activity/class/er/flowchart/usecase/component)")
+	importDiagramCmd.Flags().String("diagram-type", "auto", "图表类型 (auto/mindmap/sequence/activity/class/er/flowchart/state/component)")
 	importDiagramCmd.Flags().String("style", "board", "样式类型 (board/classic)")
 	importDiagramCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 }

@@ -57,7 +57,7 @@ func GetBoardImage(whiteboardID string, outputPath string) error {
 type ImportDiagramOptions struct {
 	SourceType  string // file or content
 	Syntax      string // plantuml or mermaid
-	DiagramType string // auto, mindmap, sequence, activity, class, er, flowchart, usecase, component
+	DiagramType string // auto, mindmap, sequence, activity, class, er, flowchart, state, component
 	Style       string // board or classic
 }
 
@@ -121,7 +121,7 @@ func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions
 
 	// Map diagram type to API value (integer)
 	// Options: [0,1,2,3,4,5,6,7,8,101,102,201]
-	// Based on lark-cli behavior: auto=0, mindmap=1, sequence=2, activity=3, class=4, er=5, flowchart=6, usecase=7, component=8
+	// auto=0, mindmap=1, sequence=2, activity=3, class=4, er=5, flowchart=6, state=7, component=8
 	var diagramType int
 	switch strings.ToLower(opts.DiagramType) {
 	case "mindmap":
@@ -136,7 +136,7 @@ func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions
 		diagramType = 5
 	case "flowchart":
 		diagramType = 6
-	case "usecase":
+	case "state":
 		diagramType = 7
 	case "component":
 		diagramType = 8
@@ -294,4 +294,25 @@ func DownloadBoardImageByURL(imageURL string, outputPath string) error {
 	}
 
 	return nil
+}
+
+// GetBoardNodes 获取画板的所有节点列表
+func GetBoardNodes(whiteboardID string) (json.RawMessage, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	apiPath := fmt.Sprintf("/open-apis/board/v1/whiteboards/%s/nodes", whiteboardID)
+
+	resp, err := client.Get(Context(), apiPath, nil, larkcore.AccessTokenTypeTenant)
+	if err != nil {
+		return nil, fmt.Errorf("获取画板节点失败: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("获取画板节点失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	}
+
+	return resp.RawBody, nil
 }
