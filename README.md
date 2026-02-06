@@ -102,7 +102,7 @@ feishu-cli doc import README.md --title "项目文档" --upload-images
 
 ### Mermaid / PlantUML 图表
 
-Markdown 中的 Mermaid 和 PlantUML 代码块会自动转换为飞书画板：
+Markdown 中的 Mermaid 和 PlantUML 代码块会自动转换为飞书画板（全部实测验证通过）：
 
 ````markdown
 ```mermaid
@@ -122,7 +122,18 @@ Bob --> Alice: Hi
 ```
 ````
 
-**支持的 Mermaid 图表类型**：flowchart、sequenceDiagram、classDiagram、stateDiagram-v2、erDiagram、gantt、pie、mindmap
+**支持的 Mermaid 图表类型（8 种，全部已验证）**：
+
+| 图表类型 | 声明 | 说明 |
+|---------|------|------|
+| 流程图 | `flowchart TD` / `flowchart LR` | 支持 subgraph |
+| 时序图 | `sequenceDiagram` | 参与者建议 ≤ 8 |
+| 类图 | `classDiagram` | |
+| 状态图 | `stateDiagram-v2` | 必须用 v2 |
+| ER 图 | `erDiagram` | |
+| 甘特图 | `gantt` | |
+| 饼图 | `pie` | |
+| 思维导图 | `mindmap` | |
 
 ````markdown
 ```mermaid

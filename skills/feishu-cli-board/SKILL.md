@@ -16,6 +16,7 @@ allowed-tools: Bash, Read
 |------|------|------|
 | 下载图片 | `board image` | 将画板导出为图片 |
 | 导入图表 | `board import` | 导入 PlantUML/Mermaid 图表 |
+| 获取节点 | `board nodes` | 获取画板节点列表 |
 | 创建节点 | `board create-notes` | 在画板上创建节点 |
 
 ## 下载画板图片
@@ -65,8 +66,23 @@ feishu-cli board import <whiteboard_id> diagram.puml --style classic
 | `class` | 类图 |
 | `er` | ER 图 |
 | `flowchart` | 流程图 |
-| `usecase` | 用例图 |
+| `state` | 状态图 |
 | `component` | 组件图 |
+
+### 已验证的 Mermaid 图表类型（8 种）
+
+以下 8 种 Mermaid 图表类型已全部实测通过，可在飞书画板中正常渲染：
+
+| Mermaid 声明 | diagram_type | 说明 |
+|-------------|-------------|------|
+| `flowchart TD` / `flowchart LR` | flowchart | 流程图，支持 subgraph |
+| `sequenceDiagram` | sequence | 时序图，参与者建议 ≤ 8 |
+| `classDiagram` | class | 类图 |
+| `stateDiagram-v2` | auto | 状态图，必须用 v2 |
+| `erDiagram` | er | ER 图 |
+| `gantt` | auto | 甘特图 |
+| `pie` | auto | 饼图 |
+| `mindmap` | mindmap | 思维导图 |
 
 ### 样式类型
 
@@ -136,6 +152,15 @@ feishu-cli doc add-board <document_id> -o json
 - `board:board` - 画板读写权限
 - `docx:document` - 文档操作权限（用于 add-board）
 
+## 获取画板节点
+
+查看画板中的所有节点信息：
+
+```bash
+# 获取画板节点列表（JSON 格式）
+feishu-cli board nodes <whiteboard_id>
+```
+
 ## 最佳实践
 
 1. **图表导入流程**：
@@ -143,9 +168,11 @@ feishu-cli doc add-board <document_id> -o json
    - 获取返回的 `whiteboard_id`
    - 使用 `board import` 导入图表到该画板
 
-2. **Mermaid 图表**：推荐使用 Mermaid 语法，支持 8 种图表类型
+2. **Mermaid 图表**：推荐使用 Mermaid 语法，8 种图表类型全部已验证
 
 3. **PlantUML 图表**：支持时序图、活动图、类图、用例图、组件图、ER 图、思维导图等
+
+4. **导入后查看**：使用 `board nodes` 查看画板中导入的节点数据结构
 
 ## 示例
 
@@ -158,6 +185,9 @@ feishu-cli doc add-board DOC_ID -o json
 # 2. 导入 Mermaid 图表到画板
 feishu-cli board import wb_xxx diagram.mmd --syntax mermaid
 
-# 3. 下载画板图片
+# 3. 查看画板节点
+feishu-cli board nodes wb_xxx
+
+# 4. 下载画板图片
 feishu-cli board image wb_xxx output.png
 ```

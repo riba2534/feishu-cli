@@ -12,6 +12,7 @@ var boardCmd = &cobra.Command{
 子命令:
   image         下载画板图片
   import        导入图表到画板
+  nodes         获取画板节点列表
   create-notes  创建画板节点
 
 示例:
@@ -22,7 +23,10 @@ var boardCmd = &cobra.Command{
   feishu-cli board import <whiteboard_id> diagram.puml --syntax plantuml
 
   # 导入 Mermaid 图表
-  feishu-cli board import <whiteboard_id> "sequenceDiagram\nA->>B: Hi" --source-type content --syntax mermaid
+  feishu-cli board import <whiteboard_id> diagram.mmd --syntax mermaid
+
+  # 获取画板节点列表
+  feishu-cli board nodes <whiteboard_id>
 
   # 创建画板节点
   feishu-cli board create-notes <whiteboard_id> nodes.json`,

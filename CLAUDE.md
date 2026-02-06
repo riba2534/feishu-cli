@@ -229,7 +229,7 @@ feishu-cli search messages "关键词" --user-access-token <token>
 - **表格单元格**：飞书 API 创建表格时会自动在每个单元格内创建空的 Text 块，填充内容时应更新现有块而非创建新块
 - **表格列宽**：通过 `TableProperty.ColumnWidth` 设置，单位像素，数组长度需与列数一致
 - **画板 API**：路径 `/open-apis/board/v1/whiteboards/{id}/nodes/plantuml`，`syntax_type=1` PlantUML / `2` Mermaid
-- **diagram_type 映射**：0=auto, 1=mindmap, 2=sequence, 3=activity, 4=class, 5=er, 6=flowchart, 7=usecase, 8=component
+- **diagram_type 映射**：0=auto, 1=mindmap, 2=sequence, 3=activity, 4=class, 5=er, 6=flowchart, 7=state, 8=component
 
 ### 电子表格
 
