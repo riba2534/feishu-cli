@@ -65,10 +65,17 @@ var searchMessagesCmd = &cobra.Command{
 			userAccessToken = os.Getenv("FEISHU_USER_ACCESS_TOKEN")
 		}
 		if userAccessToken == "" {
-			return fmt.Errorf("缺少 User Access Token，请通过以下方式之一提供:\n" +
-				"  1. 命令行参数: --user-access-token <token>\n" +
-				"  2. 环境变量: export FEISHU_USER_ACCESS_TOKEN=<token>\n" +
-				"  3. 配置文件: user_access_token: <token>")
+			// 尝试从 token 文件获取（支持自动刷新）
+			var err error
+			userAccessToken, err = client.GetUserAccessToken()
+			if err != nil {
+				return fmt.Errorf("缺少 User Access Token，请通过以下方式之一提供:\n" +
+					"  1. 命令行参数: --user-access-token <token>\n" +
+					"  2. 环境变量: export FEISHU_USER_ACCESS_TOKEN=<token>\n" +
+					"  3. 配置文件: user_access_token: <token>\n" +
+					"  4. 运行授权命令: feishu-cli auth login\n" +
+					"\n错误: %w", err)
+			}
 		}
 
 		// 获取其他参数
