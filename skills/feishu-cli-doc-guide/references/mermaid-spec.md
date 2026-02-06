@@ -513,7 +513,58 @@ sequenceDiagram
 
 ---
 
-## 4. 快速参考卡片
+## 4. 视觉样式规范（flowchart/graph 必须遵循）
+
+> 生成 flowchart/graph 图表时，**必须**使用 `classDef` 为不同实体类型定义颜色，并使用不同节点形状区分实体类别。禁止所有节点使用相同的默认样式。
+
+### classDef 颜色定义（复制到每个 flowchart 图表末尾）
+
+```
+classDef db fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+classDef es fill:#fff3e0,stroke:#e65100,color:#bf360c
+classDef mq fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c
+classDef dw fill:#fce4ec,stroke:#c62828,color:#b71c1c
+classDef svc fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+classDef faas fill:#e0f7fa,stroke:#00838f,color:#006064
+classDef cfg fill:#fffde7,stroke:#f9a825,color:#f57f17
+classDef fe fill:#f5f5f5,stroke:#616161,color:#212121
+classDef legacy fill:#ffebee,stroke:#c62828,stroke-dasharray:5 5
+classDef ext fill:#eceff1,stroke:#455a64,color:#263238
+```
+
+### 实体类型 → 颜色 + 形状 对照表
+
+| 实体类型 | classDef | 节点形状 | 适用对象 |
+|---------|----------|---------|---------|
+| 数据库 MySQL/RDS | `db` | `[(文本)]` 圆柱体 | MySQL, RDS, PostgreSQL |
+| 搜索引擎 ES | `es` | `[(文本)]` 圆柱体 | Elasticsearch, ES 索引 |
+| 消息队列 MQ | `mq` | `([文本])` 体育场形 | EventBus, Kafka, RocketMQ |
+| 数仓 | `dw` | `[(文本)]` 圆柱体 | OneService, Doris, Hive, Dorado |
+| RPC 服务 | `svc` | `[文本]` 矩形 | 微服务、RPC 服务端 |
+| FaaS 服务 | `faas` | `[文本]` 矩形 | ByteFaaS, DSync FaaS |
+| 配置中心 | `cfg` | `[文本]` 矩形 | TCC, Kani, 配置平台 |
+| 前端/用户 | `fe` | `(文本)` 圆角矩形 | 前端、用户界面、TLB |
+| 旧系统 | `legacy` | `[文本]` 矩形虚线 | 待下线系统、遗留服务 |
+| 外部服务 | `ext` | `[文本]` 矩形 | 第三方服务、非团队维护的服务 |
+
+### 注意事项
+
+- **sequenceDiagram 不支持 classDef**，仅 flowchart/graph 类型图表可用
+- 每个图表都应通过颜色自解释实体类型
+- 新旧系统并存时，旧系统使用 `legacy`（红色虚线边框）明确标识
+- 完整规范和使用示例见 `~/.claude/rules/markdown-style-guide.md`
+
+---
+
+## 5. 快速参考卡片
+
+### 视觉样式速查
+
+```
+DB=绿色圆柱体 | ES=橙色圆柱体 | MQ=紫色体育场形
+RPC=蓝色矩形 | FaaS=青色矩形 | 配置=黄色矩形
+前端=灰色圆角 | 旧系统=红色虚线 | 外部=灰蓝色矩形
+```
 
 ### 图表类型选择
 
