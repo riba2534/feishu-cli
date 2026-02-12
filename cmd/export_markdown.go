@@ -21,9 +21,13 @@ var exportMarkdownCmd = &cobra.Command{
   feishu-cli doc export https://xxx.feishu.cn/docx/ABC123def456
   feishu-cli doc export https://xxx.larkoffice.com/docx/ABC123def456
 
+使用 --download-images 可同时下载文档中的图片和画板（画板自动导出为 PNG），
+通过 --assets-dir 指定资源保存目录（默认 ./assets）。
+
 示例:
   feishu-cli doc export ABC123def456
   feishu-cli doc export ABC123def456 --output doc.md
+  feishu-cli doc export ABC123def456 --download-images
   feishu-cli doc export ABC123def456 --download-images --assets-dir ./images`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -48,6 +52,8 @@ var exportMarkdownCmd = &cobra.Command{
 		frontMatter, _ := cmd.Flags().GetBool("front-matter")
 		highlight, _ := cmd.Flags().GetBool("highlight")
 
+		expandMentions, _ := cmd.Flags().GetBool("expand-mentions")
+
 		// Convert to Markdown
 		options := converter.ConvertOptions{
 			DownloadImages: downloadImages,
@@ -55,9 +61,16 @@ var exportMarkdownCmd = &cobra.Command{
 			DocumentID:     documentID,
 			FrontMatter:    frontMatter,
 			Highlight:      highlight,
+			ExpandMentions: expandMentions,
 		}
 
-		conv := converter.NewBlockToMarkdown(blocks, options)
+		var conv *converter.BlockToMarkdown
+		if expandMentions {
+			resolver := &FeishuUserResolver{}
+			conv = converter.NewBlockToMarkdownWithResolver(blocks, options, resolver)
+		} else {
+			conv = converter.NewBlockToMarkdown(blocks, options)
+		}
 		markdown, err := conv.Convert()
 		if err != nil {
 			return fmt.Errorf("转换为 Markdown 失败: %w", err)
@@ -109,8 +122,9 @@ func extractDocToken(input string) (string, error) {
 func init() {
 	docCmd.AddCommand(exportMarkdownCmd)
 	exportMarkdownCmd.Flags().StringP("output", "o", "", "输出文件路径")
-	exportMarkdownCmd.Flags().Bool("download-images", false, "下载图片到本地目录")
-	exportMarkdownCmd.Flags().String("assets-dir", "./assets", "下载资源的保存目录")
+	exportMarkdownCmd.Flags().Bool("download-images", false, "下载图片和画板到本地目录（画板自动导出为 PNG）")
+	exportMarkdownCmd.Flags().String("assets-dir", "./assets", "图片和画板的保存目录")
 	exportMarkdownCmd.Flags().Bool("front-matter", false, "添加 YAML front matter (标题和文档 ID)")
 	exportMarkdownCmd.Flags().Bool("highlight", false, "保留文本颜色和背景色 (输出为 HTML span)")
+	exportMarkdownCmd.Flags().Bool("expand-mentions", true, "展开 @用户为友好格式 (需要 contact:user.base:readonly 权限)")
 }

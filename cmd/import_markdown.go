@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -531,13 +532,19 @@ func phase1CreateBlocks(
 				}
 				batch := topLevelBlocks[i:end]
 
-				createdBlocks, err := client.CreateBlock(documentID, documentID, batch, -1)
-				if err != nil {
-					return nil, nil, fmt.Errorf("添加内容失败 (段落 %d): %w", segIdx+1, err)
+				createResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+					blocks, err := client.CreateBlock(documentID, documentID, batch, -1)
+					return blocks, nil, err
+				}, client.RetryConfig{
+					MaxRetries:       5,
+					RetryOnRateLimit: true,
+				})
+				if createResult.Err != nil {
+					return nil, nil, fmt.Errorf("添加内容失败 (段落 %d): %w", segIdx+1, createResult.Err)
 				}
-				stats.totalBlocks += len(createdBlocks)
+				stats.totalBlocks += len(createResult.Value)
 
-				for _, block := range createdBlocks {
+				for _, block := range createResult.Value {
 					if block.BlockId != nil {
 						createdBlockIDs = append(createdBlockIDs, *block.BlockId)
 					}
@@ -732,51 +739,43 @@ func processDiagramTask(task diagramTask, maxRetries int, verbose bool) diagramR
 		Syntax:     task.syntax,
 	}
 
-	var lastErr error
-	var lastRetry int
-	for retry := 0; retry <= maxRetries; retry++ {
-		lastRetry = retry
-		_, err := client.ImportDiagram(task.whiteboardID, task.content, opts)
-		if err == nil {
+	result := client.DoWithRetry(func() (*client.ImportDiagramResult, http.Header, error) {
+		r, err := client.ImportDiagram(task.whiteboardID, task.content, opts)
+		return r, nil, err // ImportDiagram 不返回 HTTP header
+	}, client.RetryConfig{
+		MaxRetries:       maxRetries,
+		MaxTotalAttempts: maxRetries + 5,
+		RetryOnRateLimit: true,
+		IsPermanent:      client.IsPermanentError,
+		OnRetry: func(attempt int, err error, wait time.Duration) {
 			if verbose {
-				if retry > 0 {
-					syncPrintf("  ✓ %s %d 成功 (重试 %d 次)\n", syntaxLabel, task.index, retry)
-				} else {
-					syncPrintf("  ✓ %s %d 成功\n", syntaxLabel, task.index)
-				}
+				syncPrintf("  ⚠ %s %d 重试 %d/%d (等待 %.1fs): %v\n",
+					syntaxLabel, task.index, attempt, maxRetries, wait.Seconds(), err)
 			}
-			return diagramResult{task: task, success: true, retries: retry}
-		}
+		},
+	})
 
-		lastErr = err
-
-		// 判断是否值得重试
-		// 语法解析错误不可重试
-		if client.IsPermanentError(err) {
-			syncPrintf("  ✗ %s %d 语法错误 (不重试): %v\n", syntaxLabel, task.index, err)
-			return diagramResult{task: task, success: false, err: err, retries: retry}
-		}
-
-		isRetryable := client.IsRetryableError(err)
-
-		if !isRetryable {
-			break
-		}
-
-		if retry < maxRetries {
-			if verbose {
-				syncPrintf("  ⚠ %s %d 重试 %d/%d (等待 1s): %v\n",
-					syntaxLabel, task.index, retry+1, maxRetries, err)
+	retries := result.Attempts - 1
+	if result.Err == nil {
+		if verbose {
+			if retries > 0 {
+				syncPrintf("  ✓ %s %d 成功 (重试 %d 次)\n", syntaxLabel, task.index, retries)
+			} else {
+				syncPrintf("  ✓ %s %d 成功\n", syntaxLabel, task.index)
 			}
-			time.Sleep(1 * time.Second)
 		}
+		return diagramResult{task: task, success: true, retries: retries}
 	}
 
-	syncPrintf("  ✗ %s %d 失败 (重试%d次): %v\n", syntaxLabel, task.index, lastRetry, lastErr)
-	return diagramResult{task: task, success: false, err: lastErr, retries: lastRetry}
+	if client.IsPermanentError(result.Err) {
+		syncPrintf("  ✗ %s %d 语法错误 (不重试): %v\n", syntaxLabel, task.index, result.Err)
+	} else {
+		syncPrintf("  ✗ %s %d 失败 (重试%d次): %v\n", syntaxLabel, task.index, retries, result.Err)
+	}
+	return diagramResult{task: task, success: false, err: result.Err, retries: retries}
 }
 
-// processTableTask 处理单个表格填充任务（带 429 重试）
+// processTableTask 处理单个表格填充任务（带重试）
 func processTableTask(documentID string, task tableTask, verbose bool) tableResult {
 	if verbose {
 		syncPrintf("  [表格 %d] 填充 %d×%d...\n", task.index, task.tableData.Rows, task.tableData.Cols)
@@ -784,52 +783,40 @@ func processTableTask(documentID string, task tableTask, verbose bool) tableResu
 
 	const maxRetries = 5
 
-	for retry := 0; retry <= maxRetries; retry++ {
-		if retry > 0 {
-			delay := time.Duration(retry) * 2 * time.Second
-			if verbose {
-				syncPrintf("  ⚠ 表格 %d 重试 %d/%d (等待 %v)...\n", task.index, retry, maxRetries, delay)
-			}
-			time.Sleep(delay)
-		}
-
+	result := client.DoVoidWithRetry(func() (http.Header, error) {
 		// 获取表格单元格 ID
 		cellIDs, err := client.GetTableCellIDs(documentID, task.tableBlockID)
 		if err != nil {
-			if isRateLimitError(err) && retry < maxRetries {
-				continue
-			}
-			if verbose {
-				syncPrintf("  ✗ 表格 %d 获取单元格失败: %v\n", task.index, err)
-			}
-			return tableResult{task: task, success: false, err: err}
+			return nil, err
 		}
 
 		// 填充单元格内容（优先使用富文本元素以保留链接等样式）
-		var fillErr error
 		if len(task.tableData.CellElements) > 0 {
-			fillErr = client.FillTableCellsRich(documentID, cellIDs, task.tableData.CellElements, task.tableData.CellContents)
-		} else {
-			fillErr = client.FillTableCells(documentID, cellIDs, task.tableData.CellContents)
+			return nil, client.FillTableCellsRich(documentID, cellIDs, task.tableData.CellElements, task.tableData.CellContents)
 		}
-		if err := fillErr; err != nil {
-			if isRateLimitError(err) && retry < maxRetries {
-				continue
-			}
+		return nil, client.FillTableCells(documentID, cellIDs, task.tableData.CellContents)
+	}, client.RetryConfig{
+		MaxRetries:       maxRetries,
+		RetryOnRateLimit: true,
+		OnRetry: func(attempt int, err error, wait time.Duration) {
 			if verbose {
-				syncPrintf("  ✗ 表格 %d 填充失败: %v\n", task.index, err)
+				syncPrintf("  ⚠ 表格 %d 重试 %d/%d (等待 %.1fs): %v\n",
+					task.index, attempt, maxRetries, wait.Seconds(), err)
 			}
-			return tableResult{task: task, success: false, err: err}
-		}
+		},
+	})
 
+	if result.Err != nil {
 		if verbose {
-			syncPrintf("  ✓ 表格 %d 成功\n", task.index)
+			syncPrintf("  ✗ 表格 %d 失败: %v\n", task.index, result.Err)
 		}
-		return tableResult{task: task, success: true}
+		return tableResult{task: task, success: false, err: result.Err}
 	}
 
-	// 不应到达这里
-	return tableResult{task: task, success: false, err: fmt.Errorf("重试耗尽")}
+	if verbose {
+		syncPrintf("  ✓ 表格 %d 成功\n", task.index)
+	}
+	return tableResult{task: task, success: true}
 }
 
 // createNestedChildren 递归创建嵌套子块（如嵌套列表的父子关系）
@@ -855,13 +842,19 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 		}
 		batch := childBlocks[i:end]
 
-		createdBlocks, err := client.CreateBlock(documentID, parentBlockID, batch, -1)
-		if err != nil {
-			return totalCreated, fmt.Errorf("创建嵌套子块失败 (parent=%s): %w", parentBlockID, err)
+		result := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+			blocks, err := client.CreateBlock(documentID, parentBlockID, batch, -1)
+			return blocks, nil, err
+		}, client.RetryConfig{
+			MaxRetries:       5,
+			RetryOnRateLimit: true,
+		})
+		if result.Err != nil {
+			return totalCreated, fmt.Errorf("创建嵌套子块失败 (parent=%s): %w", parentBlockID, result.Err)
 		}
-		totalCreated += len(createdBlocks)
+		totalCreated += len(result.Value)
 
-		for _, block := range createdBlocks {
+		for _, block := range result.Value {
 			if block.BlockId != nil {
 				createdBlockIDs = append(createdBlockIDs, *block.BlockId)
 			}
@@ -880,11 +873,6 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 	}
 
 	return totalCreated, nil
-}
-
-// isRateLimitError 判断是否为频率限制错误（委托给 client 包统一实现）
-func isRateLimitError(err error) bool {
-	return client.IsRateLimitError(err)
 }
 
 // phase3HandleFallbacks 处理失败的图表，降级为代码块

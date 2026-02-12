@@ -193,7 +193,7 @@ feishu-cli doc add-callout <document_id> "警告内容" --callout-type warning
 feishu-cli doc add-callout <document_id> "内容" --callout-type tip --parent-id <block_id> --index 0
 ```
 
-Callout 类型：`info` (信息), `warning` (警告), `success` (成功), `danger` (危险), `tip` (提示), `note` (备注)
+Callout 类型：`info` (信息/蓝色), `warning` (警告/红色), `error` (错误/橙色), `success` (成功/绿色)
 
 ### 批量更新块
 

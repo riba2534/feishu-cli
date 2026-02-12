@@ -41,6 +41,22 @@ allowed-tools: Read
 | `$$公式$$` | 16 | Equation | 块级公式（降级为行内 Equation） |
 | `$公式$` | — | InlineEquation | 行内公式 |
 
+### 新增块类型（导出支持）
+
+以下块类型在导出时有对应的处理：
+
+| Block Type | 名称 | 导出结果 | 说明 |
+|------------|------|---------|------|
+| 44 | Agenda | 展开子块 | 议程块 |
+| 45 | AgendaItem | 展开子块 | 议程条目 |
+| 46 | AgendaItemTitle | 粗体文本 | 议程标题 |
+| 47 | AgendaItemContent | 展开子块 | 议程内容 |
+| 48 | LinkPreview | 链接 | 链接预览块 |
+| 49 | SyncSource | 展开子块 | 同步源块 |
+| 50 | SyncReference | 展开子块 | 同步引用块 |
+| 51 | WikiCatalogV2 | `[知识库目录 V2]` | 知识库目录 V2 |
+| 52 | AITemplate | HTML 注释 | AI 模板块 |
+
 ### 行内样式
 
 | Markdown | 效果 | 说明 |
@@ -80,7 +96,7 @@ allowed-tools: Read
 | 流程图 | `flowchart TD` / `flowchart LR` | 6 (flowchart) | 支持 subgraph |
 | 时序图 | `sequenceDiagram` | 2 (sequence) | 复杂度限制最严格 |
 | 类图 | `classDiagram` | 4 (class) | |
-| 状态图 | `stateDiagram-v2` | 0 (auto) | 必须用 v2 |
+| 状态图 | `stateDiagram-v2` | 7 (state) | 必须用 v2 |
 | ER 图 | `erDiagram` | 5 (er) | |
 | 甘特图 | `gantt` | 0 (auto) | |
 | 饼图 | `pie` | 0 (auto) | |

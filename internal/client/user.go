@@ -101,3 +101,87 @@ func GetUserInfo(userID string, opts GetUserInfoOptions) (*UserInfo, error) {
 
 	return info, nil
 }
+
+// batchUserLimit 飞书 Batch API 单次最多查询 50 个用户
+const batchUserLimit = 50
+
+// BatchGetUserInfo 批量获取用户信息
+// 使用飞书 /open-apis/contact/v3/users/batch API，每次最多 50 个，自动分批
+func BatchGetUserInfo(userIDs []string, userIDType string) ([]*UserInfo, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+
+	c, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	if userIDType == "" {
+		userIDType = "open_id"
+	}
+
+	var result []*UserInfo
+
+	// 分批查询，每批最多 50 个
+	for i := 0; i < len(userIDs); i += batchUserLimit {
+		end := i + batchUserLimit
+		if end > len(userIDs) {
+			end = len(userIDs)
+		}
+		batch := userIDs[i:end]
+
+		req := larkcontact.NewBatchUserReqBuilder().
+			UserIds(batch).
+			UserIdType(userIDType).
+			Build()
+
+		resp, err := c.Contact.User.Batch(Context(), req)
+		if err != nil {
+			return result, fmt.Errorf("批量获取用户信息失败: %w", err)
+		}
+		if !resp.Success() {
+			return result, fmt.Errorf("批量获取用户信息失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		}
+
+		if resp.Data != nil && resp.Data.Items != nil {
+			for _, user := range resp.Data.Items {
+				if user == nil {
+					continue
+				}
+				info := &UserInfo{
+					UserID:       StringVal(user.UserId),
+					OpenID:       StringVal(user.OpenId),
+					UnionID:      StringVal(user.UnionId),
+					Name:         StringVal(user.Name),
+					EnName:       StringVal(user.EnName),
+					Nickname:     StringVal(user.Nickname),
+					Email:        StringVal(user.Email),
+					Mobile:       StringVal(user.Mobile),
+					EmployeeNo:   StringVal(user.EmployeeNo),
+					EmployeeType: IntVal(user.EmployeeType),
+					Gender:       IntVal(user.Gender),
+					City:         StringVal(user.City),
+					Country:      StringVal(user.Country),
+					WorkStation:  StringVal(user.WorkStation),
+					JoinTime:     IntVal(user.JoinTime),
+					IsTenantMgr:  BoolVal(user.IsTenantManager),
+					JobTitle:     StringVal(user.JobTitle),
+				}
+				if user.Avatar != nil && user.Avatar.AvatarOrigin != nil {
+					info.Avatar = *user.Avatar.AvatarOrigin
+				}
+				if user.Status != nil && user.Status.IsFrozen != nil {
+					if *user.Status.IsFrozen {
+						info.Status = "frozen"
+					} else {
+						info.Status = "active"
+					}
+				}
+				result = append(result, info)
+			}
+		}
+	}
+
+	return result, nil
+}

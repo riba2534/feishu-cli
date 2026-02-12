@@ -43,7 +43,9 @@ feishu-cli wiki get https://xxx.larkoffice.com/wiki/<node_token>
   节点 Token:  <node_token>
   文档 Token:  <document_token>
   文档类型:    docx
+  节点类型:    origin
   标题:        示例文档标题
+  有子节点:    true
   创建者:      ou_xxx
   所有者:      ou_xxx
 ```
@@ -75,7 +77,15 @@ feishu-cli wiki export <node_token> -o doc.md --download-images --assets-dir ./i
 
 ```bash
 feishu-cli wiki spaces
+
+# 指定每页数量
+feishu-cli wiki spaces --page-size 20
 ```
+
+**参数说明**：
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--page-size` | 每页数量 | 50 |
 
 **输出示例**：
 ```
@@ -92,8 +102,21 @@ feishu-cli wiki spaces
 ### 4. 列出空间下的节点
 
 ```bash
+# 列出根节点
 feishu-cli wiki nodes <space_id>
+
+# 列出指定父节点下的子节点
+feishu-cli wiki nodes <space_id> --parent <node_token>
+
+# 指定每页数量
+feishu-cli wiki nodes <space_id> --page-size 20
 ```
+
+**参数说明**：
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--parent` | 父节点 Token（不指定则列出根节点） | 根节点 |
+| `--page-size` | 每页数量 | 50 |
 
 **输出示例**：
 ```
@@ -170,7 +193,7 @@ feishu-cli wiki get <node_token>
 
 当导出目录节点时，如果文档内容显示为：
 ```markdown
-<!-- Unknown block type: 42 -->
+[Wiki 目录 - 使用 'wiki nodes <space_id> --parent <node_token>' 获取子节点列表]
 ```
 
 说明这是一个**Wiki 目录块**（block_type=42），表示该节点是知识库目录，子文档列表存储在知识库元数据中，而非文档内容中。

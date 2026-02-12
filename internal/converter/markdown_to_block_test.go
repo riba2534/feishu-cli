@@ -457,7 +457,7 @@ func TestConvert_Callout(t *testing.T) {
 		{"CAUTION", "> [!CAUTION]\n> 这是警示", 3},   // Orange
 		{"TIP", "> [!TIP]\n> 这是技巧", 4},           // Yellow
 		{"SUCCESS", "> [!SUCCESS]\n> 这是成功", 5},   // Green
-		{"IMPORTANT", "> [!IMPORTANT]\n> 重要", 7},   // Purple
+		{"IMPORTANT", "> [!IMPORTANT]\n> 重要", 7}, // Purple
 	}
 
 	for _, tt := range tests {

@@ -47,6 +47,7 @@ allowed-tools: Bash, Read, Grep
    **可选参数**：
    - `--front-matter`：在 Markdown 顶部添加 YAML front matter（含标题和文档 ID）
    - `--highlight`：保留文本颜色和背景色（输出为 HTML `<span>` 标签）
+   - `--expand-mentions`：展开 @用户为友好格式（默认开启，需要 contact:user.base:readonly 权限）
 
 3. **读取文本内容**
    - 使用 Read 工具读取导出的 Markdown 文件

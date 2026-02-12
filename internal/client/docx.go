@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -532,22 +533,23 @@ func fillTableCellsInternal(documentID string, cellIDs []string, cellElements []
 
 // fillCellSingleBlock 用单个文本块填充单元格（优先更新已有空块）
 func fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextElement, maxRetries int) error {
+	retryCfg := RetryConfig{
+		MaxRetries:       maxRetries,
+		MaxTotalAttempts: maxRetries + 5,
+		RetryOnRateLimit: true,
+	}
+
 	// 尝试更新已有子块（飞书创建表格时自动生成空文本块）
 	children, childErr := GetBlockChildren(documentID, cellID)
 	if childErr == nil && len(children) > 0 {
 		existingBlockID := StringVal(children[0].BlockId)
 		if existingBlockID != "" {
 			updateContent := buildCellUpdateContent(elements)
-			for attempt := 0; attempt < maxRetries; attempt++ {
-				err := UpdateBlock(documentID, existingBlockID, updateContent)
-				if err == nil {
-					return nil
-				}
-				if IsRateLimitError(err) {
-					time.Sleep(time.Duration(2+attempt*2) * time.Second)
-					continue
-				}
-				break
+			result := DoVoidWithRetry(func() (http.Header, error) {
+				return nil, UpdateBlock(documentID, existingBlockID, updateContent)
+			}, retryCfg)
+			if result.Err == nil {
+				return nil
 			}
 		}
 	}
@@ -558,22 +560,21 @@ func fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextEle
 		BlockType: &blockType,
 		Text:      &larkdocx.Text{Elements: elements},
 	}
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	result := DoVoidWithRetry(func() (http.Header, error) {
 		_, err := CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, 0)
-		if err == nil {
-			return nil
-		}
-		if IsRateLimitError(err) {
-			time.Sleep(time.Duration(2+attempt*2) * time.Second)
-			continue
-		}
-		return err
-	}
-	return fmt.Errorf("rate limit: 填充单元格重试 %d 次后仍失败", maxRetries)
+		return nil, err
+	}, retryCfg)
+	return result.Err
 }
 
 // fillCellMultiBlocks 用多个块填充单元格（支持 bullet/heading/text 混合）
 func fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, maxRetries int) error {
+	retryCfg := RetryConfig{
+		MaxRetries:       maxRetries,
+		MaxTotalAttempts: maxRetries + 5,
+		RetryOnRateLimit: true,
+	}
+
 	// 获取飞书自动创建的空文本块，更新其内容以避免留下空块
 	startIdx := 0
 	children, childErr := GetBlockChildren(documentID, cellID)
@@ -581,17 +582,11 @@ func fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, max
 		existingBlockID := StringVal(children[0].BlockId)
 		if existingBlockID != "" {
 			updateContent := buildCellUpdateContent(groups[0].elements)
-			for attempt := 0; attempt < maxRetries; attempt++ {
-				err := UpdateBlock(documentID, existingBlockID, updateContent)
-				if err == nil {
-					startIdx = 1 // 第一组已通过更新处理
-					break
-				}
-				if IsRateLimitError(err) {
-					time.Sleep(time.Duration(2+attempt*2) * time.Second)
-					continue
-				}
-				break
+			result := DoVoidWithRetry(func() (http.Header, error) {
+				return nil, UpdateBlock(documentID, existingBlockID, updateContent)
+			}, retryCfg)
+			if result.Err == nil {
+				startIdx = 1 // 第一组已通过更新处理
 			}
 		}
 	}
@@ -603,21 +598,12 @@ func fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, max
 			continue
 		}
 		block := buildCellBlock(group)
-		created := false
-		for attempt := 0; attempt < maxRetries; attempt++ {
+		result := DoVoidWithRetry(func() (http.Header, error) {
 			_, err := CreateBlock(documentID, cellID, []*larkdocx.Block{block}, -1)
-			if err == nil {
-				created = true
-				break
-			}
-			if IsRateLimitError(err) {
-				time.Sleep(time.Duration(2+attempt*2) * time.Second)
-				continue
-			}
-			return err
-		}
-		if !created {
-			return fmt.Errorf("rate limit: 创建单元格块重试 %d 次后仍失败", maxRetries)
+			return nil, err
+		}, retryCfg)
+		if result.Err != nil {
+			return result.Err
 		}
 	}
 	return nil

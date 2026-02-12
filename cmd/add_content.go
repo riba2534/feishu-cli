@@ -3,9 +3,9 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -256,43 +256,34 @@ func addContentMarkdown(documentID, blockID, contentData, basePath string, uploa
 	return nil
 }
 
-// fillTableWithRetry 填充单个表格内容，带 429 重试（最多 5 次，指数退避）
+// fillTableWithRetry 填充单个表格内容，带重试（最多 5 次，full jitter 退避）
 func fillTableWithRetry(documentID, tableBlockID string, td *converter.TableData) bool {
-	const maxRetries = 5
-
-	for retry := 0; retry <= maxRetries; retry++ {
-		if retry > 0 {
-			delay := time.Duration(retry) * 2 * time.Second
-			time.Sleep(delay)
-		}
-
+	result := client.DoVoidWithRetry(func() (http.Header, error) {
 		cellIDs, err := client.GetTableCellIDs(documentID, tableBlockID)
 		if err != nil {
-			if isRateLimitError(err) && retry < maxRetries {
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "[Warning] 获取表格 %s 单元格失败: %v\n", tableBlockID, err)
-			return false
+			return nil, fmt.Errorf("获取单元格失败: %w", err)
 		}
 
-		var fillErr error
 		if len(td.CellElements) > 0 {
-			fillErr = client.FillTableCellsRich(documentID, cellIDs, td.CellElements, td.CellContents)
-		} else {
-			fillErr = client.FillTableCells(documentID, cellIDs, td.CellContents)
-		}
-		if fillErr != nil {
-			if isRateLimitError(fillErr) && retry < maxRetries {
-				continue
+			if err := client.FillTableCellsRich(documentID, cellIDs, td.CellElements, td.CellContents); err != nil {
+				return nil, fmt.Errorf("填充内容失败: %w", err)
 			}
-			fmt.Fprintf(os.Stderr, "[Warning] 填充表格 %s 内容失败: %v\n", tableBlockID, fillErr)
-			return false
+			return nil, nil
 		}
+		if err := client.FillTableCells(documentID, cellIDs, td.CellContents); err != nil {
+			return nil, fmt.Errorf("填充内容失败: %w", err)
+		}
+		return nil, nil
+	}, client.RetryConfig{
+		MaxRetries:       5,
+		RetryOnRateLimit: true,
+	})
 
-		return true
+	if result.Err != nil {
+		fmt.Fprintf(os.Stderr, "[Warning] 表格 %s: %v\n", tableBlockID, result.Err)
+		return false
 	}
-
-	return false
+	return true
 }
 
 func init() {

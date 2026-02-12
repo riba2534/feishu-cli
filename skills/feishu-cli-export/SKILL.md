@@ -56,10 +56,11 @@ allowed-tools: Bash, Read
 |------|------|--------|
 | document_id/node_token | 文档 ID 或知识库节点 Token | 必需 |
 | output_path | 输出文件路径 | `/tmp/<id>.md` |
-| --download-images | 下载文档中的图片 | 否 |
-| --assets-dir | 图片保存目录 | `./assets` |
+| --download-images | 下载文档中的图片和画板（画板自动导出为 PNG） | 否 |
+| --assets-dir | 图片和画板的保存目录 | `./assets` |
 | --front-matter | 添加 YAML front matter（标题和文档 ID） | 否 |
 | --highlight | 保留文本颜色和背景色（输出为 HTML `<span>` 标签） | 否 |
+| --expand-mentions | 展开 @用户为友好格式（需要 contact:user.base:readonly 权限） | 是（默认开启） |
 
 ## 支持的 URL 格式
 
@@ -237,11 +238,16 @@ sleep 5 && feishu-cli doc export <doc_id>
 | 表格 (Table) | Markdown 表格 | 管道符自动转义 |
 | 图片 (Image) | `\[Image: url\]` | |
 | 链接 | `[text](url)` | URL 特殊字符自动编码 |
-| 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` | |
+| 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` 或 PNG 图片 | 使用 `--download-images` 时自动导出为 PNG |
 | **ISV 块** | 画板链接或 HTML 注释 | Mermaid 绘图/时间线 |
 | **Iframe** | `<iframe>` HTML 标签 | 嵌入内容 |
 | **AddOns/SyncedBlock** | 展开子块内容 | 透明展开 |
 | Wiki 目录 | `[Wiki 目录...]` | |
+| **Agenda/AgendaItem** | 展开子块内容 | 议程块 |
+| **LinkPreview** | 链接 | 链接预览 |
+| **SyncSource/SyncReference** | 展开子块内容 | 同步块 |
+| **WikiCatalogV2** | `[知识库目录 V2]` | |
+| **AITemplate** | HTML 注释 | AI 模板块 |
 
 ### Callout 高亮块导出
 
@@ -297,14 +303,16 @@ Callout 内部子块（段落、列表等）会在引用语法内逐行展示。
 - **ISV 块**（Mermaid 绘图）✅
 - **AddOns/SyncedBlock 展开** ✅
 - **特殊字符转义** ✅
+- **@用户展开** ✅（使用 `--expand-mentions`，默认开启）
+- **新块类型**（Agenda/LinkPreview/SyncBlock/WikiCatalogV2/AITemplate）✅
 - 表格结构 ⚠️（内容可能丢失）
-- 飞书画板 → 画板链接 ✅
+- 飞书画板 → 画板链接/PNG 图片 ✅
 
 ## 双向转换说明
 
 | 导入（Markdown → 飞书） | 导出（飞书 → Markdown） |
 |------------------------|------------------------|
-| Mermaid/PlantUML 代码块 → 飞书画板 | 飞书画板 → 画板链接 |
+| Mermaid/PlantUML 代码块 → 飞书画板 | 飞书画板 → 画板链接/PNG 图片 |
 | 大表格 → 自动拆分为多个表格 | 多个表格 → 分开的表格 |
 | 缩进列表 → 嵌套父子块 | 嵌套列表 → 缩进 Markdown |
 | `> [!NOTE]` → Callout 高亮块 | Callout 高亮块 → `> [!NOTE]` |

@@ -478,7 +478,8 @@ func TestBlockToMd_SkipsPageBlock(t *testing.T) {
 }
 
 func TestBlockToMd_UnknownBlockType(t *testing.T) {
-	unknownType := 999
+	// 使用一个不在映射中的类型值
+	unknownType := 888
 	blocks := []*larkdocx.Block{
 		{
 			BlockId:   strPtr("unknown1"),
@@ -493,9 +494,31 @@ func TestBlockToMd_UnknownBlockType(t *testing.T) {
 		t.Fatalf("Convert() 返回错误: %v", err)
 	}
 
-	// 未知块类型应转为注释
-	if !strings.Contains(result, "<!-- Unknown block type") {
-		t.Errorf("未知块类型应转为注释: %s", result)
+	// 未知块类型应转为含可读名称的注释
+	if !strings.Contains(result, "<!-- 不支持的块类型: Unknown(888) (type=888) -->") {
+		t.Errorf("未知块类型应转为含名称的注释: %s", result)
+	}
+}
+
+func TestBlockToMd_UndefinedBlockType(t *testing.T) {
+	// BlockTypeUndefined (999) 也应该输出有意义的注释
+	undefinedType := int(BlockTypeUndefined)
+	blocks := []*larkdocx.Block{
+		{
+			BlockId:   strPtr("undef1"),
+			BlockType: &undefinedType,
+		},
+	}
+
+	converter := NewBlockToMarkdown(blocks, ConvertOptions{})
+	result, err := converter.Convert()
+
+	if err != nil {
+		t.Fatalf("Convert() 返回错误: %v", err)
+	}
+
+	if !strings.Contains(result, "Undefined") {
+		t.Errorf("Undefined 类型应包含名称: %s", result)
 	}
 }
 
@@ -804,9 +827,9 @@ func intPtr(i int) *int {
 // TestBlockToMd_ISVBlock 测试 ISV 块导出
 func TestBlockToMd_ISVBlock(t *testing.T) {
 	tests := []struct {
-		name       string
-		typeID     string
-		compID     string
+		name           string
+		typeID         string
+		compID         string
 		expectContains string
 	}{
 		{
@@ -1028,5 +1051,325 @@ func TestBlockToMd_HighlightNoColor(t *testing.T) {
 	}
 	if strings.Contains(result, "<span") {
 		t.Errorf("颜色值为 0 时不应输出 span:\n%s", result)
+	}
+}
+
+// --- MentionUser 展开测试 ---
+
+// mockUserResolver 实现 UserResolver 接口用于测试
+type mockUserResolver struct {
+	users map[string]MentionUserInfo
+}
+
+func (m *mockUserResolver) BatchResolve(userIDs []string) map[string]MentionUserInfo {
+	result := make(map[string]MentionUserInfo)
+	for _, id := range userIDs {
+		if info, ok := m.users[id]; ok {
+			result[id] = info
+		}
+	}
+	return result
+}
+
+// 创建包含 MentionUser 的文本块
+func createMentionUserBlock(id, userID string) *larkdocx.Block {
+	blockType := int(BlockTypeText)
+	return &larkdocx.Block{
+		BlockId:   strPtr(id),
+		BlockType: &blockType,
+		Text: &larkdocx.Text{
+			Elements: []*larkdocx.TextElement{
+				{
+					TextRun: &larkdocx.TextRun{
+						Content: strPtr("你好 "),
+					},
+				},
+				{
+					MentionUser: &larkdocx.MentionUser{
+						UserId: strPtr(userID),
+					},
+				},
+				{
+					TextRun: &larkdocx.TextRun{
+						Content: strPtr(" 请查看"),
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestBlockToMd_MentionUserExpanded(t *testing.T) {
+	blocks := []*larkdocx.Block{
+		createMentionUserBlock("block1", "ou_123"),
+	}
+
+	resolver := &mockUserResolver{
+		users: map[string]MentionUserInfo{
+			"ou_123": {Name: "张三", Email: "zhangsan@example.com"},
+		},
+	}
+
+	conv := NewBlockToMarkdownWithResolver(blocks, ConvertOptions{ExpandMentions: true}, resolver)
+	result, err := conv.Convert()
+	if err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+
+	if !strings.Contains(result, "[@张三](mailto:zhangsan@example.com)") {
+		t.Errorf("展开的 mention 应包含 mailto 链接: %s", result)
+	}
+}
+
+func TestBlockToMd_MentionUserNoEmail(t *testing.T) {
+	blocks := []*larkdocx.Block{
+		createMentionUserBlock("block1", "ou_456"),
+	}
+
+	resolver := &mockUserResolver{
+		users: map[string]MentionUserInfo{
+			"ou_456": {Name: "李四", Email: ""},
+		},
+	}
+
+	conv := NewBlockToMarkdownWithResolver(blocks, ConvertOptions{ExpandMentions: true}, resolver)
+	result, err := conv.Convert()
+	if err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+
+	if !strings.Contains(result, "@李四") {
+		t.Errorf("无邮箱时应输出 @名字: %s", result)
+	}
+	if strings.Contains(result, "mailto:") {
+		t.Errorf("无邮箱时不应包含 mailto: %s", result)
+	}
+}
+
+func TestBlockToMd_MentionUserFallback(t *testing.T) {
+	blocks := []*larkdocx.Block{
+		createMentionUserBlock("block1", "ou_unknown"),
+	}
+
+	resolver := &mockUserResolver{
+		users: map[string]MentionUserInfo{}, // 空映射，不包含该用户
+	}
+
+	conv := NewBlockToMarkdownWithResolver(blocks, ConvertOptions{ExpandMentions: true}, resolver)
+	result, err := conv.Convert()
+	if err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+
+	if !strings.Contains(result, "@[user:ou_unknown]") {
+		t.Errorf("找不到用户时应降级为原始格式: %s", result)
+	}
+}
+
+func TestBlockToMd_MentionDisabled(t *testing.T) {
+	blocks := []*larkdocx.Block{
+		createMentionUserBlock("block1", "ou_123"),
+	}
+
+	// ExpandMentions=false，不传 resolver
+	conv := NewBlockToMarkdown(blocks, ConvertOptions{ExpandMentions: false})
+	result, err := conv.Convert()
+	if err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+
+	if !strings.Contains(result, "@[user:ou_123]") {
+		t.Errorf("ExpandMentions=false 应保持原始格式: %s", result)
+	}
+}
+
+func TestCollectMentionUserIDs(t *testing.T) {
+	blocks := []*larkdocx.Block{
+		createMentionUserBlock("block1", "ou_aaa"),
+		createMentionUserBlock("block2", "ou_bbb"),
+		createMentionUserBlock("block3", "ou_aaa"), // 重复 ID
+	}
+
+	conv := NewBlockToMarkdown(blocks, ConvertOptions{})
+	ids := conv.collectMentionUserIDs()
+
+	// 验证去重
+	if len(ids) != 2 {
+		t.Errorf("collectMentionUserIDs 应去重，期望 2 个 ID，得到 %d: %v", len(ids), ids)
+	}
+
+	idSet := make(map[string]bool)
+	for _, id := range ids {
+		idSet[id] = true
+	}
+	if !idSet["ou_aaa"] || !idSet["ou_bbb"] {
+		t.Errorf("缺少预期的 user ID: %v", ids)
+	}
+}
+
+// --- 新块类型测试 ---
+
+func TestBlockToMd_Agenda(t *testing.T) {
+	pageType := int(BlockTypePage)
+	agendaType := int(BlockTypeAgenda)
+	agendaItemType := int(BlockTypeAgendaItem)
+	agendaItemTitleType := int(BlockTypeAgendaItemTitle)
+
+	blocks := []*larkdocx.Block{
+		{BlockId: strPtr("page"), BlockType: &pageType, Children: []string{"agenda1"}},
+		{
+			BlockId:   strPtr("agenda1"),
+			BlockType: &agendaType,
+			Children:  []string{"item1"},
+		},
+		{
+			BlockId:   strPtr("item1"),
+			BlockType: &agendaItemType,
+			Children:  []string{"title1"},
+		},
+		{
+			BlockId:   strPtr("title1"),
+			BlockType: &agendaItemTitleType,
+			Text: &larkdocx.Text{
+				Elements: []*larkdocx.TextElement{
+					{TextRun: &larkdocx.TextRun{Content: strPtr("议程标题")}},
+				},
+			},
+		},
+	}
+
+	conv := NewBlockToMarkdown(blocks, ConvertOptions{})
+	result, err := conv.Convert()
+	if err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+
+	if !strings.Contains(result, "---") {
+		t.Errorf("Agenda 块应输出分隔线: %s", result)
+	}
+	if !strings.Contains(result, "**议程标题**") {
+		t.Errorf("AgendaItemTitle 应加粗输出: %s", result)
+	}
+}
+
+func TestBlockToMd_LinkPreview(t *testing.T) {
+	linkPreviewType := int(BlockTypeLinkPreview)
+	blocks := []*larkdocx.Block{
+		{
+			BlockId:   strPtr("lp1"),
+			BlockType: &linkPreviewType,
+		},
+	}
+
+	conv := NewBlockToMarkdown(blocks, ConvertOptions{})
+	result, err := conv.Convert()
+	if err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+
+	if !strings.Contains(result, "[链接预览]") {
+		t.Errorf("无子块的 LinkPreview 应输出占位符: %s", result)
+	}
+}
+
+func TestBlockToMd_SyncReference(t *testing.T) {
+	pageType := int(BlockTypePage)
+	syncRefType := int(BlockTypeSyncReference)
+	textType := int(BlockTypeText)
+
+	blocks := []*larkdocx.Block{
+		{BlockId: strPtr("page"), BlockType: &pageType, Children: []string{"sync1"}},
+		{
+			BlockId:   strPtr("sync1"),
+			BlockType: &syncRefType,
+			Children:  []string{"child1"},
+		},
+		{
+			BlockId:   strPtr("child1"),
+			BlockType: &textType,
+			Text: &larkdocx.Text{
+				Elements: []*larkdocx.TextElement{
+					{TextRun: &larkdocx.TextRun{Content: strPtr("同步内容")}},
+				},
+			},
+		},
+	}
+
+	conv := NewBlockToMarkdown(blocks, ConvertOptions{})
+	result, err := conv.Convert()
+	if err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+
+	if !strings.Contains(result, "同步内容") {
+		t.Errorf("SyncReference 应展开子块内容: %s", result)
+	}
+}
+
+func TestBlockToMd_WikiCatalogV2(t *testing.T) {
+	wikiCatType := int(BlockTypeWikiCatalogV2)
+	blocks := []*larkdocx.Block{
+		{
+			BlockId:   strPtr("wc1"),
+			BlockType: &wikiCatType,
+		},
+	}
+
+	conv := NewBlockToMarkdown(blocks, ConvertOptions{})
+	result, err := conv.Convert()
+	if err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+
+	if !strings.Contains(result, "[知识库目录 V2]") {
+		t.Errorf("WikiCatalogV2 输出不正确: %s", result)
+	}
+}
+
+func TestBlockToMd_AITemplate(t *testing.T) {
+	aiType := int(BlockTypeAITemplate)
+	blocks := []*larkdocx.Block{
+		{
+			BlockId:   strPtr("ai1"),
+			BlockType: &aiType,
+		},
+	}
+
+	conv := NewBlockToMarkdown(blocks, ConvertOptions{})
+	result, err := conv.Convert()
+	if err != nil {
+		t.Fatalf("转换失败: %v", err)
+	}
+
+	if !strings.Contains(result, "<!-- AI 模板块 -->") {
+		t.Errorf("AITemplate 应输出 HTML 注释: %s", result)
+	}
+}
+
+func TestBlockTypeName(t *testing.T) {
+	tests := []struct {
+		bt       BlockType
+		expected string
+	}{
+		{BlockTypePage, "Page"},
+		{BlockTypeText, "Text"},
+		{BlockTypeHeading1, "Heading1"},
+		{BlockTypeBullet, "Bullet"},
+		{BlockTypeAddOns, "AddOns"},
+		{BlockTypeAgenda, "Agenda"},
+		{BlockTypeLinkPreview, "LinkPreview"},
+		{BlockTypeSyncSource, "SyncSource"},
+		{BlockTypeAITemplate, "AITemplate"},
+		{BlockTypeUndefined, "Undefined"},
+		{BlockType(888), "Unknown(888)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			result := BlockTypeName(tt.bt)
+			if result != tt.expected {
+				t.Errorf("BlockTypeName(%d) = %q, 期望 %q", int(tt.bt), result, tt.expected)
+			}
+		})
 	}
 }

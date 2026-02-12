@@ -74,7 +74,8 @@ allowed-tools: Bash, Read
 | markdown_file | Markdown 文件路径 | 必需 |
 | --title | 新文档标题 | 文件名 |
 | --document-id | 更新已有文档 | 创建新文档 |
-| --upload-images | 上传本地图片 | 否 |
+| --upload-images | 上传本地图片 | 是（默认开启） |
+| --folder, -f | 新文档的目标文件夹 Token | 根目录 |
 | --diagram-workers | 图表 (Mermaid/PlantUML) 并发导入数 | 5 |
 | --table-workers | 表格并发填充数 | 3 |
 | --diagram-retries | 图表最大重试次数 | 10 |

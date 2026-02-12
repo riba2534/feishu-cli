@@ -13,8 +13,9 @@ allowed-tools: Bash, Read
 ## 使用方法
 
 ```bash
-/feishu-comment list <file_token> --type docx       # 列出云文档评论
-/feishu-comment add <file_token> --type docx "评论" # 添加评论
+/feishu-comment list <file_token> --type docx                    # 列出云文档评论
+/feishu-comment add <file_token> --type docx --text "评论"       # 添加评论
+/feishu-comment delete <file_token> <comment_id> --type docx     # 删除评论
 ```
 
 **注意**：`--type` 参数为必需，指定文件类型（docx/sheet/bitable）。
@@ -98,6 +99,27 @@ feishu-cli comment add <file_token> --type docx --text "请 @张三 review 一�
 | `sheet` | 电子表格 |
 | `bitable` | 多维表格 |
 
+### 3. 删除评论
+
+```bash
+# 删除指定评论
+feishu-cli comment delete <file_token> <comment_id> --type docx
+```
+
+**参数说明**：
+| 参数 | 说明 | 必需 |
+|------|------|------|
+| `file_token` | 文件 Token | 是 |
+| `comment_id` | 评论 ID | 是 |
+| `--type` | 文件类型（docx/sheet/bitable） | 是 |
+
+**输出示例**：
+```
+评论删除成功！
+  评论 ID: 7123456789012345678
+  文件: doccnXxx
+```
+
 ## 典型工作流
 
 ### 代码审查流程
@@ -133,3 +155,4 @@ done
 1. **评论位置**：当前 CLI 仅支持全文评论，不支持关联特定文字/段落的评论
 2. **@ 功能**：在评论中使用 `@用户名` 需要用户有文档访问权限
 3. **评论状态**：评论状态（已解决/未解决）需通过飞书客户端修改
+4. **删除评论**：删除操作不可逆，删除前请确认评论 ID

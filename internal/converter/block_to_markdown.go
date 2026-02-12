@@ -22,7 +22,8 @@ type BlockToMarkdown struct {
 	childBlockIDs map[string]bool // 子块 ID 集合，这些块不应独立处理
 	options       ConvertOptions
 	imageCount    int
-	headingSeqs   []string // 标题自动编号状态，按深度索引（depth-1）
+	headingSeqs   []string                   // 标题自动编号状态，按深度索引（depth-1）
+	userCache     map[string]MentionUserInfo // 用户 ID → 信息缓存
 }
 
 // NewBlockToMarkdown creates a new converter
@@ -85,6 +86,16 @@ func NewBlockToMarkdown(blocks []*larkdocx.Block, options ConvertOptions) *Block
 					collectChildren(childID)
 				}
 			}
+		case BlockTypeAddOns, BlockTypeSyncSource, BlockTypeSyncReference,
+			BlockTypeAgenda, BlockTypeAgendaItem, BlockTypeAgendaItemContent,
+			BlockTypeLinkPreview:
+			// 容器块：子块由父块递归展开
+			if block.Children != nil {
+				for _, childID := range block.Children {
+					childBlockIDs[childID] = true
+					collectChildren(childID)
+				}
+			}
 		}
 	}
 
@@ -94,6 +105,92 @@ func NewBlockToMarkdown(blocks []*larkdocx.Block, options ConvertOptions) *Block
 		childBlockIDs: childBlockIDs,
 		options:       options,
 	}
+}
+
+// NewBlockToMarkdownWithResolver 创建支持 @用户 展开的转换器
+func NewBlockToMarkdownWithResolver(blocks []*larkdocx.Block, options ConvertOptions, resolver UserResolver) *BlockToMarkdown {
+	c := NewBlockToMarkdown(blocks, options)
+	if resolver != nil && options.ExpandMentions {
+		userIDs := c.collectMentionUserIDs()
+		if len(userIDs) > 0 {
+			c.userCache = resolver.BatchResolve(userIDs)
+		}
+	}
+	return c
+}
+
+// collectMentionUserIDs 扫描所有块的 TextElement，收集去重的 MentionUser ID
+func (c *BlockToMarkdown) collectMentionUserIDs() []string {
+	seen := make(map[string]bool)
+
+	collectFromElements := func(elements []*larkdocx.TextElement) {
+		for _, elem := range elements {
+			if elem != nil && elem.MentionUser != nil && elem.MentionUser.UserId != nil {
+				seen[*elem.MentionUser.UserId] = true
+			}
+		}
+	}
+
+	for _, block := range c.blocks {
+		if block.BlockType == nil {
+			continue
+		}
+		// 检查所有包含 TextElement 的块类型
+		if block.Text != nil {
+			collectFromElements(block.Text.Elements)
+		}
+		if block.Heading1 != nil {
+			collectFromElements(block.Heading1.Elements)
+		}
+		if block.Heading2 != nil {
+			collectFromElements(block.Heading2.Elements)
+		}
+		if block.Heading3 != nil {
+			collectFromElements(block.Heading3.Elements)
+		}
+		if block.Heading4 != nil {
+			collectFromElements(block.Heading4.Elements)
+		}
+		if block.Heading5 != nil {
+			collectFromElements(block.Heading5.Elements)
+		}
+		if block.Heading6 != nil {
+			collectFromElements(block.Heading6.Elements)
+		}
+		if block.Heading7 != nil {
+			collectFromElements(block.Heading7.Elements)
+		}
+		if block.Heading8 != nil {
+			collectFromElements(block.Heading8.Elements)
+		}
+		if block.Heading9 != nil {
+			collectFromElements(block.Heading9.Elements)
+		}
+		if block.Bullet != nil {
+			collectFromElements(block.Bullet.Elements)
+		}
+		if block.Ordered != nil {
+			collectFromElements(block.Ordered.Elements)
+		}
+		if block.Quote != nil {
+			collectFromElements(block.Quote.Elements)
+		}
+		if block.Todo != nil {
+			collectFromElements(block.Todo.Elements)
+		}
+		if block.Code != nil {
+			collectFromElements(block.Code.Elements)
+		}
+		if block.Equation != nil {
+			collectFromElements(block.Equation.Elements)
+		}
+	}
+
+	result := make([]string, 0, len(seen))
+	for id := range seen {
+		result = append(result, id)
+	}
+	return result
 }
 
 // isListBlockType 判断是否为列表块类型
@@ -246,9 +343,92 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 		return c.convertWikiCatalog(block)
 	case BlockTypeISV:
 		return c.convertISV(block)
+	case BlockTypeAgenda:
+		// 议程块：分隔线 + 递归展开子块
+		var sb strings.Builder
+		sb.WriteString("---\n")
+		if block.Children != nil {
+			for _, childID := range block.Children {
+				childBlock := c.blockMap[childID]
+				if childBlock != nil {
+					text, _ := c.convertBlockWithDepth(childBlock, indent, depth+1)
+					sb.WriteString(text)
+				}
+			}
+		}
+		return sb.String(), nil
+	case BlockTypeAgendaItem:
+		// 议程项：容器块，递归展开子块
+		if block.Children != nil {
+			var sb strings.Builder
+			for _, childID := range block.Children {
+				childBlock := c.blockMap[childID]
+				if childBlock != nil {
+					text, _ := c.convertBlockWithDepth(childBlock, indent, depth+1)
+					sb.WriteString(text)
+				}
+			}
+			return sb.String(), nil
+		}
+		return "", nil
+	case BlockTypeAgendaItemTitle:
+		// 议程项标题：提取文本并加粗
+		if block.Text != nil {
+			text := c.convertTextElements(block.Text.Elements)
+			return fmt.Sprintf("**%s**\n", text), nil
+		}
+		return "", nil
+	case BlockTypeAgendaItemContent:
+		// 议程项内容：容器块，递归展开子块
+		if block.Children != nil {
+			var sb strings.Builder
+			for _, childID := range block.Children {
+				childBlock := c.blockMap[childID]
+				if childBlock != nil {
+					text, _ := c.convertBlockWithDepth(childBlock, indent, depth+1)
+					sb.WriteString(text)
+				}
+			}
+			return sb.String(), nil
+		}
+		return "", nil
+	case BlockTypeLinkPreview:
+		// 链接预览：尝试展开子块，否则输出占位符
+		if block.Children != nil && len(block.Children) > 0 {
+			var sb strings.Builder
+			for _, childID := range block.Children {
+				childBlock := c.blockMap[childID]
+				if childBlock != nil {
+					text, _ := c.convertBlockWithDepth(childBlock, indent, depth+1)
+					sb.WriteString(text)
+				}
+			}
+			if sb.Len() > 0 {
+				return sb.String(), nil
+			}
+		}
+		return "[链接预览]\n", nil
+	case BlockTypeSyncSource, BlockTypeSyncReference:
+		// 同步块：容器块，递归展开子块（类似 AddOns）
+		if block.Children != nil {
+			var sb strings.Builder
+			for _, childID := range block.Children {
+				childBlock := c.blockMap[childID]
+				if childBlock != nil {
+					text, _ := c.convertBlockWithDepth(childBlock, indent, depth+1)
+					sb.WriteString(text)
+				}
+			}
+			return sb.String(), nil
+		}
+		return "", nil
+	case BlockTypeWikiCatalogV2:
+		return "[知识库目录 V2]\n", nil
+	case BlockTypeAITemplate:
+		return "<!-- AI 模板块 -->\n", nil
 	default:
-		// Unknown block type - output as comment
-		return fmt.Sprintf("<!-- Unknown block type: %d -->\n", blockType), nil
+		typeName := BlockTypeName(blockType)
+		return fmt.Sprintf("<!-- 不支持的块类型: %s (type=%d) -->\n", typeName, int(blockType)), nil
 	}
 }
 
@@ -789,8 +969,22 @@ func (c *BlockToMarkdown) convertBoard(block *larkdocx.Block) (string, error) {
 		token = *block.Board.Token
 	}
 
-	// Board (画板) can contain PlantUML or other diagrams
-	// The content is accessed via a separate Board API
+	if token != "" && c.options.DownloadImages {
+		c.imageCount++
+		filename := fmt.Sprintf("board_%d.png", c.imageCount)
+
+		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
+			return "", fmt.Errorf("创建资源目录失败: %w", err)
+		}
+
+		localPath := filepath.Join(c.options.AssetsDir, filename)
+
+		if err := client.GetBoardImage(token, localPath); err == nil {
+			return fmt.Sprintf("![画板](%s)\n", localPath), nil
+		}
+	}
+
+	// 下载未启用或下载失败，降级为链接
 	return fmt.Sprintf("[画板/Whiteboard](feishu://board/%s)\n", token), nil
 }
 
@@ -1022,7 +1216,19 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 			if elem.MentionUser.UserId != nil {
 				userID = *elem.MentionUser.UserId
 			}
-			result.WriteString(fmt.Sprintf("@[user:%s]", userID))
+			if c.options.ExpandMentions {
+				if info, ok := c.userCache[userID]; ok && info.Name != "" {
+					if info.Email != "" {
+						result.WriteString(fmt.Sprintf("[@%s](mailto:%s)", info.Name, info.Email))
+					} else {
+						result.WriteString(fmt.Sprintf("@%s", info.Name))
+					}
+				} else {
+					result.WriteString(fmt.Sprintf("@[user:%s]", userID))
+				}
+			} else {
+				result.WriteString(fmt.Sprintf("@[user:%s]", userID))
+			}
 		}
 
 		if elem.MentionDoc != nil {
@@ -1118,7 +1324,16 @@ func (c *BlockToMarkdown) convertTextElementsRaw(elements []*larkdocx.TextElemen
 			result.WriteString(*elem.TextRun.Content)
 		}
 		if elem.MentionUser != nil && elem.MentionUser.UserId != nil {
-			result.WriteString(*elem.MentionUser.UserId)
+			userID := *elem.MentionUser.UserId
+			if c.options.ExpandMentions {
+				if info, ok := c.userCache[userID]; ok && info.Name != "" {
+					result.WriteString(info.Name)
+				} else {
+					result.WriteString(userID)
+				}
+			} else {
+				result.WriteString(userID)
+			}
 		}
 		if elem.MentionDoc != nil && elem.MentionDoc.Title != nil {
 			result.WriteString(*elem.MentionDoc.Title)
