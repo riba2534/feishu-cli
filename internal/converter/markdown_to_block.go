@@ -19,8 +19,9 @@ import (
 // 最大递归深度常量（在 block_to_markdown.go 中定义）
 // const maxRecursionDepth = 100
 
-// 飞书 API 限制单个表格最多 9 行（包括表头）
+// 飞书 API 限制单个表格最多 9 行（包括表头）、9 列
 const maxTableRows = 9
+const maxTableCols = 9
 
 // 表格列宽配置（单位：像素）
 const (
@@ -1051,6 +1052,58 @@ func (c *MarkdownToBlock) convertTable(node *east.Table) (*larkdocx.Block, error
 	return result.Block, nil
 }
 
+// splitColumnGroups 将列索引分组，每组最多 maxTableCols 列。
+// 第一列（通常是标识/名称列）在所有分组中保留，避免拆分后数据行无法识别。
+// 列数 ≤ maxTableCols 时返回 nil 表示无需拆分。
+func splitColumnGroups(totalCols int) [][]int {
+	if totalCols <= maxTableCols {
+		return nil
+	}
+	var groups [][]int
+	// 第一组：col0 ~ col(maxTableCols-1)
+	first := make([]int, maxTableCols)
+	for i := 0; i < maxTableCols; i++ {
+		first[i] = i
+	}
+	groups = append(groups, first)
+	// 后续组：col0（标识列）+ 连续数据列，每组最多 maxTableCols 列
+	maxDataPerGroup := maxTableCols - 1 // 留一列给标识列
+	for i := maxTableCols; i < totalCols; i += maxDataPerGroup {
+		end := i + maxDataPerGroup
+		if end > totalCols {
+			end = totalCols
+		}
+		group := []int{0} // 保留第一列
+		for j := i; j < end; j++ {
+			group = append(group, j)
+		}
+		groups = append(groups, group)
+	}
+	return groups
+}
+
+// extractColumns 从一行纯文本中提取指定列
+func extractColumns(row []string, colIndices []int) []string {
+	result := make([]string, len(colIndices))
+	for i, idx := range colIndices {
+		if idx < len(row) {
+			result[i] = row[idx]
+		}
+	}
+	return result
+}
+
+// extractColumnElements 从一行富文本元素中提取指定列
+func extractColumnElements(rowElements [][]*larkdocx.TextElement, colIndices []int) [][]*larkdocx.TextElement {
+	result := make([][]*larkdocx.TextElement, len(colIndices))
+	for i, idx := range colIndices {
+		if idx < len(rowElements) {
+			result[i] = rowElements[idx]
+		}
+	}
+	return result
+}
+
 func (c *MarkdownToBlock) convertTableWithData(node *east.Table) *ConvertTableResult {
 	results := c.convertTableWithDataMultiple(node)
 	if len(results) == 0 {
@@ -1104,94 +1157,136 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 		return nil
 	}
 
-	// 计算列宽（根据内容自动调整）
-	columnWidths := calculateColumnWidths(headerContents, dataRows, cols)
+	// 按列分组（超过 maxTableCols 列时拆分，保留首列作为标识列）
+	colGroups := splitColumnGroups(cols)
 
-	// 构建 TableData 的辅助函数
-	buildTableData := func(rows, cols int, hasHeader bool, chunkDataRows [][]string, chunkDataElements [][][]*larkdocx.TextElement) *TableData {
-		var cellContents []string
-		var cellElements [][]*larkdocx.TextElement
-		if hasHeader {
-			cellContents = append(cellContents, headerContents...)
-			cellElements = append(cellElements, headerElements...)
-		}
-		for _, row := range chunkDataRows {
-			cellContents = append(cellContents, row...)
-		}
-		for _, row := range chunkDataElements {
-			cellElements = append(cellElements, row...)
-		}
-		return &TableData{
-			Rows:         rows,
-			Cols:         cols,
-			CellContents: cellContents,
-			CellElements: cellElements,
-			HasHeader:    hasHeader,
-		}
-	}
+	// buildRowSplitResults 对一组列的数据执行行拆分，返回拆分后的子表格列表
+	buildRowSplitResults := func(groupCols int, groupHeader []string, groupHeaderElems [][]*larkdocx.TextElement,
+		groupDataRows [][]string, groupDataRowElements [][][]*larkdocx.TextElement, groupColWidths []int, groupHasHeader bool) []*ConvertTableResult {
 
-	// 如果表格不超过限制，直接返回单个表格
-	if totalRows <= maxTableRows {
-		blockType := int(BlockTypeTable)
-		headerRow := hasHeader
-		rows := totalRows
-		block := &larkdocx.Block{
-			BlockType: &blockType,
-			Table: &larkdocx.Table{
-				Property: &larkdocx.TableProperty{
-					RowSize:     &rows,
-					ColumnSize:  &cols,
-					ColumnWidth: columnWidths,
-					HeaderRow:   &headerRow,
+		groupTotalRows := len(groupDataRows)
+		if groupHasHeader {
+			groupTotalRows++
+		}
+
+		// 构建 TableData
+		buildTableData := func(rows int, chunkDataRows [][]string, chunkDataElements [][][]*larkdocx.TextElement) *TableData {
+			var cellContents []string
+			var cellElements [][]*larkdocx.TextElement
+			if groupHasHeader {
+				cellContents = append(cellContents, groupHeader...)
+				cellElements = append(cellElements, groupHeaderElems...)
+			}
+			for _, row := range chunkDataRows {
+				cellContents = append(cellContents, row...)
+			}
+			for _, row := range chunkDataElements {
+				cellElements = append(cellElements, row...)
+			}
+			return &TableData{
+				Rows:         rows,
+				Cols:         groupCols,
+				CellContents: cellContents,
+				CellElements: cellElements,
+				HasHeader:    groupHasHeader,
+			}
+		}
+
+		// 不超过行限制，直接返回单个表格
+		if groupTotalRows <= maxTableRows {
+			blockType := int(BlockTypeTable)
+			headerRow := groupHasHeader
+			rows := groupTotalRows
+			block := &larkdocx.Block{
+				BlockType: &blockType,
+				Table: &larkdocx.Table{
+					Property: &larkdocx.TableProperty{
+						RowSize:     &rows,
+						ColumnSize:  &groupCols,
+						ColumnWidth: groupColWidths,
+						HeaderRow:   &headerRow,
+					},
 				},
-			},
+			}
+			return []*ConvertTableResult{{
+				Block:     block,
+				TableData: buildTableData(rows, groupDataRows, groupDataRowElements),
+			}}
 		}
 
-		return []*ConvertTableResult{{
-			Block:     block,
-			TableData: buildTableData(rows, cols, hasHeader, dataRows, dataRowElements),
-		}}
+		// 行拆分
+		var results []*ConvertTableResult
+		maxDataRowsPerTable := maxTableRows
+		if groupHasHeader {
+			maxDataRowsPerTable = maxTableRows - 1
+		}
+		for i := 0; i < len(groupDataRows); i += maxDataRowsPerTable {
+			end := i + maxDataRowsPerTable
+			if end > len(groupDataRows) {
+				end = len(groupDataRows)
+			}
+			chunkDataRows := groupDataRows[i:end]
+			chunkDataElements := groupDataRowElements[i:end]
+
+			rows := len(chunkDataRows)
+			if groupHasHeader {
+				rows++
+			}
+			blockType := int(BlockTypeTable)
+			headerRow := groupHasHeader
+			block := &larkdocx.Block{
+				BlockType: &blockType,
+				Table: &larkdocx.Table{
+					Property: &larkdocx.TableProperty{
+						RowSize:     &rows,
+						ColumnSize:  &groupCols,
+						ColumnWidth: groupColWidths,
+						HeaderRow:   &headerRow,
+					},
+				},
+			}
+			results = append(results, &ConvertTableResult{
+				Block:     block,
+				TableData: buildTableData(rows, chunkDataRows, chunkDataElements),
+			})
+		}
+		return results
 	}
 
-	// 需要拆分表格
-	// 每个子表格最多有 maxTableRows 行，第一个表格包含表头+数据，后续表格复制表头
+	// 无需列拆分：直接走行拆分逻辑
+	if colGroups == nil {
+		columnWidths := calculateColumnWidths(headerContents, dataRows, cols)
+		return buildRowSplitResults(cols, headerContents, headerElements, dataRows, dataRowElements, columnWidths, hasHeader)
+	}
+
+	// 需要列拆分：对每个列组提取数据，再分别行拆分
 	var results []*ConvertTableResult
-	maxDataRowsPerTable := maxTableRows
-	if hasHeader {
-		maxDataRowsPerTable = maxTableRows - 1 // 留一行给表头
-	}
+	for _, colIndices := range colGroups {
+		groupCols := len(colIndices)
 
-	for i := 0; i < len(dataRows); i += maxDataRowsPerTable {
-		end := i + maxDataRowsPerTable
-		if end > len(dataRows) {
-			end = len(dataRows)
-		}
-		chunkDataRows := dataRows[i:end]
-		chunkDataElements := dataRowElements[i:end]
-
-		rows := len(chunkDataRows)
+		// 提取该列组的表头
+		var groupHeader []string
+		var groupHeaderElems [][]*larkdocx.TextElement
 		if hasHeader {
-			rows++
+			groupHeader = extractColumns(headerContents, colIndices)
+			groupHeaderElems = extractColumnElements(headerElements, colIndices)
 		}
 
-		blockType := int(BlockTypeTable)
-		headerRow := hasHeader
-		block := &larkdocx.Block{
-			BlockType: &blockType,
-			Table: &larkdocx.Table{
-				Property: &larkdocx.TableProperty{
-					RowSize:     &rows,
-					ColumnSize:  &cols,
-					ColumnWidth: columnWidths,
-					HeaderRow:   &headerRow,
-				},
-			},
+		// 提取该列组的数据行
+		groupDataRows := make([][]string, len(dataRows))
+		groupDataRowElements := make([][][]*larkdocx.TextElement, len(dataRowElements))
+		for i, row := range dataRows {
+			groupDataRows[i] = extractColumns(row, colIndices)
+		}
+		for i, rowElems := range dataRowElements {
+			groupDataRowElements[i] = extractColumnElements(rowElems, colIndices)
 		}
 
-		results = append(results, &ConvertTableResult{
-			Block:     block,
-			TableData: buildTableData(rows, cols, hasHeader, chunkDataRows, chunkDataElements),
-		})
+		// 计算该列组的列宽
+		groupColWidths := calculateColumnWidths(groupHeader, groupDataRows, groupCols)
+
+		// 对该列组执行行拆分
+		results = append(results, buildRowSplitResults(groupCols, groupHeader, groupHeaderElems, groupDataRows, groupDataRowElements, groupColWidths, hasHeader)...)
 	}
 
 	return results

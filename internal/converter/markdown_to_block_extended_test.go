@@ -1,6 +1,7 @@
 package converter
 
 import (
+	"fmt"
 	"testing"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
@@ -1128,6 +1129,299 @@ func TestConvertWithTableData(t *testing.T) {
 			}
 			tt.checkFn(t, result)
 		})
+	}
+}
+
+// ==========================
+// splitColumnGroups 测试
+// ==========================
+
+func TestSplitColumnGroups(t *testing.T) {
+	tests := []struct {
+		name      string
+		totalCols int
+		wantNil   bool
+		wantLen   int    // 期望分组数
+		checkFn   func(*testing.T, [][]int)
+	}{
+		{
+			name:      "9 列不拆分",
+			totalCols: 9,
+			wantNil:   true,
+		},
+		{
+			name:      "1 列不拆分",
+			totalCols: 1,
+			wantNil:   true,
+		},
+		{
+			name:      "2 列不拆分",
+			totalCols: 2,
+			wantNil:   true,
+		},
+		{
+			name:      "10 列拆为 2 组",
+			totalCols: 10,
+			wantLen:   2,
+			checkFn: func(t *testing.T, groups [][]int) {
+				// 第一组: [0,1,2,3,4,5,6,7,8] = 9 列
+				if len(groups[0]) != 9 {
+					t.Errorf("group[0] expected 9 cols, got %d", len(groups[0]))
+				}
+				// 第二组: [0, 9] = 2 列（保留首列 + 1 列数据）
+				if len(groups[1]) != 2 {
+					t.Errorf("group[1] expected 2 cols, got %d", len(groups[1]))
+				}
+				if groups[1][0] != 0 || groups[1][1] != 9 {
+					t.Errorf("group[1] = %v, want [0, 9]", groups[1])
+				}
+			},
+		},
+		{
+			name:      "17 列拆为 2 组",
+			totalCols: 17,
+			wantLen:   2,
+			checkFn: func(t *testing.T, groups [][]int) {
+				// 第一组: [0..8] = 9 列
+				if len(groups[0]) != 9 {
+					t.Errorf("group[0] expected 9 cols, got %d", len(groups[0]))
+				}
+				// 第二组: [0, 9..16] = 9 列（保留首列 + 8 列数据）
+				if len(groups[1]) != 9 {
+					t.Errorf("group[1] expected 9 cols, got %d", len(groups[1]))
+				}
+				if groups[1][0] != 0 {
+					t.Errorf("group[1][0] should be 0 (identity col)")
+				}
+			},
+		},
+		{
+			name:      "18 列拆为 3 组",
+			totalCols: 18,
+			wantLen:   3,
+			checkFn: func(t *testing.T, groups [][]int) {
+				// 第一组: [0..8] = 9 列
+				if len(groups[0]) != 9 {
+					t.Errorf("group[0] expected 9 cols, got %d", len(groups[0]))
+				}
+				// 第二组: [0, 9..16] = 9 列
+				if len(groups[1]) != 9 {
+					t.Errorf("group[1] expected 9 cols, got %d", len(groups[1]))
+				}
+				// 第三组: [0, 17] = 2 列
+				if len(groups[2]) != 2 {
+					t.Errorf("group[2] expected 2 cols, got %d", len(groups[2]))
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := splitColumnGroups(tt.totalCols)
+			if tt.wantNil {
+				if result != nil {
+					t.Errorf("expected nil, got %v", result)
+				}
+				return
+			}
+			if len(result) != tt.wantLen {
+				t.Errorf("expected %d groups, got %d", tt.wantLen, len(result))
+			}
+			// 验证所有分组首列都是 0
+			for i, group := range result {
+				if group[0] != 0 {
+					t.Errorf("group[%d][0] = %d, want 0", i, group[0])
+				}
+				if len(group) > maxTableCols {
+					t.Errorf("group[%d] has %d cols, exceeds maxTableCols %d", i, len(group), maxTableCols)
+				}
+			}
+			if tt.checkFn != nil {
+				tt.checkFn(t, result)
+			}
+		})
+	}
+}
+
+// ==========================
+// 宽表格（>9 列）列拆分测试
+// ==========================
+
+func TestMarkdownToBlockWideTable(t *testing.T) {
+	// 构造 12 列表格（1 行表头 + 3 行数据 = 4 行，不触发行拆分）
+	header := "| 名称 |"
+	sep := "|------|"
+	for i := 1; i < 12; i++ {
+		header += fmt.Sprintf(" 列%d |", i)
+		sep += "------|"
+	}
+	markdown := header + "\n" + sep + "\n"
+	for r := 1; r <= 3; r++ {
+		row := fmt.Sprintf("| 行%d |", r)
+		for i := 1; i < 12; i++ {
+			row += fmt.Sprintf(" D%d-%d |", r, i)
+		}
+		markdown += row + "\n"
+	}
+
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	result, err := converter.ConvertWithTableData()
+	if err != nil {
+		t.Fatalf("ConvertWithTableData failed: %v", err)
+	}
+
+	// 12 列 → 2 个子表格（9 列 + 4 列）
+	if len(result.TableDatas) != 2 {
+		t.Fatalf("expected 2 tables, got %d", len(result.TableDatas))
+	}
+
+	// 第一个表格 9 列
+	if result.TableDatas[0].Cols != 9 {
+		t.Errorf("table[0] expected 9 cols, got %d", result.TableDatas[0].Cols)
+	}
+	// 第二个表格 4 列（首列 + 3 列数据）
+	if result.TableDatas[1].Cols != 4 {
+		t.Errorf("table[1] expected 4 cols, got %d", result.TableDatas[1].Cols)
+	}
+
+	// 验证每个表格都不超过列数限制
+	for i, td := range result.TableDatas {
+		if td.Cols > maxTableCols {
+			t.Errorf("table %d has %d cols, exceeds maxTableCols %d", i, td.Cols, maxTableCols)
+		}
+	}
+
+	// 验证 CellContents 数量 = Rows * Cols
+	for i, td := range result.TableDatas {
+		expected := td.Rows * td.Cols
+		if len(td.CellContents) != expected {
+			t.Errorf("table %d: CellContents len = %d, want %d (rows=%d, cols=%d)",
+				i, len(td.CellContents), expected, td.Rows, td.Cols)
+		}
+	}
+}
+
+func TestMarkdownToBlockWideAndTallTable(t *testing.T) {
+	// 构造 12 列 × 15 行数据（+ 1 行表头）= 16 行
+	// 预期：列拆分为 2 组（9 列 + 4 列），每组行拆分 → 共 4 个子表格
+	header := "| 名称 |"
+	sep := "|------|"
+	for i := 1; i < 12; i++ {
+		header += fmt.Sprintf(" C%d |", i)
+		sep += "----|"
+	}
+	markdown := header + "\n" + sep + "\n"
+	for r := 1; r <= 15; r++ {
+		row := fmt.Sprintf("| R%d |", r)
+		for i := 1; i < 12; i++ {
+			row += fmt.Sprintf(" %d |", r*100+i)
+		}
+		markdown += row + "\n"
+	}
+
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	result, err := converter.ConvertWithTableData()
+	if err != nil {
+		t.Fatalf("ConvertWithTableData failed: %v", err)
+	}
+
+	// 12 列 × 16 行 → 列拆分 2 组 × 行拆分 2 个 = 4 个子表格
+	if len(result.TableDatas) != 4 {
+		t.Fatalf("expected 4 tables, got %d", len(result.TableDatas))
+	}
+
+	// 验证所有表格都不超过限制
+	for i, td := range result.TableDatas {
+		if td.Rows > maxTableRows {
+			t.Errorf("table %d has %d rows, exceeds maxTableRows %d", i, td.Rows, maxTableRows)
+		}
+		if td.Cols > maxTableCols {
+			t.Errorf("table %d has %d cols, exceeds maxTableCols %d", i, td.Cols, maxTableCols)
+		}
+	}
+
+	// 验证 CellContents 数量
+	for i, td := range result.TableDatas {
+		expected := td.Rows * td.Cols
+		if len(td.CellContents) != expected {
+			t.Errorf("table %d: CellContents len = %d, want %d", i, len(td.CellContents), expected)
+		}
+	}
+}
+
+func TestColumnSplitEdgeCases(t *testing.T) {
+	// 恰好 9 列不拆分
+	header := "| A | B | C | D | E | F | G | H | I |\n"
+	sep := "|---|---|---|---|---|---|---|---|---|\n"
+	data := "| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |\n"
+	markdown := header + sep + data
+
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	result, err := converter.ConvertWithTableData()
+	if err != nil {
+		t.Fatalf("ConvertWithTableData failed: %v", err)
+	}
+
+	if len(result.TableDatas) != 1 {
+		t.Errorf("9-col table should not be split, got %d tables", len(result.TableDatas))
+	}
+	if result.TableDatas[0].Cols != 9 {
+		t.Errorf("expected 9 cols, got %d", result.TableDatas[0].Cols)
+	}
+}
+
+func TestColumnSplitCellContents(t *testing.T) {
+	// 10 列表格，验证拆分后内容正确（首列保留）
+	header := "| 名称 | C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 |\n"
+	sep := "|------|----|----|----|----|----|----|----|----|----|\n"
+	data := "| 甲 | a1 | a2 | a3 | a4 | a5 | a6 | a7 | a8 | a9 |\n"
+	markdown := header + sep + data
+
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	result, err := converter.ConvertWithTableData()
+	if err != nil {
+		t.Fatalf("ConvertWithTableData failed: %v", err)
+	}
+
+	if len(result.TableDatas) != 2 {
+		t.Fatalf("expected 2 tables, got %d", len(result.TableDatas))
+	}
+
+	// 第一个表格：名称, C1..C8 = 9 列
+	td0 := result.TableDatas[0]
+	if td0.Cols != 9 || td0.Rows != 2 {
+		t.Fatalf("table[0] expected 9×2, got %d×%d", td0.Cols, td0.Rows)
+	}
+	// 表头首列 = "名称"
+	if td0.CellContents[0] != "名称" {
+		t.Errorf("table[0] header[0] = %q, want '名称'", td0.CellContents[0])
+	}
+	// 数据行首列 = "甲"
+	if td0.CellContents[9] != "甲" {
+		t.Errorf("table[0] data[0] = %q, want '甲'", td0.CellContents[9])
+	}
+
+	// 第二个表格：名称, C9 = 2 列（首列保留）
+	td1 := result.TableDatas[1]
+	if td1.Cols != 2 || td1.Rows != 2 {
+		t.Fatalf("table[1] expected 2×2, got %d×%d", td1.Cols, td1.Rows)
+	}
+	// 表头首列仍是 "名称"
+	if td1.CellContents[0] != "名称" {
+		t.Errorf("table[1] header[0] = %q, want '名称'", td1.CellContents[0])
+	}
+	// 表头第二列 = "C9"
+	if td1.CellContents[1] != "C9" {
+		t.Errorf("table[1] header[1] = %q, want 'C9'", td1.CellContents[1])
+	}
+	// 数据行首列 = "甲"
+	if td1.CellContents[2] != "甲" {
+		t.Errorf("table[1] data[0] = %q, want '甲'", td1.CellContents[2])
+	}
+	// 数据行第二列 = "a9"
+	if td1.CellContents[3] != "a9" {
+		t.Errorf("table[1] data[1] = %q, want 'a9'", td1.CellContents[3])
 	}
 }
 
