@@ -39,11 +39,16 @@ var taskSubtaskCreateCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		taskGuid := args[0]
 		summary, _ := cmd.Flags().GetString("summary")
 		output, _ := cmd.Flags().GetString("output")
 
-		task, err := client.CreateSubtask(taskGuid, summary)
+		task, err := client.CreateSubtask(taskGuid, summary, token)
 		if err != nil {
 			return err
 		}
@@ -77,12 +82,17 @@ var taskSubtaskListCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		taskGuid := args[0]
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
 
-		tasks, nextPageToken, hasMore, err := client.ListSubtasks(taskGuid, pageSize, pageToken)
+		tasks, nextPageToken, hasMore, err := client.ListSubtasks(taskGuid, pageSize, pageToken, token)
 		if err != nil {
 			return err
 		}
@@ -128,10 +138,12 @@ func init() {
 	taskSubtaskCmd.AddCommand(taskSubtaskCreateCmd)
 	taskSubtaskCreateCmd.Flags().StringP("summary", "s", "", "子任务标题（必填）")
 	taskSubtaskCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	taskSubtaskCreateCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	mustMarkFlagRequired(taskSubtaskCreateCmd, "summary")
 
 	taskSubtaskCmd.AddCommand(taskSubtaskListCmd)
 	taskSubtaskListCmd.Flags().Int("page-size", 0, "每页数量")
 	taskSubtaskListCmd.Flags().String("page-token", "", "分页标记")
 	taskSubtaskListCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	taskSubtaskListCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

@@ -43,12 +43,17 @@ var readUsersCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		messageID := args[0]
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 
-		result, err := client.GetReadUsers(messageID, userIDType, pageSize, pageToken)
+		result, err := client.GetReadUsers(messageID, userIDType, pageSize, pageToken, token)
 		if err != nil {
 			return err
 		}
@@ -87,4 +92,5 @@ func init() {
 	readUsersCmd.Flags().Int("page-size", 20, "每页数量（最大 100）")
 	readUsersCmd.Flags().String("page-token", "", "分页标记")
 	readUsersCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	readUsersCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

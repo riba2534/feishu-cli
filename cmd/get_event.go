@@ -39,11 +39,16 @@ var getEventCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		calendarID := args[0]
 		eventID := args[1]
 		output, _ := cmd.Flags().GetString("output")
 
-		event, err := client.GetEvent(calendarID, eventID)
+		event, err := client.GetEvent(calendarID, eventID, token)
 		if err != nil {
 			return err
 		}
@@ -97,4 +102,5 @@ var getEventCmd = &cobra.Command{
 func init() {
 	calendarCmd.AddCommand(getEventCmd)
 	getEventCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	getEventCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

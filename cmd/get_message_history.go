@@ -47,6 +47,11 @@ var getMessageHistoryCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		containerIDType, _ := cmd.Flags().GetString("container-id-type")
 		containerID, _ := cmd.Flags().GetString("container-id")
 		startTime, _ := cmd.Flags().GetString("start-time")
@@ -69,7 +74,7 @@ var getMessageHistoryCmd = &cobra.Command{
 			PageToken:       pageToken,
 		}
 
-		result, err := client.ListMessages(containerID, opts)
+		result, err := client.ListMessages(containerID, opts, token)
 		if err != nil {
 			return err
 		}
@@ -123,5 +128,6 @@ func init() {
 	getMessageHistoryCmd.Flags().Int("page-size", 50, "分页大小 (1-50)")
 	getMessageHistoryCmd.Flags().String("page-token", "", "分页标记")
 	getMessageHistoryCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
+	getMessageHistoryCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	mustMarkFlagRequired(getMessageHistoryCmd, "container-id-type", "container-id")
 }

@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
 // SendMessage sends a message to a user or chat
-func SendMessage(receiveIDType string, receiveID string, msgType string, content string) (string, error) {
+func SendMessage(receiveIDType string, receiveID string, msgType string, content string, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -23,7 +24,7 @@ func SendMessage(receiveIDType string, receiveID string, msgType string, content
 			Build()).
 		Build()
 
-	resp, err := client.Im.Message.Create(Context(), req)
+	resp, err := client.Im.Message.Create(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return "", fmt.Errorf("发送消息失败: %w", err)
 	}
@@ -40,7 +41,7 @@ func SendMessage(receiveIDType string, receiveID string, msgType string, content
 }
 
 // ReplyMessage replies to a message
-func ReplyMessage(messageID string, msgType string, content string) (string, error) {
+func ReplyMessage(messageID string, msgType string, content string, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -54,7 +55,7 @@ func ReplyMessage(messageID string, msgType string, content string) (string, err
 			Build()).
 		Build()
 
-	resp, err := client.Im.Message.Reply(Context(), req)
+	resp, err := client.Im.Message.Reply(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return "", fmt.Errorf("回复消息失败: %w", err)
 	}
@@ -71,7 +72,7 @@ func ReplyMessage(messageID string, msgType string, content string) (string, err
 }
 
 // UpdateMessage updates a message content
-func UpdateMessage(messageID string, content string) error {
+func UpdateMessage(messageID string, content string, userAccessToken string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -84,7 +85,7 @@ func UpdateMessage(messageID string, content string) error {
 			Build()).
 		Build()
 
-	resp, err := client.Im.Message.Patch(Context(), req)
+	resp, err := client.Im.Message.Patch(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return fmt.Errorf("更新消息失败: %w", err)
 	}
@@ -123,7 +124,7 @@ func CreateInteractiveCardContent(card map[string]any) string {
 }
 
 // DeleteMessage deletes a message by message ID
-func DeleteMessage(messageID string) error {
+func DeleteMessage(messageID string, userAccessToken string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -133,7 +134,7 @@ func DeleteMessage(messageID string) error {
 		MessageId(messageID).
 		Build()
 
-	resp, err := client.Im.Message.Delete(Context(), req)
+	resp, err := client.Im.Message.Delete(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return fmt.Errorf("删除消息失败: %w", err)
 	}
@@ -163,7 +164,7 @@ type ListMessagesResult struct {
 }
 
 // ListMessages lists messages in a container (chat)
-func ListMessages(containerID string, opts ListMessagesOptions) (*ListMessagesResult, error) {
+func ListMessages(containerID string, opts ListMessagesOptions, userAccessToken string) (*ListMessagesResult, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -189,7 +190,7 @@ func ListMessages(containerID string, opts ListMessagesOptions) (*ListMessagesRe
 		reqBuilder.PageToken(opts.PageToken)
 	}
 
-	resp, err := client.Im.Message.List(Context(), reqBuilder.Build())
+	resp, err := client.Im.Message.List(Context(), reqBuilder.Build(), larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return nil, fmt.Errorf("获取消息列表失败: %w", err)
 	}
@@ -211,7 +212,7 @@ type GetMessageResult struct {
 }
 
 // GetMessage gets a message by message ID
-func GetMessage(messageID string) (*GetMessageResult, error) {
+func GetMessage(messageID string, userAccessToken string) (*GetMessageResult, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -221,7 +222,7 @@ func GetMessage(messageID string) (*GetMessageResult, error) {
 		MessageId(messageID).
 		Build()
 
-	resp, err := client.Im.Message.Get(Context(), req)
+	resp, err := client.Im.Message.Get(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return nil, fmt.Errorf("获取消息详情失败: %w", err)
 	}
@@ -240,7 +241,7 @@ func GetMessage(messageID string) (*GetMessageResult, error) {
 }
 
 // ForwardMessage forwards a message to another recipient
-func ForwardMessage(messageID string, receiveID string, receiveIDType string) (string, error) {
+func ForwardMessage(messageID string, receiveID string, receiveIDType string, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -254,7 +255,7 @@ func ForwardMessage(messageID string, receiveID string, receiveIDType string) (s
 			Build()).
 		Build()
 
-	resp, err := client.Im.Message.Forward(Context(), req)
+	resp, err := client.Im.Message.Forward(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return "", fmt.Errorf("转发消息失败: %w", err)
 	}
@@ -310,7 +311,7 @@ type SearchChatsResult struct {
 }
 
 // SearchChats searches for chats
-func SearchChats(opts SearchChatsOptions) (*SearchChatsResult, error) {
+func SearchChats(opts SearchChatsOptions, userAccessToken string) (*SearchChatsResult, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -330,7 +331,7 @@ func SearchChats(opts SearchChatsOptions) (*SearchChatsResult, error) {
 		reqBuilder.PageToken(opts.PageToken)
 	}
 
-	resp, err := client.Im.Chat.List(Context(), reqBuilder.Build())
+	resp, err := client.Im.Chat.List(Context(), reqBuilder.Build(), larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return nil, fmt.Errorf("搜索群聊失败: %w", err)
 	}
@@ -398,7 +399,7 @@ func equalIgnoreCase(a, b string) bool {
 }
 
 // MergeForwardMessage 合并转发多条消息
-func MergeForwardMessage(receiveID, receiveIDType string, messageIDs []string) (string, error) {
+func MergeForwardMessage(receiveID, receiveIDType string, messageIDs []string, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -412,7 +413,7 @@ func MergeForwardMessage(receiveID, receiveIDType string, messageIDs []string) (
 			Build()).
 		Build()
 
-	resp, err := client.Im.Message.MergeForward(Context(), req)
+	resp, err := client.Im.Message.MergeForward(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return "", fmt.Errorf("合并转发消息失败: %w", err)
 	}
@@ -429,7 +430,7 @@ func MergeForwardMessage(receiveID, receiveIDType string, messageIDs []string) (
 }
 
 // CreateReaction 给消息添加表情回复
-func CreateReaction(messageID, emojiType string) (string, error) {
+func CreateReaction(messageID, emojiType string, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -442,7 +443,7 @@ func CreateReaction(messageID, emojiType string) (string, error) {
 			Build()).
 		Build()
 
-	resp, err := client.Im.MessageReaction.Create(Context(), req)
+	resp, err := client.Im.MessageReaction.Create(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return "", fmt.Errorf("添加表情回复失败: %w", err)
 	}
@@ -459,7 +460,7 @@ func CreateReaction(messageID, emojiType string) (string, error) {
 }
 
 // DeleteReaction 删除消息的表情回复
-func DeleteReaction(messageID, reactionID string) error {
+func DeleteReaction(messageID, reactionID string, userAccessToken string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -470,7 +471,7 @@ func DeleteReaction(messageID, reactionID string) error {
 		ReactionId(reactionID).
 		Build()
 
-	resp, err := client.Im.MessageReaction.Delete(Context(), req)
+	resp, err := client.Im.MessageReaction.Delete(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return fmt.Errorf("删除表情回复失败: %w", err)
 	}
@@ -490,7 +491,7 @@ type ListReactionsResult struct {
 }
 
 // ListReactions 获取消息的表情回复列表
-func ListReactions(messageID, emojiType string, pageSize int, pageToken string) (*ListReactionsResult, error) {
+func ListReactions(messageID, emojiType string, pageSize int, pageToken string, userAccessToken string) (*ListReactionsResult, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -509,7 +510,7 @@ func ListReactions(messageID, emojiType string, pageSize int, pageToken string) 
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Im.MessageReaction.List(Context(), reqBuilder.Build())
+	resp, err := client.Im.MessageReaction.List(Context(), reqBuilder.Build(), larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return nil, fmt.Errorf("获取表情回复列表失败: %w", err)
 	}
@@ -526,7 +527,7 @@ func ListReactions(messageID, emojiType string, pageSize int, pageToken string) 
 }
 
 // PinMessage 置顶消息
-func PinMessage(messageID string) error {
+func PinMessage(messageID string, userAccessToken string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -538,7 +539,7 @@ func PinMessage(messageID string) error {
 			Build()).
 		Build()
 
-	resp, err := client.Im.Pin.Create(Context(), req)
+	resp, err := client.Im.Pin.Create(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return fmt.Errorf("置顶消息失败: %w", err)
 	}
@@ -551,7 +552,7 @@ func PinMessage(messageID string) error {
 }
 
 // UnpinMessage 取消置顶消息
-func UnpinMessage(messageID string) error {
+func UnpinMessage(messageID string, userAccessToken string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -561,7 +562,7 @@ func UnpinMessage(messageID string) error {
 		MessageId(messageID).
 		Build()
 
-	resp, err := client.Im.Pin.Delete(Context(), req)
+	resp, err := client.Im.Pin.Delete(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return fmt.Errorf("取消置顶消息失败: %w", err)
 	}
@@ -581,7 +582,7 @@ type ListPinsResult struct {
 }
 
 // ListPins 获取群内置顶消息列表
-func ListPins(chatID string, startTime, endTime, pageToken string, pageSize int) (*ListPinsResult, error) {
+func ListPins(chatID string, startTime, endTime, pageToken string, pageSize int, userAccessToken string) (*ListPinsResult, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -603,7 +604,7 @@ func ListPins(chatID string, startTime, endTime, pageToken string, pageSize int)
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Im.Pin.List(Context(), reqBuilder.Build())
+	resp, err := client.Im.Pin.List(Context(), reqBuilder.Build(), larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return nil, fmt.Errorf("获取置顶消息列表失败: %w", err)
 	}
@@ -620,7 +621,7 @@ func ListPins(chatID string, startTime, endTime, pageToken string, pageSize int)
 }
 
 // GetReadUsers gets the list of users who have read a message
-func GetReadUsers(messageID string, userIDType string, pageSize int, pageToken string) (*ReadUsersResult, error) {
+func GetReadUsers(messageID string, userIDType string, pageSize int, pageToken string, userAccessToken string) (*ReadUsersResult, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -637,7 +638,7 @@ func GetReadUsers(messageID string, userIDType string, pageSize int, pageToken s
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Im.Message.ReadUsers(Context(), reqBuilder.Build())
+	resp, err := client.Im.Message.ReadUsers(Context(), reqBuilder.Build(), larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return nil, fmt.Errorf("查询消息已读用户失败: %w", err)
 	}

@@ -41,11 +41,16 @@ var forwardMessageCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		messageID := args[0]
 		receiveID, _ := cmd.Flags().GetString("receive-id")
 		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
 
-		newMessageID, err := client.ForwardMessage(messageID, receiveID, receiveIDType)
+		newMessageID, err := client.ForwardMessage(messageID, receiveID, receiveIDType, token)
 		if err != nil {
 			return err
 		}
@@ -73,5 +78,6 @@ func init() {
 	forwardMessageCmd.Flags().String("receive-id", "", "接收者 ID")
 	forwardMessageCmd.Flags().String("receive-id-type", "", "接收者 ID 类型（email/open_id/user_id/union_id/chat_id）")
 	forwardMessageCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	forwardMessageCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	mustMarkFlagRequired(forwardMessageCmd, "receive-id", "receive-id-type")
 }

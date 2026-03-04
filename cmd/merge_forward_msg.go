@@ -42,6 +42,11 @@ var mergeForwardMsgCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		receiveID, _ := cmd.Flags().GetString("receive-id")
 		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
 		messageIDsStr, _ := cmd.Flags().GetString("message-ids")
@@ -51,7 +56,7 @@ var mergeForwardMsgCmd = &cobra.Command{
 			return fmt.Errorf("消息 ID 列表不能为空")
 		}
 
-		newMessageID, err := client.MergeForwardMessage(receiveID, receiveIDType, messageIDs)
+		newMessageID, err := client.MergeForwardMessage(receiveID, receiveIDType, messageIDs, token)
 		if err != nil {
 			return err
 		}
@@ -69,5 +74,6 @@ func init() {
 	mergeForwardMsgCmd.Flags().String("receive-id", "", "接收者 ID")
 	mergeForwardMsgCmd.Flags().String("receive-id-type", "email", "接收者 ID 类型（email/open_id/user_id/union_id/chat_id）")
 	mergeForwardMsgCmd.Flags().String("message-ids", "", "消息 ID 列表（逗号分隔）")
+	mergeForwardMsgCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	mustMarkFlagRequired(mergeForwardMsgCmd, "receive-id", "message-ids")
 }

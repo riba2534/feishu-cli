@@ -51,10 +51,15 @@ var msgReactionAddCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		messageID := args[0]
 		emojiType, _ := cmd.Flags().GetString("emoji-type")
 
-		reactionID, err := client.CreateReaction(messageID, emojiType)
+		reactionID, err := client.CreateReaction(messageID, emojiType, token)
 		if err != nil {
 			return err
 		}
@@ -83,10 +88,15 @@ var msgReactionRemoveCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		messageID := args[0]
 		reactionID, _ := cmd.Flags().GetString("reaction-id")
 
-		if err := client.DeleteReaction(messageID, reactionID); err != nil {
+		if err := client.DeleteReaction(messageID, reactionID, token); err != nil {
 			return err
 		}
 
@@ -116,12 +126,17 @@ var msgReactionListCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		messageID := args[0]
 		emojiType, _ := cmd.Flags().GetString("emoji-type")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 
-		result, err := client.ListReactions(messageID, emojiType, pageSize, pageToken)
+		result, err := client.ListReactions(messageID, emojiType, pageSize, pageToken, token)
 		if err != nil {
 			return err
 		}
@@ -133,19 +148,19 @@ var msgReactionListCmd = &cobra.Command{
 func init() {
 	msgCmd.AddCommand(msgReactionCmd)
 
-	// add 子命令
 	msgReactionCmd.AddCommand(msgReactionAddCmd)
 	msgReactionAddCmd.Flags().String("emoji-type", "", "emoji 类型（如 THUMBSUP/SMILE/LAUGH 等）")
+	msgReactionAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	mustMarkFlagRequired(msgReactionAddCmd, "emoji-type")
 
-	// remove 子命令
 	msgReactionCmd.AddCommand(msgReactionRemoveCmd)
 	msgReactionRemoveCmd.Flags().String("reaction-id", "", "Reaction ID")
+	msgReactionRemoveCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	mustMarkFlagRequired(msgReactionRemoveCmd, "reaction-id")
 
-	// list 子命令
 	msgReactionCmd.AddCommand(msgReactionListCmd)
 	msgReactionListCmd.Flags().String("emoji-type", "", "筛选 emoji 类型")
 	msgReactionListCmd.Flags().Int("page-size", 0, "每页数量")
 	msgReactionListCmd.Flags().String("page-token", "", "分页标记")
+	msgReactionListCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

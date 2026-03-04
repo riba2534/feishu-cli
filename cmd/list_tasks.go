@@ -40,6 +40,11 @@ var listTasksCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		completedFlag, _ := cmd.Flags().GetBool("completed")
@@ -54,7 +59,7 @@ var listTasksCmd = &cobra.Command{
 			completed = &f
 		}
 
-		result, err := client.ListTasks(pageSize, pageToken, completed)
+		result, err := client.ListTasks(pageSize, pageToken, completed, token)
 		if err != nil {
 			return err
 		}
@@ -111,4 +116,5 @@ func init() {
 	listTasksCmd.Flags().Bool("completed", false, "只显示已完成的任务")
 	listTasksCmd.Flags().Bool("uncompleted", false, "只显示未完成的任务")
 	listTasksCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	listTasksCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

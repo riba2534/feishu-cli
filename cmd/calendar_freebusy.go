@@ -31,12 +31,17 @@ var calendarFreebusyCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		startTime, _ := cmd.Flags().GetString("start")
 		endTime, _ := cmd.Flags().GetString("end")
 		userID, _ := cmd.Flags().GetString("user-id")
 		output, _ := cmd.Flags().GetString("output")
 
-		result, err := client.ListFreebusy(startTime, endTime, userID)
+		result, err := client.ListFreebusy(startTime, endTime, userID, token)
 		if err != nil {
 			return err
 		}
@@ -65,6 +70,7 @@ func init() {
 	calendarFreebusyCmd.Flags().String("end", "", "结束时间，RFC3339 格式（必填）")
 	calendarFreebusyCmd.Flags().String("user-id", "", "用户 ID")
 	calendarFreebusyCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	calendarFreebusyCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 
 	mustMarkFlagRequired(calendarFreebusyCmd, "start", "end")
 }

@@ -30,6 +30,11 @@ var calendarEventSearchCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		calendarID, _ := cmd.Flags().GetString("calendar-id")
 		query, _ := cmd.Flags().GetString("query")
 		startTime, _ := cmd.Flags().GetString("start")
@@ -38,7 +43,7 @@ var calendarEventSearchCmd = &cobra.Command{
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		output, _ := cmd.Flags().GetString("output")
 
-		events, nextPageToken, err := client.SearchEvents(calendarID, query, startTime, endTime, pageToken, pageSize)
+		events, nextPageToken, err := client.SearchEvents(calendarID, query, startTime, endTime, pageToken, pageSize, token)
 		if err != nil {
 			return err
 		}
@@ -84,6 +89,7 @@ func init() {
 	calendarEventSearchCmd.Flags().Int("page-size", 0, "每页数量")
 	calendarEventSearchCmd.Flags().String("page-token", "", "分页标记")
 	calendarEventSearchCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	calendarEventSearchCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 
 	mustMarkFlagRequired(calendarEventSearchCmd, "calendar-id", "query")
 }

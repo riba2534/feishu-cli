@@ -30,10 +30,15 @@ var deleteEventCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		calendarID := args[0]
 		eventID := args[1]
 
-		if err := client.DeleteEvent(calendarID, eventID); err != nil {
+		if err := client.DeleteEvent(calendarID, eventID, token); err != nil {
 			return err
 		}
 
@@ -44,4 +49,5 @@ var deleteEventCmd = &cobra.Command{
 
 func init() {
 	calendarCmd.AddCommand(deleteEventCmd)
+	deleteEventCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

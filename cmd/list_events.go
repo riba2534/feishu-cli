@@ -48,6 +48,11 @@ var listEventsCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		calendarID := args[0]
 		startTime, _ := cmd.Flags().GetString("start-time")
 		endTime, _ := cmd.Flags().GetString("end-time")
@@ -63,7 +68,7 @@ var listEventsCmd = &cobra.Command{
 			PageToken:  pageToken,
 		}
 
-		events, nextToken, hasMore, err := client.ListEvents(params)
+		events, nextToken, hasMore, err := client.ListEvents(params, token)
 		if err != nil {
 			return err
 		}
@@ -116,4 +121,5 @@ func init() {
 	listEventsCmd.Flags().Int("page-size", 50, "每页数量")
 	listEventsCmd.Flags().String("page-token", "", "分页标记")
 	listEventsCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	listEventsCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

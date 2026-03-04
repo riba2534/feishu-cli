@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -56,22 +55,11 @@ var searchMessagesCmd = &cobra.Command{
 
 		query := args[0]
 
-		// 获取 user access token
-		userAccessToken, _ := cmd.Flags().GetString("user-access-token")
-		if userAccessToken == "" {
-			userAccessToken = config.Get().UserAccessToken
-		}
-		if userAccessToken == "" {
-			userAccessToken = os.Getenv("FEISHU_USER_ACCESS_TOKEN")
-		}
-		if userAccessToken == "" {
-			return fmt.Errorf("缺少 User Access Token，请通过以下方式之一提供:\n" +
-				"  1. 命令行参数: --user-access-token <token>\n" +
-				"  2. 环境变量: export FEISHU_USER_ACCESS_TOKEN=<token>\n" +
-				"  3. 配置文件: user_access_token: <token>")
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
 		}
 
-		// 获取其他参数
 		chatIDsStr, _ := cmd.Flags().GetString("chat-ids")
 		fromIDsStr, _ := cmd.Flags().GetString("from-ids")
 		atChatterIDsStr, _ := cmd.Flags().GetString("at-chatter-ids")
@@ -112,7 +100,7 @@ var searchMessagesCmd = &cobra.Command{
 			UserIDType:   userIDType,
 		}
 
-		result, err := client.SearchMessages(opts, userAccessToken)
+		result, err := client.SearchMessages(opts, token)
 		if err != nil {
 			return err
 		}

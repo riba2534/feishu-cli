@@ -42,11 +42,16 @@ var listCalendarsCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
 
-		calendars, nextToken, hasMore, err := client.ListCalendars(pageSize, pageToken)
+		calendars, nextToken, hasMore, err := client.ListCalendars(pageSize, pageToken, token)
 		if err != nil {
 			return err
 		}
@@ -105,4 +110,5 @@ func init() {
 	listCalendarsCmd.Flags().Int("page-size", 50, "每页数量")
 	listCalendarsCmd.Flags().String("page-token", "", "分页标记")
 	listCalendarsCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	listCalendarsCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

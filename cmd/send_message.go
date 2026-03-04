@@ -66,6 +66,11 @@ var sendMessageCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
 		receiveID, _ := cmd.Flags().GetString("receive-id")
 		msgType, _ := cmd.Flags().GetString("msg-type")
@@ -73,7 +78,6 @@ var sendMessageCmd = &cobra.Command{
 		contentFile, _ := cmd.Flags().GetString("content-file")
 		text, _ := cmd.Flags().GetString("text")
 
-		// Get content from various sources
 		var msgContent string
 		if contentFile != "" {
 			data, err := os.ReadFile(contentFile)
@@ -84,14 +88,13 @@ var sendMessageCmd = &cobra.Command{
 		} else if content != "" {
 			msgContent = content
 		} else if text != "" {
-			// Simple text message
 			msgType = "text"
 			msgContent = client.CreateTextMessageContent(text)
 		} else {
 			return fmt.Errorf("必须指定 --content、--content-file 或 --text")
 		}
 
-		messageID, err := client.SendMessage(receiveIDType, receiveID, msgType, msgContent)
+		messageID, err := client.SendMessage(receiveIDType, receiveID, msgType, msgContent, token)
 		if err != nil {
 			return err
 		}
@@ -121,5 +124,6 @@ func init() {
 	sendMessageCmd.Flags().String("content-file", "", "消息内容 JSON 文件")
 	sendMessageCmd.Flags().StringP("text", "t", "", "简单文本消息")
 	sendMessageCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	sendMessageCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	mustMarkFlagRequired(sendMessageCmd, "receive-id-type", "receive-id")
 }

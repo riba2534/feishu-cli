@@ -41,6 +41,11 @@ var replyMsgCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		messageID := args[0]
 		msgType, _ := cmd.Flags().GetString("msg-type")
 		content, _ := cmd.Flags().GetString("content")
@@ -63,7 +68,7 @@ var replyMsgCmd = &cobra.Command{
 			return fmt.Errorf("必须指定 --content、--content-file 或 --text")
 		}
 
-		newMessageID, err := client.ReplyMessage(messageID, msgType, msgContent)
+		newMessageID, err := client.ReplyMessage(messageID, msgType, msgContent, token)
 		if err != nil {
 			return err
 		}
@@ -82,4 +87,5 @@ func init() {
 	replyMsgCmd.Flags().StringP("text", "t", "", "简单文本消息")
 	replyMsgCmd.Flags().StringP("content", "c", "", "消息内容 JSON")
 	replyMsgCmd.Flags().String("content-file", "", "消息内容 JSON 文件")
+	replyMsgCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

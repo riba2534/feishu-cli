@@ -42,6 +42,11 @@ var updateTaskCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		taskGuid := args[0]
 
 		summary, _ := cmd.Flags().GetString("summary")
@@ -69,7 +74,7 @@ var updateTaskCmd = &cobra.Command{
 			return fmt.Errorf("请指定要更新的字段（--summary, --description, --due 或 --completed）")
 		}
 
-		task, err := client.UpdateTask(taskGuid, opts)
+		task, err := client.UpdateTask(taskGuid, opts, token)
 		if err != nil {
 			return err
 		}
@@ -105,4 +110,5 @@ func init() {
 	updateTaskCmd.Flags().String("due", "", "新的截止时间（格式: 2006-01-02 15:04:05）")
 	updateTaskCmd.Flags().Bool("completed", false, "标记任务为已完成")
 	updateTaskCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	updateTaskCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

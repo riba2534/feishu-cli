@@ -21,9 +21,14 @@ var calendarPrimaryCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		output, _ := cmd.Flags().GetString("output")
 
-		cal, err := client.GetPrimaryCalendar()
+		cal, err := client.GetPrimaryCalendar(token)
 		if err != nil {
 			return err
 		}
@@ -49,4 +54,5 @@ var calendarPrimaryCmd = &cobra.Command{
 func init() {
 	calendarCmd.AddCommand(calendarPrimaryCmd)
 	calendarPrimaryCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	calendarPrimaryCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

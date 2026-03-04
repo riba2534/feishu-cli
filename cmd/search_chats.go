@@ -37,6 +37,11 @@ var searchChatsCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
 		query, _ := cmd.Flags().GetString("query")
 		pageToken, _ := cmd.Flags().GetString("page-token")
@@ -50,7 +55,7 @@ var searchChatsCmd = &cobra.Command{
 			PageSize:   pageSize,
 		}
 
-		result, err := client.SearchChats(opts)
+		result, err := client.SearchChats(opts, token)
 		if err != nil {
 			return err
 		}
@@ -88,4 +93,5 @@ func init() {
 	searchChatsCmd.Flags().String("page-token", "", "分页标记")
 	searchChatsCmd.Flags().Int("page-size", 50, "分页大小 (1-100)")
 	searchChatsCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
+	searchChatsCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

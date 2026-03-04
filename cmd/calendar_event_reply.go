@@ -28,6 +28,11 @@ var calendarEventReplyCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		calendarID := args[0]
 		eventID := args[1]
 		status, _ := cmd.Flags().GetString("status")
@@ -36,7 +41,7 @@ var calendarEventReplyCmd = &cobra.Command{
 			return fmt.Errorf("无效的回复状态: %s，有效值: accept/decline/tentative", status)
 		}
 
-		if err := client.ReplyEvent(calendarID, eventID, status); err != nil {
+		if err := client.ReplyEvent(calendarID, eventID, status, token); err != nil {
 			return err
 		}
 
@@ -54,6 +59,7 @@ var calendarEventReplyCmd = &cobra.Command{
 func init() {
 	calendarCmd.AddCommand(calendarEventReplyCmd)
 	calendarEventReplyCmd.Flags().String("status", "", "回复状态: accept/decline/tentative（必填）")
+	calendarEventReplyCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 
 	mustMarkFlagRequired(calendarEventReplyCmd, "status")
 }

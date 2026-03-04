@@ -56,6 +56,11 @@ var createEventCmd = &cobra.Command{
 			return err
 		}
 
+		token, err := client.RequireUserAccessToken(cmd)
+		if err != nil {
+			return err
+		}
+
 		calendarID, _ := cmd.Flags().GetString("calendar-id")
 		summary, _ := cmd.Flags().GetString("summary")
 		startTime, _ := cmd.Flags().GetString("start")
@@ -73,7 +78,7 @@ var createEventCmd = &cobra.Command{
 			Location:    location,
 		}
 
-		event, err := client.CreateEvent(params)
+		event, err := client.CreateEvent(params, token)
 		if err != nil {
 			return err
 		}
@@ -112,6 +117,7 @@ func init() {
 	createEventCmd.Flags().StringP("description", "d", "", "日程描述")
 	createEventCmd.Flags().StringP("location", "l", "", "地点")
 	createEventCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	createEventCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 
 	mustMarkFlagRequired(createEventCmd, "calendar-id", "summary", "start", "end")
 }
