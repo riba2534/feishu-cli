@@ -526,7 +526,7 @@ feishu-cli dept children <department_id>
 
 | 功能 | 所需权限 | 说明 |
 |------|---------|----|
-| 文档操作 | `docx:document` | 文档读写, 文档写需申请 |
+| 文档操作 | `docx:document` | 文档读写 |
 | 知识库 | `wiki:wiki:readonly` | 知识库读取 |
 | 知识库成员 | `wiki:member` | 空间成员管理 |
 | 云空间文件 | `drive:drive`, `drive:drive:readonly` | 文件管理 |
@@ -560,8 +560,10 @@ feishu-cli dept children <department_id>
       "docs:document.comment:read",
       "docs:document.comment:write_only",
       "docs:permission.member:create",
+      "docx:document.block:convert",
       "docx:document:create",
       "docx:document:readonly",
+      "docx:document:write_only",
       "drive:drive.metadata:readonly",
       "drive:drive.search:readonly",
       "drive:drive:version:readonly",
@@ -604,12 +606,7 @@ feishu-cli dept children <department_id>
       "task:tasklist:read",
       "wiki:wiki:readonly"
     ],
-    "user": [
-      "docs:document.comment:create",
-      "docs:document.comment:read",
-      "docs:document.comment:update",
-      "docs:document.comment:write_only"
-    ]
+    "user": []
   }
 }
 ```
