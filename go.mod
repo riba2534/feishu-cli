@@ -3,7 +3,7 @@ module github.com/riba2534/feishu-cli
 go 1.21
 
 require (
-	github.com/larksuite/oapi-sdk-go/v3 v3.4.3
+	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
 	github.com/yuin/goldmark v1.7.0

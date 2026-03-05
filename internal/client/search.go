@@ -156,3 +156,188 @@ func SearchApps(opts SearchAppsOptions, userAccessToken string) (*SearchAppsResu
 
 	return result, nil
 }
+
+// SearchDocWikiOptions 搜索文档和 Wiki 的选项
+type SearchDocWikiOptions struct {
+	Query        string   // 搜索关键词
+	DocTypes     []string // 文档类型（doc/sheet/bitable/wiki/mindnote/file）
+	FolderTokens []string // 文件夹 Token 列表
+	SpaceIDs     []string // Wiki 空间 ID 列表
+	CreatorIDs   []string // 创建者 ID 列表
+	OnlyTitle    *bool    // 仅搜索标题
+	SortType     string   // 排序方式（EditedTime/CreatedTime/OpenedTime）
+	PageSize     int      // 每页数量
+	PageToken    string   // 分页 token
+}
+
+// SearchDocWikiResult 搜索文档和 Wiki 的结果
+type SearchDocWikiResult struct {
+	Total     int               // 总结果数
+	HasMore   bool              // 是否有更多
+	ResUnits  []*DocWikiResUnit // 搜索结果列表
+	PageToken string            // 分页 token
+}
+
+// DocWikiResUnit 文档搜索结果单元
+type DocWikiResUnit struct {
+	TitleHighlighted   string // 高亮标题
+	SummaryHighlighted string // 高亮摘要
+	EntityType         string // 结果类型
+	URL                string // 文档 URL
+	Token              string // 文档 Token
+	OwnerID            string // 所有者 ID
+	OwnerName          string // 所有者名称
+	DocTypes           string // 文档类型
+	CreateTime         int64  // 创建时间
+	UpdateTime         int64  // 更新时间
+}
+
+// SearchDocWiki 搜索文档和 Wiki
+// 注意：此 API 需要 User Access Token
+func SearchDocWiki(opts SearchDocWikiOptions, userAccessToken string) (*SearchDocWikiResult, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	// 构建请求体
+	bodyBuilder := larksearch.NewSearchDocWikiReqBodyBuilder().
+		Query(opts.Query)
+
+	// 如果有文档类型过滤
+	if len(opts.DocTypes) > 0 || len(opts.FolderTokens) > 0 || len(opts.CreatorIDs) > 0 || opts.OnlyTitle != nil || opts.SortType != "" {
+		// 判断是否包含 wiki 类型
+		hasWiki := false
+		for _, dt := range opts.DocTypes {
+			if dt == "wiki" {
+				hasWiki = true
+				break
+			}
+		}
+
+		if hasWiki && len(opts.SpaceIDs) > 0 {
+			// 使用 WikiFilter
+			wikiFilterBuilder := larksearch.NewWikiFilterBuilder()
+			if len(opts.SpaceIDs) > 0 {
+				wikiFilterBuilder.SpaceIds(opts.SpaceIDs)
+			}
+			if len(opts.CreatorIDs) > 0 {
+				wikiFilterBuilder.CreatorIds(opts.CreatorIDs)
+			}
+			if len(opts.DocTypes) > 0 {
+				wikiFilterBuilder.DocTypes(opts.DocTypes)
+			}
+			if opts.OnlyTitle != nil {
+				wikiFilterBuilder.OnlyTitle(*opts.OnlyTitle)
+			}
+			if opts.SortType != "" {
+				wikiFilterBuilder.SortType(opts.SortType)
+			}
+			bodyBuilder.WikiFilter(wikiFilterBuilder.Build())
+		} else {
+			// 使用 DocFilter
+			docFilterBuilder := larksearch.NewDocFilterBuilder()
+			if len(opts.DocTypes) > 0 {
+				docFilterBuilder.DocTypes(opts.DocTypes)
+			}
+			if len(opts.FolderTokens) > 0 {
+				docFilterBuilder.FolderTokens(opts.FolderTokens)
+			}
+			if len(opts.CreatorIDs) > 0 {
+				docFilterBuilder.CreatorIds(opts.CreatorIDs)
+			}
+			if opts.OnlyTitle != nil {
+				docFilterBuilder.OnlyTitle(*opts.OnlyTitle)
+			}
+			if opts.SortType != "" {
+				docFilterBuilder.SortType(opts.SortType)
+			}
+			bodyBuilder.DocFilter(docFilterBuilder.Build())
+		}
+	}
+
+	// 设置分页参数
+	if opts.PageSize > 0 {
+		bodyBuilder.PageSize(opts.PageSize)
+	}
+	if opts.PageToken != "" {
+		bodyBuilder.PageToken(opts.PageToken)
+	}
+
+	// 构建请求
+	req := larksearch.NewSearchDocWikiReqBuilder().
+		Body(bodyBuilder.Build()).
+		Build()
+
+	// 使用 User Access Token 调用 API
+	resp, err := client.Search.V2.DocWiki.Search(Context(), req,
+		larkcore.WithUserAccessToken(userAccessToken))
+	if err != nil {
+		return nil, fmt.Errorf("搜索文档失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("搜索文档失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	// 解析结果
+	result := &SearchDocWikiResult{
+		ResUnits: make([]*DocWikiResUnit, 0),
+	}
+
+	if resp.Data != nil {
+		if resp.Data.Total != nil {
+			result.Total = *resp.Data.Total
+		}
+		if resp.Data.HasMore != nil {
+			result.HasMore = *resp.Data.HasMore
+		}
+		if resp.Data.PageToken != nil {
+			result.PageToken = *resp.Data.PageToken
+		}
+
+		// 解析每个结果单元
+		for _, item := range resp.Data.ResUnits {
+			unit := &DocWikiResUnit{}
+
+			if item.TitleHighlighted != nil {
+				unit.TitleHighlighted = *item.TitleHighlighted
+			}
+			if item.SummaryHighlighted != nil {
+				unit.SummaryHighlighted = *item.SummaryHighlighted
+			}
+			if item.EntityType != nil {
+				unit.EntityType = *item.EntityType
+			}
+
+			// 解析元数据
+			if item.ResultMeta != nil {
+				if item.ResultMeta.Url != nil {
+					unit.URL = *item.ResultMeta.Url
+				}
+				if item.ResultMeta.Token != nil {
+					unit.Token = *item.ResultMeta.Token
+				}
+				if item.ResultMeta.OwnerId != nil {
+					unit.OwnerID = *item.ResultMeta.OwnerId
+				}
+				if item.ResultMeta.OwnerName != nil {
+					unit.OwnerName = *item.ResultMeta.OwnerName
+				}
+				if item.ResultMeta.DocTypes != nil {
+					unit.DocTypes = *item.ResultMeta.DocTypes
+				}
+				if item.ResultMeta.CreateTime != nil {
+					unit.CreateTime = int64(*item.ResultMeta.CreateTime)
+				}
+				if item.ResultMeta.UpdateTime != nil {
+					unit.UpdateTime = int64(*item.ResultMeta.UpdateTime)
+				}
+			}
+
+			result.ResUnits = append(result.ResUnits, unit)
+		}
+	}
+
+	return result, nil
+}

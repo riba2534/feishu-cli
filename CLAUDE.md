@@ -258,7 +258,15 @@ feishu-cli media upload image.png --parent-type docx_image --parent-node <doc_id
 feishu-cli comment list <file_token> --type docx
 feishu-cli comment resolve <file_token> <comment_id> --type docx
 feishu-cli comment reply list <file_token> <comment_id> --type docx
+
+# === 搜索 ===
 feishu-cli search messages "关键词" --user-access-token <token>
+feishu-cli search apps "审批" --user-access-token <token>
+feishu-cli search docs "产品需求" --user-access-token <token>
+feishu-cli search docs "季度报告" --doc-types DOC,SHEET --user-access-token <token>
+feishu-cli search docs "会议纪要" --folder-tokens fldcnxxxxxxxxxxxxxx --user-access-token <token>
+feishu-cli search docs "技术方案" --only-title --user-access-token <token>
+feishu-cli search docs "项目文档" --doc-types WIKI --space-ids space_xxxxxxxxxxxx --user-access-token <token>
 ```
 
 ## 块类型映射
@@ -320,6 +328,7 @@ feishu-cli search messages "关键词" --user-access-token <token>
 - 素材上传需指定 `--parent-type`（docx_image/docx_file 等）
 - 日历 API 时间格式 RFC3339（如 `2024-01-01T10:00:00+08:00`），任务 API 使用 V2 版本
 - 搜索 API 需要 User Access Token，不能使用 App Access Token
+- 搜索文档 API 支持的文档类型：DOC, SHEET, BITABLE, MINDNOTE, FILE, WIKI, DOCX, FOLDER, CATALOG, SLIDES, SHORTCUT
 - 画板 API 使用通用 HTTP 请求方式（client.Get/Post），非专用 SDK 方法
 - 用户信息 API 需要 `contact:user.base:readonly` 权限
 
@@ -388,7 +397,8 @@ feishu-cli search messages "关键词" --user-access-token <token>
 | 日历 | `calendar:calendar:readonly`, `calendar:calendar` | 需单独申请 |
 | 任务 | `task:task:read`, `task:task:write` | 需单独申请 |
 | 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
-| 搜索 | 需要 User Access Token | 用户授权 |
+| 搜索消息/应用 | 需要 User Access Token | 用户授权 |
+| 搜索文档 | 需要 User Access Token | 用户授权，支持 `search:read` 权限 |
 
 ## 发布 Release 规范
 
@@ -544,6 +554,7 @@ feishu-cli perm add <DOC_ID> --doc-type docx --member-type email --member-id use
 ✅ sheet read-plain/read-rich/write-rich/insert/append-rich/clear（V3 API）
 ✅ calendar get/primary/event-search/event-reply/attendee/freebusy
 ✅ user search/list + dept get/children
+✅ search messages/apps/docs（文档搜索支持类型过滤、文件夹范围、Wiki 空间等）
 ✅ Mermaid 图表导入（8 种类型全部验证，88 个图表 93.2% 成功率）
 ✅ PlantUML 图表导入（时序图、活动图已验证）
 ✅ 大规模导入：10,000+ 行 / 127 个图表 / 170+ 个表格

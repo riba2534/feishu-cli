@@ -114,7 +114,7 @@ feishu-cli doc import large-doc.md --title "大文档" \
 | **素材** | 上传 / 下载（图片、文件、音视频） |
 | **画板** | 下载图片、导入 Mermaid / PlantUML |
 | **评论** | 列出、添加、解决/恢复评论、回复管理 |
-| **搜索** | 消息搜索、应用搜索（需 User Access Token） |
+| **搜索** | 消息搜索、应用搜索、文档搜索（需 User Access Token） |
 | **用户** | 获取用户信息、用户搜索、部门用户列表 |
 | **通讯录** | 部门详情、子部门列表 |
 
@@ -212,7 +212,7 @@ Commands:
   dept      部门操作（详情、子部门列表）
   board     画板操作（导入图表、下载图片）
   comment   评论操作（列出、添加、解决/恢复、回复管理）
-  search    搜索操作（消息、应用）
+  search    搜索操作（消息、应用、文档）
   config    配置管理
 ```
 
@@ -416,6 +416,31 @@ feishu-cli file stats <file_token> --doc-type docx
 </details>
 
 <details>
+<summary>搜索操作</summary>
+
+```bash
+# 搜索消息（需要 User Access Token）
+feishu-cli search messages "关键词" --user-access-token <token>
+feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy --user-access-token <token>
+
+# 搜索应用（需要 User Access Token）
+feishu-cli search apps "审批" --user-access-token <token>
+
+# 搜索文档和 Wiki（需要 User Access Token）
+feishu-cli search docs "产品需求" --user-access-token <token>
+feishu-cli search docs "季度报告" --doc-types DOC,SHEET --user-access-token <token>
+feishu-cli search docs "会议纪要" --folder-tokens fldcnxxxxxxxxxxxxxx --user-access-token <token>
+feishu-cli search docs "技术方案" --only-title --user-access-token <token>
+feishu-cli search docs "项目文档" --doc-types WIKI --space-ids space_xxxxxxxxxxxx --user-access-token <token>
+
+# 使用环境变量（推荐）
+export FEISHU_USER_ACCESS_TOKEN="u-xxx"
+feishu-cli search docs "产品需求"
+```
+
+</details>
+
+<details>
 <summary>更多命令</summary>
 
 ```bash
@@ -546,7 +571,8 @@ feishu-cli dept children <department_id>
 | 日历 | `calendar:calendar:readonly`, `calendar:calendar` | 需单独申请 |
 | 任务 | `task:task:read`, `task:task:write` | 需单独申请 |
 | 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
-| 搜索 | 需要 User Access Token | 用户授权 |
+| 搜索消息/应用 | 需要 User Access Token | 用户授权 |
+| 搜索文档 | 需要 User Access Token | 用户授权，支持 `search:read` 权限 |
 
 ## 技术栈
 

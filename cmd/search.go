@@ -7,11 +7,12 @@ import (
 var searchCmd = &cobra.Command{
 	Use:   "search",
 	Short: "搜索相关命令",
-	Long: `搜索相关命令，支持搜索消息和应用。
+	Long: `搜索相关命令，支持搜索消息、应用和文档。
 
 子命令:
   messages  搜索消息
   apps      搜索应用
+  docs      搜索文档和 Wiki
 
 注意:
   搜索功能需要 User Access Token（用户授权令牌）。
@@ -32,7 +33,13 @@ var searchCmd = &cobra.Command{
   feishu-cli search messages "关键词"
 
   # 搜索应用
-  feishu-cli search apps "关键词" --user-access-token <token>`,
+  feishu-cli search apps "关键词" --user-access-token <token>
+
+  # 搜索文档
+  feishu-cli search docs "产品需求" --user-access-token <token>
+
+  # 搜索特定类型的文档
+  feishu-cli search docs "季度报告" --doc-types doc,sheet --user-access-token <token>`,
 }
 
 func init() {
