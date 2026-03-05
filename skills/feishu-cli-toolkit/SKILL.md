@@ -71,9 +71,9 @@ feishu-cli sheet merge <token> "Sheet1!A1:B2"
 feishu-cli sheet unmerge <token> "Sheet1!A1:B2"
 feishu-cli sheet style <token> "Sheet1!A1:C3" --bold --bg-color "#FF0000"
 
-# 查找替换
-feishu-cli sheet find <token> <sheet_id> --find "旧文本"
-feishu-cli sheet replace <token> <sheet_id> --find "旧文本" --replace "新文本"
+# 查找替换（--range 必填）
+feishu-cli sheet find <token> <sheet_id> "关键词" --range "A1:Z100"
+feishu-cli sheet replace <token> <sheet_id> "查找词" "替换词" --range "A1:Z100"
 ```
 
 ### API 限制
@@ -108,10 +108,10 @@ feishu-cli calendar create-event \
   --end "2024-01-21T15:00:00+08:00" \
   --description "讨论本周进展"
 
-feishu-cli calendar list-events --calendar-id <id> --start <RFC3339> --end <RFC3339>
-feishu-cli calendar get-event --calendar-id <id> --event-id <event_id>
-feishu-cli calendar update-event --calendar-id <id> --event-id <event_id> --summary "新标题"
-feishu-cli calendar delete-event --calendar-id <id> --event-id <event_id>
+feishu-cli calendar list-events <calendar_id> --start-time <RFC3339> --end-time <RFC3339>
+feishu-cli calendar get-event <calendar_id> <event_id>
+feishu-cli calendar update-event <calendar_id> <event_id> --summary "新标题"
+feishu-cli calendar delete-event <calendar_id> <event_id>
 
 # 搜索日程
 feishu-cli calendar event-search --calendar-id <id> --query "周会"
@@ -505,3 +505,14 @@ feishu-cli dept children <department_id> [--department-id-type open_department_i
 | `no permission` | 应用权限不足 | 检查应用权限配置 |
 | `invalid parameter` | 参数格式错误 | 检查参数类型和格式 |
 | `not found` | 资源不存在 | 检查 ID/Token 是否正确 |
+
+### 已知问题（v1.7.0）
+
+| 模块 | 问题 | 说明 |
+|------|------|------|
+| 文件 | `file version create` BUG | JSON 反序列化错误（status 字段类型不匹配），无法创建版本 |
+| 文档 | `doc import-file` BUG | DOCX/TXT 文件导入失败（field validation failed），使用 `doc import`（Markdown 导入）替代 |
+| 表格 | `sheet find/replace` 需要 `--range` | 不提供 `--range` 参数会报 field validation failed |
+| 表格 | `sheet protect` API 限制 | 即使参数正确也可能返回 invalid operation |
+| 日历 | `freebusy --user-id` 实际必填 | 帮助文档标记为可选，但不提供会报 invalid parameters |
+| 权限 | `perm password` 需要企业版 | 创建/更新/删除分享密码可能返回 Permission denied |

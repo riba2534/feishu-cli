@@ -238,6 +238,7 @@ feishu-cli perm public-update docx_xxxxxx \
 
 ```bash
 feishu-cli perm password create docx_xxxxxx
+# 注意：可能需要特定企业版功能或额外 scope，测试时返回 Permission denied
 ```
 
 ### 删除分享密码

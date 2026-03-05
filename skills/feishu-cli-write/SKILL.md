@@ -36,6 +36,16 @@ feishu-cli doc create --title "文档标题" --output json
 
 **Markdown 作为中间态**：本地文档与飞书云文档之间通过 Markdown 格式进行转换，中间文件存储在 `/tmp` 目录中。
 
+> **CRITICAL: 禁止对已有文档全量覆盖**
+>
+> **绝对禁止**对已有文档使用 `doc import --document-id <id>` 全量覆盖！这会：
+> - 丢失所有划词评论（inline comments）
+> - 破坏画板/白板引用（变成空占位块）
+> - 丢失用户手动编辑的格式和内容
+>
+> 更新已有文档**必须使用增量方式**：`doc add`（追加）、`doc update`（修改块）、`doc delete`（删除块）。
+> `doc import --document-id` 仅允许在用户**明确要求全量替换**时使用。
+
 ## 使用方法
 
 ```bash
@@ -72,20 +82,80 @@ feishu-cli doc create --title "文档标题" --output json
    - 提供文档链接
    - 发送飞书消息通知
 
-### 更新已有文档
+### 更新已有文档（增量更新）
 
-1. **先读取现有内容**
-   ```bash
-   feishu-cli doc export <document_id> --output /tmp/feishu_existing.md
-   ```
+**原则**：只修改需要变更的部分，保留其余内容不动。
 
-2. **修改内容**
-   - 根据用户需求修改 Markdown 文件
+#### 场景 A：在文档末尾追加内容
 
-3. **重新导入**
-   ```bash
-   feishu-cli doc import /tmp/feishu_updated.md --document-id <document_id>
-   ```
+最常见的场景。直接用 `doc add` 以 Markdown 格式追加：
+
+```bash
+# 1. 准备要追加的内容（只写新增部分，不要包含已有内容）
+cat > /tmp/feishu_append.md << 'EOF'
+## 新增章节标题
+
+新增的内容...
+EOF
+
+# 2. 追加到文档末尾
+feishu-cli doc add <document_id> /tmp/feishu_append.md --content-type markdown
+```
+
+#### 场景 B：在文档指定位置插入内容
+
+```bash
+# 1. 获取文档块结构，找到插入点
+feishu-cli doc blocks <document_id>
+
+# 2. 在指定父块的指定位置插入
+feishu-cli doc add <document_id> /tmp/feishu_insert.md \
+  --content-type markdown \
+  --block-id <parent_block_id> \
+  --index <position>
+```
+
+#### 场景 C：修改已有块的内容
+
+```bash
+# 1. 获取文档块结构，找到要修改的 block_id
+feishu-cli doc blocks <document_id>
+
+# 2. 更新指定块
+feishu-cli doc update <document_id> <block_id> \
+  --content '{"update_text_elements":{"elements":[{"text_run":{"content":"更新后的文本"}}]}}'
+```
+
+#### 场景 D：删除指定范围的块
+
+```bash
+# 删除父块下索引 2~4 的子块
+feishu-cli doc delete <document_id> <parent_block_id> --start 2 --end 5
+
+# 删除父块下所有子块
+feishu-cli doc delete <document_id> <parent_block_id> --all
+```
+
+#### 场景 E：替换某个章节
+
+先删除旧章节的块，再在同一位置插入新内容：
+
+```bash
+# 1. 获取块结构，定位章节的块范围
+feishu-cli doc blocks <document_id>
+
+# 2. 删除旧章节（假设在父块下索引 5~8）
+feishu-cli doc delete <document_id> <parent_block_id> --start 5 --end 9 -f
+
+# 3. 在同一位置插入新内容
+feishu-cli doc add <document_id> /tmp/feishu_new_section.md \
+  --content-type markdown \
+  --block-id <parent_block_id> \
+  --index 5
+```
+
+> **何时允许全量覆盖**：仅当用户明确说"重写整个文档"、"全量替换"时，才可使用
+> `feishu-cli doc import /tmp/file.md --document-id <id>`。默认必须增量更新。
 
 ## 支持的 Markdown 语法
 

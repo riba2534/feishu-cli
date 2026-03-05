@@ -102,7 +102,7 @@ allowed-tools: Read
 | 饼图 | `pie` | 0 (auto) | |
 | 思维导图 | `mindmap` | 1 (mindmap) | |
 
-### 6 条强制性规则
+### 7 条强制性规则
 
 #### 规则 1：禁止在标签中使用花括号 `{}`
 
@@ -183,7 +183,30 @@ sequenceDiagram
 
 **建议**：超过安全阈值时，拆分为多个小图。
 
-#### 规则 6：避免过于复杂的嵌套结构
+#### 规则 6：节点标签换行必须用 `<br>` 而非 `\n`
+
+飞书画板不支持 Mermaid 节点标签中的 `\n` 转义符，会原样显示为 `\n` 文本。需要使用 `<br>` 或 `<br/>` 实现换行，也可以在源码中写真实换行（需用双引号包裹标签）。
+
+```markdown
+<!-- ❌ 错误：\n 会原样显示为文本 -->
+flowchart TD
+    A["normalizePort\n(detect-port)"]
+
+<!-- ✅ 正确：使用 <br> -->
+flowchart TD
+    A["normalizePort<br>(detect-port)"]
+
+<!-- ✅ 正确：使用 <br/> -->
+flowchart TD
+    A["normalizePort<br/>(detect-port)"]
+
+<!-- ✅ 正确：源码中直接换行（标签必须用双引号） -->
+flowchart TD
+    A["normalizePort
+(detect-port)"]
+```
+
+#### 规则 7：避免过于复杂的嵌套结构
 
 多层 subgraph 嵌套、大量条件分支等复杂结构会增加渲染失败概率。保持图表简洁。
 
@@ -197,6 +220,7 @@ sequenceDiagram
 - [ ] 方括号标签中是否有冒号？→ 加双引号
 - [ ] sequenceDiagram 参与者是否 ≤ 8？
 - [ ] sequenceDiagram alt 嵌套是否 ≤ 1 层？
+- [ ] 节点标签换行是否使用了 `\n`？→ 改用 `<br>` 或 `<br/>`
 - [ ] 整体复杂度是否可控？→ 考虑拆分
 
 > 详细的 8 种图表模板和更多正反示例见 `references/mermaid-spec.md`。

@@ -396,3 +396,9 @@ feishu-cli doc import-file local_file.docx --type docx --name "文档名称"
 # 导入 Word 文档
 feishu-cli doc import-file ~/Documents/report.docx --type docx --name "季度报告"
 ```
+
+### 已知问题
+
+> **BUG（v1.7.0）**：`doc import-file` 存在 bug，文件上传成功但创建导入任务时报
+> `field validation failed`（API: POST /open-apis/drive/v1/import_tasks），即使使用合法的 .docx 文件也会失败。
+> 请使用 `feishu-cli doc import` (Markdown 导入) 作为替代方案。
