@@ -13,6 +13,7 @@ type Config struct {
 	AppID           string       `mapstructure:"app_id"`
 	AppSecret       string       `mapstructure:"app_secret"`
 	UserAccessToken string       `mapstructure:"user_access_token"`
+	TokenMode       string       `mapstructure:"token_mode"`
 	BaseURL         string       `mapstructure:"base_url"`
 	Debug           bool         `mapstructure:"debug"`
 	Export          ExportConfig `mapstructure:"export"`
@@ -66,6 +67,7 @@ func Init(cfgFile string) error {
 	_ = viper.BindEnv("app_id", "FEISHU_APP_ID")
 	_ = viper.BindEnv("app_secret", "FEISHU_APP_SECRET")
 	_ = viper.BindEnv("user_access_token", "FEISHU_USER_ACCESS_TOKEN")
+	_ = viper.BindEnv("token_mode", "FEISHU_TOKEN_MODE")
 	_ = viper.BindEnv("base_url", "FEISHU_BASE_URL")
 	_ = viper.BindEnv("debug", "FEISHU_DEBUG")
 

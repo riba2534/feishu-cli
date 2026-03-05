@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -11,6 +12,7 @@ import (
 var (
 	cfgFile   string
 	debug     bool
+	tokenMode string
 	version   = "dev"
 	buildTime = "unknown"
 )
@@ -42,6 +44,8 @@ var rootCmd = &cobra.Command{
   calendar  日历操作（日历、日程管理）
   search    搜索操作（消息、应用搜索，需要用户授权）
   config    配置管理（初始化配置）
+  login     OAuth 登录（获取用户令牌）
+  logout    退出登录（清除用户令牌）
 
 配置方式:
   1. 环境变量（推荐）:
@@ -66,6 +70,12 @@ var rootCmd = &cobra.Command{
   # 发送消息
   feishu-cli msg send --receive-id-type email --receive-id user@example.com --text "你好"
 
+  # OAuth 登录（使用用户身份访问飞书资源）
+  feishu-cli login
+
+  # 使用用户身份模式执行命令
+  feishu-cli doc export <document_id> --token-mode user
+
 更多信息请访问: https://github.com/riba2534/feishu-cli`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Skip config initialization for group commands (those with subcommands but no own RunE)
@@ -74,7 +84,7 @@ var rootCmd = &cobra.Command{
 			return nil
 		}
 		switch cmd.Name() {
-		case "init", "help", "completion", "version":
+		case "init", "help", "completion", "version", "logout":
 			return nil
 		}
 
@@ -86,6 +96,25 @@ var rootCmd = &cobra.Command{
 		if debug {
 			cfg := config.Get()
 			cfg.Debug = true
+		}
+
+		// 解析 token-mode（支持环境变量 FEISHU_TOKEN_MODE）
+		mode := tokenMode
+		if mode == "" {
+			mode = os.Getenv("FEISHU_TOKEN_MODE")
+		}
+		if mode != "" {
+			if _, err := auth.ParseTokenMode(mode); err != nil {
+				return err
+			}
+			cfg := config.Get()
+			cfg.TokenMode = mode
+		}
+
+		// 初始化令牌管理器（用于自动刷新 user_access_token）
+		cfg := config.Get()
+		if cfg.AppID != "" && cfg.AppSecret != "" {
+			auth.InitManager(cfg.AppID, cfg.AppSecret, cfg.BaseURL)
 		}
 
 		return nil
@@ -103,4 +132,5 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径（默认: ~/.feishu-cli/config.yaml）")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "启用调试模式")
+	rootCmd.PersistentFlags().StringVar(&tokenMode, "token-mode", "", "令牌模式: auto（默认，优先用户令牌）、user（强制用户令牌）、tenant（强制应用令牌）")
 }
