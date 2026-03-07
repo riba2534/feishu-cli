@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -109,6 +110,7 @@ type MarkdownToBlock struct {
 	options    ConvertOptions
 	basePath   string // base path for resolving relative image paths
 	imageStats ImageStats
+	imageDatas []*ImageData
 }
 
 // NewMarkdownToBlock creates a new converter
@@ -146,6 +148,7 @@ func FlattenBlockNodes(nodes []*BlockNode) []*larkdocx.Block {
 type ConvertResult struct {
 	BlockNodes []*BlockNode // 支持嵌套层级的块树
 	TableDatas []*TableData // Table data in order of appearance, used for filling content
+	ImageDatas []*ImageData // Image data in order of appearance, used for upload+replace
 	ImageStats ImageStats   // 图片处理统计
 }
 
@@ -237,6 +240,7 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 		return nil, err
 	}
 
+	result.ImageDatas = c.imageDatas
 	result.ImageStats = c.imageStats
 	return result, nil
 }
@@ -991,13 +995,21 @@ func (c *MarkdownToBlock) convertImage(node *ast.Image) (*larkdocx.Block, error)
 		return c.createImagePlaceholder(dest), nil
 	}
 
-	// 飞书 Open API 限制：DocX 文档无法通过 API 插入带图片的 Image 块。
-	// Drive upload API 不支持 DocX block ID 作为 parent_node（返回 "parent node not exist"），
-	// 且 replace_image 在 token 通过 documentID 上传时返回 "relation mismatch"。
-	// 因此创建空 Image 块作为占位符，用户可在飞书网页端手动添加图片。
-	// 参考：https://github.com/cso1z/Feishu-MCP/issues/32
-	c.imageStats.Skipped++
+	// 创建空 Image 块，后续通过 upload media + replace_image 填充实际图片
 	blockType := int(BlockTypeImage)
+
+	// 解析图片来源路径
+	isLocal := !strings.HasPrefix(dest, "http://") && !strings.HasPrefix(dest, "https://")
+	source := dest
+	if isLocal && !filepath.IsAbs(dest) {
+		source = filepath.Join(c.basePath, dest)
+	}
+
+	c.imageDatas = append(c.imageDatas, &ImageData{
+		Source:  source,
+		IsLocal: isLocal,
+	})
+
 	return &larkdocx.Block{
 		BlockType: &blockType,
 		Image:     &larkdocx.Image{},

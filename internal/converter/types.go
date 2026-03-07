@@ -103,9 +103,17 @@ type ConvertOptions struct {
 	ExpandMentions      bool // 导出时展开 @用户为友好格式（默认 false，CLI 默认 true）
 }
 
+// ImageData 记录待上传的图片信息（在文档块创建后进行上传+替换）
+type ImageData struct {
+	Source   string // 图片来源：本地路径或 HTTP(S) URL
+	IsLocal  bool   // true 表示本地文件，false 表示网络 URL
+}
+
 // ImageStats 记录图片处理统计
 type ImageStats struct {
-	Skipped int // 跳过（API 不支持插入图片）数
+	Skipped  int // 跳过（feishu:// 协议等无法处理的）数
+	Uploaded int // 成功上传数
+	Failed   int // 上传失败数
 }
 
 // MentionUserInfo 保存 @用户 的解析信息

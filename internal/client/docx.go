@@ -802,6 +802,17 @@ func buildElementsJSON(elements []*larkdocx.TextElement) []map[string]any {
 	return result
 }
 
+// ReplaceBlockImage replaces an empty image block with an uploaded image.
+// It uploads the local file as media, then calls UpdateBlock with replace_image.
+func ReplaceBlockImage(documentID string, blockID string, fileToken string) error {
+	updateContent := map[string]any{
+		"replace_image": map[string]any{
+			"token": fileToken,
+		},
+	}
+	return UpdateBlock(documentID, blockID, updateContent)
+}
+
 // GetTableCellIDs retrieves cell block IDs from a table block
 func GetTableCellIDs(documentID string, tableBlockID string) ([]string, error) {
 	block, err := GetBlock(documentID, tableBlockID)

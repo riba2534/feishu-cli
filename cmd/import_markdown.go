@@ -220,6 +220,20 @@ type diagramResult struct {
 	retries int
 }
 
+// imageTask 表示一个待上传的图片任务
+type imageTask struct {
+	index        int    // 序号 (1-based)
+	imageBlockID string // 创建的空 Image 块 ID
+	imageData    *converter.ImageData
+}
+
+// imageResult 表示图片上传的结果
+type imageResult struct {
+	task    imageTask
+	success bool
+	err     error
+}
+
 // tableTask 表示一个待填充的表格任务
 type tableTask struct {
 	index        int // 序号 (1-based)
@@ -247,6 +261,9 @@ type importStats struct {
 	tableSuccess    int
 	tableFailed     int
 	imageSkipped    int
+	imageTotal      int
+	imageSuccess    int
+	imageFailed     int
 	fallbackSuccess int
 	fallbackFailed  int
 	phase1Duration  time.Duration
@@ -366,18 +383,19 @@ var importMarkdownCmd = &cobra.Command{
 		fmt.Println("=== 阶段 1/3: 创建文档块 ===")
 		phase1Start := time.Now()
 
-		dTasks, tTasks, err := phase1CreateBlocks(documentID, segments, uploadImages, basePath, stats, verbose)
+		dTasks, tTasks, iTasks, err := phase1CreateBlocks(documentID, segments, uploadImages, basePath, stats, verbose)
 		if err != nil {
 			return err
 		}
 
 		stats.phase1Duration = time.Since(phase1Start)
 		stats.tableTotal = len(tTasks)
-		fmt.Printf("[阶段1] 完成 (%.1fs), 块: %d, 待填表格: %d, 待导入图表: %d\n\n",
-			stats.phase1Duration.Seconds(), stats.totalBlocks, len(tTasks), len(dTasks))
+		stats.imageTotal = len(iTasks)
+		fmt.Printf("[阶段1] 完成 (%.1fs), 块: %d, 待填表格: %d, 待导入图表: %d, 待上传图片: %d\n\n",
+			stats.phase1Duration.Seconds(), stats.totalBlocks, len(tTasks), len(dTasks), len(iTasks))
 
 		// === 阶段 2/3: 并发处理 ===
-		if len(dTasks) > 0 || len(tTasks) > 0 {
+		if len(dTasks) > 0 || len(tTasks) > 0 || len(iTasks) > 0 {
 			// 阶段 1 大量 API 调用后等待配额恢复，避免阶段 2 立即触发频率限制
 			if stats.totalBlocks > 30 {
 				cooldown := 5 * time.Second
@@ -386,16 +404,17 @@ var importMarkdownCmd = &cobra.Command{
 				}
 				time.Sleep(cooldown)
 			}
-			fmt.Printf("=== 阶段 2/3: 并发处理 (图表×%d, 表格×%d) ===\n", diagramWorkers, tableWorkers)
+			fmt.Printf("=== 阶段 2/3: 并发处理 (图表×%d, 表格×%d, 图片: %d) ===\n", diagramWorkers, tableWorkers, len(iTasks))
 			phase2Start := time.Now()
 
-			failedDiagrams := phase2ConcurrentProcess(documentID, dTasks, tTasks, diagramWorkers, tableWorkers, diagramRetries, stats, verbose)
+			failedDiagrams := phase2ConcurrentProcess(documentID, dTasks, tTasks, iTasks, diagramWorkers, tableWorkers, diagramRetries, stats, verbose)
 
 			stats.phase2Duration = time.Since(phase2Start)
-			fmt.Printf("[阶段2] 完成 (%.1fs), 图表: %d/%d, 表格: %d/%d\n\n",
+			fmt.Printf("[阶段2] 完成 (%.1fs), 图表: %d/%d, 表格: %d/%d, 图片: %d/%d\n\n",
 				stats.phase2Duration.Seconds(),
 				stats.diagramSuccess, stats.diagramTotal,
-				stats.tableSuccess, stats.tableTotal)
+				stats.tableSuccess, stats.tableTotal,
+				stats.imageSuccess, stats.imageTotal)
 
 			// === 阶段 3/3: 降级处理 ===
 			if len(failedDiagrams) > 0 {
@@ -428,6 +447,9 @@ var importMarkdownCmd = &cobra.Command{
 				"table_total":      stats.tableTotal,
 				"table_success":    stats.tableSuccess,
 				"table_failed":     stats.tableFailed,
+				"image_total":      stats.imageTotal,
+				"image_success":    stats.imageSuccess,
+				"image_failed":     stats.imageFailed,
 				"image_skipped":    stats.imageSkipped,
 				"duration_seconds": totalDuration.Seconds(),
 				"phase1_seconds":   stats.phase1Duration.Seconds(),
@@ -440,8 +462,11 @@ var importMarkdownCmd = &cobra.Command{
 			fmt.Println("导入完成!")
 			fmt.Printf("  文档ID: %s\n", documentID)
 			fmt.Printf("  添加块数: %d\n", stats.totalBlocks)
+			if stats.imageTotal > 0 {
+				fmt.Printf("  图片: %d/%d 成功\n", stats.imageSuccess, stats.imageTotal)
+			}
 			if stats.imageSkipped > 0 {
-				fmt.Printf("  图片: %d 张 (已创建空占位块，飞书 API 暂不支持通过 Open API 插入图片)\n", stats.imageSkipped)
+				fmt.Printf("  图片跳过: %d 张 (feishu:// 协议或禁用上传)\n", stats.imageSkipped)
 			}
 			if stats.tableTotal > 0 {
 				fmt.Printf("  表格: %d/%d 成功\n", stats.tableSuccess, stats.tableTotal)
@@ -466,7 +491,7 @@ var importMarkdownCmd = &cobra.Command{
 	},
 }
 
-// phase1CreateBlocks 顺序创建所有文档块，收集待处理的图表和表格任务
+// phase1CreateBlocks 顺序创建所有文档块，收集待处理的图表、表格和图片任务
 func phase1CreateBlocks(
 	documentID string,
 	segments []segment,
@@ -474,9 +499,10 @@ func phase1CreateBlocks(
 	basePath string,
 	stats *importStats,
 	verbose bool,
-) ([]diagramTask, []tableTask, error) {
+) ([]diagramTask, []tableTask, []imageTask, error) {
 	var dTasks []diagramTask
 	var tTasks []tableTask
+	var iTasks []imageTask
 	diagramIdx := 0
 
 	for segIdx, seg := range segments {
@@ -493,10 +519,10 @@ func phase1CreateBlocks(
 			conv := converter.NewMarkdownToBlock([]byte(seg.content), options, basePath)
 			result, err := conv.ConvertWithTableData()
 			if err != nil {
-				return nil, nil, fmt.Errorf("转换 Markdown 失败 (段落 %d): %w", segIdx+1, err)
+				return nil, nil, nil, fmt.Errorf("转换 Markdown 失败 (段落 %d): %w", segIdx+1, err)
 			}
 
-			// 累加图片跳过统计（飞书 API 不支持通过 Open API 插入图片，仅创建空占位块）
+			// 累加图片跳过统计（feishu:// 协议等无法处理的图片）
 			stats.imageSkipped += result.ImageStats.Skipped
 
 			if len(result.BlockNodes) == 0 {
@@ -514,11 +540,15 @@ func phase1CreateBlocks(
 				}
 			}
 
-			// 记录表格块的索引
+			// 记录表格块和图片块的索引
 			var tableIndices []int
+			var imageIndices []int
 			for i, block := range topLevelBlocks {
 				if block.BlockType != nil && *block.BlockType == int(converter.BlockTypeTable) {
 					tableIndices = append(tableIndices, i)
+				}
+				if block.BlockType != nil && *block.BlockType == int(converter.BlockTypeImage) {
+					imageIndices = append(imageIndices, i)
 				}
 			}
 
@@ -540,7 +570,7 @@ func phase1CreateBlocks(
 					RetryOnRateLimit: true,
 				})
 				if createResult.Err != nil {
-					return nil, nil, fmt.Errorf("添加内容失败 (段落 %d): %w", segIdx+1, createResult.Err)
+					return nil, nil, nil, fmt.Errorf("添加内容失败 (段落 %d): %w", segIdx+1, createResult.Err)
 				}
 				stats.totalBlocks += len(createResult.Value)
 
@@ -633,6 +663,21 @@ func phase1CreateBlocks(
 				tableDataIdx++
 			}
 
+			// 收集图片任务（不立即上传）
+			imageDataIdx := 0
+			for _, imgIdx := range imageIndices {
+				if imgIdx >= len(createdBlockIDs) || imageDataIdx >= len(result.ImageDatas) {
+					continue
+				}
+
+				iTasks = append(iTasks, imageTask{
+					index:        len(iTasks) + 1,
+					imageBlockID: createdBlockIDs[imgIdx],
+					imageData:    result.ImageDatas[imageDataIdx],
+				})
+				imageDataIdx++
+			}
+
 		} else if seg.kind == "equation" {
 			// 块级公式：飞书 API 不支持创建 Equation 块（type=16），
 			// 降级为包含行内 Equation 元素的 Text 块，保留公式语义
@@ -703,14 +748,15 @@ func phase1CreateBlocks(
 		}
 	}
 
-	return dTasks, tTasks, nil
+	return dTasks, tTasks, iTasks, nil
 }
 
-// phase2ConcurrentProcess 并发处理图表导入和表格填充
+// phase2ConcurrentProcess 并发处理图表导入、表格填充和图片上传
 func phase2ConcurrentProcess(
 	documentID string,
 	dTasks []diagramTask,
 	tTasks []tableTask,
+	iTasks []imageTask,
 	diagramWorkers int,
 	tableWorkers int,
 	maxRetries int,
@@ -724,6 +770,8 @@ func phase2ConcurrentProcess(
 	diagramSem := make(chan struct{}, diagramWorkers)
 	// 表格信号量
 	tableSem := make(chan struct{}, tableWorkers)
+	// 图片信号量（复用 tableWorkers 数量）
+	imageSem := make(chan struct{}, tableWorkers)
 
 	// 启动图表工作
 	for i, task := range dTasks {
@@ -761,6 +809,26 @@ func phase2ConcurrentProcess(
 				stats.tableSuccess++
 			} else {
 				stats.tableFailed++
+			}
+			stats.mu.Unlock()
+		}(task)
+	}
+
+	// 启动图片工作
+	for _, task := range iTasks {
+		wg.Add(1)
+		go func(t imageTask) {
+			defer wg.Done()
+			imageSem <- struct{}{}
+			defer func() { <-imageSem }()
+
+			result := processImageTask(documentID, t, verbose)
+
+			stats.mu.Lock()
+			if result.success {
+				stats.imageSuccess++
+			} else {
+				stats.imageFailed++
 			}
 			stats.mu.Unlock()
 		}(task)
@@ -866,6 +934,78 @@ func processTableTask(documentID string, task tableTask, verbose bool) tableResu
 		syncPrintf("  ✓ 表格 %d 成功\n", task.index)
 	}
 	return tableResult{task: task, success: true}
+}
+
+// processImageTask 处理单个图片上传任务：下载(如需) → 上传 media → replace_image
+func processImageTask(documentID string, task imageTask, verbose bool) imageResult {
+	if verbose {
+		syncPrintf("  [图片 %d] 上传 %s...\n", task.index, task.imageData.Source)
+	}
+
+	// 确定本地文件路径
+	localPath := task.imageData.Source
+	if !task.imageData.IsLocal {
+		// 网络图片：先下载到临时文件
+		tmpFile, err := os.CreateTemp("", "feishu-img-*")
+		if err != nil {
+			syncPrintf("  ✗ 图片 %d 创建临时文件失败: %v\n", task.index, err)
+			return imageResult{task: task, success: false, err: err}
+		}
+		tmpPath := tmpFile.Name()
+		tmpFile.Close()
+		defer os.Remove(tmpPath)
+
+		if err := client.DownloadFromURL(task.imageData.Source, tmpPath); err != nil {
+			syncPrintf("  ✗ 图片 %d 下载失败: %v\n", task.index, err)
+			return imageResult{task: task, success: false, err: err}
+		}
+		localPath = tmpPath
+	}
+
+	// 上传图片到飞书 media
+	fileName := filepath.Base(localPath)
+	uploadResult := client.DoWithRetry(func() (string, http.Header, error) {
+		token, err := client.UploadMedia(localPath, "docx_image", documentID, fileName)
+		return token, nil, err
+	}, client.RetryConfig{
+		MaxRetries:       5,
+		RetryOnRateLimit: true,
+		OnRetry: func(attempt int, err error, wait time.Duration) {
+			if verbose {
+				syncPrintf("  ⚠ 图片 %d 上传重试 %d/5 (等待 %.1fs): %v\n",
+					task.index, attempt, wait.Seconds(), err)
+			}
+		},
+	})
+	if uploadResult.Err != nil {
+		syncPrintf("  ✗ 图片 %d 上传失败: %v\n", task.index, uploadResult.Err)
+		return imageResult{task: task, success: false, err: uploadResult.Err}
+	}
+
+	fileToken := uploadResult.Value
+
+	// 用 replace_image 替换空 Image 块
+	replaceResult := client.DoVoidWithRetry(func() (http.Header, error) {
+		return nil, client.ReplaceBlockImage(documentID, task.imageBlockID, fileToken)
+	}, client.RetryConfig{
+		MaxRetries:       5,
+		RetryOnRateLimit: true,
+		OnRetry: func(attempt int, err error, wait time.Duration) {
+			if verbose {
+				syncPrintf("  ⚠ 图片 %d 替换重试 %d/5 (等待 %.1fs): %v\n",
+					task.index, attempt, wait.Seconds(), err)
+			}
+		},
+	})
+	if replaceResult.Err != nil {
+		syncPrintf("  ✗ 图片 %d 替换失败: %v\n", task.index, replaceResult.Err)
+		return imageResult{task: task, success: false, err: replaceResult.Err}
+	}
+
+	if verbose {
+		syncPrintf("  ✓ 图片 %d 成功 (token: %s)\n", task.index, fileToken)
+	}
+	return imageResult{task: task, success: true}
 }
 
 // createNestedChildren 递归创建嵌套子块（如嵌套列表的父子关系）
