@@ -4,6 +4,7 @@ set -euo pipefail
 REPO="riba2534/feishu-cli"
 BINARY_NAME="feishu-cli"
 DEFAULT_INSTALL_DIR="/usr/local/bin"
+tmpdir=""
 
 # 颜色输出
 info()  { printf "\033[34m[INFO]\033[0m  %s\n" "$*"; }
@@ -85,7 +86,7 @@ detect_install_dir() {
 
 # 下载并安装
 install() {
-    local os arch version install_dir asset_name download_url tmpdir
+    local os arch version install_dir asset_name download_url
 
     os=$(detect_os)
     arch=$(detect_arch)
