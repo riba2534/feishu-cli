@@ -50,10 +50,10 @@ func RequireUserAccessToken(cmd *cobra.Command) (string, error) {
 	token := GetUserAccessToken(cmd)
 	if token == "" {
 		return "", fmt.Errorf("缺少 User Access Token，请通过以下方式之一提供:\n" +
-			"  1. 命令行参数: --user-access-token <token>\n" +
-			"  2. 环境变量: export FEISHU_USER_ACCESS_TOKEN=<token>\n" +
-			"  3. 配置文件: user_access_token: <token>\n" +
-			"  4. 运行 feishu-auth.py 进行 OAuth 授权")
+			"  1. 运行 feishu-cli auth login 进行 OAuth 授权（推荐）\n" +
+			"  2. 命令行参数: --user-access-token <token>\n" +
+			"  3. 环境变量: export FEISHU_USER_ACCESS_TOKEN=<token>\n" +
+			"  4. 配置文件: user_access_token: <token>")
 	}
 	return token, nil
 }

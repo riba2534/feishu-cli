@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -91,7 +92,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 	fmt.Printf("正在打开浏览器进行授权...\n")
 	fmt.Printf("如果浏览器未自动打开，请手动访问:\n%s\n\n", authURL)
 
-	if err := exec.Command("open", authURL).Start(); err != nil {
+	if err := openBrowser(authURL); err != nil {
 		fmt.Printf("无法自动打开浏览器: %v\n", err)
 	}
 
@@ -102,13 +103,13 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		if result.err != nil {
 			return result.err
 		}
-		return exchangeToken(cfg, result.code, redirectURI)
+		return exchangeToken(cfg, result.code)
 	case <-time.After(2 * time.Minute):
 		return fmt.Errorf("等待授权超时（2 分钟）")
 	}
 }
 
-func exchangeToken(cfg *config.Config, code, redirectURI string) error {
+func exchangeToken(cfg *config.Config, code string) error {
 	// 1. 获取 app_access_token
 	appToken, err := fetchAppAccessToken(cfg)
 	if err != nil {
@@ -116,9 +117,12 @@ func exchangeToken(cfg *config.Config, code, redirectURI string) error {
 	}
 
 	// 2. 用授权码换 user tokens
-	body := fmt.Sprintf(`{"grant_type":"authorization_code","code":"%s"}`, code)
+	reqBody, _ := json.Marshal(map[string]string{
+		"grant_type": "authorization_code",
+		"code":       code,
+	})
 	req, err := http.NewRequest("POST", cfg.BaseURL+"/open-apis/authen/v1/oidc/access_token",
-		strings.NewReader(body))
+		strings.NewReader(string(reqBody)))
 	if err != nil {
 		return err
 	}
@@ -236,4 +240,18 @@ func fetchAppAccessToken(cfg *config.Config) (string, error) {
 		return "", fmt.Errorf("code=%d: %s", result.Code, result.Msg)
 	}
 	return result.AppAccessToken, nil
+}
+
+// openBrowser 跨平台打开浏览器
+func openBrowser(url string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", url).Start()
+	case "linux":
+		return exec.Command("xdg-open", url).Start()
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	default:
+		return fmt.Errorf("不支持的操作系统: %s", runtime.GOOS)
+	}
 }
