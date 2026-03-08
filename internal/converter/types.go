@@ -103,9 +103,20 @@ type ConvertOptions struct {
 	ExpandMentions      bool // 导出时展开 @用户为友好格式（默认 false，CLI 默认 true）
 }
 
+// ConvertResult contains converted blocks and table data
+type ConvertResult struct {
+	BlockNodes   []*BlockNode // 支持嵌套层级的块树
+	TableDatas   []*TableData // Table data in order of appearance, used for filling content
+	ImageStats   ImageStats   // 图片处理统计
+	ImageSources []string     // 每个 Image Block 对应的图片来源路径，与 BlockNodes 中的 Image Block 按序对应
+}
+
 // ImageStats 记录图片处理统计
 type ImageStats struct {
-	Skipped int // 跳过（API 不支持插入图片）数
+	Total   int // 需要上传的图片总数
+	Success int // 上传成功数
+	Failed  int // 上传失败数
+	Skipped int // 跳过（feishu://media/ 引用或 upload-images=false）数
 }
 
 // MentionUserInfo 保存 @用户 的解析信息

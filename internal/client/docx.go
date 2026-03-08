@@ -241,6 +241,16 @@ func UpdateBlock(documentID string, blockID string, updateContent any) error {
 	return nil
 }
 
+// ReplaceImage replaces the image token of an Image block.
+// 用于图片三步法上传的第三步：将上传后的 fileToken 设置到 Image Block。
+func ReplaceImage(documentID, imageBlockID, fileToken string) error {
+	return UpdateBlock(documentID, imageBlockID, map[string]any{
+		"replace_image": map[string]any{
+			"token": fileToken,
+		},
+	})
+}
+
 // DeleteBlocks deletes child blocks from a parent block by index range
 // startIndex is the starting index (0-based), endIndex is exclusive
 func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex int) error {

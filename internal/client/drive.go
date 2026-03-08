@@ -67,10 +67,10 @@ func UploadMedia(filePath string, parentType string, parentNode string, fileName
 	return *resp.Data.FileToken, nil
 }
 
-// UploadMediaWithExtra uploads a file with extra routing parameter.
-// Required for docx_image: extra must be {"drive_route_token":"<document_id>"}.
+// UploadMediaWithExtra uploads a file to Feishu drive with extra parameter.
+// extra 为 JSON 字符串，用于指定扩展信息（如 {"drive_route_token":"documentID"}）。
 func UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra string) (string, error) {
-	cli, err := GetClient()
+	client, err := GetClient()
 	if err != nil {
 		return "", err
 	}
@@ -85,6 +85,7 @@ func UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra stri
 	if err != nil {
 		return "", fmt.Errorf("获取文件信息失败: %w", err)
 	}
+	fileSize := int(stat.Size())
 
 	if fileName == "" {
 		fileName = filepath.Base(filePath)
@@ -94,7 +95,7 @@ func UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra stri
 		FileName(fileName).
 		ParentType(parentType).
 		ParentNode(parentNode).
-		Size(int(stat.Size())).
+		Size(fileSize).
 		File(file)
 
 	if extra != "" {
@@ -105,16 +106,19 @@ func UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra stri
 		Body(bodyBuilder.Build()).
 		Build()
 
-	resp, err := cli.Drive.Media.UploadAll(Context(), req)
+	resp, err := client.Drive.Media.UploadAll(Context(), req)
 	if err != nil {
 		return "", fmt.Errorf("上传素材失败: %w", err)
 	}
+
 	if !resp.Success() {
 		return "", fmt.Errorf("上传素材失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
+
 	if resp.Data.FileToken == nil {
 		return "", fmt.Errorf("上传成功但未返回文件 Token")
 	}
+
 	return *resp.Data.FileToken, nil
 }
 

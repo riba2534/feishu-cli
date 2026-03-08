@@ -109,7 +109,7 @@ type MarkdownToBlock struct {
 	options      ConvertOptions
 	basePath     string // base path for resolving relative image paths
 	imageStats   ImageStats
-	imageSources []string // 待上传图片源（本地路径或 URL）
+	imageSources []string // 记录每个 Image Block 对应的图片来源路径
 }
 
 // NewMarkdownToBlock creates a new converter
@@ -141,14 +141,6 @@ func FlattenBlockNodes(nodes []*BlockNode) []*larkdocx.Block {
 		}
 	}
 	return result
-}
-
-// ConvertResult contains converted blocks and table data
-type ConvertResult struct {
-	BlockNodes   []*BlockNode // 支持嵌套层级的块树
-	TableDatas   []*TableData // Table data in order of appearance, used for filling content
-	ImageSources []string     // 待上传图片源（本地路径或 URL），与 Image 块一一对应
-	ImageStats   ImageStats   // 图片处理统计
 }
 
 // ConvertWithTableData converts Markdown to Feishu blocks and returns table data for content filling
@@ -994,7 +986,12 @@ func (c *MarkdownToBlock) convertImage(node *ast.Image) (*larkdocx.Block, error)
 		return c.createImagePlaceholder(dest), nil
 	}
 
-	// 创建空 Image 块，收集图片源用于 Phase 2 上传
+	// 图片三步法上传：
+	// 1. 创建空 Image Block → 获得 imageBlockID
+	// 2. UploadMediaWithExtra(filePath, "docx_image", imageBlockID, ..., extra) → 获得 fileToken
+	// 3. ReplaceImage(documentID, imageBlockID, fileToken) → 图片显示
+	// 此处仅创建空 Image Block，记录图片来源路径，实际上传在 cmd 层完成。
+	c.imageStats.Total++
 	c.imageSources = append(c.imageSources, dest)
 	blockType := int(BlockTypeImage)
 	return &larkdocx.Block{
