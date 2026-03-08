@@ -515,7 +515,6 @@ feishu-cli_v1.4.0_linux-amd64/
 | 表格导出 | 导出时表格单元格内容可能丢失（块类型 32） | 待修复 |
 | file quota | `file quota` 命令 SDK 未实现 | 不支持 |
 | board import CLI | 命令行单独导入画板，API 返回 404 | API 限制 |
-| board create-notes | API 格式问题 | API 限制 |
 
 ## 技能使用规范（Skills）
 
