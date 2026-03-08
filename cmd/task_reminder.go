@@ -41,10 +41,7 @@ var taskReminderAddCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		taskGuid := args[0]
 		minutes, _ := cmd.Flags().GetInt("minutes")
@@ -79,10 +76,7 @@ var taskReminderRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		taskGuid := args[0]
 		idsStr, _ := cmd.Flags().GetString("ids")

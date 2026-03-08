@@ -41,10 +41,7 @@ var tasklistCreateCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		name, _ := cmd.Flags().GetString("name")
 		output, _ := cmd.Flags().GetString("output")
@@ -83,10 +80,7 @@ var tasklistGetCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		tasklistGuid := args[0]
 		output, _ := cmd.Flags().GetString("output")
@@ -135,10 +129,7 @@ var tasklistListCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
@@ -193,10 +184,7 @@ var tasklistDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		tasklistGuid := args[0]
 

@@ -39,10 +39,7 @@ var taskSubtaskCreateCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		taskGuid := args[0]
 		summary, _ := cmd.Flags().GetString("summary")
@@ -82,10 +79,7 @@ var taskSubtaskListCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		taskGuid := args[0]
 		pageSize, _ := cmd.Flags().GetInt("page-size")

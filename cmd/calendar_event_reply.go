@@ -28,10 +28,7 @@ var calendarEventReplyCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		calendarID := args[0]
 		eventID := args[1]

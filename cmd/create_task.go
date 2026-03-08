@@ -42,10 +42,7 @@ var createTaskCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		summary, _ := cmd.Flags().GetString("summary")
 		description, _ := cmd.Flags().GetString("description")

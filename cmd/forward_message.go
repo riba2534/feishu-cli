@@ -41,10 +41,7 @@ var forwardMessageCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		messageID := args[0]
 		receiveID, _ := cmd.Flags().GetString("receive-id")

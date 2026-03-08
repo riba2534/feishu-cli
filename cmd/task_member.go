@@ -42,10 +42,7 @@ var taskMemberAddCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		taskGuid := args[0]
 		membersStr, _ := cmd.Flags().GetString("members")
@@ -95,10 +92,7 @@ var taskMemberRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		taskGuid := args[0]
 		membersStr, _ := cmd.Flags().GetString("members")

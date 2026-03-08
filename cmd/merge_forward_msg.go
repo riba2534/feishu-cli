@@ -42,10 +42,7 @@ var mergeForwardMsgCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		receiveID, _ := cmd.Flags().GetString("receive-id")
 		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")

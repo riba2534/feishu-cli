@@ -66,10 +66,7 @@ var sendMessageCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
 		receiveID, _ := cmd.Flags().GetString("receive-id")

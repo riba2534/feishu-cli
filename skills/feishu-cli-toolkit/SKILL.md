@@ -469,20 +469,18 @@ feishu-cli search apps "应用名" --user-access-token <token>
 # 搜索文档和 Wiki
 feishu-cli search docs "关键词" \
   --user-access-token <token> \
-  [--doc-types DOC,SHEET,WIKI] \
-  [--folder-tokens fldcnxxxxxxxxxxxxxx] \
-  [--space-ids space_xxxxxxxxxxxx] \
-  [--creator-ids ou_xxx] \
-  [--only-title] \
-  [--sort-type EditedTime|CreatedTime|OpenedTime]
+  [--docs-types doc,sheet,wiki] \
+  [--owner-ids ou_xxx] \
+  [--chat-ids oc_xxx] \
+  [--count 20] \
+  [--offset 0]
 ```
 
 ### 文档搜索要点
 
-- **文档类型必须大写**：DOC, SHEET, BITABLE, MINDNOTE, FILE, WIKI, DOCX, FOLDER, CATALOG, SLIDES, SHORTCUT
-- **搜索范围**：可按文件夹、Wiki 空间、创建者筛选
-- **搜索模式**：默认全文搜索，加 `--only-title` 仅搜索标题
-- **排序方式**：EditedTime（最后编辑）、CreatedTime（创建时间）、OpenedTime（最后打开）
+- **文档类型使用小写**：doc, docx, sheet, slides, bitable, mindnote, file, wiki, shortcut
+- **搜索范围**：可按所有者、群聊筛选
+- **分页**：通过 `--count` 和 `--offset` 控制（offset + count < 200）
 
 ### User Access Token 说明
 

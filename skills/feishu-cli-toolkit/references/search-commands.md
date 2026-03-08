@@ -138,8 +138,7 @@ feishu-cli search docs "产品需求" --user-access-token u-xxx
 
 ### 注意事项
 
-1. **文档类型必须大写**：`DOC`、`SHEET`、`WIKI` 等，小写会报错
+1. **文档类型使用小写**：`doc`、`sheet`、`wiki` 等（与 CLI `--docs-types` 帮助文本一致）
 2. **搜索范围**：只能搜索用户有权访问的文档
-3. **Wiki 搜索**：搜索 Wiki 时需要同时指定 `--doc-types WIKI` 和 `--space-ids`
-4. **分页**：使用 `--page-token` 获取更多结果
+3. **分页**：使用 `--offset` 和 `--count` 控制（offset + count < 200）
 

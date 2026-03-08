@@ -41,10 +41,7 @@ var replyMsgCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		messageID := args[0]
 		msgType, _ := cmd.Flags().GetString("msg-type")

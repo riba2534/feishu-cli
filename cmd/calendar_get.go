@@ -25,10 +25,7 @@ var calendarGetCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		calendarID := args[0]
 		output, _ := cmd.Flags().GetString("output")

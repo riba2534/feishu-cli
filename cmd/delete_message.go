@@ -33,15 +33,11 @@ var deleteMessageCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		messageID := args[0]
 
-		err = client.DeleteMessage(messageID, token)
-		if err != nil {
+		if err := client.DeleteMessage(messageID, token); err != nil {
 			return err
 		}
 

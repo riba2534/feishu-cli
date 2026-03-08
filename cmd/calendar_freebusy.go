@@ -31,10 +31,7 @@ var calendarFreebusyCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		startTime, _ := cmd.Flags().GetString("start")
 		endTime, _ := cmd.Flags().GetString("end")

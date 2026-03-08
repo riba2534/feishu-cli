@@ -47,10 +47,7 @@ var getMessageHistoryCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		containerIDType, _ := cmd.Flags().GetString("container-id-type")
 		containerID, _ := cmd.Flags().GetString("container-id")

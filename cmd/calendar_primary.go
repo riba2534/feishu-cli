@@ -21,10 +21,7 @@ var calendarPrimaryCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := client.RequireUserAccessToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		output, _ := cmd.Flags().GetString("output")
 
