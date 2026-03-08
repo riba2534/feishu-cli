@@ -400,7 +400,7 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 | `/feishu-cli-export` | 导出为 Markdown/PDF/Word，或从 DOCX 导入 | `/feishu-cli-export <doc_id> [path]` |
 | `/feishu-cli-perm` | 权限管理 | `/feishu-cli-perm <doc_token>` |
 | `/feishu-cli-msg` | 消息全功能管理（发送/回复/转发/Reaction/Pin） | `/feishu-cli-msg <receive_id>` |
-| `/feishu-cli-toolkit` | 综合工具箱（表格/日历/任务/群聊/画板/文件/素材/评论/知识库/搜索/通讯录） | `/feishu-cli-toolkit` |
+| `/feishu-cli-toolkit` | 综合工具箱（表格/日历/任务/群聊/画板/文件/素材/评论/知识库/搜索/通讯录/**附件下载**） | `/feishu-cli-toolkit` |
 | `feishu-cli-doc-guide` | 飞书文档创建规范（内部参考，不可直接调用） | — |
 
 ### 支持的 URL 格式

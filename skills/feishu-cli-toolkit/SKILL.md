@@ -2,10 +2,10 @@
 name: feishu-cli-toolkit
 description: >-
   飞书综合工具箱：电子表格、日历日程、任务管理、群聊管理、画板操作、PlantUML 图表、
-  文件管理、素材上传下载、文档评论、知识库、搜索、用户通讯录。当用户请求操作飞书表格、
-  查看日历、创建任务、管理群聊、操作画板、生成 PlantUML、管理文件、上传素材、
-  查看评论、查看知识库、搜索消息、搜索文档、查询用户信息、查询部门时使用。
-  涵盖 feishu-cli 除文档读写导入导出和权限管理外的全部功能。
+  文件管理、素材上传下载、文档评论、知识库、搜索、用户通讯录、文档附件下载。
+  当用户请求操作飞书表格、查看日历、创建任务、管理群聊、操作画板、生成 PlantUML、
+  管理文件、上传素材、查看评论、查看知识库、搜索消息、搜索文档、查询用户信息、查询部门、
+  下载文档附件时使用。涵盖 feishu-cli 除文档读写导入导出和权限管理外的全部功能。
 argument-hint: <module> <command> [args]
 user-invocable: true
 allowed-tools: Bash, Read, Write
@@ -13,7 +13,7 @@ allowed-tools: Bash, Read, Write
 
 # 飞书综合工具箱
 
-覆盖 feishu-cli 的 12 个功能模块，提供命令速查和核心用法。复杂模块的详细参考文档在 `references/` 目录中。
+覆盖 feishu-cli 的 13 个功能模块，提供命令速查和核心用法。复杂模块的详细参考文档在 `references/` 目录中。
 
 ## 模块速查表
 
@@ -31,6 +31,7 @@ allowed-tools: Bash, Read, Write
 | 10 | 知识库 | `wiki get/export/spaces/nodes/space-get` + `wiki member` | — |
 | 11 | 搜索 | `search messages/apps/docs`（需 User Access Token） | `references/search-commands.md` |
 | 12 | 用户和部门 | `user info/search/list` + `dept get/children` | — |
+| 13 | 附件下载 | `doc export` + `media download` 批量下载文档附件 | — |
 
 ---
 
@@ -270,9 +271,22 @@ flowchart、sequenceDiagram、classDiagram、stateDiagram-v2、erDiagram、gantt
 
 ---
 
-## 7. 文件管理
+## 7. 文件管理（云空间文件）
 
-飞书云空间（Drive）文件的完整管理，包括文件 CRUD、版本管理、元数据和统计。
+**定义**：管理飞书云空间（Drive）中的文件和文件夹，包括文档、表格、本地文件等的 CRUD、版本管理、元数据和统计。
+
+**适用场景**：
+- 管理云空间文件夹结构（创建文件夹、移动/复制文件）
+- 下载云空间中的独立文件（如 PDF、Word、Excel 等）
+- 管理文件版本和元数据
+
+**与素材/附件的区别**：
+| 维度 | 云空间文件 | 素材（media） | 文档附件 |
+|------|-----------|--------------|---------|
+| 存储位置 | 云空间（Drive） | 临时素材库 | 文档内嵌 |
+| 管理方式 | 独立文件管理 | 依附于文档/消息 | 依附于文档 |
+| 下载命令 | `file download` | `media download` | `doc export` + `media download` |
+| 权限 | `drive:drive` | `drive:drive` | `docx:document` + `drive:file:download` |
 
 ### 常用命令
 
@@ -311,9 +325,22 @@ feishu-cli file stats <file_token> --doc-type docx        # 获取统计信息
 
 ---
 
-## 8. 素材管理
+## 8. 素材管理（Media）
 
-上传图片/文件到飞书云空间，或下载已有素材。
+**定义**：管理飞书素材系统中的临时文件，包括上传到文档/消息的图片和附件，以及下载已上传的素材。
+
+**适用场景**：
+- 上传图片或文件到飞书素材库（用于插入文档、发送消息）
+- 下载已上传的素材（通过 file_token）
+- 管理文档内嵌的图片和附件资源
+
+**与云空间文件/文档附件的区别**：
+| 维度 | 素材（Media） | 云空间文件（File） | 文档附件 |
+|------|--------------|-------------------|---------|
+| 用途 | 文档/消息插入 | 独立文件存储 | 文档内嵌附件 |
+| 生命周期 | 依附于父资源 | 独立管理 | 随文档存在 |
+| Token 来源 | 上传返回 / 文档解析 | 云空间列表 | 导出文档解析 |
+| 典型命令 | `media upload/download` | `file list/download` | `doc export` + `media download` |
 
 ### 常用命令
 
@@ -502,6 +529,168 @@ feishu-cli dept children <department_id> [--department-id-type open_department_i
 
 ---
 
+## 13. 文档附件下载（Document Attachments）
+
+**定义**：从飞书文档（Docx）或知识库（Wiki）页面中批量提取并下载内嵌的附件文件。
+
+**适用场景**：
+- 文档中包含多个附件需要批量下载（如资料包、压缩包、PDF 等）
+- 需要备份文档中的所有附件资源
+- 文档转发后需要获取其中的附件
+
+**与云空间文件/素材的区别**：
+| 维度 | 文档附件 | 云空间文件（File） | 素材（Media） |
+|------|---------|-------------------|--------------|
+| 存储方式 | 文档内嵌（File Block） | 云空间独立文件 | 临时素材库 |
+| 获取方式 | 先导出文档解析链接 | 直接通过 file_token 下载 | 通过 token 下载 |
+| 批量能力 | 支持批量下载文档内所有附件 | 单文件操作 | 单文件操作 |
+| 依赖权限 | `docx:document` + `drive:file:download` | `drive:drive` | `drive:drive` |
+
+**工作流程**：
+1. 导出文档为 Markdown → 2. 解析 `[filename](feishu://file/token)` 链接 → 3. 批量下载附件
+
+### 工作原理
+
+1. **导出文档**：使用 `doc export` 或 `wiki export` 将文档转为 Markdown
+2. **解析附件**：从 Markdown 中提取 `[filename](feishu://file/token)` 格式的附件链接
+3. **批量下载**：使用 `media download` 下载每个附件
+4. **冲突处理**：自动为同名文件添加序号后缀（如 `file (1).pdf`）
+
+### 支持的输入格式
+
+| 格式 | 示例 |
+|------|------|
+| 文档 URL | `https://xxx.feishu.cn/docx/T1McdFgZcoEtHQxfadicXwwCn6e` |
+| 知识库 URL | `https://xxx.feishu.cn/wiki/AbCdEfGhIjKlMnOp` |
+| 纯文档 ID | `T1McdFgZcoEtHQxfadicXwwCn6e` |
+| docx ID | `docxT1McdFgZcoEtHQxfadicXwwCn6e` |
+| wiki Token | `wikiAbCdEfGhIjKlMnOp` |
+
+### 使用步骤
+
+```bash
+# 步骤 1: 导出文档
+feishu-cli doc export <document_id> -o /tmp/doc.md
+
+# 步骤 2: 解析附件链接（用 tab 分隔文件名和 token，避免文件名含空格时出错）
+grep -oE '\[[^]]+\]\(feishu://file/[^)]+\)' /tmp/doc.md | \
+  sed $'s/^\\[//;s/\\](feishu:\\/\\/file\\//\t/;s/)$//' > /tmp/attachments.txt
+
+# 步骤 3: 创建输出目录
+mkdir -p ./attachments_<doc_id>
+
+# 步骤 4: 批量下载
+while IFS=$'\t' read -r filename token; do
+  feishu-cli media download "$token" -o "./attachments_<doc_id>/$filename"
+done < /tmp/attachments.txt
+```
+
+### 完整脚本示例
+
+```bash
+#!/bin/bash
+INPUT="$1"                          # 文档 ID/URL
+OUTPUT_DIR="${2:-./attachments_$(echo "$INPUT" | tr '/' '_')}"
+
+# 提取文档 ID 或 Wiki Token
+DOC_ID=""
+WIKI_TOKEN=""
+if echo "$INPUT" | grep -qE 'wiki/[A-Za-z0-9]+'; then
+  WIKI_TOKEN=$(echo "$INPUT" | grep -oP 'wiki/\K[A-Za-z0-9]+' 2>/dev/null)
+elif echo "$INPUT" | grep -qE '^wiki[A-Z]'; then
+  WIKI_TOKEN=$(echo "$INPUT" | grep -oE '^wiki[A-Z][A-Za-z0-9]+')
+elif echo "$INPUT" | grep -qE 'docx/[A-Za-z0-9]+'; then
+  DOC_ID=$(echo "$INPUT" | grep -oP 'docx/\K[A-Za-z0-9]+' 2>/dev/null)
+elif echo "$INPUT" | grep -qE 'docx[A-Z]'; then
+  DOC_ID=$(echo "$INPUT" | grep -oE 'docx[A-Z][A-Za-z0-9]+' | head -1)
+elif echo "$INPUT" | grep -qE '^[A-Z][A-Za-z0-9]+$'; then
+  DOC_ID="$INPUT"
+fi
+
+if [ -z "$DOC_ID" ] && [ -z "$WIKI_TOKEN" ]; then
+  echo "无法识别的文档标识符"
+  exit 1
+fi
+
+# 导出并下载
+if [ -n "$WIKI_TOKEN" ]; then
+  TMP_MD="/tmp/wiki_${WIKI_TOKEN}.md"
+  feishu-cli wiki export "$WIKI_TOKEN" -o "$TMP_MD"
+else
+  TMP_MD="/tmp/doc_${DOC_ID}.md"
+  feishu-cli doc export "$DOC_ID" -o "$TMP_MD"
+fi
+
+mkdir -p "$OUTPUT_DIR"
+
+grep -oE '\[[^]]+\]\(feishu://file/[^)]+\)' "$TMP_MD" 2>/dev/null | \
+  sed $'s/^\\[//;s/\\](feishu:\\/\\/file\\//\t/;s/)$//' | \
+  while IFS=$'\t' read -r filename token; do
+    [ -z "$filename" ] && continue
+
+    # 处理文件名冲突
+    output_file="$OUTPUT_DIR/$filename"
+    counter=1
+    while [ -e "$output_file" ]; do
+      ext="${filename##*.}"
+      name="${filename%.*}"
+      if [ "$name" = "$filename" ]; then
+        output_file="$OUTPUT_DIR/${filename} (${counter})"
+      else
+        output_file="$OUTPUT_DIR/${name} (${counter}).${ext}"
+      fi
+      ((counter++))
+    done
+
+    feishu-cli media download "$token" -o "$output_file"
+  done
+
+rm -f "$TMP_MD"
+```
+
+### 注意事项
+
+- **附件 vs 图片**：只下载文件块（block_type=23），不处理图片块
+- **文件大小限制**：单个文件最大 100MB
+- **跨租户文件**：如果附件来自其他租户，可能无法下载（403 错误）
+- **临时文件**：导出过程中会在 `/tmp` 创建临时 Markdown 文件
+
+**权限要求**：
+- `docx:document`（导出文档内容）
+- `drive:file:download`（下载文件附件，必需）
+- 或 `drive:drive` / `drive:drive:readonly`（云空间权限）
+
+---
+
+## 文件下载功能选择指南
+
+根据你的需求选择合适的下载方式：
+
+| 如果你需要... | 使用模块 | 命令示例 |
+|--------------|---------|---------|
+| 下载云空间中的文件（PDF、Word 等） | **7. 文件管理** | `file download <token> -o output.pdf` |
+| 上传/下载文档图片或附件 | **8. 素材管理** | `media download <token> -o file.zip` |
+| 批量下载文档中的所有附件 | **13. 文档附件下载** | 导出文档 → 解析 → `media download` |
+
+### 关键区别总结
+
+**云空间文件（File）**：
+- 存储在飞书云空间（Drive）
+- 有独立的 file_token
+- 通过 `file list` 获取，用 `file download` 下载
+
+**素材（Media）**：
+- 上传后用于插入文档/消息
+- 通过 `media upload` 上传，返回 file_token
+- 用 `media download` 下载
+
+**文档附件（Attachment）**：
+- 嵌入在文档内容中的文件块
+- 需要先用 `doc export` 导出文档解析链接
+- 提取 file_token 后用 `media download` 下载
+
+---
+
 ## 通用注意事项
 
 ### 权限要求汇总
@@ -519,6 +708,7 @@ feishu-cli dept children <department_id> [--department-id-type open_department_i
 | 知识库 | `wiki:wiki:readonly`、`wiki:wiki` |
 | 搜索 | 需要 User Access Token |
 | 用户/部门 | `contact:user.base:readonly`、`contact:department.base:readonly` |
+| 附件下载 | `docx:document`、`drive:file:download`（或 `drive:drive`） |
 
 ### 错误处理
 
