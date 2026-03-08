@@ -572,15 +572,15 @@ feishu-cli dept children <department_id> [--department-id-type open_department_i
 # 步骤 1: 导出文档
 feishu-cli doc export <document_id> -o /tmp/doc.md
 
-# 步骤 2: 解析附件链接
+# 步骤 2: 解析附件链接（用 tab 分隔文件名和 token，避免文件名含空格时出错）
 grep -oE '\[[^]]+\]\(feishu://file/[^)]+\)' /tmp/doc.md | \
-  sed 's/^\[//;s/\](feishu:\/\/file\// /;s/)$//' > /tmp/attachments.txt
+  sed $'s/^\\[//;s/\\](feishu:\\/\\/file\\//\t/;s/)$//' > /tmp/attachments.txt
 
 # 步骤 3: 创建输出目录
 mkdir -p ./attachments_<doc_id>
 
 # 步骤 4: 批量下载
-while IFS=' ' read -r filename token; do
+while IFS=$'\t' read -r filename token; do
   feishu-cli media download "$token" -o "./attachments_<doc_id>/$filename"
 done < /tmp/attachments.txt
 ```
@@ -590,25 +590,42 @@ done < /tmp/attachments.txt
 ```bash
 #!/bin/bash
 INPUT="$1"                          # 文档 ID/URL
-OUTPUT_DIR="${2:-./attachments_$(echo "$INPUT" | tr '/' '_')}""
+OUTPUT_DIR="${2:-./attachments_$(echo "$INPUT" | tr '/' '_')}"
 
-# 提取文档 ID
-DOC_ID=$(echo "$INPUT" | grep -oP 'docx/\K[A-Za-z0-9]+' 2>/dev/null || \
-         echo "$INPUT" | grep -oE 'docx[A-Z][A-Za-z0-9]+' | head -1 || \
-         echo "$INPUT" | grep -oE '^[A-Z][A-Za-z0-9]+$' || echo "")
+# 提取文档 ID 或 Wiki Token
+DOC_ID=""
+WIKI_TOKEN=""
+if echo "$INPUT" | grep -qE 'wiki/[A-Za-z0-9]+'; then
+  WIKI_TOKEN=$(echo "$INPUT" | grep -oP 'wiki/\K[A-Za-z0-9]+' 2>/dev/null)
+elif echo "$INPUT" | grep -qE '^wiki[A-Z]'; then
+  WIKI_TOKEN=$(echo "$INPUT" | grep -oE '^wiki[A-Z][A-Za-z0-9]+')
+elif echo "$INPUT" | grep -qE 'docx/[A-Za-z0-9]+'; then
+  DOC_ID=$(echo "$INPUT" | grep -oP 'docx/\K[A-Za-z0-9]+' 2>/dev/null)
+elif echo "$INPUT" | grep -qE 'docx[A-Z]'; then
+  DOC_ID=$(echo "$INPUT" | grep -oE 'docx[A-Z][A-Za-z0-9]+' | head -1)
+elif echo "$INPUT" | grep -qE '^[A-Z][A-Za-z0-9]+$'; then
+  DOC_ID="$INPUT"
+fi
 
-if [ -z "$DOC_ID" ]; then
+if [ -z "$DOC_ID" ] && [ -z "$WIKI_TOKEN" ]; then
   echo "无法识别的文档标识符"
   exit 1
 fi
 
 # 导出并下载
-TMP_MD="/tmp/doc_${DOC_ID}.md"
-feishu-cli doc export "$DOC_ID" -o "$TMP_MD"
+if [ -n "$WIKI_TOKEN" ]; then
+  TMP_MD="/tmp/wiki_${WIKI_TOKEN}.md"
+  feishu-cli wiki export "$WIKI_TOKEN" -o "$TMP_MD"
+else
+  TMP_MD="/tmp/doc_${DOC_ID}.md"
+  feishu-cli doc export "$DOC_ID" -o "$TMP_MD"
+fi
+
+mkdir -p "$OUTPUT_DIR"
 
 grep -oE '\[[^]]+\]\(feishu://file/[^)]+\)' "$TMP_MD" 2>/dev/null | \
-  sed 's/^\[//;s/\](feishu:\/\/file\// /;s/)$//' | \
-  while IFS=' ' read -r filename token; do
+  sed $'s/^\\[//;s/\\](feishu:\\/\\/file\\//\t/;s/)$//' | \
+  while IFS=$'\t' read -r filename token; do
     [ -z "$filename" ] && continue
 
     # 处理文件名冲突
