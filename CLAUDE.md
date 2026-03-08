@@ -26,6 +26,8 @@ feishu-cli/
 │   ├── msg.go                    # 消息命令组
 │   ├── sheet_*.go                # 电子表格命令（V2/V3 API）
 │   ├── calendar.go               # 日历命令组
+│   ├── auth.go                   # 认证命令组（OAuth 登录）
+│   ├── auth_login.go             # auth login 子命令
 │   ├── task.go                   # 任务命令组
 │   └── utils.go                  # 公共工具（printJSON 等）
 ├── internal/
@@ -247,6 +249,10 @@ feishu-cli wiki member add <space_id> --member-type userid --member-id USER_ID -
 feishu-cli wiki member list <space_id>
 feishu-cli wiki member remove <space_id> --member-type userid --member-id USER_ID --role admin
 
+# === 认证 ===
+feishu-cli auth login              # OAuth 登录，自动保存 token 到 config.yaml
+feishu-cli auth login --port 8080  # 自定义回调端口
+
 # === 其他 ===
 feishu-cli user info <user_id>
 feishu-cli user search --email user@example.com
@@ -258,7 +264,7 @@ feishu-cli media upload image.png --parent-type docx_image --parent-node <doc_id
 feishu-cli comment list <file_token> --type docx
 feishu-cli comment resolve <file_token> <comment_id> --type docx
 feishu-cli comment reply list <file_token> <comment_id> --type docx
-feishu-cli search messages "关键词" --user-access-token <token>
+feishu-cli search messages "关键词"
 ```
 
 ## 块类型映射
