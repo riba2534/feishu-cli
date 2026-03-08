@@ -1083,6 +1083,7 @@ func init() {
 	_ = importMarkdownCmd.Flags().MarkHidden("mermaid-workers")
 	_ = importMarkdownCmd.Flags().MarkHidden("mermaid-retries")
 }
+
 // importViaDocxFallback 当 Markdown 含图片时，走 pandoc → docx → Drive import_tasks 路径
 // 飞书 Open API 不支持通过逐块 API 插入图片，此方法绕过该限制
 func importViaDocxFallback(mdPath, title, folder string, verbose bool) (docToken string, docURL string, err error) {
@@ -1097,7 +1098,14 @@ func importViaDocxFallback(mdPath, title, folder string, verbose bool) (docToken
 	processedMdPath := mdPath
 	mmdcPath, mmdcErr := exec.LookPath("mmdc")
 	if mmdcErr == nil {
-		tmpMd, err := preprocessMermaidToPNG(mdPath, mmdcPath, basePath, verbose)
+		tmpMd, pngFiles, err := preprocessMermaidToPNG(mdPath, mmdcPath, basePath, verbose)
+		if len(pngFiles) > 0 {
+			defer func() {
+				for _, f := range pngFiles {
+					os.Remove(f)
+				}
+			}()
+		}
 		if err != nil {
 			if verbose {
 				fmt.Printf("[警告] Mermaid 预处理失败，保留原始代码块: %v\n", err)
@@ -1133,17 +1141,8 @@ func importViaDocxFallback(mdPath, title, folder string, verbose bool) (docToken
 		fmt.Printf("[pandoc] 生成 docx: %s (%.1f KB)\n", docxPath, float64(info.Size())/1024)
 	}
 
-	// 4. 获取目标文件夹
+	// 4. 目标文件夹（空字符串时 API 自动使用根文件夹）
 	folderToken := folder
-	if folderToken == "" {
-		folderToken, err = client.GetRootFolderToken()
-		if err != nil {
-			return "", "", fmt.Errorf("获取根文件夹失败: %w", err)
-		}
-		if verbose {
-			fmt.Printf("[Drive] 根文件夹: %s\n", folderToken)
-		}
-	}
 
 	// 5. 上传 docx
 	if verbose {
@@ -1196,10 +1195,11 @@ func hasImageReferences(content []byte) bool {
 }
 
 // preprocessMermaidToPNG 将 Markdown 中的 Mermaid 代码块渲染为 PNG 图片
-func preprocessMermaidToPNG(mdPath, mmdcPath, basePath string, verbose bool) (string, error) {
+// 返回: 处理后的 Markdown 路径, 生成的 PNG 文件列表（调用方负责清理）, 错误
+func preprocessMermaidToPNG(mdPath, mmdcPath, basePath string, verbose bool) (string, []string, error) {
 	content, err := os.ReadFile(mdPath)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	text := string(content)
@@ -1214,11 +1214,12 @@ func preprocessMermaidToPNG(mdPath, mmdcPath, basePath string, verbose bool) (st
 		}
 	}
 	if !hasMermaid {
-		return mdPath, nil // 无 mermaid，返回原文件
+		return mdPath, nil, nil // 无 mermaid，返回原文件
 	}
 
 	// 重建 markdown，将 mermaid 块替换为图片引用
 	var result strings.Builder
+	var pngPaths []string
 	mermaidIdx := 0
 	for _, seg := range segments {
 		if seg.kind == "mermaid" {
@@ -1226,7 +1227,7 @@ func preprocessMermaidToPNG(mdPath, mmdcPath, basePath string, verbose bool) (st
 			// 渲染为 PNG
 			tmpMmd, err := os.CreateTemp("", fmt.Sprintf("feishu-mmd-%d-*.mmd", mermaidIdx))
 			if err != nil {
-				return "", err
+				return "", pngPaths, err
 			}
 			tmpMmd.WriteString(seg.content)
 			tmpMmd.Close()
@@ -1239,6 +1240,7 @@ func preprocessMermaidToPNG(mdPath, mmdcPath, basePath string, verbose bool) (st
 					fmt.Printf("[mmdc] Mermaid %d 渲染失败: %v\n%s\n", mermaidIdx, err, string(output))
 				}
 				os.Remove(tmpMmd.Name())
+				os.Remove(pngPath)
 				// 降级：保留原始代码块
 				result.WriteString("```mermaid\n")
 				result.WriteString(seg.content)
@@ -1246,6 +1248,7 @@ func preprocessMermaidToPNG(mdPath, mmdcPath, basePath string, verbose bool) (st
 				continue
 			}
 			os.Remove(tmpMmd.Name())
+			pngPaths = append(pngPaths, pngPath)
 
 			if verbose {
 				fmt.Printf("[mmdc] Mermaid %d → %s\n", mermaidIdx, pngPath)
@@ -1269,10 +1272,10 @@ func preprocessMermaidToPNG(mdPath, mmdcPath, basePath string, verbose bool) (st
 	// 写入临时文件
 	tmpMd, err := os.CreateTemp("", "feishu-processed-*.md")
 	if err != nil {
-		return "", err
+		return "", pngPaths, err
 	}
 	tmpMd.WriteString(result.String())
 	tmpMd.Close()
 
-	return tmpMd.Name(), nil
+	return tmpMd.Name(), pngPaths, nil
 }

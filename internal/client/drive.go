@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkdrive "github.com/larksuite/oapi-sdk-go/v3/service/drive/v1"
 )
 
@@ -817,38 +815,3 @@ func GetDriveQuota() (*DriveQuota, error) {
 	return nil, fmt.Errorf("获取云空间容量功能暂不支持：当前 SDK 版本未提供此 API")
 }
 
-// GetRootFolderToken 获取用户根文件夹 token
-func GetRootFolderToken() (string, error) {
-	c, err := GetClient()
-	if err != nil {
-		return "", fmt.Errorf("获取客户端失败: %w", err)
-	}
-	resp, err := c.Do(Context(),
-		&larkcore.ApiReq{
-			HttpMethod: http.MethodGet,
-			ApiPath:    "/open-apis/drive/explorer/v2/root_folder/meta",
-			SupportedAccessTokenTypes: []larkcore.AccessTokenType{
-				larkcore.AccessTokenTypeTenant,
-			},
-		})
-	if err != nil {
-		return "", fmt.Errorf("获取根文件夹失败: %w", err)
-	}
-
-	// 解析响应
-	type rootFolderResp struct {
-		Code int `json:"code"`
-		Data struct {
-			Token string `json:"token"`
-		} `json:"data"`
-	}
-
-	var result rootFolderResp
-	if err := json.Unmarshal(resp.RawBody, &result); err != nil {
-		return "", fmt.Errorf("解析根文件夹响应失败: %w", err)
-	}
-	if result.Code != 0 {
-		return "", fmt.Errorf("获取根文件夹失败: code=%d", result.Code)
-	}
-	return result.Data.Token, nil
-}
