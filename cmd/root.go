@@ -74,7 +74,7 @@ var rootCmd = &cobra.Command{
 			return nil
 		}
 		switch cmd.Name() {
-		case "init", "help", "completion", "version":
+		case "init", "help", "completion", "version", "login":
 			return nil
 		}
 

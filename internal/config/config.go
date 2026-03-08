@@ -13,6 +13,8 @@ type Config struct {
 	AppID           string       `mapstructure:"app_id"`
 	AppSecret       string       `mapstructure:"app_secret"`
 	UserAccessToken string       `mapstructure:"user_access_token"`
+	RefreshToken    string       `mapstructure:"refresh_token"`
+	TokenExpireAt   int64        `mapstructure:"token_expire_at"`
 	BaseURL         string       `mapstructure:"base_url"`
 	Debug           bool         `mapstructure:"debug"`
 	Export          ExportConfig `mapstructure:"export"`
@@ -112,6 +114,30 @@ func Validate() error {
 		return fmt.Errorf("缺少 app_secret，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_SECRET=xxx\n  2. 配置文件: ~/.feishu-cli/config.yaml")
 	}
 	return nil
+}
+
+// SaveToken 更新 token 到内存配置和配置文件
+func SaveToken(accessToken, refreshToken string, expireAt int64) error {
+	if cfg != nil {
+		cfg.UserAccessToken = accessToken
+		cfg.RefreshToken = refreshToken
+		cfg.TokenExpireAt = expireAt
+	}
+
+	viper.Set("user_access_token", accessToken)
+	viper.Set("refresh_token", refreshToken)
+	viper.Set("token_expire_at", expireAt)
+
+	configFile := viper.ConfigFileUsed()
+	if configFile == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("获取用户目录失败: %w", err)
+		}
+		configFile = filepath.Join(home, ".feishu-cli", "config.yaml")
+	}
+
+	return viper.WriteConfigAs(configFile)
 }
 
 // CreateDefaultConfig creates a default configuration file
