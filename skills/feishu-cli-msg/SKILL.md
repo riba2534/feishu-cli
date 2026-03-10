@@ -73,6 +73,44 @@ allowed-tools: Bash, Read, Write
 | share_user | 个人名片 | `{"user_id":"ou_xxx"}` | — |
 | system | 系统分割线 | `{"type":"divider",...}` | 仅 p2p |
 
+## Bot 身份 vs User 身份
+
+feishu-cli 默认使用 **Bot（应用）身份** 调用 API。部分场景下 Bot 身份能力受限，需要切换为 **User（用户）身份**。
+
+### 何时需要 User 身份
+
+| 场景 | Bot 身份 | User 身份 |
+|------|---------|----------|
+| 搜索群聊（Bot 在群内） | ✅ 可用 | ✅ 可用 |
+| 搜索群聊（Bot 不在群内） | ❌ 搜不到 | ✅ 可搜到用户所在的群 |
+| 获取消息（Bot 在群内） | ✅ 可用 | ✅ 可用 |
+| 获取消息（Bot 不在群内） | ❌ 报错 230002 | ✅ 可用（用户在群内即可） |
+| 搜索消息 | ❌ 不支持 | ✅ 需要 User Access Token |
+
+### 如何切换为 User 身份
+
+在命令中添加 `--user-access-token` 参数。Token 从 `~/.feishu-cli/token.json` 获取（通过 `feishu-cli auth login` 登录后自动保存）：
+
+```bash
+# 获取 token（通过 shell 变量简化使用）
+UAT=$(python3 -c "import json; print(json.load(open('$HOME/.feishu-cli/token.json'))['access_token'])")
+
+# 在任何命令中添加 --user-access-token 即可切换身份
+feishu-cli msg search-chats --query "群名" --user-access-token "$UAT"
+feishu-cli msg list --container-id oc_xxx --container-id-type chat --user-access-token "$UAT"
+feishu-cli msg get om_xxx --user-access-token "$UAT"
+```
+
+### 查看群消息的推荐流程
+
+```
+1. 先用 Bot 身份 search-chats（快，无额外依赖）
+2. 搜不到？ → 加 --user-access-token 切换 User 身份重试
+3. 拿到 chat_id 后，用同样的身份 msg list 获取消息
+```
+
+**注意**：`search-chats` 使用 Bot 身份时调用 List API（只返回 Bot 所在的群），使用 User 身份时调用 Search API（可搜到用户所在的群和公开群），结果范围不同。
+
 ## 发送命令
 
 ### 基础格式
@@ -477,7 +515,12 @@ feishu-cli msg pins --chat-id <chat_id> [--start-time <ms_timestamp>] [--end-tim
 ```bash
 feishu-cli msg get <message_id>
 feishu-cli msg get om_xxx --output json
+
+# Bot 不在群内时，使用 User 身份
+feishu-cli msg get om_xxx --user-access-token "$UAT" -o json
 ```
+
+> **注意**：`share_chat` 类型消息的 `chat_id` 是消息**发送所在的群**，而非被分享的群。被分享群的 ID 在 `body.content` 的 JSON 中（`{"chat_id":"oc_xxx"}`），注意区分。
 
 ### 转发消息
 
@@ -503,9 +546,17 @@ feishu-cli msg list \
   --container-id-type chat \
   --page-size 20 \
   --sort-type ByCreateTimeDesc
+
+# Bot 不在群内时，使用 User 身份
+feishu-cli msg list \
+  --container-id oc_xxx \
+  --container-id-type chat \
+  --sort-type ByCreateTimeDesc \
+  --page-size 50 \
+  --user-access-token "$UAT"
 ```
 
-支持参数：`--start-time`、`--end-time`（秒级时间戳）、`--page-token`。
+支持参数：`--start-time`、`--end-time`（秒级时间戳）、`--page-token`、`--user-access-token`。
 
 ### 获取会话历史
 
@@ -515,6 +566,14 @@ feishu-cli msg history \
   --container-id-type chat \
   --sort-type ByCreateTimeAsc \
   --page-size 50
+
+# Bot 不在群内时，使用 User 身份
+feishu-cli msg history \
+  --container-id oc_xxx \
+  --container-id-type chat \
+  --sort-type ByCreateTimeAsc \
+  --page-size 50 \
+  --user-access-token "$UAT"
 ```
 
 ### 查询消息已读用户
@@ -527,9 +586,15 @@ feishu-cli msg read-users om_xxx --user-id-type user_id --page-size 50
 ### 搜索群聊
 
 ```bash
+# Bot 身份搜索（仅返回 Bot 所在的群）
 feishu-cli msg search-chats --query "项目群"
 feishu-cli msg search-chats --page-size 20
+
+# User 身份搜索（可搜到用户所在的群和公开群，推荐）
+feishu-cli msg search-chats --query "项目群" --user-access-token "$UAT"
 ```
+
+> **重要**：Bot 身份只能搜到 Bot 已加入的群。如果目标群没有加入 Bot，必须使用 `--user-access-token` 切换为 User 身份搜索。
 
 ### 搜索消息（需 User Access Token）
 
@@ -543,7 +608,15 @@ feishu-cli search messages "关键词" \
 
 ## 执行流程
 
-Claude 发送消息时按以下流程操作：
+Claude 操作消息时按以下流程：
+
+### 读取群消息流程
+
+1. **搜索群聊**：`feishu-cli msg search-chats --query "群名"`
+2. **搜不到？** → 加 `--user-access-token "$UAT"` 重试（Bot 不在群内时必须用 User 身份）
+3. **获取消息**：`feishu-cli msg list --container-id <chat_id> --container-id-type chat`（身份与搜索时一致）
+
+### 发送消息流程
 
 1. **确定接收者**：默认 `user@example.com`（email），或从上下文获取
 2. **选择消息类型**：
@@ -590,6 +663,7 @@ Claude 发送消息时按以下流程操作：
 | `rate limit exceeded` | API 限流 | 等待几秒后重试 |
 | `user not found` | 用户不存在 | 检查邮箱或 ID 是否正确 |
 | `card content too large` | 卡片 JSON 超过 30 KB | 精简卡片内容或拆分为多条消息 |
+| `Bot/User can NOT be out of the chat` | Bot 不在目标群内 | 添加 `--user-access-token` 切换为 User 身份重试 |
 
 ## 参考文档
 
