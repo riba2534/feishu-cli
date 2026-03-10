@@ -8,9 +8,10 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/riba2534/feishu-cli/internal/config"
-
+	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // SendMessage sends a message to a user or chat
@@ -398,7 +399,9 @@ type SearchChatsResult struct {
 	HasMore   bool
 }
 
-// SearchChats searches for chats
+// SearchChats searches for chats.
+// When query is provided, uses the Search API (server-side filtering).
+// When query is empty, falls back to List API with client-side filtering.
 func SearchChats(opts SearchChatsOptions, userAccessToken string) (*SearchChatsResult, error) {
 	client, err := GetClient()
 	if err != nil {
@@ -409,6 +412,53 @@ func SearchChats(opts SearchChatsOptions, userAccessToken string) (*SearchChatsR
 		opts.UserIDType = "open_id"
 	}
 
+	if opts.Query != "" {
+		return searchChatsWithSearchAPI(client, opts, userAccessToken)
+	}
+	return searchChatsWithListAPI(client, opts, userAccessToken)
+}
+
+// searchChatsWithSearchAPI uses GET /open-apis/im/v1/chats/search for server-side query filtering.
+func searchChatsWithSearchAPI(client *lark.Client, opts SearchChatsOptions, userAccessToken string) (*SearchChatsResult, error) {
+	reqBuilder := larkim.NewSearchChatReqBuilder().
+		UserIdType(opts.UserIDType).
+		Query(opts.Query)
+
+	if opts.PageSize > 0 {
+		reqBuilder.PageSize(opts.PageSize)
+	}
+	if opts.PageToken != "" {
+		reqBuilder.PageToken(opts.PageToken)
+	}
+
+	resp, err := client.Im.Chat.Search(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("搜索群聊失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("搜索群聊失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	result := &SearchChatsResult{
+		PageToken: StringVal(resp.Data.PageToken),
+		HasMore:   BoolVal(resp.Data.HasMore),
+	}
+	for _, chat := range resp.Data.Items {
+		result.Items = append(result.Items, &ChatInfo{
+			ChatID:      StringVal(chat.ChatId),
+			Name:        StringVal(chat.Name),
+			Description: StringVal(chat.Description),
+			OwnerID:     StringVal(chat.OwnerId),
+			External:    BoolVal(chat.External),
+		})
+	}
+
+	return result, nil
+}
+
+// searchChatsWithListAPI uses GET /open-apis/im/v1/chats to list all chats (no query).
+func searchChatsWithListAPI(client *lark.Client, opts SearchChatsOptions, userAccessToken string) (*SearchChatsResult, error) {
 	reqBuilder := larkim.NewListChatReqBuilder().
 		UserIdType(opts.UserIDType)
 
@@ -433,18 +483,13 @@ func SearchChats(opts SearchChatsOptions, userAccessToken string) (*SearchChatsR
 		HasMore:   BoolVal(resp.Data.HasMore),
 	}
 	for _, chat := range resp.Data.Items {
-		info := &ChatInfo{
+		result.Items = append(result.Items, &ChatInfo{
 			ChatID:      StringVal(chat.ChatId),
 			Name:        StringVal(chat.Name),
 			Description: StringVal(chat.Description),
 			OwnerID:     StringVal(chat.OwnerId),
 			External:    BoolVal(chat.External),
-		}
-
-		// Filter by query if specified
-		if opts.Query == "" || containsIgnoreCase(info.Name, opts.Query) || containsIgnoreCase(info.Description, opts.Query) {
-			result.Items = append(result.Items, info)
-		}
+		})
 	}
 
 	return result, nil
