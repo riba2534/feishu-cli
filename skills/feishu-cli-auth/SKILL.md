@@ -40,7 +40,7 @@ AI Agent 的 Bash tool 无法进行交互式 stdin 输入，因此 `--manual` �
 **始终使用最大 scope 范围授权**，一次性覆盖 feishu-cli 所有用户身份功能，避免后续因 scope 不足导致 99991679 错误：
 
 ```bash
-feishu-cli auth login --print-url --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
+feishu-cli auth login --print-url --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:message.group_msg:get_as_user im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
 ```
 
 输出 JSON（stdout）：
@@ -85,7 +85,7 @@ Token 自动保存到 `~/.feishu-cli/token.json`。
 
 ```bash
 # 步骤 1（使用最大 scope 范围）
-feishu-cli auth login --print-url --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
+feishu-cli auth login --print-url --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:message.group_msg:get_as_user im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
 # → 展示 auth_url 给用户，用户浏览器授权后复制回调 URL
 
 # 步骤 2（用步骤 1 的 state 和用户提供的回调 URL）
@@ -103,7 +103,7 @@ scope 决定了 Token 能访问哪些 API。登录时通过 `--scopes` 指定（
 **每次登录都使用以下完整 scope 列表**，一次性覆盖 feishu-cli 全部用户身份功能。避免因 scope 不足导致部分命令报 99991679 错误：
 
 ```
-offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:chat:read contact:user.base:readonly drive:drive.metadata:readonly
+offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:message.group_msg:get_as_user im:chat:read contact:user.base:readonly drive:drive.metadata:readonly
 ```
 
 ### Token 使用策略
@@ -134,6 +134,7 @@ feishu-cli 的 wiki、calendar、task、msg 等命令通过 `resolveOptionalUser
 | `task:tasklist:read` | 任务列表读取 | `tasklist list/get` |
 | `task:tasklist:write` | 任务列表写入 | `tasklist create/delete` |
 | `im:message:readonly` | 消息历史读取 | `msg history/get` |
+| `im:message.group_msg:get_as_user` | 用户身份读取群消息 | `msg list/history`（User Token 读群消息必需） |
 | `im:chat:read` | 群聊信息读取 | `chat get/search-chats` |
 | `contact:user.base:readonly` | 用户信息读取 | `user info/search` |
 | `drive:drive.metadata:readonly` | 文件元数据读取 | `file list/meta` |
@@ -241,7 +242,7 @@ scope 中无目标权限         → 需要重新登录并补充 scope
 feishu-cli auth status -o json
 
 # 2. 如果未登录或已过期，执行两步式登录（使用最大 scope）
-feishu-cli auth login --print-url --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
+feishu-cli auth login --print-url --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:message.group_msg:get_as_user im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
 # ... 用户授权 ...
 feishu-cli auth callback "<回调URL>" --state "<state>"
 
@@ -260,10 +261,10 @@ feishu-cli task create --summary "待办事项"
 
 ```bash
 # 本地桌面环境（默认）：自动打开浏览器 + 本地 HTTP 回调
-feishu-cli auth login --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
+feishu-cli auth login --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:message.group_msg:get_as_user im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
 
 # 远程 SSH 环境：打印 URL，用户手动粘贴回调 URL（交互式 stdin）
-feishu-cli auth login --manual --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
+feishu-cli auth login --manual --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:message.group_msg:get_as_user im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
 ```
 
 ### 前置条件

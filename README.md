@@ -105,7 +105,7 @@ feishu-cli doc import large-doc.md --title "大文档" \
 | **文档** | 创建、导入、导出、编辑、批量更新、Callout、画板、异步导出/导入文件 |
 | **知识库** | 空间列表、节点增删改查、导出、空间详情、成员管理 |
 | **电子表格** | V2 基础读写 + V3 富文本 API，行列操作、样式、合并、查找替换 |
-| **消息** | 发送（text/post/image/file/card 等 11 种类型）、转发、合并转发、回复、Pin、表情回复、搜索群聊、历史记录 |
+| **消息** | 发送（text/post/image/file/card 等 11 种类型）、转发、合并转发、回复、Pin、表情回复、搜索群聊（Bot/User 双身份）、历史记录（支持 User Token 读 Bot 不在的群） |
 | **群聊** | 创建、获取、更新、删除、分享链接、成员管理 |
 | **日历** | 日历列表、主日历、日程增删改查、搜索、回复邀请、参与者管理、忙闲查询 |
 | **任务** | 创建、查看、完成、删除、子任务、成员管理、提醒管理、任务列表 |
@@ -320,10 +320,13 @@ feishu-cli msg send --receive-id-type email --receive-id user@example.com --text
 feishu-cli msg send --receive-id-type email --receive-id user@example.com \
   --msg-type post --content-file msg.json
 
-# 搜索群聊
+# 搜索群聊（Bot 身份，仅返回 Bot 所在的群）
 feishu-cli msg search-chats --query "关键词"
 
-# 获取历史消息
+# 搜索群聊（User 身份，可搜到用户所在的群）
+feishu-cli msg search-chats --query "关键词" --user-access-token <token>
+
+# 获取历史消息（Bot 不在群内时使用 --user-access-token）
 feishu-cli msg history --container-id <chat_id> --container-id-type chat
 
 # 转发消息
@@ -438,6 +441,7 @@ feishu-cli auth login
 # 搜索消息
 feishu-cli search messages "关键词"
 feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
+feishu-cli search messages "你好" --chat-type p2p_chat  # 搜索私聊消息
 
 # 搜索应用
 feishu-cli search apps "审批"
@@ -632,6 +636,7 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
 | 群聊管理 | `im:chat` | 群聊 CRUD |
 | 群成员管理 | `im:chat.members` | 群成员操作 |
 | 会话历史 | `im:message:readonly` | 获取历史消息 |
+| 群消息读取（User 身份） | `im:message.group_msg:get_as_user` | User Token 读取群消息 |
 | 画板 | `board:whiteboard` | 画板读写 |
 | 电子表格 | `sheets:spreadsheet` | 电子表格读写 |
 | 素材管理 | `subscriptions:image` | 上传下载, 需单独申请 |

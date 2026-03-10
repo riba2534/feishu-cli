@@ -310,6 +310,7 @@ feishu-cli comment reply list <file_token> <comment_id> --type docx
 
 # === 搜索 ===
 feishu-cli search messages "关键词" --user-access-token <token>
+feishu-cli search messages "你好" --chat-type p2p_chat  # 搜索私聊消息
 feishu-cli search apps "审批" --user-access-token <token>
 feishu-cli search docs "产品需求"
 feishu-cli search docs "季度报告" --docs-types doc,sheet
@@ -443,6 +444,8 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 | 群聊管理 | `im:chat` | 群聊 CRUD |
 | 群成员管理 | `im:chat.members` | 群成员操作 |
 | 会话历史 | `im:message:readonly` | 获取历史消息 |
+| 群消息读取（User 身份） | `im:message.group_msg:get_as_user` | User Token 读取群消息 |
+| 群聊搜索（User 身份） | `im:chat:read` | User Token 搜索群聊 |
 | 用户信息 | `contact:user.base:readonly` | 获取用户信息，需单独申请 |
 | 通讯录 | `contact:contact.base:readonly` | 需单独申请 |
 | 部分搜索 | `directory:department:search` | 需单独申请 |

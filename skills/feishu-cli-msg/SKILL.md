@@ -85,7 +85,9 @@ feishu-cli 默认使用 **Bot（应用）身份** 调用 API。部分场景下 B
 | 搜索群聊（Bot 不在群内） | ❌ 搜不到 | ✅ 可搜到用户所在的群 |
 | 获取消息（Bot 在群内） | ✅ 可用 | ✅ 可用 |
 | 获取消息（Bot 不在群内） | ❌ 报错 230002 | ✅ 可用（用户在群内即可） |
-| 搜索消息 | ❌ 不支持 | ✅ 需要 User Access Token |
+| 搜索消息（群聊） | ❌ 不支持 | ✅ `--chat-type group_chat` |
+| 搜索消息（私聊） | ❌ 不支持 | ✅ `--chat-type p2p_chat` |
+| 搜索 p2p 会话 | ❌ search-chats 不支持 | ❌ search-chats 不支持（用 `search messages --chat-type p2p_chat` 替代） |
 
 ### 如何切换为 User 身份
 
@@ -599,12 +601,25 @@ feishu-cli msg search-chats --query "项目群" --user-access-token "$UAT"
 ### 搜索消息（需 User Access Token）
 
 ```bash
+# 搜索所有消息
+feishu-cli search messages "关键词" --user-access-token "$UAT"
+
+# 只搜索私聊消息
+feishu-cli search messages "关键词" --chat-type p2p_chat --user-access-token "$UAT"
+
+# 只搜索群聊消息
+feishu-cli search messages "关键词" --chat-type group_chat --user-access-token "$UAT"
+
+# 更多过滤条件
 feishu-cli search messages "关键词" \
-  --user-access-token u-xxx \
   --chat-ids oc_xxx \
   --message-type file \
-  --start-time 1704067200
+  --from-type user \
+  --start-time 1704067200 \
+  --user-access-token "$UAT"
 ```
+
+> **提示**：搜索群聊 API（`search-chats`）无法搜到 p2p 私聊会话。要查找私聊消息，使用 `search messages --chat-type p2p_chat`。
 
 ## 执行流程
 
@@ -638,8 +653,9 @@ Claude 操作消息时按以下流程：
 |------|------|
 | `im:message` | 消息读写 |
 | `im:message:send_as_bot` | 以机器人身份发送消息 |
-| `im:chat:read` | 搜索群聊 |
 | `im:message:readonly` | 获取历史消息 |
+| `im:message.group_msg:get_as_user` | User 身份读取群消息（`--user-access-token` 读群消息必需） |
+| `im:chat:read` | 搜索群聊（User 身份） |
 
 ## 注意事项
 

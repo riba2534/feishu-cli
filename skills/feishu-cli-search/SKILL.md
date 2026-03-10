@@ -45,7 +45,7 @@ feishu-cli auth login --print-url --scopes \
    calendar:calendar.event:reply calendar:calendar.free_busy:read \
    task:task:read task:task:write \
    task:tasklist:read task:tasklist:write \
-   im:message:readonly im:chat:read contact:user.base:readonly \
+   im:message:readonly im:message.group_msg:get_as_user im:chat:read contact:user.base:readonly \
    drive:drive.metadata:readonly"
 ```
 
@@ -169,6 +169,9 @@ feishu-cli search messages "关键词" [选项]
 # 搜索消息
 feishu-cli search messages "上线"
 
+# 搜索私聊消息（search-chats 无法搜到 p2p 会话，用此方式替代）
+feishu-cli search messages "你好" --chat-type p2p_chat
+
 # 搜索群聊中的文件消息
 feishu-cli search messages "周报" --chat-type group_chat --message-type file
 
@@ -181,6 +184,8 @@ feishu-cli search messages "项目" --start-time 1704067200 --end-time 170415360
 # 限定特定群
 feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
 ```
+
+> **提示**：搜索群聊 API（`search-chats`）**无法搜到 p2p 私聊会话**。要查找私聊内容，使用 `search messages --chat-type p2p_chat`。
 
 ### JSON 输出格式
 
