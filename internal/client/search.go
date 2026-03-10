@@ -7,6 +7,7 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larksearch "github.com/larksuite/oapi-sdk-go/v3/service/search/v2"
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // SearchMessagesOptions 搜索消息的选项
@@ -204,7 +205,7 @@ func buildDocsURL(docsType, docsToken string) string {
 	if !ok {
 		path = docsType
 	}
-	return fmt.Sprintf("https://feishu.cn/%s/%s", path, docsToken)
+	return fmt.Sprintf("%s/%s/%s", config.ResolveWebBaseURL(config.Get()), path, docsToken)
 }
 
 // SearchDocWiki 搜索云文档

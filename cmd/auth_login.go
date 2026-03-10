@@ -58,13 +58,14 @@ Token 保存位置: ~/.feishu-cli/token.json
 		printURL, _ := cmd.Flags().GetBool("print-url")
 
 		opts := auth.LoginOptions{
-			Port:      port,
-			Manual:    manual,
-			NoManual:  noManual,
-			AppID:     cfg.AppID,
-			AppSecret: cfg.AppSecret,
-			BaseURL:   cfg.BaseURL,
-			Scopes:    scopes,
+			Port:        port,
+			Manual:      manual,
+			NoManual:    noManual,
+			AppID:       cfg.AppID,
+			AppSecret:   cfg.AppSecret,
+			BaseURL:     config.ResolveAPIBaseURL(cfg),
+			AuthBaseURL: config.ResolveAuthBaseURL(cfg),
+			Scopes:      scopes,
 		}
 
 		// 非交互模式：仅输出授权 URL 和 state

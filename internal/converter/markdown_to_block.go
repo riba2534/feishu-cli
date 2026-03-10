@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
+	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -1703,16 +1704,18 @@ func applyTextStyle(elem *larkdocx.TextElement, bold, italic, strikethrough bool
 // 1. 将 feishu:// 内部协议转换为 https:// 链接（API 不接受 feishu:// 协议）
 // 2. 解码 URL 编码的链接，例如 "https%3A%2F%2Fexample.com" → "https://example.com"
 func normalizeURL(rawURL string) string {
+	baseURL := docBaseURL()
+
 	// feishu:// 内部协议转换为 HTTPS 链接
 	if strings.HasPrefix(rawURL, "feishu://doc/") {
-		return "https://feishu.cn/docx/" + strings.TrimPrefix(rawURL, "feishu://doc/")
+		return baseURL + "/docx/" + strings.TrimPrefix(rawURL, "feishu://doc/")
 	}
 	if strings.HasPrefix(rawURL, "feishu://wiki/") {
-		return "https://feishu.cn/wiki/" + strings.TrimPrefix(rawURL, "feishu://wiki/")
+		return baseURL + "/wiki/" + strings.TrimPrefix(rawURL, "feishu://wiki/")
 	}
 	if strings.HasPrefix(rawURL, "feishu://") {
 		// 其他 feishu:// 链接，尝试通用转换
-		return "https://feishu.cn/" + strings.TrimPrefix(rawURL, "feishu://")
+		return baseURL + "/" + strings.TrimPrefix(rawURL, "feishu://")
 	}
 
 	// URL 解码
@@ -1720,6 +1723,10 @@ func normalizeURL(rawURL string) string {
 		return decoded
 	}
 	return rawURL
+}
+
+func docBaseURL() string {
+	return config.ResolveWebBaseURL(config.Get())
 }
 
 // hasValidURLPrefix 检查 URL 是否以支持的协议开头

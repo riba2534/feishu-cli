@@ -63,11 +63,12 @@ var createDocumentCmd = &cobra.Command{
 				return err
 			}
 		} else {
+			documentWebURL := fmt.Sprintf("%s/docx/%s", config.ResolveWebBaseURL(config.Get()), documentID)
 			fmt.Printf("文档创建成功！\n")
 			fmt.Printf("  文档 ID: %s\n", documentID)
 			fmt.Printf("  标题: %s\n", docTitle)
 			fmt.Printf("  版本: %d\n", revisionID)
-			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+			fmt.Printf("  链接: %s\n", documentWebURL)
 		}
 
 		return nil

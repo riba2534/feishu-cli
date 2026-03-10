@@ -380,7 +380,7 @@ var importMarkdownCmd = &cobra.Command{
 			}
 			documentID = *doc.DocumentId
 			fmt.Printf("已创建文档: %s\n", documentID)
-			fmt.Printf("链接: https://feishu.cn/docx/%s\n\n", documentID)
+			fmt.Printf("链接: %s/docx/%s\n\n", config.ResolveWebBaseURL(config.Get()), documentID)
 		}
 
 		// 解析 Markdown 为片段
@@ -518,7 +518,7 @@ var importMarkdownCmd = &cobra.Command{
 				}
 			}
 			fmt.Printf("  总耗时: %.1fs\n", totalDuration.Seconds())
-			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+			fmt.Printf("  链接: %s/docx/%s\n", config.ResolveWebBaseURL(config.Get()), documentID)
 		}
 
 		return nil

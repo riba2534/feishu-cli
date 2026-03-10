@@ -18,11 +18,14 @@ var configCmd = &cobra.Command{
 配置优先级:
   环境变量 > 配置文件 > 默认值
 
-环境变量:
-  FEISHU_APP_ID      应用 ID
-  FEISHU_APP_SECRET  应用密钥
-  FEISHU_BASE_URL    API 地址（可选）
-  FEISHU_DEBUG       调试模式（可选）
+	环境变量:
+    FEISHU_APP_ID      应用 ID
+    FEISHU_APP_SECRET  应用密钥
+    FEISHU_PLATFORM    平台（feishu/lark）
+    FEISHU_BASE_URL    API 地址（可选，仅 API）
+    FEISHU_AUTH_BASE_URL  OAuth 地址（可选）
+    FEISHU_WEB_BASE_URL   文档链接地址（可选）
+    FEISHU_DEBUG       调试模式（可选）
 
 示例:
   # 初始化配置文件

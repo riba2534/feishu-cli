@@ -39,17 +39,18 @@ func GetClient() (*lark.Client, error) {
 
 	// 使用简单的配置指纹来检测变更，避免存储敏感信息
 	currentHash := fmt.Sprintf("%s:%d", cfg.AppID, len(cfg.AppSecret))
+	apiBaseURL := config.ResolveAPIBaseURL(cfg)
 
 	// Check if config changed or instance is nil
 	configChanged := instance == nil ||
 		lastCfg.appID != cfg.AppID ||
 		lastCfg.cfgHash != currentHash ||
-		lastCfg.baseURL != cfg.BaseURL ||
+		lastCfg.baseURL != apiBaseURL ||
 		lastCfg.debug != cfg.Debug
 
 	if configChanged {
 		opts := []lark.ClientOptionFunc{
-			lark.WithOpenBaseUrl(cfg.BaseURL),
+			lark.WithOpenBaseUrl(apiBaseURL),
 		}
 		if cfg.Debug {
 			opts = append(opts, lark.WithLogLevel(larkcore.LogLevelDebug))
@@ -59,7 +60,7 @@ func GetClient() (*lark.Client, error) {
 		// Save current config (不存储 secret 明文)
 		lastCfg.appID = cfg.AppID
 		lastCfg.cfgHash = currentHash
-		lastCfg.baseURL = cfg.BaseURL
+		lastCfg.baseURL = apiBaseURL
 		lastCfg.debug = cfg.Debug
 	}
 

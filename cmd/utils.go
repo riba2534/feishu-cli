@@ -31,7 +31,7 @@ func resolveOptionalUserToken(cmd *cobra.Command) string {
 func resolveRequiredUserToken(cmd *cobra.Command) (string, error) {
 	flagToken, _ := cmd.Flags().GetString("user-access-token")
 	cfg := config.Get()
-	return auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+	return auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, config.ResolveAPIBaseURL(cfg))
 }
 
 // mustMarkFlagRequired 标记 flag 为必填，如果失败则 panic

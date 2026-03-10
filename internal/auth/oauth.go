@@ -16,23 +16,25 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 const (
-	DefaultPort   = 9768
-	CallbackPath  = "/callback"
-	FeishuAuthURL = "https://accounts.feishu.cn/open-apis/authen/v1/authorize"
+	DefaultPort  = 9768
+	CallbackPath = "/callback"
 )
 
 // LoginOptions 登录选项
 type LoginOptions struct {
-	Port      int
-	Manual    bool   // 强制手动粘贴模式
-	NoManual  bool   // 强制本地回调模式
-	AppID     string
-	AppSecret string
-	BaseURL   string
-	Scopes    string // OAuth scope，空格分隔
+	Port        int
+	Manual      bool // 强制手动粘贴模式
+	NoManual    bool // 强制本地回调模式
+	AppID       string
+	AppSecret   string
+	BaseURL     string // API 地址
+	AuthBaseURL string
+	Scopes      string // OAuth scope，空格分隔
 }
 
 // tokenResponse 飞书 token 端点响应
@@ -88,9 +90,14 @@ func buildAuthURL(opts LoginOptions) (state, redirectURI, authURL string, err er
 	state = hex.EncodeToString(stateBytes)
 
 	redirectURI = fmt.Sprintf("http://127.0.0.1:%d%s", opts.Port, CallbackPath)
+	authBaseURL := opts.AuthBaseURL
+	if authBaseURL == "" {
+		authBaseURL = config.ResolveAuthBaseURL(nil)
+	}
+	authAuthorizeURL := config.ResolveOAuthAuthorizeURL(&config.Config{AuthBaseURL: authBaseURL})
 
 	authURL = fmt.Sprintf("%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
-		FeishuAuthURL,
+		authAuthorizeURL,
 		url.QueryEscape(opts.AppID),
 		url.QueryEscape(redirectURI),
 		url.QueryEscape(state),
@@ -111,7 +118,10 @@ func Login(opts LoginOptions) (*TokenStore, error) {
 	}
 
 	if opts.BaseURL == "" {
-		opts.BaseURL = "https://open.feishu.cn"
+		opts.BaseURL = config.ResolveAPIBaseURL(nil)
+	}
+	if opts.AuthBaseURL == "" {
+		opts.AuthBaseURL = config.ResolveAuthBaseURL(nil)
 	}
 
 	state, redirectURI, authURL, err := buildAuthURL(opts)
@@ -311,11 +321,11 @@ func ExchangeToken(code, appID, appSecret, redirectURI, baseURL string) (*TokenS
 	tokenURL := baseURL + "/open-apis/authen/v2/oauth/token"
 
 	body := map[string]string{
-		"grant_type":   "authorization_code",
-		"code":         code,
-		"client_id":    appID,
+		"grant_type":    "authorization_code",
+		"code":          code,
+		"client_id":     appID,
 		"client_secret": appSecret,
-		"redirect_uri": redirectURI,
+		"redirect_uri":  redirectURI,
 	}
 
 	return doTokenRequest(tokenURL, body)

@@ -47,11 +47,12 @@ var getDocumentCmd = &cobra.Command{
 				return err
 			}
 		} else {
+			docWebURL := fmt.Sprintf("%s/docx/%s", config.ResolveWebBaseURL(config.Get()), documentID)
 			fmt.Printf("文档信息:\n")
 			fmt.Printf("  文档ID: %s\n", documentID)
 			fmt.Printf("  标题: %s\n", docTitle)
 			fmt.Printf("  版本: %d\n", revisionID)
-			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+			fmt.Printf("  链接: %s\n", docWebURL)
 		}
 
 		return nil

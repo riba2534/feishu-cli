@@ -43,10 +43,7 @@ var authCallbackCmd = &cobra.Command{
 		// 构造 redirectURI（需与 --print-url 时一致）
 		redirectURI := fmt.Sprintf("http://127.0.0.1:%d%s", port, auth.CallbackPath)
 
-		baseURL := cfg.BaseURL
-		if baseURL == "" {
-			baseURL = "https://open.feishu.cn"
-		}
+		baseURL := config.ResolveAPIBaseURL(cfg)
 
 		// 用 code 换 token
 		token, err := auth.ExchangeToken(code, cfg.AppID, cfg.AppSecret, redirectURI, baseURL)

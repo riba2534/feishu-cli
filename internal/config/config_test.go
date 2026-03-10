@@ -45,7 +45,10 @@ func TestInit_DefaultValues(t *testing.T) {
 	// 清除可能存在的环境变量
 	os.Unsetenv("FEISHU_APP_ID")
 	os.Unsetenv("FEISHU_APP_SECRET")
+	os.Unsetenv("FEISHU_PLATFORM")
 	os.Unsetenv("FEISHU_BASE_URL")
+	os.Unsetenv("FEISHU_AUTH_BASE_URL")
+	os.Unsetenv("FEISHU_WEB_BASE_URL")
 	os.Unsetenv("FEISHU_DEBUG")
 	os.Unsetenv("FEISHU_USER_ACCESS_TOKEN")
 
@@ -55,8 +58,11 @@ func TestInit_DefaultValues(t *testing.T) {
 	}
 
 	c := Get()
-	if c.BaseURL != "https://open.feishu.cn" {
-		t.Errorf("BaseURL = %q, 期望 %q", c.BaseURL, "https://open.feishu.cn")
+	if c.Platform != PlatformFeishu {
+		t.Errorf("Platform = %q, 期望 %q", c.Platform, PlatformFeishu)
+	}
+	if c.BaseURL != "" {
+		t.Errorf("BaseURL = %q, 期望空字符串", c.BaseURL)
 	}
 	if c.Debug != false {
 		t.Errorf("Debug = %v, 期望 %v", c.Debug, false)
@@ -165,8 +171,11 @@ func TestGet_WithoutInit(t *testing.T) {
 		t.Fatal("Get() 返回 nil")
 	}
 	// 应返回默认配置
-	if c.BaseURL != "https://open.feishu.cn" {
-		t.Errorf("BaseURL = %q, 期望 %q", c.BaseURL, "https://open.feishu.cn")
+	if c.Platform != PlatformFeishu {
+		t.Errorf("Platform = %q, 期望 %q", c.Platform, PlatformFeishu)
+	}
+	if c.BaseURL != "" {
+		t.Errorf("BaseURL = %q, 期望空字符串", c.BaseURL)
 	}
 	if c.Export.AssetsDir != "./assets" {
 		t.Errorf("Export.AssetsDir = %q, 期望 %q", c.Export.AssetsDir, "./assets")
@@ -363,6 +372,53 @@ func TestInit_BaseURLFromEnv(t *testing.T) {
 	c := Get()
 	if c.BaseURL != "https://custom.lark.com" {
 		t.Errorf("BaseURL = %q, 期望 %q", c.BaseURL, "https://custom.lark.com")
+	}
+}
+
+func TestResolveURLs_DefaultFeishu(t *testing.T) {
+	cfg := &Config{Platform: PlatformFeishu}
+
+	if got := ResolveAPIBaseURL(cfg); got != defaultFeishuAPIBaseURL {
+		t.Errorf("ResolveAPIBaseURL() = %q, 期望 %q", got, defaultFeishuAPIBaseURL)
+	}
+	if got := ResolveAuthBaseURL(cfg); got != defaultFeishuAuthBaseURL {
+		t.Errorf("ResolveAuthBaseURL() = %q, 期望 %q", got, defaultFeishuAuthBaseURL)
+	}
+	if got := ResolveWebBaseURL(cfg); got != defaultFeishuWebBaseURL {
+		t.Errorf("ResolveWebBaseURL() = %q, 期望 %q", got, defaultFeishuWebBaseURL)
+	}
+}
+
+func TestResolveURLs_DefaultLark(t *testing.T) {
+	cfg := &Config{Platform: PlatformLark}
+
+	if got := ResolveAPIBaseURL(cfg); got != defaultLarkAPIBaseURL {
+		t.Errorf("ResolveAPIBaseURL() = %q, 期望 %q", got, defaultLarkAPIBaseURL)
+	}
+	if got := ResolveAuthBaseURL(cfg); got != defaultLarkAuthBaseURL {
+		t.Errorf("ResolveAuthBaseURL() = %q, 期望 %q", got, defaultLarkAuthBaseURL)
+	}
+	if got := ResolveWebBaseURL(cfg); got != defaultLarkWebBaseURL {
+		t.Errorf("ResolveWebBaseURL() = %q, 期望 %q", got, defaultLarkWebBaseURL)
+	}
+}
+
+func TestResolveURLs_ExplicitOverrides(t *testing.T) {
+	cfg := &Config{
+		Platform:    PlatformLark,
+		BaseURL:     "https://proxy.example.com",
+		AuthBaseURL: "https://auth.example.com",
+		WebBaseURL:  "https://docs.example.com",
+	}
+
+	if got := ResolveAPIBaseURL(cfg); got != "https://proxy.example.com" {
+		t.Errorf("ResolveAPIBaseURL() = %q, 期望 %q", got, "https://proxy.example.com")
+	}
+	if got := ResolveAuthBaseURL(cfg); got != "https://auth.example.com" {
+		t.Errorf("ResolveAuthBaseURL() = %q, 期望 %q", got, "https://auth.example.com")
+	}
+	if got := ResolveWebBaseURL(cfg); got != "https://docs.example.com" {
+		t.Errorf("ResolveWebBaseURL() = %q, 期望 %q", got, "https://docs.example.com")
 	}
 }
 

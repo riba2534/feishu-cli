@@ -2,6 +2,9 @@ package auth
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/riba2534/feishu-cli/internal/config"
 	"os"
 )
 
@@ -39,8 +42,8 @@ func ResolveUserAccessToken(flagValue, configValue, appID, appSecret, baseURL st
 
 		// access_token 过期，尝试刷新
 		if token.IsRefreshTokenValid() {
-			if baseURL == "" {
-				baseURL = "https://open.feishu.cn"
+			if strings.TrimSpace(baseURL) == "" {
+				baseURL = config.ResolveAPIBaseURL(nil)
 			}
 			logf("[自动刷新] Access Token 已过期，正在刷新...")
 			newToken, refreshErr := RefreshAccessToken(token.RefreshToken, appID, appSecret, baseURL)

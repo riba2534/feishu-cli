@@ -988,7 +988,8 @@ func (c *BlockToMarkdown) convertBitable(block *larkdocx.Block) (string, error) 
 		token = *block.Bitable.Token
 	}
 
-	return fmt.Sprintf("[Bitable: %s](https://feishu.cn/base/%s)\n", token, token), nil
+	baseURL := docBaseURL()
+	return fmt.Sprintf("[Bitable: %s](%s/base/%s)\n", token, baseURL, token), nil
 }
 
 func (c *BlockToMarkdown) convertSheet(block *larkdocx.Block) (string, error) {
@@ -1001,7 +1002,8 @@ func (c *BlockToMarkdown) convertSheet(block *larkdocx.Block) (string, error) {
 		token = *block.Sheet.Token
 	}
 
-	return fmt.Sprintf("[Sheet: %s](https://feishu.cn/sheets/%s)\n", token, token), nil
+	baseURL := docBaseURL()
+	return fmt.Sprintf("[Sheet: %s](%s/sheets/%s)\n", token, baseURL, token), nil
 }
 
 func (c *BlockToMarkdown) convertChatCard(block *larkdocx.Block) (string, error) {

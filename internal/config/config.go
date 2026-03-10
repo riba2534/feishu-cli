@@ -2,18 +2,38 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
+
+const (
+	PlatformFeishu = "feishu"
+	PlatformLark   = "lark"
+)
+
+const defaultFeishuAPIBaseURL = "https://open.feishu.cn"
+const defaultFeishuAuthBaseURL = "https://accounts.feishu.cn"
+const defaultFeishuWebBaseURL = "https://feishu.cn"
+
+const defaultLarkAPIBaseURL = "https://open.larksuite.com"
+const defaultLarkAuthBaseURL = "https://accounts.larksuite.com"
+const defaultLarkWebBaseURL = "https://larksuite.com"
+
+const defaultAuthPath = "/open-apis/authen/v1/authorize"
 
 // Config holds the application configuration
 type Config struct {
 	AppID           string       `mapstructure:"app_id"`
 	AppSecret       string       `mapstructure:"app_secret"`
 	UserAccessToken string       `mapstructure:"user_access_token"`
-	BaseURL         string       `mapstructure:"base_url"`
+	Platform        string       `mapstructure:"platform"`
+	BaseURL         string       `mapstructure:"base_url"`      // API 地址
+	AuthBaseURL     string       `mapstructure:"auth_base_url"` // OAuth 地址
+	WebBaseURL      string       `mapstructure:"web_base_url"`  // 文档链接地址
 	Debug           bool         `mapstructure:"debug"`
 	Export          ExportConfig `mapstructure:"export"`
 	Import          ImportConfig `mapstructure:"import"`
@@ -52,7 +72,10 @@ func Init(cfgFile string) error {
 	}
 
 	// 2. 设置默认值
-	viper.SetDefault("base_url", "https://open.feishu.cn")
+	viper.SetDefault("platform", PlatformFeishu)
+	viper.SetDefault("base_url", "")
+	viper.SetDefault("auth_base_url", "")
+	viper.SetDefault("web_base_url", "")
 	viper.SetDefault("debug", false)
 	viper.SetDefault("export.download_images", false)
 	viper.SetDefault("export.assets_dir", "./assets")
@@ -66,7 +89,10 @@ func Init(cfgFile string) error {
 	_ = viper.BindEnv("app_id", "FEISHU_APP_ID")
 	_ = viper.BindEnv("app_secret", "FEISHU_APP_SECRET")
 	_ = viper.BindEnv("user_access_token", "FEISHU_USER_ACCESS_TOKEN")
+	_ = viper.BindEnv("platform", "FEISHU_PLATFORM")
 	_ = viper.BindEnv("base_url", "FEISHU_BASE_URL")
+	_ = viper.BindEnv("auth_base_url", "FEISHU_AUTH_BASE_URL")
+	_ = viper.BindEnv("web_base_url", "FEISHU_WEB_BASE_URL")
 	_ = viper.BindEnv("debug", "FEISHU_DEBUG")
 
 	// 4. 读取配置文件
@@ -80,6 +106,9 @@ func Init(cfgFile string) error {
 	if err := viper.Unmarshal(cfg); err != nil {
 		return fmt.Errorf("解析配置失败: %w", err)
 	}
+	if err := normalizeConfig(cfg); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -88,7 +117,7 @@ func Init(cfgFile string) error {
 func Get() *Config {
 	if cfg == nil {
 		return &Config{
-			BaseURL: "https://open.feishu.cn",
+			Platform: PlatformFeishu,
 			Export: ExportConfig{
 				AssetsDir: "./assets",
 			},
@@ -98,6 +127,113 @@ func Get() *Config {
 		}
 	}
 	return cfg
+}
+
+func normalizeConfig(c *Config) error {
+	if c == nil {
+		return nil
+	}
+
+	platform, err := normalizePlatform(c.Platform)
+	if err != nil {
+		return err
+	}
+	c.Platform = platform
+
+	c.BaseURL, err = normalizeBaseURLField("base_url", c.BaseURL)
+	if err != nil {
+		return err
+	}
+	c.AuthBaseURL, err = normalizeBaseURLField("auth_base_url", c.AuthBaseURL)
+	if err != nil {
+		return err
+	}
+	c.WebBaseURL, err = normalizeBaseURLField("web_base_url", c.WebBaseURL)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func normalizePlatform(platform string) (string, error) {
+	platform = strings.ToLower(strings.TrimSpace(platform))
+	if platform == "" {
+		return PlatformFeishu, nil
+	}
+	switch platform {
+	case PlatformFeishu, PlatformLark:
+		return platform, nil
+	default:
+		return "", fmt.Errorf("配置项 platform 无效: %s（仅支持 feishu 或 lark）", platform)
+	}
+}
+
+func normalizeBaseURLField(name, raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("配置项 %s 无效: %s", name, raw)
+	}
+	return u.Scheme + "://" + u.Host, nil
+}
+
+func effectivePlatform(cfg *Config) string {
+	if cfg == nil {
+		return PlatformFeishu
+	}
+	if cfg.Platform == "" {
+		return PlatformFeishu
+	}
+	return cfg.Platform
+}
+
+// ResolveAPIBaseURL 返回 API 入口地址。
+func ResolveAPIBaseURL(cfg *Config) string {
+	if cfg != nil && cfg.BaseURL != "" {
+		return cfg.BaseURL
+	}
+	switch effectivePlatform(cfg) {
+	case PlatformLark:
+		return defaultLarkAPIBaseURL
+	default:
+		return defaultFeishuAPIBaseURL
+	}
+}
+
+// ResolveAuthBaseURL 返回 OAuth 主机地址。
+func ResolveAuthBaseURL(cfg *Config) string {
+	if cfg != nil && cfg.AuthBaseURL != "" {
+		return cfg.AuthBaseURL
+	}
+	switch effectivePlatform(cfg) {
+	case PlatformLark:
+		return defaultLarkAuthBaseURL
+	default:
+		return defaultFeishuAuthBaseURL
+	}
+}
+
+// ResolveOAuthAuthorizeURL 返回完整 OAuth authorize 地址。
+func ResolveOAuthAuthorizeURL(cfg *Config) string {
+	return ResolveAuthBaseURL(cfg) + defaultAuthPath
+}
+
+// ResolveWebBaseURL 返回文档/知识库链接域名。
+func ResolveWebBaseURL(cfg *Config) string {
+	if cfg != nil && cfg.WebBaseURL != "" {
+		return cfg.WebBaseURL
+	}
+	switch effectivePlatform(cfg) {
+	case PlatformLark:
+		return defaultLarkWebBaseURL
+	default:
+		return defaultFeishuWebBaseURL
+	}
 }
 
 // Validate validates the configuration
@@ -143,7 +279,10 @@ func CreateDefaultConfig() error {
 
 app_id: ""
 app_secret: ""
-base_url: "https://open.feishu.cn"
+platform: "feishu"  # 可选: feishu, lark
+base_url: ""        # API 地址，留空时按 platform 使用官方默认值
+auth_base_url: ""   # OAuth 地址，留空时按 platform 使用官方默认值
+web_base_url: ""    # 文档链接地址，留空时按 platform 使用官方默认值
 debug: false
 
 # 导出配置
