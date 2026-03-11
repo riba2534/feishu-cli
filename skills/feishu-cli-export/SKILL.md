@@ -371,7 +371,7 @@ feishu-cli doc import-file ~/Documents/report.docx --type docx --name "季度报
 | 行内公式 | `$formula$` | 段落内嵌公式 |
 | 分割线 (Divider) | `---` | |
 | 表格 (Table) | Markdown 表格 | 管道符自动转义 |
-| 图片 (Image) | `\[Image: url\]` | |
+| 图片 (Image) | `![alt](feishu://media/<token>)` 或本地路径 | 使用 `--download-images` 时下载到本地 |
 | 链接 | `[text](url)` | URL 特殊字符自动编码 |
 | 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` 或 PNG 图片 | 使用 `--download-images` 时自动导出为 PNG |
 | ISV 块 | 画板链接或 HTML 注释 | Mermaid 绘图/时间线 |
