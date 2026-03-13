@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -44,6 +45,65 @@ func SendMessage(receiveIDType string, receiveID string, msgType string, content
 	}
 
 	return *resp.Data.MessageId, nil
+}
+
+// UploadImage uploads an image for use in messages, returning an image_key
+func UploadImage(filePath string) (string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("打开图片文件失败: %w", err)
+	}
+	defer file.Close()
+
+	req := larkim.NewCreateImageReqBuilder().
+		Body(larkim.NewCreateImageReqBodyBuilder().
+			ImageType(larkim.ImageTypeMessage).
+			Image(file).
+			Build()).
+		Build()
+
+	resp, err := client.Im.Image.Create(Context(), req)
+	if err != nil {
+		return "", fmt.Errorf("上传图片失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return "", fmt.Errorf("上传图片失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data.ImageKey == nil {
+		return "", fmt.Errorf("上传成功但未返回 image_key")
+	}
+
+	return *resp.Data.ImageKey, nil
+}
+
+// CreateImageMessageContent creates JSON content for an image message
+func CreateImageMessageContent(imageKey string) string {
+	content := map[string]string{"image_key": imageKey}
+	data, _ := json.Marshal(content)
+	return string(data)
+}
+
+// UploadAndSendImage uploads an image and sends it as a message in one step
+func UploadAndSendImage(filePath, receiveIDType, receiveID, userAccessToken string) (imageKey string, messageID string, err error) {
+	imageKey, err = UploadImage(filePath)
+	if err != nil {
+		return "", "", err
+	}
+
+	content := CreateImageMessageContent(imageKey)
+	messageID, err = SendMessage(receiveIDType, receiveID, "image", content, userAccessToken)
+	if err != nil {
+		return imageKey, "", err
+	}
+
+	return imageKey, messageID, nil
 }
 
 // ReplyMessage replies to a message
