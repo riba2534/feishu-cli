@@ -1,10 +1,10 @@
 ---
 name: feishu-cli-msg
 description: >-
-  飞书消息全功能管理。发送消息（text/post/interactive 卡片等 11 种类型）、回复消息、
-  转发/合并转发、Reaction 表情回应、Pin 置顶消息、删除消息、消息详情、会话历史、
-  搜索群聊。当用户请求"发消息"、"回复"、"转发"、"置顶"、"Reaction"、"表情回应"、
-  "消息历史"、"Pin 消息"时使用。
+  飞书消息全功能管理。发送消息（text/post/interactive 卡片等 11 种类型）、上传并发送图片、
+  回复消息、转发/合并转发、Reaction 表情回应、Pin 置顶消息、删除消息、消息详情、会话历史、
+  搜索群聊。当用户请求"发消息"、"发图片"、"发送图片"、"回复"、"转发"、"置顶"、"Reaction"、
+  "表情回应"、"消息历史"、"Pin 消息"时使用。
 argument-hint: <receive_id> [--msg-type <type>]
 user-invocable: true
 allowed-tools: Bash, Read, Write
@@ -47,6 +47,7 @@ allowed-tools: Bash, Read, Write
 ```
 用户需求
 ├─ 【默认】通知/报告/告警/任何有信息量的消息 → interactive（卡片）
+├─ 发送本地图片文件 → 先用 msg upload-image 上传获取 image_key，再 msg send（或直接 --send 一步完成）
 ├─ 发送已上传的图片/文件/音视频 → image/file/audio/media
 ├─ 分享群聊或用户名片 → share_chat/share_user
 ├─ 会话分割线（仅 p2p） → system
@@ -72,6 +73,53 @@ allowed-tools: Bash, Read, Write
 | share_chat | 群名片 | `{"chat_id":"oc_xxx"}` | — |
 | share_user | 个人名片 | `{"user_id":"ou_xxx"}` | — |
 | system | 系统分割线 | `{"type":"divider",...}` | 仅 p2p |
+
+## 上传图片（upload-image）
+
+发送图片消息需要 `image_key`（不同于云空间的 `file_token`）。使用 `msg upload-image` 上传本地图片获取 `image_key`。
+
+### 仅上传
+
+```bash
+feishu-cli msg upload-image screenshot.png
+# 输出: image_key: img_v3_xxxx
+
+# JSON 输出（便于脚本）
+feishu-cli msg upload-image screenshot.png -o json
+```
+
+### 上传并直接发送（推荐）
+
+```bash
+# 一步完成：上传 + 发送给用户
+feishu-cli msg upload-image photo.png \
+  --send \
+  --receive-id-type email \
+  --receive-id user@example.com
+
+# 发送到群聊
+feishu-cli msg upload-image chart.png \
+  --send \
+  --receive-id-type chat_id \
+  --receive-id oc_xxx
+```
+
+### 分步发送
+
+```bash
+# 先上传
+feishu-cli msg upload-image screenshot.png -o json
+# 返回: {"image_key":"img_v3_xxxx"}
+
+# 再发送
+feishu-cli msg send \
+  --receive-id-type email \
+  --receive-id user@example.com \
+  --msg-type image \
+  -c '{"image_key":"img_v3_xxxx"}'
+```
+
+**注意**：`image_key` 与 `file_token` 是不同体系。`media upload` 和 `file upload` 返回的是 `file_token`，不能用于图片消息。必须使用 `msg upload-image` 获取 `image_key`。
 
 ## Bot 身份 vs User 身份
 
