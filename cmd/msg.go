@@ -12,6 +12,7 @@ var msgCmd = &cobra.Command{
 子命令:
   send            发送消息
   reply           回复消息
+  upload-image    上传图片获取 image_key（支持直接发送）
   delete          删除消息
   list            获取消息列表
   get             获取消息详情
