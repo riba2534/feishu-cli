@@ -648,6 +648,9 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
 | 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
 | 搜索消息/应用 | 需要 User Access Token | 通过 `auth login` 或手动获取 |
 | 搜索文档 | 需要 User Access Token | 通过 `auth login` 或手动获取，支持 `search:read` 权限 |
+| 读取他人文档（User 身份） | `docx:document:readonly`（User scope） | 通过 `feishu-cli auth login --scopes "docx:document:readonly offline_access"` 授权 |
+| 搜索云文档（User 身份） | `search:docs:read`（User scope） | 通过 `feishu-cli auth login --scopes "search:docs:read offline_access"` 授权 |
+| 离线刷新 Token | `offline_access`（User scope） | 与其他 scope 一起传入，获取 Refresh Token 以自动续期 |
 
 ### 无需审批权限快捷导入
 ```json

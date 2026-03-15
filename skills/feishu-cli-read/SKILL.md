@@ -16,7 +16,8 @@ allowed-tools: Bash, Read, Grep
 ## 前置条件
 
 - 已完成认证（`feishu-cli auth login`）
-- 需要 `docx:document` 或 `wiki:wiki:readonly` 权限
+- App 权限：需要 `docx:document` 或 `docx:document:readonly`（普通文档）、`wiki:wiki:readonly`（知识库）
+- User Token 权限：若 App 无权访问他人文档，需通过 `feishu-cli auth login --scopes "docx:document:readonly offline_access"` 授权，`doc export` 会自动读取保存的 User Token
 
 ## 核心概念
 
@@ -33,6 +34,7 @@ allowed-tools: Bash, Read, Grep
 ## 执行流程
 
 1. **解析参数**
+
    - 判断 URL 类型：
      - `/docx/` → 普通文档，使用 `doc export`
      - `/wiki/` → 知识库文档，使用 `wiki export`
@@ -41,11 +43,24 @@ allowed-tools: Bash, Read, Grep
 2. **导出为 Markdown（含图片下载）**
 
    **普通文档**:
+
    ```bash
    feishu-cli doc export <document_id> --output /tmp/feishu_doc.md --download-images --assets-dir /tmp/feishu_assets
    ```
 
+   `doc export` 会按以下优先级自动获取权限：
+
+   1. App Access Token（需应用有 `docx:document:readonly` 权限）
+   2. User Access Token（从 `auth login` 保存的 token.json 自动读取，或通过 `--user-access-token` 手动指定）
+
+   若遇到 `code=1770032 forBidden`（App 无权限）或 `code=99991679 Unauthorized`（User Token 缺少 scope），需先完成 User Token 授权：
+
+   ```bash
+   feishu-cli auth login --scopes "docx:document:readonly offline_access"
+   ```
+
    **知识库文档**:
+
    ```bash
    feishu-cli wiki export <node_token> --output /tmp/feishu_wiki.md --download-images --assets-dir /tmp/feishu_assets
    ```
@@ -53,15 +68,19 @@ allowed-tools: Bash, Read, Grep
    **重要**：务必使用 `--download-images` 参数下载文档中的图片到本地，否则只能看到 `feishu://media/<token>` 引用，无法理解图片内容。
 
    **可选参数**：
+
+   - `--user-access-token`：手动指定 User Access Token（不填则自动从 `~/.feishu-cli/token.json` 读取）
    - `--front-matter`：在 Markdown 顶部添加 YAML front matter（含标题和文档 ID）
    - `--highlight`：保留文本颜色和背景色（输出为 HTML `<span>` 标签）
    - `--expand-mentions`：展开 @用户为友好格式（默认开启，需要 contact:user.base:readonly 权限）
 
 3. **读取文本内容**
+
    - 使用 Read 工具读取导出的 Markdown 文件
    - 分析文档结构和文本内容
 
 4. **读取并理解图片内容**
+
    - 检查 `--assets-dir` 指定的目录是否有下载的图片
    - **使用 Read 工具逐个读取图片文件**（Claude 支持多模态，可直接理解图片内容）
    - 将图片内容整合到文档分析中
@@ -82,6 +101,7 @@ allowed-tools: Bash, Read, Grep
 ## 输出格式
 
 向用户报告：
+
 - 文档标题
 - 文档结构概要（标题层级）
 - 内容摘要（关键信息）
@@ -91,12 +111,12 @@ allowed-tools: Bash, Read, Grep
 
 ## 支持的 URL 格式
 
-| URL 格式 | 类型 | 命令 |
-|---------|------|------|
-| `https://xxx.feishu.cn/docx/<id>` | 普通文档 | `doc export` |
-| `https://xxx.feishu.cn/wiki/<token>` | 知识库 | `wiki export` |
-| `https://xxx.larkoffice.com/docx/<id>` | 普通文档 | `doc export` |
-| `https://xxx.larkoffice.com/wiki/<token>` | 知识库 | `wiki export` |
+| URL 格式                                  | 类型     | 命令          |
+| ----------------------------------------- | -------- | ------------- |
+| `https://xxx.feishu.cn/docx/<id>`         | 普通文档 | `doc export`  |
+| `https://xxx.feishu.cn/wiki/<token>`      | 知识库   | `wiki export` |
+| `https://xxx.larkoffice.com/docx/<id>`    | 普通文档 | `doc export`  |
+| `https://xxx.larkoffice.com/wiki/<token>` | 知识库   | `wiki export` |
 
 ## 示例
 
@@ -114,15 +134,15 @@ allowed-tools: Bash, Read, Grep
 
 导出的 Markdown 支持以下飞书特有块类型的转换：
 
-| 飞书块类型 | Markdown 表现 |
-|-----------|--------------|
-| Callout 高亮块 | `> [!NOTE]`、`> [!WARNING]` 等 6 种 GitHub-style alert |
-| 块级/行内公式 | `$formula$`（LaTeX 格式） |
-| 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` 链接 |
-| ISV 块 (Mermaid) | 画板链接 |
-| QuoteContainer | `>` 引用语法（支持嵌套） |
-| AddOns/SyncedBlock | 透明展开子块内容 |
-| Iframe | `<iframe>` HTML 标签 |
+| 飞书块类型         | Markdown 表现                                          |
+| ------------------ | ------------------------------------------------------ |
+| Callout 高亮块     | `> [!NOTE]`、`> [!WARNING]` 等 6 种 GitHub-style alert |
+| 块级/行内公式      | `$formula$`（LaTeX 格式）                              |
+| 画板 (Board)       | `[画板/Whiteboard](feishu://board/...)` 链接           |
+| ISV 块 (Mermaid)   | 画板链接                                               |
+| QuoteContainer     | `>` 引用语法（支持嵌套）                               |
+| AddOns/SyncedBlock | 透明展开子块内容                                       |
+| Iframe             | `<iframe>` HTML 标签                                   |
 
 使用 `--highlight` 参数时，带颜色的文本输出为 `<span style="color:...">` 标签。
 
@@ -133,6 +153,7 @@ allowed-tools: Bash, Read, Grep
 ### 1. 识别目录节点
 
 当导出知识库文档时，如果 Markdown 内容显示为：
+
 ```markdown
 [Wiki 目录 - 使用 'wiki nodes <space_id> --parent <node_token>' 获取子节点列表]
 ```
@@ -174,32 +195,38 @@ feishu-cli wiki export <child_node_token_2> -o /tmp/child2.md
 
 ### 1. 常见错误
 
-| 错误 | 原因 | 解决 |
-|------|------|------|
-| `code=131002, param err` | 参数错误 | 检查 token 格式 |
-| `code=131001, node not found` | 节点不存在 | 检查 token 是否正确 |
-| `code=131003, no permission` | 无权限访问 | 确认应用有 wiki:wiki:readonly 权限 |
-| `code=131004, space not found` | 知识空间不存在 | 检查 space_id 是否正确 |
-| 空内容或 `Unknown block type` | 特殊块类型 | 见「高级：Wiki 目录节点处理」章节 |
+| 错误                              | 原因                                           | 解决                                                                                                        |
+| --------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `code=1770032, msg=forBidden`     | App Token 无权限访问该文档                     | 通过 `auth login --scopes "docx:document:readonly offline_access"` 授权 User Token，`doc export` 会自动读取 |
+| `code=99991679, msg=Unauthorized` | User Token 缺少 `docx:document:readonly` scope | 重新执行 `feishu-cli auth login --scopes "docx:document:readonly offline_access"`                           |
+| `code=131002, param err`          | 参数错误                                       | 检查 token 格式                                                                                             |
+| `code=131001, node not found`     | 节点不存在                                     | 检查 token 是否正确                                                                                         |
+| `code=131003, no permission`      | 无权限访问                                     | 确认应用有 wiki:wiki:readonly 权限                                                                          |
+| `code=131004, space not found`    | 知识空间不存在                                 | 检查 space_id 是否正确                                                                                      |
+| 空内容或 `Unknown block type`     | 特殊块类型                                     | 见「高级：Wiki 目录节点处理」章节                                                                           |
 
 ### 2. 边界情况处理
 
 **情况 1：文档内容为空**
+
 - 检查文档是否真的为空
 - 检查是否有权限查看内容
 - 检查是否是目录节点（见上文）
 
 **情况 2：图片下载失败**
+
 - 检查 `--assets-dir` 目录是否可写
 - 检查网络连接
 - 图片可能已被删除或过期
 
 **情况 3：部分块类型无法识别**
+
 - 飞书 API 可能返回未知的块类型
 - 这些块会显示为 `<!-- Unknown block type: XX -->`
 - 这是正常现象，不影响其他内容的读取
 
 **情况 4：大型文档**
+
 - 超过 1000 个块的文档可能需要分页获取
 - 使用 `feishu-cli doc blocks <doc_id> --all` 自动分页
 
@@ -223,15 +250,22 @@ sleep 5 && feishu-cli wiki export <token>
 
 ## 常见问题
 
-**Q: 提示权限不足 / `no permission`**
-- 确认应用已获得 `docx:document`（普通文档）或 `wiki:wiki:readonly`（知识库）权限
-- 在飞书开放平台的应用权限页面检查并申请所需权限
+**Q: 提示权限不足 / `no permission` / `forBidden`**
+
+- 确认应用已获得 `docx:document:readonly`（普通文档）或 `wiki:wiki:readonly`（知识库）权限
+- 如果是他人文档且 App 没有被添加为协作者，需要使用 User Token：
+  ```bash
+  feishu-cli auth login --scopes "docx:document:readonly offline_access"
+  ```
+  授权后 `doc export` 会自动读取，无需额外参数
 
 **Q: 文档不存在 / `node not found`**
+
 - 检查文档 ID 或 node_token 是否正确（注意区分 `document_id` 和 `node_token`）
 - 从 URL 中提取 ID 时确认使用了正确的路径段（`/docx/` 后为 document_id，`/wiki/` 后为 node_token）
 
 **Q: Token 过期 / 认证失败**
+
 - 运行 `feishu-cli auth status` 检查当前认证状态
 - 如已过期，运行 `feishu-cli auth login` 重新认证
 - 如使用 App Access Token，检查 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET` 环境变量是否正确

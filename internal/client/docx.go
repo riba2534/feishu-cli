@@ -95,6 +95,11 @@ func GetRawContent(documentID string) (string, error) {
 
 // ListBlocks retrieves all blocks in a document
 func ListBlocks(documentID string, pageToken string, pageSize int) ([]*larkdocx.Block, string, error) {
+	return ListBlocksWithToken(documentID, pageToken, pageSize, "")
+}
+
+// ListBlocksWithToken retrieves all blocks in a document, optionally using a User Access Token
+func ListBlocksWithToken(documentID string, pageToken string, pageSize int, userAccessToken string) ([]*larkdocx.Block, string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, "", err
@@ -108,7 +113,7 @@ func ListBlocks(documentID string, pageToken string, pageSize int) ([]*larkdocx.
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Docx.DocumentBlock.List(Context(), reqBuilder.Build())
+	resp, err := client.Docx.DocumentBlock.List(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, "", fmt.Errorf("获取块列表失败: %w", err)
 	}
@@ -124,6 +129,11 @@ func ListBlocks(documentID string, pageToken string, pageSize int) ([]*larkdocx.
 
 // GetAllBlocks retrieves all blocks in a document with pagination
 func GetAllBlocks(documentID string) ([]*larkdocx.Block, error) {
+	return GetAllBlocksWithToken(documentID, "")
+}
+
+// GetAllBlocksWithToken retrieves all blocks in a document with pagination, optionally using a User Access Token
+func GetAllBlocksWithToken(documentID string, userAccessToken string) ([]*larkdocx.Block, error) {
 	var allBlocks []*larkdocx.Block
 	pageToken := ""
 	pageSize := 500
@@ -134,7 +144,7 @@ func GetAllBlocks(documentID string) ([]*larkdocx.Block, error) {
 		if pageCount >= maxPages {
 			return nil, fmt.Errorf("超过最大分页限制 %d，文档可能有异常", maxPages)
 		}
-		blocks, nextToken, err := ListBlocks(documentID, pageToken, pageSize)
+		blocks, nextToken, err := ListBlocksWithToken(documentID, pageToken, pageSize, userAccessToken)
 		if err != nil {
 			return nil, err
 		}

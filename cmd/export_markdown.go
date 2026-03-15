@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 
+	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/converter"
@@ -43,8 +44,13 @@ var exportMarkdownCmd = &cobra.Command{
 		downloadImages, _ := cmd.Flags().GetBool("download-images")
 		assetsDir, _ := cmd.Flags().GetString("assets-dir")
 
+		// 获取可选的 User Access Token（用于访问无 App 权限的文档）
+		flagToken, _ := cmd.Flags().GetString("user-access-token")
+		cfg := config.Get()
+		userAccessToken, _ := auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+
 		// Get all blocks
-		blocks, err := client.GetAllBlocks(documentID)
+		blocks, err := client.GetAllBlocksWithToken(documentID, userAccessToken)
 		if err != nil {
 			return fmt.Errorf("获取块失败: %w", err)
 		}
@@ -127,4 +133,5 @@ func init() {
 	exportMarkdownCmd.Flags().Bool("front-matter", false, "添加 YAML front matter (标题和文档 ID)")
 	exportMarkdownCmd.Flags().Bool("highlight", false, "保留文本颜色和背景色 (输出为 HTML span)")
 	exportMarkdownCmd.Flags().Bool("expand-mentions", true, "展开 @用户为友好格式 (需要 contact:user.base:readonly 权限)")
+	exportMarkdownCmd.Flags().String("user-access-token", "", "User Access Token（用于访问无 App 权限的文档，自动从 auth login 读取）")
 }
