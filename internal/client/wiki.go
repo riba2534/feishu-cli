@@ -185,7 +185,7 @@ type CreateWikiNodeResult struct {
 }
 
 // CreateWikiNode 在知识空间中创建节点
-func CreateWikiNode(spaceID, title, parentNode, nodeType string, userAccessToken string) (*CreateWikiNodeResult, error) {
+func CreateWikiNode(spaceID, title, parentNode, objType string, nodeType string, userAccessToken string) (*CreateWikiNodeResult, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -194,10 +194,15 @@ func CreateWikiNode(spaceID, title, parentNode, nodeType string, userAccessToken
 	nodeBuilder := larkwiki.NewNodeBuilder().
 		Title(title)
 
-	if nodeType == "" {
-		nodeType = larkwiki.ObjTypeObjTypeDocx
+	if objType == "" {
+		objType = larkwiki.ObjTypeObjTypeDocx
 	}
-	nodeBuilder.ObjType(nodeType)
+	nodeBuilder.ObjType(objType)
+
+	if nodeType == "" {
+		nodeType = larkwiki.NodeTypeNodeTypeEntity
+	}
+	nodeBuilder.NodeType(nodeType)
 
 	if parentNode != "" {
 		nodeBuilder.ParentNodeToken(parentNode)
