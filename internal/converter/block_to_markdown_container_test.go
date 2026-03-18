@@ -916,6 +916,45 @@ func TestConvertQuoteContainer(t *testing.T) {
 			},
 			want: "> Line1\n> Line2\n> Line3",
 		},
+		{
+			name: "quote container skips empty text children",
+			blocks: []*larkdocx.Block{
+				{
+					BlockId:        strPtr("qc1"),
+					BlockType:      intPtr(int(BlockTypeQuoteContainer)),
+					QuoteContainer: &larkdocx.QuoteContainer{},
+					Children:       []string{"empty1", "text1"},
+				},
+				{
+					BlockId:   strPtr("empty1"),
+					BlockType: intPtr(int(BlockTypeText)),
+					Text: &larkdocx.Text{
+						Elements: []*larkdocx.TextElement{},
+					},
+				},
+				createTextBlock("text1", "Hello World"),
+			},
+			want: "> Hello World",
+		},
+		{
+			name: "quote container with only empty children",
+			blocks: []*larkdocx.Block{
+				{
+					BlockId:        strPtr("qc1"),
+					BlockType:      intPtr(int(BlockTypeQuoteContainer)),
+					QuoteContainer: &larkdocx.QuoteContainer{},
+					Children:       []string{"empty1"},
+				},
+				{
+					BlockId:   strPtr("empty1"),
+					BlockType: intPtr(int(BlockTypeText)),
+					Text: &larkdocx.Text{
+						Elements: []*larkdocx.TextElement{},
+					},
+				},
+			},
+			want: "",
+		},
 	}
 
 	for _, tt := range tests {
