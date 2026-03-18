@@ -319,6 +319,40 @@ func TestMustMarkFlagRequired_EmptyFlags(t *testing.T) {
 	mustMarkFlagRequired(cmd)
 }
 
+func TestNormalizePermMemberType(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// Underscore aliases (IM API style) → Drive API style
+		{"open_id", "openid"},
+		{"user_id", "userid"},
+		{"union_id", "unionid"},
+		{"chat_id", "openchat"},
+		// Already correct Drive API values → unchanged
+		{"openid", "openid"},
+		{"userid", "userid"},
+		{"unionid", "unionid"},
+		{"openchat", "openchat"},
+		{"email", "email"},
+		{"opendepartmentid", "opendepartmentid"},
+		{"groupid", "groupid"},
+		{"wikispaceid", "wikispaceid"},
+		// Unknown values → pass through unchanged
+		{"something_else", "something_else"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := normalizePermMemberType(tt.input)
+			if result != tt.expected {
+				t.Errorf("normalizePermMemberType(%q) = %q, expected %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 // 测试 validateOutputPath 与允许目录的交互
 func TestValidateOutputPath_WithAllowedDir(t *testing.T) {
 	tmpDir := t.TempDir()

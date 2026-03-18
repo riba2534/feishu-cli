@@ -26,12 +26,12 @@ var permCmd = &cobra.Command{
   edit         编辑权限
   full_access  完全访问权限
 
-成员类型:
+成员类型（也接受 open_id/user_id/union_id/chat_id 等 IM API 风格的别名）:
   email             邮箱
-  openid            Open ID
-  userid            用户 ID
-  unionid           Union ID
-  openchat          群组 ID
+  openid/open_id    Open ID
+  userid/user_id    用户 ID
+  unionid/union_id  Union ID
+  openchat/chat_id  群组 ID
   opendepartmentid  部门 ID
 
 示例:

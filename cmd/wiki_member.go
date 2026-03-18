@@ -19,11 +19,11 @@ var wikiMemberCmd = &cobra.Command{
   remove    移除成员
 
 成员类型 (--member-type):
-  openchat          群 ID
-  userid            用户 ID
-  email             邮箱
-  opendepartmentid  部门 ID
-  openid            Open ID
+  openchat/chat_id      群 ID
+  userid/user_id        用户 ID
+  email                 邮箱
+  opendepartmentid      部门 ID
+  openid/open_id        Open ID
 
 角色 (--role):
   admin    管理员
@@ -58,6 +58,8 @@ var wikiMemberAddCmd = &cobra.Command{
 		memberType, _ := cmd.Flags().GetString("member-type")
 		memberID, _ := cmd.Flags().GetString("member-id")
 		role, _ := cmd.Flags().GetString("role")
+
+		memberType = normalizePermMemberType(memberType)
 
 		if err := client.AddWikiSpaceMember(spaceID, memberType, memberID, role, resolveOptionalUserToken(cmd)); err != nil {
 			return err
@@ -147,6 +149,8 @@ var wikiMemberRemoveCmd = &cobra.Command{
 		memberType, _ := cmd.Flags().GetString("member-type")
 		memberID, _ := cmd.Flags().GetString("member-id")
 		role, _ := cmd.Flags().GetString("role")
+
+		memberType = normalizePermMemberType(memberType)
 
 		if err := client.RemoveWikiSpaceMember(spaceID, memberType, memberID, role, resolveOptionalUserToken(cmd)); err != nil {
 			return err

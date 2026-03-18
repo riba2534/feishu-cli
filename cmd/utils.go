@@ -153,6 +153,25 @@ func isValidToken(token string) bool {
 	return true
 }
 
+// normalizePermMemberType normalizes member type aliases for the Drive permission API.
+// The IM API uses underscore-separated identifiers (open_id, user_id, union_id, chat_id),
+// while the Drive permission API uses concatenated identifiers (openid, userid, unionid, openchat).
+// This function accepts both styles so users don't have to remember which API uses which format.
+func normalizePermMemberType(memberType string) string {
+	switch memberType {
+	case "open_id":
+		return "openid"
+	case "user_id":
+		return "userid"
+	case "union_id":
+		return "unionid"
+	case "chat_id":
+		return "openchat"
+	default:
+		return memberType
+	}
+}
+
 // splitAndTrim 按逗号分割字符串并去除空白
 func splitAndTrim(s string) []string {
 	parts := strings.Split(s, ",")

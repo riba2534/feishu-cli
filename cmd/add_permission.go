@@ -27,10 +27,10 @@ var addPermissionCmd = &cobra.Command{
 
 成员类型:
   email             邮箱
-  openid            Open ID
-  userid            用户 ID
-  unionid           Union ID
-  openchat          群组 ID
+  openid/open_id    Open ID
+  userid/user_id    用户 ID
+  unionid/union_id  Union ID
+  openchat/chat_id  群组 ID
   opendepartmentid  部门 ID
   groupid           群组 ID
   wikispaceid       知识空间 ID
@@ -63,6 +63,8 @@ var addPermissionCmd = &cobra.Command{
 		perm, _ := cmd.Flags().GetString("perm")
 		notification, _ := cmd.Flags().GetBool("notification")
 
+		memberType = normalizePermMemberType(memberType)
+
 		member := client.PermissionMember{
 			MemberType: memberType,
 			MemberID:   memberID,
@@ -84,7 +86,7 @@ var addPermissionCmd = &cobra.Command{
 func init() {
 	permCmd.AddCommand(addPermissionCmd)
 	addPermissionCmd.Flags().String("doc-type", "docx", "文档类型（docx/sheet/bitable 等）")
-	addPermissionCmd.Flags().String("member-type", "", "成员类型（email/openid/userid 等）")
+	addPermissionCmd.Flags().String("member-type", "", "成员类型（email/openid/open_id/userid/user_id 等）")
 	addPermissionCmd.Flags().String("member-id", "", "成员标识")
 	addPermissionCmd.Flags().String("perm", "", "权限级别（view/edit/full_access）")
 	addPermissionCmd.Flags().Bool("notification", false, "发送通知给成员")

@@ -65,6 +65,7 @@ var batchAddPermissionCmd = &cobra.Command{
 		}
 
 		for i, m := range members {
+			m.MemberType = normalizePermMemberType(m.MemberType)
 			if m.MemberType == "" {
 				return fmt.Errorf("第 %d 个成员的 member_type 不能为空", i+1)
 			}

@@ -21,10 +21,10 @@ var deletePermissionCmd = &cobra.Command{
 
 成员类型:
   email             邮箱
-  openid            Open ID
-  userid            用户 ID
-  unionid           Union ID
-  openchat          群组 ID
+  openid/open_id    Open ID
+  userid/user_id    用户 ID
+  unionid/union_id  Union ID
+  openchat/chat_id  群组 ID
   opendepartmentid  部门 ID
   groupid           群组 ID
   wikispaceid       知识空间 ID
@@ -51,6 +51,8 @@ var deletePermissionCmd = &cobra.Command{
 		memberType, _ := cmd.Flags().GetString("member-type")
 		memberID, _ := cmd.Flags().GetString("member-id")
 
+		memberType = normalizePermMemberType(memberType)
+
 		if err := client.DeletePermission(docToken, docType, memberType, memberID); err != nil {
 			return err
 		}
@@ -65,7 +67,7 @@ var deletePermissionCmd = &cobra.Command{
 func init() {
 	permCmd.AddCommand(deletePermissionCmd)
 	deletePermissionCmd.Flags().String("doc-type", "docx", "文档类型（docx/sheet/bitable 等）")
-	deletePermissionCmd.Flags().String("member-type", "", "成员类型（email/openid/userid 等）")
+	deletePermissionCmd.Flags().String("member-type", "", "成员类型（email/openid/open_id/userid/user_id 等）")
 	deletePermissionCmd.Flags().String("member-id", "", "成员标识")
 	mustMarkFlagRequired(deletePermissionCmd, "member-type", "member-id")
 }

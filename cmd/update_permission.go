@@ -27,10 +27,10 @@ var updatePermissionCmd = &cobra.Command{
 
 成员类型:
   email             邮箱
-  openid            Open ID
-  userid            用户 ID
-  unionid           Union ID
-  openchat          群组 ID
+  openid/open_id    Open ID
+  userid/user_id    用户 ID
+  unionid/union_id  Union ID
+  openchat/chat_id  群组 ID
   opendepartmentid  部门 ID
   groupid           群组 ID
   wikispaceid       知识空间 ID
@@ -61,6 +61,8 @@ var updatePermissionCmd = &cobra.Command{
 		memberID, _ := cmd.Flags().GetString("member-id")
 		perm, _ := cmd.Flags().GetString("perm")
 
+		memberType = normalizePermMemberType(memberType)
+
 		if err := client.UpdatePermission(docToken, docType, memberID, memberType, perm); err != nil {
 			return err
 		}
@@ -76,7 +78,7 @@ var updatePermissionCmd = &cobra.Command{
 func init() {
 	permCmd.AddCommand(updatePermissionCmd)
 	updatePermissionCmd.Flags().String("doc-type", "docx", "文档类型（docx/sheet/bitable 等）")
-	updatePermissionCmd.Flags().String("member-type", "", "成员类型（email/openid/userid 等）")
+	updatePermissionCmd.Flags().String("member-type", "", "成员类型（email/openid/open_id/userid/user_id 等）")
 	updatePermissionCmd.Flags().String("member-id", "", "成员标识")
 	updatePermissionCmd.Flags().String("perm", "", "新权限级别（view/edit/full_access）")
 	mustMarkFlagRequired(updatePermissionCmd, "member-type", "member-id", "perm")

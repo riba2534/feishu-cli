@@ -24,9 +24,9 @@ var transferOwnerCmd = &cobra.Command{
   --old-owner-perm     原所有者保留权限（默认: full_access，仅 remove-old-owner=false 时生效）
 
 成员类型:
-  email     飞书邮箱
-  openid    开放平台 ID
-  userid    用户自定义 ID
+  email             飞书邮箱
+  openid/open_id    开放平台 ID
+  userid/user_id    用户自定义 ID
 
 文档类型:
   docx      新版文档（默认）
@@ -72,6 +72,8 @@ var transferOwnerCmd = &cobra.Command{
 		stayPut, _ := cmd.Flags().GetBool("stay-put")
 		oldOwnerPerm, _ := cmd.Flags().GetString("old-owner-perm")
 
+		memberType = normalizePermMemberType(memberType)
+
 		if err := client.TransferOwnership(docToken, docType, memberType, memberID, notification, removeOldOwner, stayPut, oldOwnerPerm); err != nil {
 			return err
 		}
@@ -91,7 +93,7 @@ var transferOwnerCmd = &cobra.Command{
 func init() {
 	permCmd.AddCommand(transferOwnerCmd)
 	transferOwnerCmd.Flags().String("doc-type", "docx", "文档类型（docx/sheet/bitable 等）")
-	transferOwnerCmd.Flags().String("member-type", "", "新所有者类型（email/openid/userid）")
+	transferOwnerCmd.Flags().String("member-type", "", "新所有者类型（email/openid/open_id/userid/user_id）")
 	transferOwnerCmd.Flags().String("member-id", "", "新所有者标识")
 	transferOwnerCmd.Flags().Bool("notification", true, "通知新所有者")
 	transferOwnerCmd.Flags().Bool("remove-old-owner", false, "移除原所有者权限")
