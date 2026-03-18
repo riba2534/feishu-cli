@@ -3,11 +3,13 @@ name: feishu-cli-chat
 description: >-
   飞书会话浏览、消息互动与群聊管理。查看聊天记录、获取群聊历史消息、搜索群聊、
   获取消息详情、Reaction 表情回应、Pin 置顶/取消置顶、删除消息、
-  群聊信息查询与管理（获取/更新/解散/成员管理）。所有命令需要 User Token。
+  群聊信息查询与管理（获取/更新/解散/成员管理）。
+  支持普通群和话题群两种模式，话题群自动获取线程回复。所有命令需要 User Token。
   当用户请求"查看聊天记录"、"看和某人的消息"、"群聊历史"、"群消息"、"搜索群聊"、
   "查群信息"、"群成员"、"最近消息"、"聊天记录"、"Reaction"、"表情回应"、
   "置顶消息"、"Pin"、"删除消息"、"获取消息"、"消息详情"、
-  "和谁聊了什么"、"群里说了什么"、"总结群消息"时使用。
+  "和谁聊了什么"、"群里说了什么"、"总结群消息"、"话题回复"、"线程回复"、
+  "thread replies"时使用。
   也适用于：用户给出一个群聊名称或 chat_id 并希望浏览其消息的场景，
   即使没有明确说"聊天记录"。当用户想了解某个群最近在讨论什么、
   想找和某人的对话内容、或想对消息进行互动操作时，都应使用此技能。
@@ -79,6 +81,15 @@ feishu-cli msg history \
   --sort-type ByCreateTimeDesc \
   -o json
 
+# 按时间范围获取（--start-time 为毫秒级时间戳，仅返回该时间之后的消息）
+feishu-cli msg history \
+  --container-id oc_xxx \
+  --container-id-type chat \
+  --page-size 50 \
+  --start-time 1773778860000 \
+  --sort-type ByCreateTimeDesc \
+  -o json
+
 # 获取更早的消息（使用上一次返回的 page_token 翻页）
 feishu-cli msg history \
   --container-id oc_xxx \
@@ -87,6 +98,72 @@ feishu-cli msg history \
   --page-token "上一页返回的token" \
   -o json
 ```
+
+### 步骤 2.5：判断群类型并获取线程回复
+
+飞书群聊分为**普通群**和**话题群**两种，消息结构和获取策略完全不同。
+
+#### 如何判断群类型
+
+观察 `msg history` 返回的消息字段：
+
+| 群类型 | 特征 | 示例 |
+|--------|------|------|
+| **话题群** | **每条**消息都有 `thread_id`（形如 `omt_xxx`），主消息流仅包含每个话题的首条消息 | 泰国华商群 |
+| **普通群** | 独立消息**无** `thread_id`，仅被回复的消息和回复消息才有 `thread_id` | Claude Code闲聊群 |
+
+#### 消息中的线程相关字段
+
+| 字段 | 说明 | 出现条件 |
+|------|------|---------|
+| `thread_id` | 线程/话题 ID（形如 `omt_xxx`） | 话题群所有消息 / 普通群中参与线程的消息 |
+| `root_id` | 线程根消息 ID（即话题首条消息） | 线程回复消息 |
+| `parent_id` | 直接上级消息 ID（被回复的那条消息） | 线程回复消息 |
+
+#### 普通群：一次获取全部消息
+
+普通群的 `msg history` 返回**所有消息**（独立消息 + 线程回复），平铺在同一列表中。通过 `root_id`/`parent_id` 可重建回复关系，**不需要**额外获取线程。
+
+```
+独立消息:       无 thread_id、无 root_id
+被回复的消息:   有 thread_id（被回复后自动产生）
+线程回复:       有 thread_id + root_id + parent_id
+```
+
+#### 话题群：需要逐个话题获取回复（重要）
+
+话题群的 `msg history --container-id-type chat` **仅返回每个话题的首条消息**，线程回复不在主消息流中。必须按 thread_id 逐个获取：
+
+```bash
+# 获取单个话题的所有回复（按时间正序，方便阅读）
+feishu-cli msg history \
+  --container-id omt_xxx \
+  --container-id-type thread \
+  --page-size 50 \
+  --sort-type ByCreateTimeAsc \
+  -o json
+```
+
+**完整的话题群获取流程**：
+
+```bash
+# 1. 获取主消息流（每个话题的首条消息）
+feishu-cli msg history \
+  --container-id oc_xxx \
+  --container-id-type chat \
+  --page-size 50 \
+  --sort-type ByCreateTimeDesc \
+  -o json
+
+# 2. 从返回结果中提取所有 thread_id
+
+# 3. 对每个 thread_id 获取回复（可并发执行，提高效率）
+feishu-cli msg history --container-id omt_xxx --container-id-type thread --page-size 50 --sort-type ByCreateTimeAsc -o json
+feishu-cli msg history --container-id omt_yyy --container-id-type thread --page-size 50 --sort-type ByCreateTimeAsc -o json
+# ... 多个话题可并行获取
+```
+
+> **性能提示**：话题群中活跃话题可能有 10-20 个，建议**并发获取**多个话题的回复。飞书 API 对 `msg history` 无严格 QPS 限制（不同于搜索 API），可以安全并发。
 
 ### 步骤 3：解析消息内容
 
@@ -98,6 +175,7 @@ API 返回的消息 body.content 是 JSON 字符串，常见格式：
 | post | 富文本 JSON | 包含标题和段落结构 |
 | image | `{"image_key":"xxx"}` | 图片 |
 | interactive | 卡片 JSON | 交互式卡片 |
+| share_calendar_event | `{"summary":"会议名","start_time":"ms","end_time":"ms",...}` | 日历事件分享 |
 | sticker | `{"sticker_key":"xxx"}` | 表情包 |
 | file | `{"file_key":"xxx","file_name":"..."}` | 文件 |
 
@@ -329,6 +407,7 @@ feishu-cli msg delete <message_id>
 | 用户意图 | 命令 | Token |
 |---------|------|:---:|
 | 看某群最近消息 | `msg history --container-id oc_xxx --container-id-type chat` | User |
+| 看话题群的线程回复 | `msg history --container-id omt_xxx --container-id-type thread` | User |
 | 看和某人的聊天 | `search messages " " --chat-type p2p_chat --from-ids ou_xxx` | User |
 | 搜索群聊 | `msg search-chats --query "关键词"` | User |
 | 在群内搜索消息 | `search messages "关键词" --chat-ids oc_xxx` | User |
@@ -356,8 +435,10 @@ feishu-cli msg delete <message_id>
 1. **保存到文件**：每页结果用 `-o json` 输出，重定向到文件
 2. **循环翻页**：检查 `HasMore` 和 `PageToken`，循环获取直到满足条件
 3. **用 Python 解析**：JSON 消息结构需要解析 `body.content` 提取文本
-4. **注意限频**：搜索 API 有频率限制，大量请求间加 1s 延迟
+4. **注意限频**：搜索 API 有频率限制，大量请求间加 1s 延迟；`msg history` 限频较宽松，可安全并发
 5. **时间戳**：`create_time` 是毫秒级时间戳，需除以 1000 转为秒
+6. **话题群并发获取线程**：话题群需要对每个 `thread_id` 单独调用 `msg history --container-id-type thread`，建议**并行调用**多个话题以提高效率（实测 10-20 个并发无问题）
+7. **已撤回消息**：`deleted: true` 的消息内容为 `"This message was recalled"`，汇总时应跳过
 
 ```python
 import json
