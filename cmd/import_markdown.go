@@ -357,6 +357,8 @@ var importMarkdownCmd = &cobra.Command{
 			fmt.Printf("[信息] 检测到 %s 图表\n", strings.Join(parts, ", "))
 		}
 
+		replace, _ := cmd.Flags().GetBool("replace")
+
 		// If no document ID, create new document
 		if documentID == "" {
 			if title == "" {
@@ -381,6 +383,28 @@ var importMarkdownCmd = &cobra.Command{
 			documentID = *doc.DocumentId
 			fmt.Printf("已创建文档: %s\n", documentID)
 			fmt.Printf("链接: https://%s/docx/%s\n\n", config.Get().DocDomain(), documentID)
+		}
+
+		// --replace: 清空文档已有内容后再导入
+		if replace {
+			if documentID == "" {
+				return fmt.Errorf("--replace 需要配合 --document-id 使用")
+			}
+			children, err := client.GetBlockChildren(documentID, documentID)
+			if err != nil {
+				return fmt.Errorf("获取文档子块失败: %w", err)
+			}
+			if len(children) > 0 {
+				if verbose {
+					fmt.Printf("[信息] 清空文档已有内容（%d 个子块）...\n", len(children))
+				}
+				if err := client.DeleteBlocks(documentID, documentID, 0, len(children)); err != nil {
+					return fmt.Errorf("清空文档失败: %w", err)
+				}
+				if verbose {
+					fmt.Println("[信息] 文档已清空")
+				}
+			}
 		}
 
 		// 解析 Markdown 为片段
@@ -1292,6 +1316,7 @@ func init() {
 	importMarkdownCmd.Flags().Int("mermaid-retries", 10, "图表最大重试次数 (--diagram-retries 别名)")
 	_ = importMarkdownCmd.Flags().MarkHidden("mermaid-workers")
 	_ = importMarkdownCmd.Flags().MarkHidden("mermaid-retries")
+	importMarkdownCmd.Flags().Bool("replace", false, "清空文档已有内容后再导入（需配合 --document-id 使用）")
 	importMarkdownCmd.Flags().String("transfer-owner", "", "导入完成后转移文档所有权给指定用户（邮箱）")
 	importMarkdownCmd.Flags().String("transfer-owner-type", "email", "所有权接收者类型（email/openid/userid）")
 }
