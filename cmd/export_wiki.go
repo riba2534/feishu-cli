@@ -93,6 +93,7 @@ var exportWikiCmd = &cobra.Command{
 			AssetsDir:       assetsDir,
 			UserAccessToken: userAccessToken,
 			Debug:           cfg.Debug,
+			DocDomain:       cfg.DocDomain(),
 		}
 
 		conv := converter.NewBlockToMarkdown(blocks, options)

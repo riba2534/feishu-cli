@@ -380,7 +380,7 @@ var importMarkdownCmd = &cobra.Command{
 			}
 			documentID = *doc.DocumentId
 			fmt.Printf("已创建文档: %s\n", documentID)
-			fmt.Printf("链接: https://feishu.cn/docx/%s\n\n", documentID)
+			fmt.Printf("链接: https://%s/docx/%s\n\n", config.Get().DocDomain(), documentID)
 		}
 
 		// 解析 Markdown 为片段
@@ -457,6 +457,24 @@ var importMarkdownCmd = &cobra.Command{
 			}
 		}
 
+		// === 转移所有权（可选）===
+		transferOwner, _ := cmd.Flags().GetString("transfer-owner")
+		if transferOwner != "" {
+			transferOwnerType, _ := cmd.Flags().GetString("transfer-owner-type")
+			switch transferOwnerType {
+			case "open_id":
+				transferOwnerType = "openid"
+			case "user_id":
+				transferOwnerType = "userid"
+			}
+			fmt.Printf("正在转移文档所有权给 %s（%s）...\n", transferOwner, transferOwnerType)
+			if err := client.TransferOwnership(documentID, "docx", transferOwnerType, transferOwner, true, false, false, "full_access"); err != nil {
+				fmt.Fprintf(os.Stderr, "警告: 转移文档所有权失败: %v\n  文档ID: %s, member_type: %s, member_id: %s\n", err, documentID, transferOwnerType, transferOwner)
+			} else {
+				fmt.Printf("已转移文档所有权给: %s\n\n", transferOwner)
+			}
+		}
+
 		// === 输出结果 ===
 		totalDuration := stats.phase1Duration + stats.phase2Duration + stats.phase3Duration
 
@@ -482,6 +500,7 @@ var importMarkdownCmd = &cobra.Command{
 				"phase1_seconds":   stats.phase1Duration.Seconds(),
 				"phase2_seconds":   stats.phase2Duration.Seconds(),
 				"phase3_seconds":   stats.phase3Duration.Seconds(),
+				"transfer_owner":   transferOwner,
 			}); err != nil {
 				return err
 			}
@@ -518,7 +537,7 @@ var importMarkdownCmd = &cobra.Command{
 				}
 			}
 			fmt.Printf("  总耗时: %.1fs\n", totalDuration.Seconds())
-			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+			fmt.Printf("  链接: https://%s/docx/%s\n", config.Get().DocDomain(), documentID)
 		}
 
 		return nil
@@ -548,6 +567,7 @@ func phase1CreateBlocks(
 			options := converter.ConvertOptions{
 				UploadImages: uploadImages,
 				DocumentID:   documentID,
+				DocDomain:    config.Get().DocDomain(),
 			}
 
 			conv := converter.NewMarkdownToBlock([]byte(seg.content), options, basePath)
@@ -1272,4 +1292,6 @@ func init() {
 	importMarkdownCmd.Flags().Int("mermaid-retries", 10, "图表最大重试次数 (--diagram-retries 别名)")
 	_ = importMarkdownCmd.Flags().MarkHidden("mermaid-workers")
 	_ = importMarkdownCmd.Flags().MarkHidden("mermaid-retries")
+	importMarkdownCmd.Flags().String("transfer-owner", "", "导入完成后转移文档所有权给指定用户（邮箱）")
+	importMarkdownCmd.Flags().String("transfer-owner-type", "email", "所有权接收者类型（email/openid/userid）")
 }

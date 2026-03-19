@@ -138,6 +138,7 @@ func addContentMarkdown(documentID, blockID, contentData, basePath string, uploa
 	opts := converter.ConvertOptions{
 		DocumentID:   documentID,
 		UploadImages: uploadImages,
+		DocDomain:    config.Get().DocDomain(),
 	}
 	conv := converter.NewMarkdownToBlock([]byte(contentData), opts, basePath)
 	result, err := conv.ConvertWithTableData()

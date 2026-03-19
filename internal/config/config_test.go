@@ -382,3 +382,46 @@ func TestInit_DebugFromEnv(t *testing.T) {
 		t.Errorf("Debug = %v, 期望 %v", c.Debug, true)
 	}
 }
+
+func TestDocDomain(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		want    string
+	}{
+		{"default feishu", "https://open.feishu.cn", "feishu.cn"},
+		{"empty defaults to feishu", "", "feishu.cn"},
+		{"larksuite", "https://open.larksuite.com", "larksuite.com"},
+		{"custom with larksuite", "https://custom.larksuite.com", "larksuite.com"},
+		{"larkoffice", "https://open.larkoffice.com", "larkoffice.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Config{BaseURL: tt.baseURL}
+			if got := c.DocDomain(); got != tt.want {
+				t.Errorf("DocDomain() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAccountsDomain(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		want    string
+	}{
+		{"default feishu", "https://open.feishu.cn", "accounts.feishu.cn"},
+		{"empty defaults to feishu", "", "accounts.feishu.cn"},
+		{"larksuite", "https://open.larksuite.com", "accounts.larksuite.com"},
+		{"larkoffice", "https://open.larkoffice.com", "accounts.larksuite.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Config{BaseURL: tt.baseURL}
+			if got := c.AccountsDomain(); got != tt.want {
+				t.Errorf("AccountsDomain() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

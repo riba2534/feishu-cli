@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -112,6 +113,27 @@ func Validate() error {
 		return fmt.Errorf("缺少 app_secret，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_SECRET=xxx\n  2. 配置文件: ~/.feishu-cli/config.yaml")
 	}
 	return nil
+}
+
+// DocDomain 返回用户可见的文档链接域名
+// 根据 base_url 自动推导：larksuite.com/larkoffice.com 对应国际版，其余返回 feishu.cn
+func (c *Config) DocDomain() string {
+	if strings.Contains(c.BaseURL, "larksuite.com") {
+		return "larksuite.com"
+	}
+	if strings.Contains(c.BaseURL, "larkoffice.com") {
+		return "larkoffice.com"
+	}
+	return "feishu.cn"
+}
+
+// AccountsDomain 返回 OAuth 认证服务域名
+// 根据 base_url 自动推导：larksuite.com/larkoffice.com 对应 accounts.larksuite.com
+func (c *Config) AccountsDomain() string {
+	if strings.Contains(c.BaseURL, "larksuite.com") || strings.Contains(c.BaseURL, "larkoffice.com") {
+		return "accounts.larksuite.com"
+	}
+	return "accounts.feishu.cn"
 }
 
 // CreateDefaultConfig creates a default configuration file

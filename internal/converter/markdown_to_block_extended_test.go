@@ -61,7 +61,7 @@ func TestNormalizeURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := normalizeURL(tt.input)
+			result := normalizeURL(tt.input, "")
 			if result != tt.expected {
 				t.Errorf("normalizeURL(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
@@ -443,7 +443,7 @@ func TestCreateLinkElement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := createLinkElement(tt.text, tt.rawURL)
+			result := createLinkElement(tt.text, tt.rawURL, "")
 			if result.TextRun == nil {
 				t.Fatalf("TextRun should not be nil")
 			}

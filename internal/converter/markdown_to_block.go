@@ -567,7 +567,7 @@ func (c *MarkdownToBlock) extractTextElementsSkipCheckbox(node ast.Node) []*lark
 			text := c.getNodeText(child)
 			url := string(child.Destination)
 			if text != "" {
-				elements = append(elements, createLinkElement(text, url))
+				elements = append(elements, createLinkElement(text, url, c.options.GetDocDomain()))
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -578,7 +578,7 @@ func (c *MarkdownToBlock) extractTextElementsSkipCheckbox(node ast.Node) []*lark
 				label = linkURL
 			}
 			if linkURL != "" {
-				elements = append(elements, createLinkElement(label, linkURL))
+				elements = append(elements, createLinkElement(label, linkURL, c.options.GetDocDomain()))
 			}
 			return ast.WalkSkipChildren, nil
 		}
@@ -763,7 +763,7 @@ func (c *MarkdownToBlock) extractQuoteLines(node ast.Node) [][]*larkdocx.TextEle
 			text := c.getNodeText(child)
 			url := string(child.Destination)
 			if text != "" {
-				currentLine = append(currentLine, createLinkElement(text, url))
+				currentLine = append(currentLine, createLinkElement(text, url, c.options.GetDocDomain()))
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -774,7 +774,7 @@ func (c *MarkdownToBlock) extractQuoteLines(node ast.Node) [][]*larkdocx.TextEle
 				label = linkURL
 			}
 			if linkURL != "" {
-				currentLine = append(currentLine, createLinkElement(label, linkURL))
+				currentLine = append(currentLine, createLinkElement(label, linkURL, c.options.GetDocDomain()))
 			}
 			return ast.WalkSkipChildren, nil
 		}
@@ -1455,7 +1455,7 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 			text := c.getNodeText(child)
 			url := string(child.Destination)
 			if text != "" {
-				elements = append(elements, createLinkElement(text, url))
+				elements = append(elements, createLinkElement(text, url, c.options.GetDocDomain()))
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -1466,7 +1466,7 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 				label = linkURL
 			}
 			if linkURL != "" {
-				elements = append(elements, createLinkElement(label, linkURL))
+				elements = append(elements, createLinkElement(label, linkURL, c.options.GetDocDomain()))
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -1478,7 +1478,7 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 				alt = dest
 			}
 			if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
-				elements = append(elements, createLinkElement(fmt.Sprintf("[图片: %s]", alt), dest))
+				elements = append(elements, createLinkElement(fmt.Sprintf("[图片: %s]", alt), dest, c.options.GetDocDomain()))
 			} else {
 				placeholder := fmt.Sprintf("[Image: %s]", dest)
 				elements = append(elements, &larkdocx.TextElement{
@@ -1574,7 +1574,7 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 			text := c.getNodeText(n)
 			url := string(n.Destination)
 			if text != "" {
-				elem := createLinkElement(text, url)
+				elem := createLinkElement(text, url, c.options.GetDocDomain())
 				if inUnderline && elem.TextRun != nil {
 					underline := true
 					if elem.TextRun.TextElementStyle == nil {
@@ -1630,7 +1630,7 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 				label = linkURL
 			}
 			if linkURL != "" {
-				elem := createLinkElement(label, linkURL)
+				elem := createLinkElement(label, linkURL, c.options.GetDocDomain())
 				if inUnderline && elem.TextRun != nil {
 					underline := true
 					if elem.TextRun.TextElementStyle == nil {
@@ -1702,17 +1702,20 @@ func applyTextStyle(elem *larkdocx.TextElement, bold, italic, strikethrough bool
 // normalizeURL 尝试标准化 URL
 // 1. 将 feishu:// 内部协议转换为 https:// 链接（API 不接受 feishu:// 协议）
 // 2. 解码 URL 编码的链接，例如 "https%3A%2F%2Fexample.com" → "https://example.com"
-func normalizeURL(rawURL string) string {
+func normalizeURL(rawURL, docDomain string) string {
+	if docDomain == "" {
+		docDomain = "feishu.cn"
+	}
 	// feishu:// 内部协议转换为 HTTPS 链接
 	if strings.HasPrefix(rawURL, "feishu://doc/") {
-		return "https://feishu.cn/docx/" + strings.TrimPrefix(rawURL, "feishu://doc/")
+		return "https://" + docDomain + "/docx/" + strings.TrimPrefix(rawURL, "feishu://doc/")
 	}
 	if strings.HasPrefix(rawURL, "feishu://wiki/") {
-		return "https://feishu.cn/wiki/" + strings.TrimPrefix(rawURL, "feishu://wiki/")
+		return "https://" + docDomain + "/wiki/" + strings.TrimPrefix(rawURL, "feishu://wiki/")
 	}
 	if strings.HasPrefix(rawURL, "feishu://") {
 		// 其他 feishu:// 链接，尝试通用转换
-		return "https://feishu.cn/" + strings.TrimPrefix(rawURL, "feishu://")
+		return "https://" + docDomain + "/" + strings.TrimPrefix(rawURL, "feishu://")
 	}
 
 	// URL 解码
@@ -1728,8 +1731,8 @@ func hasValidURLPrefix(u string) bool {
 }
 
 // createLinkElement 创建链接 TextElement，自动过滤无效 URL 并解码 URL 编码的链接
-func createLinkElement(text, rawURL string) *larkdocx.TextElement {
-	u := normalizeURL(rawURL)
+func createLinkElement(text, rawURL, docDomain string) *larkdocx.TextElement {
+	u := normalizeURL(rawURL, docDomain)
 	if !hasValidURLPrefix(u) {
 		return &larkdocx.TextElement{
 			TextRun: &larkdocx.TextRun{Content: &text},

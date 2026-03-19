@@ -19,10 +19,18 @@ import (
 )
 
 const (
-	DefaultPort   = 9768
-	CallbackPath  = "/callback"
-	FeishuAuthURL = "https://accounts.feishu.cn/open-apis/authen/v1/authorize"
+	DefaultPort  = 9768
+	CallbackPath = "/callback"
 )
+
+// AuthURL returns the OAuth authorization URL based on base URL.
+// For larksuite.com/larkoffice.com (international), returns accounts.larksuite.com endpoint.
+func AuthURL(baseURL string) string {
+	if strings.Contains(baseURL, "larksuite.com") || strings.Contains(baseURL, "larkoffice.com") {
+		return "https://accounts.larksuite.com/open-apis/authen/v1/authorize"
+	}
+	return "https://accounts.feishu.cn/open-apis/authen/v1/authorize"
+}
 
 // LoginOptions 登录选项
 type LoginOptions struct {
@@ -81,6 +89,10 @@ func buildAuthURL(opts LoginOptions) (state, redirectURI, authURL string, err er
 		opts.Port = DefaultPort
 	}
 
+	if opts.BaseURL == "" {
+		opts.BaseURL = "https://open.feishu.cn"
+	}
+
 	stateBytes := make([]byte, 32)
 	if _, err := rand.Read(stateBytes); err != nil {
 		return "", "", "", fmt.Errorf("生成 state 失败: %w", err)
@@ -90,7 +102,7 @@ func buildAuthURL(opts LoginOptions) (state, redirectURI, authURL string, err er
 	redirectURI = fmt.Sprintf("http://127.0.0.1:%d%s", opts.Port, CallbackPath)
 
 	authURL = fmt.Sprintf("%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
-		FeishuAuthURL,
+		AuthURL(opts.BaseURL),
 		url.QueryEscape(opts.AppID),
 		url.QueryEscape(redirectURI),
 		url.QueryEscape(state),

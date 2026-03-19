@@ -103,6 +103,15 @@ type ConvertOptions struct {
 	FrontMatter         bool   // 为 true 时，导出时添加 YAML front matter
 	Highlight           bool   // 为 true 时，导出文本颜色和背景色为 HTML span
 	ExpandMentions      bool   // 导出时展开 @用户为友好格式（默认 false，CLI 默认 true）
+	DocDomain           string // 文档链接域名（feishu.cn 或 larksuite.com），为空时默认 feishu.cn
+}
+
+// GetDocDomain 返回文档链接域名，默认 feishu.cn
+func (o ConvertOptions) GetDocDomain() string {
+	if o.DocDomain != "" {
+		return o.DocDomain
+	}
+	return "feishu.cn"
 }
 
 // ConvertResult contains converted blocks and table data

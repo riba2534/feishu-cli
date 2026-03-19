@@ -67,7 +67,7 @@ var createDocumentCmd = &cobra.Command{
 			fmt.Printf("  文档 ID: %s\n", documentID)
 			fmt.Printf("  标题: %s\n", docTitle)
 			fmt.Printf("  版本: %d\n", revisionID)
-			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+			fmt.Printf("  链接: https://%s/docx/%s\n", config.Get().DocDomain(), documentID)
 		}
 
 		return nil
