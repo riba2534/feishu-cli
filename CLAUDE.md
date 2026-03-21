@@ -584,21 +584,28 @@ feishu-cli_v1.4.0_linux-amd64/
 - 操作结果摘要
 - 大文档需包含：图表渲染统计（成功/失败数量）、文档规模（行数/段落数）
 
-### 2. 文档创建后必须添加最高权限
+### 2. 文档创建后必须添加权限
 
-**每次创建新飞书文档后，必须立即给指定用户授予 `full_access`（最高权限）**。
+**每次创建新飞书文档后，必须立即给 `owner_email` 用户授予 `full_access` 权限**。
+
+**邮箱来源**（按优先级）：
+1. 环境变量 `FEISHU_OWNER_EMAIL`
+2. 配置文件 `~/.feishu-cli/config.yaml` 中的 `owner_email`
+3. 如果都未配置，提示用户设置
 
 **执行命令**：
 ```bash
-feishu-cli perm add <DOC_ID> --doc-type docx --member-type email --member-id user@example.com --perm full_access --notification
+# 添加 full_access 权限
+feishu-cli perm add <DOC_ID> --doc-type <type> --member-type email --member-id <owner_email> --perm full_access --notification
 ```
 
-**full_access 权限包含**：
-- 管理协作者（添加/移除成员、设置权限）
-- 编辑文档内容（修改、删除、添加）
-- 管理文档设置（复制、移动、删除文档）
-- 查看历史版本
-- 导出文档
+**如果 `transfer_ownership: true`**（配置文件或环境变量 `FEISHU_TRANSFER_OWNERSHIP=true`），还需要额外转移所有权：
+```bash
+# 转移所有权（文档保留原位，机器人降为 full_access）
+feishu-cli perm transfer-owner <DOC_ID> --doc-type <type> --member-type email --member-id <owner_email>
+```
+
+**`<type>` 根据文档类型填写**：`docx`（文档）、`bitable`（多维表格）、`sheet`（电子表格）等。
 
 ### 3. 创建飞书文档前必须参考规范
 

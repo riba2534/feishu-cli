@@ -29,15 +29,42 @@ type BitableTable struct {
 
 // BitableField 字段信息
 type BitableField struct {
-	FieldID     string `json:"field_id"`
-	FieldName   string `json:"field_name"`
-	Type        int    `json:"type"`
-	UIType      string `json:"ui_type,omitempty"`
-	IsPrimary   bool   `json:"is_primary,omitempty"`
-	Description *struct {
+	FieldID     string              `json:"field_id"`
+	FieldName   string              `json:"field_name"`
+	Type        int                 `json:"type"`
+	UIType      string              `json:"ui_type,omitempty"`
+	IsPrimary   bool                `json:"is_primary,omitempty"`
+	Description *BitableFieldDesc   `json:"description,omitempty"`
+	Property    json.RawMessage     `json:"property,omitempty"`
+}
+
+// BitableFieldDesc 字段描述，兼容字符串和对象两种 API 返回格式
+type BitableFieldDesc struct {
+	Text string
+}
+
+func (d *BitableFieldDesc) UnmarshalJSON(data []byte) error {
+	// 尝试对象格式 {"text":"..."}
+	var obj struct {
 		Text string `json:"text"`
-	} `json:"description,omitempty"`
-	Property json.RawMessage `json:"property,omitempty"`
+	}
+	if err := json.Unmarshal(data, &obj); err == nil {
+		d.Text = obj.Text
+		return nil
+	}
+	// 回退到纯字符串格式
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		d.Text = s
+		return nil
+	}
+	return nil
+}
+
+func (d BitableFieldDesc) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Text string `json:"text"`
+	}{Text: d.Text})
 }
 
 // BitableRecord 记录信息

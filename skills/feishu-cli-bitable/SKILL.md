@@ -155,12 +155,16 @@ feishu-cli bitable update-field ... --field '{"field_name":"新名称","type":1}
 
 通过 API 创建的多维表格默认只有机器人能看到。创建后必须立即添加权限：
 
-```bash
-# 添加协作者
-feishu-cli perm add <app_token> --doc-type bitable --member-type email --member-id user@example.com --perm full_access --notification
+**邮箱来源**：`~/.feishu-cli/config.yaml` 中的 `owner_email`，或环境变量 `FEISHU_OWNER_EMAIL`。
 
-# 转移所有权（可选）
-feishu-cli perm transfer-owner <app_token> --doc-type bitable --member-type email --member-id user@example.com
+```bash
+# 添加 full_access 权限
+feishu-cli perm add <app_token> --doc-type bitable --member-type email --member-id <owner_email> --perm full_access --notification
+```
+
+如果配置了 `transfer_ownership: true`，还需转移所有权：
+```bash
+feishu-cli perm transfer-owner <app_token> --doc-type bitable --member-type email --member-id <owner_email>
 ```
 
 ### 6. 关联字段的局限
