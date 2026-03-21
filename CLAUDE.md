@@ -642,7 +642,7 @@ feishu-cli perm transfer-owner <DOC_ID> --doc-type <type> --member-type email --
 ✅ sheet add-sheet/delete-sheet/copy-sheet/add-rows/add-cols/delete-rows/delete-cols
 ✅ sheet merge/unmerge/style/meta/find/replace/image
 ✅ sheet read-plain/read-rich/write-rich/insert/append-rich/clear（V3 API）
-⬜ bitable create/get/tables/fields/records/views（待验证）
+✅ bitable create/get/tables/fields/records/views/add-record/add-records/update-record/delete-records
 ✅ calendar get/primary/event-search/event-reply/attendee/freebusy
 ✅ user search/list + dept get/children
 ✅ auth login/status/logout（OAuth 2.0 授权、Token 自动刷新）
