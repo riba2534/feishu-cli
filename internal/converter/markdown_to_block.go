@@ -33,6 +33,33 @@ const (
 	columnPadding    = 16  // 列内边距
 )
 
+// taskCommentRegex 匹配 <!-- task:TASK_ID --> 格式的 HTML 注释
+var taskCommentRegex = regexp.MustCompile(`<!--\s*task:([^\s]*)\s*-->`)
+
+// convertHTMLBlock 处理 HTML 块，识别特殊的 task 注释
+func (c *MarkdownToBlock) convertHTMLBlock(node *ast.HTMLBlock) *larkdocx.Block {
+	var buf bytes.Buffer
+	lines := node.Lines()
+	for i := 0; i < lines.Len(); i++ {
+		seg := lines.At(i)
+		buf.Write(c.source[seg.Start:seg.Stop])
+	}
+	raw := strings.TrimSpace(buf.String())
+
+	// 匹配 <!-- task:TASK_ID -->
+	if m := taskCommentRegex.FindStringSubmatch(raw); m != nil {
+		taskID := m[1]
+		blockType := int(BlockTypeTask)
+		block := &larkdocx.Block{
+			BlockType: &blockType,
+			Task: larkdocx.NewTaskBuilder().TaskId(taskID).Build(),
+		}
+		return block
+	}
+
+	return nil
+}
+
 // calculateColumnWidths 根据单元格内容计算每列的宽度
 func calculateColumnWidths(headerContents []string, dataRows [][]string, cols int) []int {
 	if cols == 0 {
@@ -222,6 +249,13 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 		case *ast.ThematicBreak:
 			result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: c.createDividerBlock()})
 			return ast.WalkContinue, nil
+
+		case *ast.HTMLBlock:
+			block := c.convertHTMLBlock(node)
+			if block != nil {
+				result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: block})
+			}
+			return ast.WalkSkipChildren, nil
 		}
 
 		return ast.WalkContinue, nil

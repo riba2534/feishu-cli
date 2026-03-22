@@ -1373,3 +1373,73 @@ func TestBlockTypeName(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertTaskBlock(t *testing.T) {
+	tests := []struct {
+		name     string
+		taskID   string
+		expected string
+	}{
+		{
+			name:     "task block with ID",
+			taskID:   "463d80ff-6fe3-4646-83b1-5bc18d894872",
+			expected: "<!-- task:463d80ff-6fe3-4646-83b1-5bc18d894872 -->\n",
+		},
+		{
+			name:     "task block with empty ID",
+			taskID:   "",
+			expected: "<!-- task: -->\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			blockType := int(BlockTypeTask)
+			pageType := int(BlockTypePage)
+			taskBlock := &larkdocx.Block{
+				BlockId:   strPtr("task_block_1"),
+				BlockType: &blockType,
+				Task:      larkdocx.NewTaskBuilder().TaskId(tt.taskID).Build(),
+			}
+			pageBlock := &larkdocx.Block{
+				BlockId:   strPtr("page"),
+				BlockType: &pageType,
+				Children:  []string{"task_block_1"},
+			}
+			blocks := []*larkdocx.Block{pageBlock, taskBlock}
+			converter := NewBlockToMarkdown(blocks, ConvertOptions{})
+			result, err := converter.Convert()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(result, tt.expected) {
+				t.Errorf("expected %q in result, got:\n%s", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestConvertTaskBlockNilTask(t *testing.T) {
+	blockType := int(BlockTypeTask)
+	pageType := int(BlockTypePage)
+	taskBlock := &larkdocx.Block{
+		BlockId:   strPtr("task_block_nil"),
+		BlockType: &blockType,
+		Task:      nil,
+	}
+	pageBlock := &larkdocx.Block{
+		BlockId:   strPtr("page"),
+		BlockType: &pageType,
+		Children:  []string{"task_block_nil"},
+	}
+	blocks := []*larkdocx.Block{pageBlock, taskBlock}
+	converter := NewBlockToMarkdown(blocks, ConvertOptions{})
+	result, err := converter.Convert()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "<!-- task: -->\n"
+	if !strings.Contains(result, expected) {
+		t.Errorf("expected %q in result, got:\n%s", expected, result)
+	}
+}

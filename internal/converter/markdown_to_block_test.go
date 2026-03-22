@@ -829,3 +829,71 @@ func TestConvert_AnchorLink(t *testing.T) {
 		}
 	}
 }
+
+func TestConvertTaskComment(t *testing.T) {
+	tests := []struct {
+		name       string
+		markdown   string
+		expectTask bool
+		taskID     string
+	}{
+		{
+			name:       "task comment with ID",
+			markdown:   "<!-- task:463d80ff-6fe3-4646-83b1-5bc18d894872 -->",
+			expectTask: true,
+			taskID:     "463d80ff-6fe3-4646-83b1-5bc18d894872",
+		},
+		{
+			name:       "task comment with empty ID",
+			markdown:   "<!-- task: -->",
+			expectTask: true,
+			taskID:     "",
+		},
+		{
+			name:       "task comment with spaces",
+			markdown:   "<!--  task:abc-123  -->",
+			expectTask: true,
+			taskID:     "abc-123",
+		},
+		{
+			name:       "non-task HTML comment",
+			markdown:   "<!-- some other comment -->",
+			expectTask: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			converter := NewMarkdownToBlock([]byte(tt.markdown), ConvertOptions{}, "")
+			result, err := converter.ConvertWithTableData()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tt.expectTask {
+				found := false
+				for _, node := range result.BlockNodes {
+					if node.Block.BlockType != nil && *node.Block.BlockType == int(BlockTypeTask) {
+						found = true
+						if node.Block.Task != nil && node.Block.Task.TaskId != nil {
+							if *node.Block.Task.TaskId != tt.taskID {
+								t.Errorf("task_id = %q, want %q", *node.Block.Task.TaskId, tt.taskID)
+							}
+						} else if tt.taskID != "" {
+							t.Errorf("expected task_id %q, got nil", tt.taskID)
+						}
+					}
+				}
+				if !found {
+					t.Error("expected Task block but not found")
+				}
+			} else {
+				for _, node := range result.BlockNodes {
+					if node.Block.BlockType != nil && *node.Block.BlockType == int(BlockTypeTask) {
+						t.Error("unexpected Task block found")
+					}
+				}
+			}
+		})
+	}
+}

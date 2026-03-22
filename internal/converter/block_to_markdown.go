@@ -438,6 +438,8 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 		return "[知识库目录 V2]\n", nil
 	case BlockTypeAITemplate:
 		return "<!-- AI 模板块 -->\n", nil
+	case BlockTypeTask:
+		return c.convertTask(block)
 	default:
 		typeName := BlockTypeName(blockType)
 		return fmt.Sprintf("<!-- 不支持的块类型: %s (type=%d) -->\n", typeName, int(blockType)), nil
@@ -722,6 +724,14 @@ func (c *BlockToMarkdown) convertTodo(block *larkdocx.Block) (string, error) {
 
 	text := c.convertTextElements(block.Todo.Elements)
 	return fmt.Sprintf("- %s %s\n", checkbox, text), nil
+}
+
+func (c *BlockToMarkdown) convertTask(block *larkdocx.Block) (string, error) {
+	taskID := ""
+	if block.Task != nil && block.Task.TaskId != nil {
+		taskID = *block.Task.TaskId
+	}
+	return fmt.Sprintf("<!-- task:%s -->\n", taskID), nil
 }
 
 func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
