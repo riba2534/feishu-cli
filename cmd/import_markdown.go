@@ -555,7 +555,7 @@ func phase1CreateBlocks(
 			for idx, children := range nodeChildrenMap {
 				if idx < len(createdBlockIDs) {
 					parentID := createdBlockIDs[idx]
-					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
+					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children, client.NewDocxClient())
 					if nestedErr != nil {
 						if verbose {
 							syncPrintf("  ⚠ 段落 %d 嵌套子块创建失败: %v\n", segIdx+1, nestedErr)
@@ -821,7 +821,7 @@ func processTableTask(documentID string, task tableTask, verbose bool) tableResu
 
 // createNestedChildren 递归创建嵌套子块（如嵌套列表的父子关系）
 // 返回创建的块总数和可能的错误
-func createNestedChildren(documentID string, parentBlockID string, children []*converter.BlockNode) (int, error) {
+func createNestedChildren(documentID string, parentBlockID string, children []*converter.BlockNode, dc *client.DocxClient) (int, error) {
 	if len(children) == 0 {
 		return 0, nil
 	}
@@ -843,7 +843,7 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 		batch := childBlocks[i:end]
 
 		result := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-			blocks, err := client.CreateBlock(documentID, parentBlockID, batch, -1)
+			blocks, err := dc.CreateBlock(documentID, parentBlockID, batch, -1)
 			return blocks, nil, err
 		}, client.RetryConfig{
 			MaxRetries:       5,
@@ -864,7 +864,7 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 	// 递归创建更深层的子块
 	for i, child := range children {
 		if len(child.Children) > 0 && i < len(createdBlockIDs) {
-			nestedCount, err := createNestedChildren(documentID, createdBlockIDs[i], child.Children)
+			nestedCount, err := createNestedChildren(documentID, createdBlockIDs[i], child.Children, dc)
 			totalCreated += nestedCount
 			if err != nil {
 				return totalCreated, err

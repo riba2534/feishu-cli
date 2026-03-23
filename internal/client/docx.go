@@ -7,8 +7,33 @@ import (
 	"strings"
 	"time"
 
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 )
+
+// DocxClient 封装了文档操作的客户端，支持可选的 User Access Token。
+// 使用 User Access Token 时，API 调用将以用户身份执行（用于访问个人知识库等文档）；
+// 不设置时，使用 Tenant Access Token（应用身份）。
+type DocxClient struct {
+	userAccessToken string
+}
+
+// NewDocxClient 创建文档操作客户端。可选传入 userAccessToken 以用户身份访问文档。
+func NewDocxClient(userAccessToken ...string) *DocxClient {
+	token := ""
+	if len(userAccessToken) > 0 {
+		token = userAccessToken[0]
+	}
+	return &DocxClient{userAccessToken: token}
+}
+
+// requestOpts 将 userAccessToken 转换为 larkcore.RequestOptionFunc 切片。
+func (c *DocxClient) requestOpts() []larkcore.RequestOptionFunc {
+	if c.userAccessToken != "" {
+		return []larkcore.RequestOptionFunc{larkcore.WithUserAccessToken(c.userAccessToken)}
+	}
+	return nil
+}
 
 // 块类型常量（避免魔术数字）
 const (
@@ -93,8 +118,8 @@ func GetRawContent(documentID string) (string, error) {
 	return *resp.Data.Content, nil
 }
 
-// ListBlocks retrieves all blocks in a document
-func ListBlocks(documentID string, pageToken string, pageSize int) ([]*larkdocx.Block, string, error) {
+// ListBlocks retrieves all blocks in a document.
+func (c *DocxClient) ListBlocks(documentID string, pageToken string, pageSize int) ([]*larkdocx.Block, string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, "", err
@@ -108,7 +133,7 @@ func ListBlocks(documentID string, pageToken string, pageSize int) ([]*larkdocx.
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Docx.DocumentBlock.List(Context(), reqBuilder.Build())
+	resp, err := client.Docx.DocumentBlock.List(Context(), reqBuilder.Build(), c.requestOpts()...)
 	if err != nil {
 		return nil, "", fmt.Errorf("获取块列表失败: %w", err)
 	}
@@ -122,8 +147,8 @@ func ListBlocks(documentID string, pageToken string, pageSize int) ([]*larkdocx.
 	return resp.Data.Items, nextPageToken, nil
 }
 
-// GetAllBlocks retrieves all blocks in a document with pagination
-func GetAllBlocks(documentID string) ([]*larkdocx.Block, error) {
+// GetAllBlocks retrieves all blocks in a document with pagination.
+func (c *DocxClient) GetAllBlocks(documentID string) ([]*larkdocx.Block, error) {
 	var allBlocks []*larkdocx.Block
 	pageToken := ""
 	pageSize := 500
@@ -134,7 +159,7 @@ func GetAllBlocks(documentID string) ([]*larkdocx.Block, error) {
 		if pageCount >= maxPages {
 			return nil, fmt.Errorf("超过最大分页限制 %d，文档可能有异常", maxPages)
 		}
-		blocks, nextToken, err := ListBlocks(documentID, pageToken, pageSize)
+		blocks, nextToken, err := c.ListBlocks(documentID, pageToken, pageSize)
 		if err != nil {
 			return nil, err
 		}
@@ -151,8 +176,8 @@ func GetAllBlocks(documentID string) ([]*larkdocx.Block, error) {
 	return allBlocks, nil
 }
 
-// GetBlock retrieves a specific block
-func GetBlock(documentID string, blockID string) (*larkdocx.Block, error) {
+// GetBlock retrieves a specific block.
+func (c *DocxClient) GetBlock(documentID string, blockID string) (*larkdocx.Block, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -163,7 +188,7 @@ func GetBlock(documentID string, blockID string) (*larkdocx.Block, error) {
 		BlockId(blockID).
 		Build()
 
-	resp, err := client.Docx.DocumentBlock.Get(Context(), req)
+	resp, err := client.Docx.DocumentBlock.Get(Context(), req, c.requestOpts()...)
 	if err != nil {
 		return nil, fmt.Errorf("获取块失败: %w", err)
 	}
@@ -175,8 +200,8 @@ func GetBlock(documentID string, blockID string) (*larkdocx.Block, error) {
 	return resp.Data.Block, nil
 }
 
-// CreateBlock creates a new block under a parent block
-func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, index int) ([]*larkdocx.Block, error) {
+// CreateBlock creates a new block under a parent block.
+func (c *DocxClient) CreateBlock(documentID string, blockID string, children []*larkdocx.Block, index int) ([]*larkdocx.Block, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -192,7 +217,7 @@ func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, 
 			Build()).
 		Build()
 
-	resp, err := client.Docx.DocumentBlockChildren.Create(Context(), req)
+	resp, err := client.Docx.DocumentBlockChildren.Create(Context(), req, c.requestOpts()...)
 	if err != nil {
 		return nil, fmt.Errorf("创建块失败: %w", err)
 	}
@@ -204,8 +229,8 @@ func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, 
 	return resp.Data.Children, nil
 }
 
-// UpdateBlock updates an existing block
-func UpdateBlock(documentID string, blockID string, updateContent any) error {
+// UpdateBlock updates an existing block.
+func (c *DocxClient) UpdateBlock(documentID string, blockID string, updateContent any) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -229,7 +254,7 @@ func UpdateBlock(documentID string, blockID string, updateContent any) error {
 		UpdateBlockRequest(&updateBody).
 		Build()
 
-	resp, err := client.Docx.DocumentBlock.Patch(Context(), req)
+	resp, err := client.Docx.DocumentBlock.Patch(Context(), req, c.requestOpts()...)
 	if err != nil {
 		return fmt.Errorf("更新块失败: %w", err)
 	}
@@ -241,9 +266,9 @@ func UpdateBlock(documentID string, blockID string, updateContent any) error {
 	return nil
 }
 
-// DeleteBlocks deletes child blocks from a parent block by index range
-// startIndex is the starting index (0-based), endIndex is exclusive
-func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex int) error {
+// DeleteBlocks deletes child blocks from a parent block by index range.
+// startIndex is the starting index (0-based), endIndex is exclusive.
+func (c *DocxClient) DeleteBlocks(documentID string, blockID string, startIndex int, endIndex int) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -259,7 +284,7 @@ func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex in
 			Build()).
 		Build()
 
-	resp, err := client.Docx.DocumentBlockChildren.BatchDelete(Context(), req)
+	resp, err := client.Docx.DocumentBlockChildren.BatchDelete(Context(), req, c.requestOpts()...)
 	if err != nil {
 		return fmt.Errorf("删除块失败: %w", err)
 	}
@@ -285,7 +310,7 @@ type BatchUpdateBlocksResult struct {
 }
 
 // BatchUpdateBlocks batch updates blocks in a document
-func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateBlocksOptions) (*BatchUpdateBlocksResult, error) {
+func (c *DocxClient) BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateBlocksOptions) (*BatchUpdateBlocksResult, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -317,7 +342,7 @@ func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateB
 		reqBuilder.ClientToken(opts.ClientToken)
 	}
 
-	resp, err := client.Docx.DocumentBlock.BatchUpdate(Context(), reqBuilder.Build())
+	resp, err := client.Docx.DocumentBlock.BatchUpdate(Context(), reqBuilder.Build(), c.requestOpts()...)
 	if err != nil {
 		return nil, fmt.Errorf("批量更新块失败: %w", err)
 	}
@@ -337,8 +362,8 @@ func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateB
 	return result, nil
 }
 
-// GetBlockChildren retrieves children of a block (first page only)
-func GetBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, error) {
+// GetBlockChildren retrieves children of a block (first page only).
+func (c *DocxClient) GetBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -349,7 +374,7 @@ func GetBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, err
 		BlockId(blockID).
 		Build()
 
-	resp, err := client.Docx.DocumentBlockChildren.Get(Context(), req)
+	resp, err := client.Docx.DocumentBlockChildren.Get(Context(), req, c.requestOpts()...)
 	if err != nil {
 		return nil, fmt.Errorf("获取子块失败: %w", err)
 	}
@@ -361,8 +386,8 @@ func GetBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, err
 	return resp.Data.Items, nil
 }
 
-// GetAllBlockChildren retrieves all direct children of a block with pagination
-func GetAllBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, error) {
+// GetAllBlockChildren retrieves all direct children of a block with pagination.
+func (c *DocxClient) GetAllBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -384,7 +409,7 @@ func GetAllBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, 
 			reqBuilder.PageToken(pageToken)
 		}
 
-		resp, err := client.Docx.DocumentBlockChildren.Get(Context(), reqBuilder.Build())
+		resp, err := client.Docx.DocumentBlockChildren.Get(Context(), reqBuilder.Build(), c.requestOpts()...)
 		if err != nil {
 			return nil, fmt.Errorf("获取子块失败: %w", err)
 		}
@@ -428,7 +453,7 @@ func AddBoard(documentID string, parentID string, index int) (*AddBoardResult, e
 	}
 
 	// 创建画板块
-	createdBlocks, err := CreateBlock(documentID, parentID, []*larkdocx.Block{boardBlock}, index)
+	createdBlocks, err := NewDocxClient().CreateBlock(documentID, parentID, []*larkdocx.Block{boardBlock}, index)
 	if err != nil {
 		return nil, fmt.Errorf("创建画板块失败: %w", err)
 	}
@@ -452,7 +477,7 @@ func AddBoard(documentID string, parentID string, index int) (*AddBoardResult, e
 // contents: cell content strings (in row-major order)
 // Note: Feishu API automatically creates an empty text block in each cell when creating a table,
 // so we need to update the existing block instead of creating a new one to avoid duplicate rows.
-func FillTableCells(documentID string, cellIDs []string, contents []string) error {
+func (c *DocxClient) FillTableCells(documentID string, cellIDs []string, contents []string) error {
 	if len(cellIDs) == 0 || len(contents) == 0 {
 		return nil
 	}
@@ -470,14 +495,14 @@ func FillTableCells(documentID string, cellIDs []string, contents []string) erro
 		}
 	}
 
-	return fillTableCellsInternal(documentID, cellIDs[:cellCount], cellElements)
+	return c.fillTableCellsInternal(documentID, cellIDs[:cellCount], cellElements)
 }
 
 // FillTableCellsRich fills table cells with rich text elements (preserving links, styles, etc.)
 // cellIDs: cell block IDs from the created table
 // cellElements: each cell's text elements (in row-major order)
 // fallbackContents: plain text fallback for cells without elements
-func FillTableCellsRich(documentID string, cellIDs []string, cellElements [][]*larkdocx.TextElement, fallbackContents []string) error {
+func (c *DocxClient) FillTableCellsRich(documentID string, cellIDs []string, cellElements [][]*larkdocx.TextElement, fallbackContents []string) error {
 	if len(cellIDs) == 0 {
 		return nil
 	}
@@ -495,11 +520,11 @@ func FillTableCellsRich(documentID string, cellIDs []string, cellElements [][]*l
 		}
 	}
 
-	return fillTableCellsInternal(documentID, cellIDs, merged)
+	return c.fillTableCellsInternal(documentID, cellIDs, merged)
 }
 
 // fillTableCellsInternal 是 FillTableCells 和 FillTableCellsRich 的统一实现
-func fillTableCellsInternal(documentID string, cellIDs []string, cellElements [][]*larkdocx.TextElement) error {
+func (c *DocxClient) fillTableCellsInternal(documentID string, cellIDs []string, cellElements [][]*larkdocx.TextElement) error {
 	const maxRetries = 5
 
 	for i, cellID := range cellIDs {
@@ -515,11 +540,9 @@ func fillTableCellsInternal(documentID string, cellIDs []string, cellElements []
 
 		var err error
 		if len(groups) > 1 {
-			// 多块：删除已有空块后创建多个正确类型的块（支持标题、列表等）
-			err = fillCellMultiBlocks(documentID, cellID, groups, maxRetries)
+			err = c.fillCellMultiBlocks(documentID, cellID, groups, maxRetries)
 		} else {
-			// 单块：更新已有空块（飞书创建表格时自动生成）
-			err = fillCellSingleBlock(documentID, cellID, elements, maxRetries)
+			err = c.fillCellSingleBlock(documentID, cellID, elements, maxRetries)
 		}
 		if err != nil {
 			return fmt.Errorf("填充单元格 %d 失败: %w", i, err)
@@ -532,7 +555,7 @@ func fillTableCellsInternal(documentID string, cellIDs []string, cellElements []
 }
 
 // fillCellSingleBlock 用单个文本块填充单元格（优先更新已有空块）
-func fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextElement, maxRetries int) error {
+func (c *DocxClient) fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextElement, maxRetries int) error {
 	retryCfg := RetryConfig{
 		MaxRetries:       maxRetries,
 		MaxTotalAttempts: maxRetries + 5,
@@ -540,13 +563,13 @@ func fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextEle
 	}
 
 	// 尝试更新已有子块（飞书创建表格时自动生成空文本块）
-	children, childErr := GetBlockChildren(documentID, cellID)
+	children, childErr := c.GetBlockChildren(documentID, cellID)
 	if childErr == nil && len(children) > 0 {
 		existingBlockID := StringVal(children[0].BlockId)
 		if existingBlockID != "" {
 			updateContent := buildCellUpdateContent(elements)
 			result := DoVoidWithRetry(func() (http.Header, error) {
-				return nil, UpdateBlock(documentID, existingBlockID, updateContent)
+				return nil, c.UpdateBlock(documentID, existingBlockID, updateContent)
 			}, retryCfg)
 			if result.Err == nil {
 				return nil
@@ -561,14 +584,14 @@ func fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextEle
 		Text:      &larkdocx.Text{Elements: elements},
 	}
 	result := DoVoidWithRetry(func() (http.Header, error) {
-		_, err := CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, 0)
+		_, err := c.CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, 0)
 		return nil, err
 	}, retryCfg)
 	return result.Err
 }
 
 // fillCellMultiBlocks 用多个块填充单元格（支持 bullet/heading/text 混合）
-func fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, maxRetries int) error {
+func (c *DocxClient) fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, maxRetries int) error {
 	retryCfg := RetryConfig{
 		MaxRetries:       maxRetries,
 		MaxTotalAttempts: maxRetries + 5,
@@ -577,13 +600,13 @@ func fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, max
 
 	// 获取飞书自动创建的空文本块，更新其内容以避免留下空块
 	startIdx := 0
-	children, childErr := GetBlockChildren(documentID, cellID)
+	children, childErr := c.GetBlockChildren(documentID, cellID)
 	if childErr == nil && len(children) > 0 && len(groups) > 0 && len(groups[0].elements) > 0 {
 		existingBlockID := StringVal(children[0].BlockId)
 		if existingBlockID != "" {
 			updateContent := buildCellUpdateContent(groups[0].elements)
 			result := DoVoidWithRetry(func() (http.Header, error) {
-				return nil, UpdateBlock(documentID, existingBlockID, updateContent)
+				return nil, c.UpdateBlock(documentID, existingBlockID, updateContent)
 			}, retryCfg)
 			if result.Err == nil {
 				startIdx = 1 // 第一组已通过更新处理
@@ -599,7 +622,7 @@ func fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, max
 		}
 		block := buildCellBlock(group)
 		result := DoVoidWithRetry(func() (http.Header, error) {
-			_, err := CreateBlock(documentID, cellID, []*larkdocx.Block{block}, -1)
+			_, err := c.CreateBlock(documentID, cellID, []*larkdocx.Block{block}, -1)
 			return nil, err
 		}, retryCfg)
 		if result.Err != nil {
@@ -803,8 +826,8 @@ func buildElementsJSON(elements []*larkdocx.TextElement) []map[string]any {
 }
 
 // GetTableCellIDs retrieves cell block IDs from a table block
-func GetTableCellIDs(documentID string, tableBlockID string) ([]string, error) {
-	block, err := GetBlock(documentID, tableBlockID)
+func (c *DocxClient) GetTableCellIDs(documentID string, tableBlockID string) ([]string, error) {
+	block, err := c.GetBlock(documentID, tableBlockID)
 	if err != nil {
 		return nil, err
 	}
@@ -814,4 +837,56 @@ func GetTableCellIDs(documentID string, tableBlockID string) ([]string, error) {
 	}
 
 	return block.Table.Cells, nil
+}
+
+// ---------------------------------------------------------------------------
+// 向后兼容的包级函数（委托给 DocxClient，不传 token 时使用 Tenant Access Token）
+// ---------------------------------------------------------------------------
+
+func ListBlocks(documentID, pageToken string, pageSize int) ([]*larkdocx.Block, string, error) {
+	return NewDocxClient().ListBlocks(documentID, pageToken, pageSize)
+}
+
+func GetAllBlocks(documentID string) ([]*larkdocx.Block, error) {
+	return NewDocxClient().GetAllBlocks(documentID)
+}
+
+func GetBlock(documentID, blockID string) (*larkdocx.Block, error) {
+	return NewDocxClient().GetBlock(documentID, blockID)
+}
+
+func CreateBlock(documentID, blockID string, children []*larkdocx.Block, index int) ([]*larkdocx.Block, error) {
+	return NewDocxClient().CreateBlock(documentID, blockID, children, index)
+}
+
+func UpdateBlock(documentID, blockID string, updateContent any) error {
+	return NewDocxClient().UpdateBlock(documentID, blockID, updateContent)
+}
+
+func DeleteBlocks(documentID, blockID string, startIndex, endIndex int) error {
+	return NewDocxClient().DeleteBlocks(documentID, blockID, startIndex, endIndex)
+}
+
+func BatchUpdateBlocks(documentID, requestsJSON string, opts BatchUpdateBlocksOptions) (*BatchUpdateBlocksResult, error) {
+	return NewDocxClient().BatchUpdateBlocks(documentID, requestsJSON, opts)
+}
+
+func GetBlockChildren(documentID, blockID string) ([]*larkdocx.Block, error) {
+	return NewDocxClient().GetBlockChildren(documentID, blockID)
+}
+
+func GetAllBlockChildren(documentID, blockID string) ([]*larkdocx.Block, error) {
+	return NewDocxClient().GetAllBlockChildren(documentID, blockID)
+}
+
+func FillTableCells(documentID string, cellIDs, contents []string) error {
+	return NewDocxClient().FillTableCells(documentID, cellIDs, contents)
+}
+
+func FillTableCellsRich(documentID string, cellIDs []string, cellElements [][]*larkdocx.TextElement, fallbackContents []string) error {
+	return NewDocxClient().FillTableCellsRich(documentID, cellIDs, cellElements, fallbackContents)
+}
+
+func GetTableCellIDs(documentID, tableBlockID string) ([]string, error) {
+	return NewDocxClient().GetTableCellIDs(documentID, tableBlockID)
 }

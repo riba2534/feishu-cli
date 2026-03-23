@@ -41,6 +41,7 @@ var getBlocksCmd = &cobra.Command{
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
+		dc := client.NewDocxClient(resolveOptionalUserToken(cmd))
 
 		if raw {
 			content, err := client.GetRawContent(documentID)
@@ -57,7 +58,7 @@ var getBlocksCmd = &cobra.Command{
 
 		if all {
 			// Get all blocks with automatic pagination
-			allBlocks, err := client.GetAllBlocks(documentID)
+			allBlocks, err := dc.GetAllBlocks(documentID)
 			if err != nil {
 				return err
 			}
@@ -83,7 +84,7 @@ var getBlocksCmd = &cobra.Command{
 			}
 		} else {
 			// Get blocks with pagination
-			blockList, nextToken, err := client.ListBlocks(documentID, pageToken, pageSize)
+			blockList, nextToken, err := dc.ListBlocks(documentID, pageToken, pageSize)
 			if err != nil {
 				return err
 			}
@@ -131,4 +132,5 @@ func init() {
 	getBlocksCmd.Flags().Int("document-revision-id", -1, "文档版本 ID（-1 表示最新）")
 	getBlocksCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型")
 	getBlocksCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
+	getBlocksCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问个人知识库等需要用户身份的文档）")
 }

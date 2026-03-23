@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -117,6 +118,21 @@ func isValidToken(token string) bool {
 		}
 	}
 	return true
+}
+
+// resolveOptionalUserToken 从命令行 flag、配置文件、环境变量中解析可选的 User Access Token。
+// 优先级：--user-access-token flag > config.UserAccessToken > FEISHU_USER_ACCESS_TOKEN 环境变量。
+// 返回空字符串表示未提供（此时 API 调用将使用 Tenant Access Token）。
+func resolveOptionalUserToken(cmd *cobra.Command) string {
+	token, _ := cmd.Flags().GetString("user-access-token")
+	if token != "" {
+		return token
+	}
+	token = config.Get().UserAccessToken
+	if token != "" {
+		return token
+	}
+	return os.Getenv("FEISHU_USER_ACCESS_TOKEN")
 }
 
 // splitAndTrim 按逗号分割字符串并去除空白

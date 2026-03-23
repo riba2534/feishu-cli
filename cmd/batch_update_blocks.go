@@ -55,6 +55,7 @@ var batchUpdateBlocksCmd = &cobra.Command{
 		clientToken, _ := cmd.Flags().GetString("client-token")
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
 		output, _ := cmd.Flags().GetString("output")
+		dc := client.NewDocxClient(resolveOptionalUserToken(cmd))
 
 		// Get requests JSON
 		var requestsJSON string
@@ -75,7 +76,7 @@ var batchUpdateBlocksCmd = &cobra.Command{
 			UserIDType:         userIDType,
 		}
 
-		result, err := client.BatchUpdateBlocks(documentID, requestsJSON, opts)
+		result, err := dc.BatchUpdateBlocks(documentID, requestsJSON, opts)
 		if err != nil {
 			return err
 		}
@@ -104,4 +105,5 @@ func init() {
 	batchUpdateBlocksCmd.Flags().String("client-token", "", "操作唯一标识（幂等）")
 	batchUpdateBlocksCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型")
 	batchUpdateBlocksCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
+	batchUpdateBlocksCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问个人知识库等需要用户身份的文档）")
 }
