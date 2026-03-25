@@ -13,6 +13,8 @@ allowed-tools: Bash, Read, Write
 
 # 飞书多维表格（Bitable）操作
 
+> **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
+
 ## 前置条件
 
 - **认证**：需要有效的 App Access Token（环境变量 `FEISHU_APP_ID` + `FEISHU_APP_SECRET`，或 `~/.feishu-cli/config.yaml`）
