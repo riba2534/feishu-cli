@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
@@ -37,6 +38,7 @@ var authAutoCmd = &cobra.Command{
   # 自定义缓冲时间（默认 300 秒）
   feishu-cli auth auto --buffer 600`,
 	SilenceErrors: true,
+	SilenceUsage:  true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		output, _ := cmd.Flags().GetString("output")
 		buffer, _ := cmd.Flags().GetInt("buffer")
@@ -89,8 +91,8 @@ var authAutoCmd = &cobra.Command{
 }
 
 // wrapAutoResult 统一处理 auth auto 的输出
-// JSON 模式下先输出 JSON 到 stdout，再返回 error（非零退出码）；
-// SilenceErrors 防止 cobra 重复打印 error 到 stderr。
+// JSON 模式下输出 JSON 到 stdout，失败时直接 os.Exit(1) 确保退出码正确，
+// 避免 root.go Execute() 重复打印 error 到 stderr。
 func wrapAutoResult(output string, ok bool, msg string, err error) error {
 	if output == "json" {
 		result := map[string]any{"ok": ok}
@@ -101,7 +103,10 @@ func wrapAutoResult(output string, ok bool, msg string, err error) error {
 			result["error"] = err.Error()
 		}
 		_ = printJSON(result)
-		return err // nil on success, non-nil on failure → correct exit code
+		if err != nil {
+			os.Exit(1)
+		}
+		return nil
 	}
 
 	if err != nil {
