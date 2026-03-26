@@ -21,17 +21,22 @@ var authAutoCmd = &cobra.Command{
 如果两级均失败（无 refresh_token 或已过期），返回非零退出码，
 提示调用方执行 auth login 重新授权。
 
+缓冲时间说明:
+  --buffer 默认 300 秒（5 分钟），用于预防性刷新，避免 token 在使用过程中过期。
+  这与 SDK 内部的 60 秒缓冲（IsAccessTokenValid）不同，auth auto 更保守。
+
 适用于 AI Agent、定时任务等需要无人值守保持 Token 有效的场景。
 
 示例:
   # 检查并自动刷新
   feishu-cli auth auto
 
-  # JSON 输出（AI Agent 推荐）
+  # JSON 输出（AI Agent 推荐，成败通过退出码和 ok 字段双重判断）
   feishu-cli auth auto -o json
 
   # 自定义缓冲时间（默认 300 秒）
   feishu-cli auth auto --buffer 600`,
+	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		output, _ := cmd.Flags().GetString("output")
 		buffer, _ := cmd.Flags().GetInt("buffer")
@@ -44,9 +49,9 @@ var authAutoCmd = &cobra.Command{
 			return wrapAutoResult(output, false, "", fmt.Errorf("未登录，请先执行: feishu-cli auth login"))
 		}
 
-		// Level 1: access_token 有效性检查
+		// Level 1: access_token 有效性检查（含空 token 校验，与 IsAccessTokenValid 一致）
 		remaining := time.Until(token.ExpiresAt)
-		if remaining > time.Duration(buffer)*time.Second {
+		if token.AccessToken != "" && remaining > time.Duration(buffer)*time.Second {
 			msg := fmt.Sprintf("Token 有效（剩余 %s）", formatDuration(remaining))
 			return wrapAutoResult(output, true, msg, nil)
 		}
@@ -84,6 +89,8 @@ var authAutoCmd = &cobra.Command{
 }
 
 // wrapAutoResult 统一处理 auth auto 的输出
+// JSON 模式下先输出 JSON 到 stdout，再返回 error（非零退出码）；
+// SilenceErrors 防止 cobra 重复打印 error 到 stderr。
 func wrapAutoResult(output string, ok bool, msg string, err error) error {
 	if output == "json" {
 		result := map[string]any{"ok": ok}
@@ -93,7 +100,8 @@ func wrapAutoResult(output string, ok bool, msg string, err error) error {
 		if err != nil {
 			result["error"] = err.Error()
 		}
-		return printJSON(result)
+		_ = printJSON(result)
+		return err // nil on success, non-nil on failure → correct exit code
 	}
 
 	if err != nil {
