@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"strings"
 
 	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 )
@@ -227,6 +228,61 @@ func ListDepartments(parentDepartmentID, userIDType, departmentIDType string, pa
 	}
 
 	return depts, nextPageToken, hasMore, nil
+}
+
+// SearchUsersByName 递归遍历所有部门，按姓名模糊搜索用户
+func SearchUsersByName(name string) ([]*UserInfo, error) {
+	var matched []*UserInfo
+	nameLower := strings.ToLower(name)
+
+	var searchDept func(deptID string) error
+	searchDept = func(deptID string) error {
+		// 列出当前部门的所有用户（自动分页）
+		pageToken := ""
+		for {
+			users, nextToken, hasMore, err := ListUsers(deptID, "open_id", 50, pageToken)
+			if err != nil {
+				return err
+			}
+			for _, u := range users {
+				if strings.Contains(strings.ToLower(u.Name), nameLower) ||
+					strings.Contains(strings.ToLower(u.EnName), nameLower) ||
+					strings.Contains(strings.ToLower(u.Nickname), nameLower) {
+					matched = append(matched, u)
+				}
+			}
+			if !hasMore {
+				break
+			}
+			pageToken = nextToken
+		}
+
+		// 递归子部门（自动分页）
+		pageToken = ""
+		for {
+			depts, nextToken, hasMore, err := ListDepartments(deptID, "open_id", "open_department_id", 50, pageToken)
+			if err != nil {
+				return err
+			}
+			for _, d := range depts {
+				if err := searchDept(d.OpenDepartmentID); err != nil {
+					return err
+				}
+			}
+			if !hasMore {
+				break
+			}
+			pageToken = nextToken
+		}
+
+		return nil
+	}
+
+	if err := searchDept("0"); err != nil {
+		return nil, err
+	}
+
+	return matched, nil
 }
 
 // convertDepartment 转换 SDK Department 为 DepartmentInfo

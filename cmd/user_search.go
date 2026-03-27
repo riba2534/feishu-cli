@@ -10,14 +10,16 @@ import (
 
 var userSearchCmd = &cobra.Command{
 	Use:   "search",
-	Short: "通过邮箱或手机号查询用户 ID",
-	Long: `通过邮箱或手机号批量查询用户 ID。至少需要指定一个查询条件。
+	Short: "通过姓名、邮箱或手机号查询用户",
+	Long: `通过姓名、邮箱或手机号查询用户。至少需要指定一个查询条件。
 
 参数:
+  --name      姓名（模糊匹配，递归搜索所有部门）
   --email     邮箱列表，逗号分隔
   --mobile    手机号列表，逗号分隔
 
 示例:
+  feishu-cli user search --name "张三"
   feishu-cli user search --email user@example.com
   feishu-cli user search --mobile +8613800138000
   feishu-cli user search --email a@example.com,b@example.com -o json`,
@@ -26,14 +28,56 @@ var userSearchCmd = &cobra.Command{
 			return err
 		}
 
+		nameStr, _ := cmd.Flags().GetString("name")
 		emailStr, _ := cmd.Flags().GetString("email")
 		mobileStr, _ := cmd.Flags().GetString("mobile")
 		output, _ := cmd.Flags().GetString("output")
 
-		if emailStr == "" && mobileStr == "" {
-			return fmt.Errorf("至少需要指定 --email 或 --mobile")
+		if nameStr == "" && emailStr == "" && mobileStr == "" {
+			return fmt.Errorf("至少需要指定 --name、--email 或 --mobile")
 		}
 
+		// 按姓名搜索（递归遍历部门）
+		if nameStr != "" {
+			users, err := client.SearchUsersByName(nameStr)
+			if err != nil {
+				return err
+			}
+
+			if output == "json" {
+				return printJSON(users)
+			}
+
+			if len(users) == 0 {
+				fmt.Printf("未找到姓名包含 \"%s\" 的用户\n", nameStr)
+				return nil
+			}
+
+			fmt.Printf("查询结果（共 %d 条，姓名匹配 \"%s\"）:\n\n", len(users), nameStr)
+			for i, u := range users {
+				fmt.Printf("[%d] %s", i+1, u.Name)
+				if u.EnName != "" {
+					fmt.Printf(" (%s)", u.EnName)
+				}
+				fmt.Println()
+				if u.OpenID != "" {
+					fmt.Printf("    Open ID: %s\n", u.OpenID)
+				}
+				if u.Email != "" {
+					fmt.Printf("    邮箱: %s\n", u.Email)
+				}
+				if u.JobTitle != "" {
+					fmt.Printf("    职位: %s\n", u.JobTitle)
+				}
+				if u.Status != "" {
+					fmt.Printf("    状态: %s\n", u.Status)
+				}
+				fmt.Println()
+			}
+			return nil
+		}
+
+		// 按邮箱/手机号搜索（原有逻辑）
 		var emails, mobiles []string
 		if emailStr != "" {
 			emails = splitAndTrim(emailStr)
@@ -74,6 +118,7 @@ var userSearchCmd = &cobra.Command{
 
 func init() {
 	userCmd.AddCommand(userSearchCmd)
+	userSearchCmd.Flags().String("name", "", "姓名（模糊匹配，递归搜索所有部门）")
 	userSearchCmd.Flags().String("email", "", "邮箱列表，逗号分隔")
 	userSearchCmd.Flags().String("mobile", "", "手机号列表，逗号分隔")
 	userSearchCmd.Flags().StringP("output", "o", "", "输出格式（json）")
