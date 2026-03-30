@@ -96,3 +96,172 @@ func TestResolveImageSourceHTTPURLWithoutPathName(t *testing.T) {
 		t.Fatalf("temp file ext = %q, want %q", filepath.Ext(localPath), ".png")
 	}
 }
+
+func TestIsGridDivOpen(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{`<div style="display: flex; gap: 16px;">`, true},
+		{`<div style="display:flex;gap:16px;">`, true},
+		{`<DIV STYLE="DISPLAY: FLEX;">`, true},
+		{`<div style="flex: 40;">`, false},
+		{`<div class="other">`, false},
+		{`<p>text</p>`, false},
+		{`just text`, false},
+	}
+	for _, tt := range tests {
+		got := isGridDivOpen(tt.input)
+		if got != tt.want {
+			t.Errorf("isGridDivOpen(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestParseGridColumns(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantLen int
+		checks  func(t *testing.T, cols []gridColumn)
+	}{
+		{
+			name: "basic 2 columns with ratios",
+			input: `<div style="display: flex; gap: 16px;">
+<div style="flex: 40;">
+
+Left content
+
+</div>
+<div style="flex: 60;">
+
+Right content
+
+</div>
+</div>`,
+			wantLen: 2,
+			checks: func(t *testing.T, cols []gridColumn) {
+				if cols[0].widthRatio != 40 {
+					t.Errorf("col[0].widthRatio = %d, want 40", cols[0].widthRatio)
+				}
+				if cols[0].content != "Left content" {
+					t.Errorf("col[0].content = %q, want %q", cols[0].content, "Left content")
+				}
+				if cols[1].widthRatio != 60 {
+					t.Errorf("col[1].widthRatio = %d, want 60", cols[1].widthRatio)
+				}
+				if cols[1].content != "Right content" {
+					t.Errorf("col[1].content = %q, want %q", cols[1].content, "Right content")
+				}
+			},
+		},
+		{
+			name: "columns without explicit ratio default to 1",
+			input: `<div style="display: flex; gap: 16px;">
+<div style="flex: 1;">
+
+Content A
+
+</div>
+<div style="flex: 1;">
+
+Content B
+
+</div>
+</div>`,
+			wantLen: 2,
+			checks: func(t *testing.T, cols []gridColumn) {
+				if cols[0].widthRatio != 1 {
+					t.Errorf("col[0].widthRatio = %d, want 1", cols[0].widthRatio)
+				}
+				if cols[1].widthRatio != 1 {
+					t.Errorf("col[1].widthRatio = %d, want 1", cols[1].widthRatio)
+				}
+			},
+		},
+		{
+			name: "3 columns",
+			input: `<div style="display: flex; gap: 16px;">
+<div style="flex: 33;">
+
+Col 1
+
+</div>
+<div style="flex: 34;">
+
+Col 2
+
+</div>
+<div style="flex: 33;">
+
+Col 3
+
+</div>
+</div>`,
+			wantLen: 3,
+			checks: func(t *testing.T, cols []gridColumn) {
+				if cols[0].widthRatio != 33 || cols[1].widthRatio != 34 || cols[2].widthRatio != 33 {
+					t.Errorf("ratios = %d/%d/%d", cols[0].widthRatio, cols[1].widthRatio, cols[2].widthRatio)
+				}
+			},
+		},
+		{
+			name:    "empty div",
+			input:   `<div style="display: flex;"></div>`,
+			wantLen: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cols := parseGridColumns(tt.input)
+			if len(cols) != tt.wantLen {
+				t.Fatalf("parseGridColumns() returned %d columns, want %d", len(cols), tt.wantLen)
+			}
+			if tt.checks != nil {
+				tt.checks(t, cols)
+			}
+		})
+	}
+}
+
+func TestParseMarkdownSegmentsGrid(t *testing.T) {
+	input := `# Title
+
+Some text
+
+<div style="display: flex; gap: 16px;">
+<div style="flex: 40;">
+
+Left column
+
+</div>
+<div style="flex: 60;">
+
+Right column
+
+</div>
+</div>
+
+More text after grid
+`
+	segs := parseMarkdownSegments(input)
+
+	var kinds []string
+	for _, s := range segs {
+		kinds = append(kinds, s.kind)
+	}
+
+	hasGrid := false
+	for _, s := range segs {
+		if s.kind == "grid" {
+			hasGrid = true
+			if !isGridDivOpen(s.content[:50]) {
+				t.Errorf("grid segment should start with grid div open tag")
+			}
+		}
+	}
+	if !hasGrid {
+		t.Fatalf("expected a grid segment, got kinds: %v", kinds)
+	}
+}

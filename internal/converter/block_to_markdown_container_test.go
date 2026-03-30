@@ -745,7 +745,7 @@ func TestConvertGrid(t *testing.T) {
 					Children: []string{},
 				},
 			},
-			want: "",
+			want: "<div style=\"display: flex; gap: 16px;\">\n</div>",
 		},
 		{
 			name: "normal grid with 2 columns",
@@ -773,7 +773,35 @@ func TestConvertGrid(t *testing.T) {
 				},
 				createTextBlock("text2", "Column 2 content"),
 			},
-			want: "Column 1 content\nColumn 2 content",
+			want: "<div style=\"display: flex; gap: 16px;\">\n<div style=\"flex: 1;\">\n\nColumn 1 content\n</div>\n<div style=\"flex: 1;\">\n\nColumn 2 content\n</div>\n</div>",
+		},
+		{
+			name: "grid with width ratios",
+			blocks: []*larkdocx.Block{
+				{
+					BlockId:   strPtr("grid1"),
+					BlockType: intPtr(int(BlockTypeGrid)),
+					Grid: &larkdocx.Grid{
+						ColumnSize: intPtr(2),
+					},
+					Children: []string{"col1", "col2"},
+				},
+				{
+					BlockId:    strPtr("col1"),
+					BlockType:  intPtr(int(BlockTypeGridColumn)),
+					GridColumn: &larkdocx.GridColumn{WidthRatio: intPtr(40)},
+					Children:   []string{"text1"},
+				},
+				createTextBlock("text1", "Left column"),
+				{
+					BlockId:    strPtr("col2"),
+					BlockType:  intPtr(int(BlockTypeGridColumn)),
+					GridColumn: &larkdocx.GridColumn{WidthRatio: intPtr(60)},
+					Children:   []string{"text2"},
+				},
+				createTextBlock("text2", "Right column"),
+			},
+			want: "<div style=\"display: flex; gap: 16px;\">\n<div style=\"flex: 40;\">\n\nLeft column\n</div>\n<div style=\"flex: 60;\">\n\nRight column\n</div>\n</div>",
 		},
 		{
 			name: "grid child is not GridColumn - should skip",
@@ -795,7 +823,7 @@ func TestConvertGrid(t *testing.T) {
 				},
 				createTextBlock("text2", "Column 2 content"),
 			},
-			want: "Column 2 content",
+			want: "<div style=\"display: flex; gap: 16px;\">\n<div style=\"flex: 1;\">\n\nColumn 2 content\n</div>\n</div>",
 		},
 		{
 			name: "grid column is nil",
@@ -815,7 +843,7 @@ func TestConvertGrid(t *testing.T) {
 					Children:   []string{"text1"},
 				},
 			},
-			want: "",
+			want: "<div style=\"display: flex; gap: 16px;\">\n</div>",
 		},
 	}
 

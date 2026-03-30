@@ -385,6 +385,8 @@ feishu-cli doc import-file ~/Documents/report.docx --type docx --name "季度报
 | 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` 或 PNG 图片 | 使用 `--download-images` 时自动导出为 PNG |
 | ISV 块 | 画板链接或 HTML 注释 | Mermaid 绘图/时间线 |
 | Iframe | `<iframe>` HTML 标签 | 嵌入内容 |
+| Grid | `<div style="display: flex">` 包裹列布局 | 分栏容器（2-5 列） |
+| GridColumn | `<div style="flex: N;">` 包裹列内容 | 分栏列（N=1-99，宽度百分比） |
 | AddOns/TextDrawing | Mermaid/PlantUML 代码块 | 文本绘图小组件自动还原为图表源码 |
 | AddOns/SyncedBlock | 展开子块内容 | 透明展开 |
 | Wiki 目录 | `[Wiki 目录...]` | |
@@ -393,6 +395,31 @@ feishu-cli doc import-file ~/Documents/report.docx --type docx --name "季度报
 | SyncSource/SyncReference | 展开子块内容 | 同步块 |
 | WikiCatalogV2 | `[知识库目录 V2]` | |
 | AITemplate | HTML 注释 | AI 模板块 |
+
+### 分栏布局（Grid）导出
+
+飞书文档中的分栏块（Grid/GridColumn）导出为 HTML Flexbox 布局：
+
+```html
+<div style="display: flex; gap: 16px;">
+<div style="flex: 40;">
+
+左栏内容（Markdown 格式）
+
+</div>
+<div style="flex: 60;">
+
+右栏内容（Markdown 格式）
+
+</div>
+</div>
+```
+
+- `flex: N` 中的 N 对应飞书 `GridColumn.WidthRatio`，取值 1-99，表示该列占整个分栏的百分比
+- 未设置 `WidthRatio` 时默认输出 `flex: 1`（等分）
+- 飞书 Grid 支持 2-5 列
+- 每列内部的子块（段落、标题、列表、图片等）递归导出为 Markdown
+- 在支持 HTML 渲染的 Markdown 阅读器（Typora、VS Code 预览等）中可直接看到分栏效果
 
 ### Callout 高亮块导出
 

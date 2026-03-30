@@ -1157,14 +1157,13 @@ func (c *BlockToMarkdown) convertGridWithDepth(block *larkdocx.Block, depth int)
 		return "", nil
 	}
 
-	// 递归深度检查
 	if depth > maxRecursionDepth {
 		return "<!-- Grid 递归深度超限 -->\n", nil
 	}
 
 	var sb strings.Builder
+	sb.WriteString("<div style=\"display: flex; gap: 16px;\">\n")
 
-	// Process grid columns
 	if block.Children != nil {
 		for _, childID := range block.Children {
 			childBlock := c.blockMap[childID]
@@ -1175,6 +1174,7 @@ func (c *BlockToMarkdown) convertGridWithDepth(block *larkdocx.Block, depth int)
 		}
 	}
 
+	sb.WriteString("</div>\n\n")
 	return sb.String(), nil
 }
 
@@ -1183,14 +1183,22 @@ func (c *BlockToMarkdown) convertGridColumnWithDepth(block *larkdocx.Block, dept
 		return "", nil
 	}
 
-	// 递归深度检查
 	if depth > maxRecursionDepth {
 		return "<!-- GridColumn 递归深度超限 -->\n", nil
 	}
 
 	var sb strings.Builder
 
-	// Process child blocks in the column
+	widthRatio := 0
+	if block.GridColumn.WidthRatio != nil {
+		widthRatio = *block.GridColumn.WidthRatio
+	}
+	if widthRatio > 0 {
+		sb.WriteString(fmt.Sprintf("<div style=\"flex: %d;\">\n\n", widthRatio))
+	} else {
+		sb.WriteString("<div style=\"flex: 1;\">\n\n")
+	}
+
 	if block.Children != nil {
 		for _, childID := range block.Children {
 			childBlock := c.blockMap[childID]
@@ -1201,6 +1209,7 @@ func (c *BlockToMarkdown) convertGridColumnWithDepth(block *larkdocx.Block, dept
 		}
 	}
 
+	sb.WriteString("</div>\n")
 	return sb.String(), nil
 }
 

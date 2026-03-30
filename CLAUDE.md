@@ -134,7 +134,32 @@ app_secret: "xxx"
 **导入**：`feishu-cli doc import doc.md --title "文档" --verbose`
 **导出**：`feishu-cli doc export <doc_id> -o output.md`
 
-支持的语法：标题、段落、列表（无限深度嵌套）、任务列表、代码块、引用（QuoteContainer）、Callout（6 种类型）、表格、分割线、图片（默认通过 `--upload-images` 上传本地和网络图片）、链接、公式（块级/行内）、粗体/斜体/删除线/下划线/行内代码/高亮
+支持的语法：标题、段落、列表（无限深度嵌套）、任务列表、代码块、引用（QuoteContainer）、Callout（6 种类型）、表格、分割线、图片（默认通过 `--upload-images` 上传本地和网络图片）、链接、公式（块级/行内）、粗体/斜体/删除线/下划线/行内代码/高亮、**分栏布局（Grid）**
+
+### 分栏布局（Grid）
+
+飞书文档中的分栏块（Grid/GridColumn）与 Markdown 之间通过 HTML `<div>` + CSS Flexbox 进行双向转换。
+
+**导出格式**（飞书 Grid → Markdown）：
+
+```html
+<div style="display: flex; gap: 16px;">
+<div style="flex: 40;">
+
+左栏内容
+
+</div>
+<div style="flex: 60;">
+
+右栏内容
+
+</div>
+</div>
+```
+
+**导入识别**（Markdown → 飞书 Grid）：检测 `<div style="display: flex">` 开始标签，解析内部 `<div style="flex: N;">` 获取列宽比例，递归转换列内 Markdown 内容为飞书块。
+
+**flex 值 N 的含义**：对应飞书 `GridColumn.WidthRatio`，取值范围 1-99，表示该列占整个分栏的百分比。未指定时默认为 `flex: 1`（等分）。飞书 Grid 支持 2-5 列。
 
 ### Mermaid / PlantUML 图表转画板
 
@@ -359,6 +384,8 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 | 21 | Diagram | Mermaid/PlantUML | 图表（自动转画板） |
 | 22 | Divider | `---` | 分隔线 |
 | 23 | File | 附件 | 文件块 |
+| 24 | Grid | `<div style="display: flex">` | 分栏容器（2-5 列） |
+| 25 | GridColumn | `<div style="flex: N;">` | 分栏列（N=1-99，宽度百分比） |
 | 26 | Iframe | `<iframe>` | 内嵌网页 |
 | 27 | Image | `![](url)` | 图片 |
 | 28 | ISV | TextDrawing/Timeline | 第三方块（导出为 Mermaid 注释/占位符） |

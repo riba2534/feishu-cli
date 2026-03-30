@@ -7,7 +7,9 @@ import (
 	"os"
 	pathpkg "path"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,8 +33,82 @@ func syncPrintf(format string, a ...any) {
 
 // segment 表示 Markdown 中的一个片段
 type segment struct {
-	kind    string // "markdown"、"mermaid"、"plantuml" 或 "equation"
+	kind    string // "markdown"、"mermaid"、"plantuml"、"equation" 或 "grid"
 	content string
+}
+
+// gridColumn 表示分栏中的一列及其内容
+type gridColumn struct {
+	widthRatio int
+	content    string
+}
+
+// isGridDivOpen 判断一行是否是分栏容器 div 的开始
+func isGridDivOpen(trimmed string) bool {
+	lower := strings.ToLower(trimmed)
+	return strings.HasPrefix(lower, "<div") && strings.Contains(lower, "display") && strings.Contains(lower, "flex")
+}
+
+// parseGridColumns 从 grid segment 内容中提取各列信息
+func parseGridColumns(content string) []gridColumn {
+	var columns []gridColumn
+	lines := strings.Split(content, "\n")
+	flexRe := regexp.MustCompile(`flex:\s*(\d+)`)
+
+	var currentRatio int
+	var currentLines []string
+	inColumn := false
+	depth := 0
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+
+		if depth == 1 && strings.HasPrefix(lower, "<div") && strings.Contains(lower, "flex") {
+			if inColumn && len(currentLines) > 0 {
+				columns = append(columns, gridColumn{
+					widthRatio: currentRatio,
+					content:    strings.TrimSpace(strings.Join(currentLines, "\n")),
+				})
+			}
+			currentRatio = 1
+			if m := flexRe.FindStringSubmatch(lower); m != nil {
+				ratio, _ := strconv.Atoi(m[1])
+				if ratio > 0 {
+					currentRatio = ratio
+				}
+			}
+			currentLines = nil
+			inColumn = true
+			depth++
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "<div") {
+			depth++
+		}
+		if strings.Contains(trimmed, "</div>") {
+			depth--
+			if depth == 1 && inColumn {
+				columns = append(columns, gridColumn{
+					widthRatio: currentRatio,
+					content:    strings.TrimSpace(strings.Join(currentLines, "\n")),
+				})
+				currentLines = nil
+				inColumn = false
+				continue
+			}
+			if depth <= 0 {
+				continue
+			}
+		}
+
+		if inColumn {
+			currentLines = append(currentLines, line)
+		}
+	}
+
+	return columns
 }
 
 // parseMarkdownSegments 将 Markdown 解析为片段，分离出 mermaid 和 plantuml 代码块
@@ -74,6 +150,34 @@ func parseMarkdownSegments(markdown string) []segment {
 			}
 			buf = append(buf, line)
 			i++
+			continue
+		}
+
+		// 检查分栏 div 开始（<div style="display: flex）
+		if !inFence && isGridDivOpen(trimmed) {
+			if len(buf) > 0 {
+				segments = append(segments, segment{kind: "markdown", content: strings.Join(buf, "\n")})
+				buf = nil
+			}
+
+			var gridLines []string
+			gridLines = append(gridLines, line)
+			i++
+			depth := 1
+			for i < len(lines) && depth > 0 {
+				gl := lines[i]
+				gt := strings.TrimSpace(gl)
+				if strings.HasPrefix(gt, "<div") {
+					depth++
+				}
+				if strings.Contains(gt, "</div>") {
+					depth--
+				}
+				gridLines = append(gridLines, gl)
+				i++
+			}
+
+			segments = append(segments, segment{kind: "grid", content: strings.Join(gridLines, "\n")})
 			continue
 		}
 
@@ -745,6 +849,205 @@ func phase1CreateBlocks(
 				if verbose {
 					fmt.Printf("  [公式] 创建 %d 个块（行内公式）\n", len(createdBlocks))
 				}
+			}
+
+		} else if seg.kind == "grid" {
+			columns := parseGridColumns(seg.content)
+			if len(columns) < 2 {
+				if verbose {
+					fmt.Printf("  ⚠ 分栏解析失败，列数不足，降级为普通内容\n")
+				}
+				continue
+			}
+			columnSize := len(columns)
+			if columnSize > 5 {
+				columnSize = 5
+			}
+
+			gridBlockType := int(converter.BlockTypeGrid)
+			gridBlock := &larkdocx.Block{
+				BlockType: &gridBlockType,
+				Grid:      &larkdocx.Grid{ColumnSize: &columnSize},
+			}
+
+			createResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+				blocks, err := client.CreateBlock(documentID, documentID, []*larkdocx.Block{gridBlock}, -1)
+				return blocks, nil, err
+			}, client.RetryConfig{MaxRetries: 5, RetryOnRateLimit: true})
+			if createResult.Err != nil {
+				if verbose {
+					fmt.Printf("  ⚠ 分栏块创建失败: %v\n", createResult.Err)
+				}
+				continue
+			}
+			stats.totalBlocks++
+
+			if len(createResult.Value) == 0 || createResult.Value[0].BlockId == nil {
+				if verbose {
+					fmt.Printf("  ⚠ 分栏块创建成功但未返回 ID\n")
+				}
+				continue
+			}
+			gridBlockID := *createResult.Value[0].BlockId
+
+			childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+				blocks, err := client.GetBlockChildren(documentID, gridBlockID)
+				return blocks, nil, err
+			}, client.RetryConfig{MaxRetries: 3, RetryOnRateLimit: true})
+			if childrenResult.Err != nil {
+				if verbose {
+					fmt.Printf("  ⚠ 获取分栏子块失败: %v\n", childrenResult.Err)
+				}
+				continue
+			}
+
+			for colIdx, col := range columns {
+				if colIdx >= len(childrenResult.Value) || colIdx >= columnSize {
+					break
+				}
+				colBlock := childrenResult.Value[colIdx]
+				if colBlock.BlockId == nil {
+					continue
+				}
+				colBlockID := *colBlock.BlockId
+
+				if col.content == "" {
+					continue
+				}
+				options := converter.ConvertOptions{
+					UploadImages: uploadImages,
+					DocumentID:   documentID,
+				}
+				colConv := converter.NewMarkdownToBlock([]byte(col.content), options, basePath)
+				colResult, err := colConv.ConvertWithTableData()
+				if err != nil {
+					if verbose {
+						fmt.Printf("  ⚠ 分栏列 %d 内容转换失败: %v\n", colIdx+1, err)
+					}
+					continue
+				}
+
+				if len(colResult.BlockNodes) == 0 {
+					continue
+				}
+
+				existingChildren := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+					blocks, err := client.GetBlockChildren(documentID, colBlockID)
+					return blocks, nil, err
+				}, client.RetryConfig{MaxRetries: 3, RetryOnRateLimit: true})
+
+				var topBlocks []*larkdocx.Block
+				colNodeChildrenMap := map[int][]*converter.BlockNode{}
+				for ci, node := range colResult.BlockNodes {
+					topBlocks = append(topBlocks, node.Block)
+					if len(node.Children) > 0 {
+						colNodeChildrenMap[ci] = node.Children
+					}
+				}
+
+				var colTableIndices []int
+				var colImageIndices []int
+				for ci, block := range topBlocks {
+					if block.BlockType != nil {
+						switch *block.BlockType {
+						case int(converter.BlockTypeTable):
+							colTableIndices = append(colTableIndices, ci)
+						case int(converter.BlockTypeImage):
+							colImageIndices = append(colImageIndices, ci)
+						}
+					}
+				}
+
+				const batchSize = 50
+				var colCreatedIDs []string
+				for bi := 0; bi < len(topBlocks); bi += batchSize {
+					end := bi + batchSize
+					if end > len(topBlocks) {
+						end = len(topBlocks)
+					}
+					batch := topBlocks[bi:end]
+					batchResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+						blocks, err := client.CreateBlock(documentID, colBlockID, batch, -1)
+						return blocks, nil, err
+					}, client.RetryConfig{MaxRetries: 5, RetryOnRateLimit: true})
+					if batchResult.Err != nil {
+						if verbose {
+							fmt.Printf("  ⚠ 分栏列 %d 内容创建失败: %v\n", colIdx+1, batchResult.Err)
+						}
+						break
+					}
+					stats.totalBlocks += len(batchResult.Value)
+					for _, block := range batchResult.Value {
+						if block.BlockId != nil {
+							colCreatedIDs = append(colCreatedIDs, *block.BlockId)
+						}
+					}
+				}
+
+				for idx, children := range colNodeChildrenMap {
+					if idx < len(colCreatedIDs) {
+						nestedCount, nestedErr := createNestedChildren(documentID, colCreatedIDs[idx], children)
+						stats.totalBlocks += nestedCount
+						if nestedErr != nil && verbose {
+							fmt.Printf("  ⚠ 分栏列 %d 嵌套子块创建失败: %v\n", colIdx+1, nestedErr)
+						}
+					}
+				}
+
+				if existingChildren.Err == nil && len(existingChildren.Value) > 0 {
+					firstChild := existingChildren.Value[0]
+					if firstChild.BlockType != nil && *firstChild.BlockType == int(converter.BlockTypeText) {
+						isEmpty := true
+						if firstChild.Text != nil && len(firstChild.Text.Elements) > 0 {
+							for _, elem := range firstChild.Text.Elements {
+								if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
+									isEmpty = false
+									break
+								}
+							}
+						}
+						if isEmpty {
+							delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
+								err := client.DeleteBlocks(documentID, colBlockID, 0, 1)
+								return struct{}{}, nil, err
+							}, client.RetryConfig{MaxRetries: 3, RetryOnRateLimit: true})
+							if delResult.Err != nil && verbose {
+								fmt.Printf("  ⚠ 分栏列 %d 空子块删除失败: %v\n", colIdx+1, delResult.Err)
+							}
+						}
+					}
+				}
+
+				tableDataIdx := 0
+				for _, tIdx := range colTableIndices {
+					if tIdx >= len(colCreatedIDs) || tableDataIdx >= len(colResult.TableDatas) {
+						continue
+					}
+					tTasks = append(tTasks, tableTask{
+						index:        len(tTasks) + 1,
+						tableBlockID: colCreatedIDs[tIdx],
+						tableData:    colResult.TableDatas[tableDataIdx],
+					})
+					tableDataIdx++
+				}
+
+				imgSourceIdx := 0
+				for _, iIdx := range colImageIndices {
+					if iIdx >= len(colCreatedIDs) || imgSourceIdx >= len(colResult.ImageSources) {
+						continue
+					}
+					iTasks = append(iTasks, imageTask{
+						index:        len(iTasks) + 1,
+						imageBlockID: colCreatedIDs[iIdx],
+						source:       colResult.ImageSources[imgSourceIdx],
+						basePath:     basePath,
+					})
+					imgSourceIdx++
+				}
+			}
+
+			if verbose {
+				fmt.Printf("  [分栏] 创建 %d 列分栏布局\n", columnSize)
 			}
 
 		} else if seg.kind == "mermaid" || seg.kind == "plantuml" {

@@ -39,6 +39,7 @@ allowed-tools: Read
 | 8 | ✅ Callout 仅 6 种：NOTE / WARNING / TIP / CAUTION / IMPORTANT / SUCCESS | 必须遵守 |
 | 9 | ⚠️ 块级公式 `$$...$$` 会降级为行内 Equation（API 限制） | 了解即可 |
 | 10 | ✅ 图片默认自动上传，失败时降级为占位块 | 了解即可 |
+| 11 | ✅ 分栏用 `<div style="display: flex">` + `<div style="flex: N;">`，N=1-99 | 了解即可 |
 
 ---
 
@@ -245,6 +246,8 @@ flowchart TD
 | `![alt](url)` | 27 | Image | 默认自动上传（见第 8 节） |
 | `` ```mermaid `` | 21→43 | Diagram→Board | 自动转飞书画板（见第 3 节） |
 | `` ```plantuml `` / `` ```puml `` | 21→43 | Diagram→Board | 自动转飞书画板（见第 4 节） |
+| `<div style="display: flex">` | 24 | Grid | 分栏容器（2-5 列，见第 10 节） |
+| `<div style="flex: N;">` | 25 | GridColumn | 分栏列（N=1-99，宽度百分比） |
 | `$$公式$$` | 16 | Equation | 块级公式（降级为行内 Equation） |
 | `$公式$` | — | InlineEquation | 行内公式 |
 
@@ -441,7 +444,91 @@ $$
 
 ---
 
-## 10. API 限制与容错
+## 10. 分栏布局（Grid）
+
+### 语法格式
+
+使用 HTML `<div>` + CSS Flexbox 表达分栏布局：
+
+```html
+<div style="display: flex; gap: 16px;">
+<div style="flex: 40;">
+
+左栏内容（Markdown 格式）
+
+</div>
+<div style="flex: 60;">
+
+右栏内容（Markdown 格式）
+
+</div>
+</div>
+```
+
+### flex 值 N 的含义
+
+| 属性 | 说明 |
+|------|------|
+| `flex: N` | 对应飞书 `GridColumn.WidthRatio`，取值 **1-99**，表示该列占整个分栏的百分比 |
+| `flex: 1` | 默认值，各列等分 |
+| 列数 | 飞书 Grid 支持 **2-5 列**，内层 `<div>` 数量即为列数 |
+
+### 注意事项
+
+- ✅ 每列内部支持任意 Markdown 内容（段落、标题、列表、代码块、图片等）
+- ✅ 导入时自动检测 `<div style="display: flex">` 结构
+- ✅ 导出时自动将飞书 Grid/GridColumn 块转为此 HTML 格式
+- ⚠️ 列数超过 5 时只取前 5 列（飞书 API 限制 `column_size` 取值 2-5）
+- ⚠️ `flex: N` 在 Markdown 预览中的列宽比例是近似的（CSS flex 行为），飞书端严格按 `WidthRatio` 百分比固定宽度
+
+### 使用示例
+
+**等分两列**：
+
+```html
+<div style="display: flex; gap: 16px;">
+<div style="flex: 1;">
+
+# 标题 A
+
+内容 A
+
+</div>
+<div style="flex: 1;">
+
+# 标题 B
+
+内容 B
+
+</div>
+</div>
+```
+
+**三列不等宽**：
+
+```html
+<div style="display: flex; gap: 16px;">
+<div style="flex: 25;">
+
+窄列
+
+</div>
+<div style="flex: 50;">
+
+宽列
+
+</div>
+<div style="flex: 25;">
+
+窄列
+
+</div>
+</div>
+```
+
+---
+
+## 11. API 限制与容错
 
 ### 三阶段并发管道
 
