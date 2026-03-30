@@ -302,6 +302,7 @@ var importMarkdownCmd = &cobra.Command{
 		uploadImages, _ := cmd.Flags().GetBool("upload-images")
 		folder, _ := cmd.Flags().GetString("folder")
 		verbose, _ := cmd.Flags().GetBool("verbose")
+		transferOwner, _ := cmd.Flags().GetString("transfer-owner")
 		diagramWorkers, _ := cmd.Flags().GetInt("diagram-workers")
 		tableWorkers, _ := cmd.Flags().GetInt("table-workers")
 		imageWorkers, _ := cmd.Flags().GetInt("image-workers")
@@ -519,6 +520,35 @@ var importMarkdownCmd = &cobra.Command{
 			}
 			fmt.Printf("  总耗时: %.1fs\n", totalDuration.Seconds())
 			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+		}
+
+		// 导入完成后，自动添加权限和/或转移所有权
+		// --transfer-owner 优先级：命令行指定邮箱 > config owner_email
+		doTransfer := cmd.Flags().Changed("transfer-owner") || config.Get().TransferOwnership
+		ownerEmail := transferOwner // 命令行指定的邮箱
+		if ownerEmail == "" {
+			ownerEmail = config.Get().OwnerEmail // config 兜底
+		}
+		if ownerEmail != "" {
+			// 添加 full_access 权限
+			if err := client.AddPermission(documentID, "docx", client.PermissionMember{
+				MemberType: "email",
+				MemberID:   ownerEmail,
+				Perm:       "full_access",
+			}, true); err != nil {
+				fmt.Fprintf(os.Stderr, "[Warning] 添加权限失败: %v\n", err)
+			} else {
+				fmt.Printf("  已授权: %s (full_access)\n", ownerEmail)
+			}
+
+			// 转移所有权
+			if doTransfer {
+				if err := client.TransferOwnership(documentID, "docx", "email", ownerEmail, true, false, false, "full_access"); err != nil {
+					fmt.Fprintf(os.Stderr, "[Warning] 转移所有权失败: %v\n", err)
+				} else {
+					fmt.Printf("  已转移所有权: %s\n", ownerEmail)
+				}
+			}
 		}
 
 		return nil
@@ -1267,6 +1297,7 @@ func init() {
 	importMarkdownCmd.Flags().Int("table-workers", 3, "表格并发填充数")
 	importMarkdownCmd.Flags().Int("image-workers", 2, "图片并发上传数 (API 限制 5 QPS)")
 	importMarkdownCmd.Flags().Int("diagram-retries", 10, "图表最大重试次数")
+	importMarkdownCmd.Flags().String("transfer-owner", "", "导入后转移文档所有权（可指定邮箱，为空时使用 config 中的 owner_email）")
 	// 向后兼容别名
 	importMarkdownCmd.Flags().Int("mermaid-workers", 5, "图表并发导入数 (--diagram-workers 别名)")
 	importMarkdownCmd.Flags().Int("mermaid-retries", 10, "图表最大重试次数 (--diagram-retries 别名)")
