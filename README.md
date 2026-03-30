@@ -652,6 +652,7 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
 | 群消息读取（User 身份） | `im:message.group_msg:get_as_user` | User Token 读取群消息 |
 | 画板 | `board:whiteboard` | 画板读写 |
 | 电子表格 | `sheets:spreadsheet` | 电子表格读写 |
+| 多维表格 | `bitable:app` | 多维表格读写 |
 | 素材管理 | `subscriptions:image` | 上传下载, 需单独申请 |
 | 用户信息 | `contact:user.base:readonly` | 获取用户信息, 需单独申请 |
 | 通讯录 | `contact:contact.base:readonly` | 需单独申请 |
@@ -671,9 +672,20 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
   "scopes": {
     "tenant": [
       "board:whiteboard:node:create",
+      "board:whiteboard:node:delete",
       "board:whiteboard:node:read",
       "board:whiteboard:node:update",
+      "bitable:app",
       "calendar:calendar.free_busy:read",
+      "calendar:calendar:create",
+      "calendar:calendar:delete",
+      "calendar:calendar:read",
+      "calendar:calendar:update",
+      "calendar:calendar.event:create",
+      "calendar:calendar.event:delete",
+      "calendar:calendar.event:read",
+      "calendar:calendar.event:reply",
+      "calendar:calendar.event:update",
       "docs:document.comment:read",
       "docs:document.comment:write_only",
       "docs:permission.member:create",
@@ -683,6 +695,8 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
       "docx:document:write_only",
       "drive:drive.metadata:readonly",
       "drive:drive.search:readonly",
+      "drive:drive",
+      "drive:drive:readonly",
       "drive:drive:version:readonly",
       "im:chat.announcement:read",
       "im:chat.announcement:write_only",
@@ -720,7 +734,13 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
       "sheets:spreadsheet:create",
       "sheets:spreadsheet:read",
       "sheets:spreadsheet:write_only",
+      "task:task:read",
+      "task:task:write",
       "task:tasklist:read",
+      "task:tasklist:write",
+      "wiki:member:create",
+      "wiki:member:retrieve",
+      "wiki:member:update",
       "wiki:wiki:readonly"
     ],
     "user": []
@@ -737,6 +757,7 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
       "board:whiteboard:node:delete",
       "board:whiteboard:node:read",
       "board:whiteboard:node:update",
+      "bitable:app",
       "calendar:calendar.acl:create",
       "calendar:calendar.acl:delete",
       "calendar:calendar.acl:read",
@@ -753,6 +774,7 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
       "calendar:calendar:update",
       "contact:contact.base:readonly",
       "contact:user.base:readonly",
+      "directory:department:search",
       "docs:document.comment:create",
       "docs:document.comment:read",
       "docs:document.comment:update",
@@ -764,6 +786,8 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
       "docx:document:write_only",
       "drive:drive.metadata:readonly",
       "drive:drive.search:readonly",
+      "drive:drive",
+      "drive:drive:readonly",
       "drive:drive:version",
       "drive:drive:version:readonly",
       "im:chat.announcement:read",
