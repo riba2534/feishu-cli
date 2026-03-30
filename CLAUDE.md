@@ -479,20 +479,31 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 
 ## Claude Code 技能
 
-本项目提供以下 Claude Code 技能，位于 `skills/` 目录（14 个技能）：
+本项目提供以下 Claude Code 技能，位于 `skills/` 目录：
 
 | 技能 | 说明 | 用法 |
 |------|------|------|
+| `/feishu-cli-shared` | 共享基础、认证前置规则、身份差异 | `/feishu-cli-shared` |
+| `/feishu-cli-doc` | 文档入口（读/写/导入/导出） | `/feishu-cli-doc` |
 | `/feishu-cli-read` | 读取飞书文档/知识库并转换为 Markdown | `/feishu-cli-read <doc_id\|url>` |
 | `/feishu-cli-write` | 创建/写入飞书文档（含素材插入、快速创建空白文档） | `/feishu-cli-write "标题"` |
 | `/feishu-cli-import` | 从 Markdown 导入创建文档 | `/feishu-cli-import <file.md>` |
 | `/feishu-cli-export` | 导出为 Markdown/PDF/Word，下载文档素材 | `/feishu-cli-export <doc_id> [path]` |
+| `/feishu-cli-im` | 即时通讯入口（消息发送 / 回复 / 转发） | `/feishu-cli-im <receive_id>` |
 | `/feishu-cli-perm` | 权限管理 | `/feishu-cli-perm <doc_token>` |
 | `/feishu-cli-msg` | 消息全功能管理（发送/回复/转发/批量获取/资源下载/话题回复） | `/feishu-cli-msg <receive_id>` |
 | `/feishu-cli-chat` | 会话浏览、消息互动与群聊管理 | `/feishu-cli-chat` |
+| `/feishu-cli-drive` | 云空间文件管理 | `/feishu-cli-drive` |
+| `/feishu-cli-sheets` | 电子表格 | `/feishu-cli-sheets` |
+| `/feishu-cli-calendar` | 日历日程管理 | `/feishu-cli-calendar` |
+| `/feishu-cli-task` | 任务与任务清单 | `/feishu-cli-task` |
+| `/feishu-cli-contact` | 通讯录和部门查询 | `/feishu-cli-contact` |
 | `/feishu-cli-toolkit` | 综合工具箱（表格导出/日历agenda/任务管理/清单成员/文件/素材/评论/知识库/通讯录） | `/feishu-cli-toolkit` |
 | `/feishu-cli-board` | 画板操作（精排绘图/Mermaid 导入/截图/节点管理） | `/feishu-cli-board` |
+| `/feishu-cli-whiteboard` | 画板入口 | `/feishu-cli-whiteboard` |
 | `/feishu-cli-bitable` | 多维表格全功能（数据表/字段/记录/视图配置/仪表盘/工作流/表单/角色/附件/聚合查询） | `/feishu-cli-bitable` |
+| `/feishu-cli-base` | 多维表格入口 | `/feishu-cli-base` |
+| `/feishu-cli-wiki` | 知识库操作 | `/feishu-cli-wiki` |
 | `/feishu-cli-vc` | 视频会议与妙记（搜索会议/获取纪要/妙记信息） | `/feishu-cli-vc` |
 | `/feishu-cli-auth` | OAuth 认证、Token 管理、scope 配置、搜索权限排错 | `/feishu-cli-auth` |
 | `/feishu-cli-search` | 搜索飞书文档/消息/应用（含 Token 前置检查流程） | `/feishu-cli-search` |
