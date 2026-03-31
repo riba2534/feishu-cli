@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -64,6 +65,11 @@ var copyFileCmd = &cobra.Command{
 			if url != "" {
 				fmt.Printf("  链接:         %s\n", url)
 			}
+		}
+
+		// Auto-grant owner permission
+		if err := grantOwnerPermission(newToken, fileType); err != nil {
+			fmt.Fprintf(os.Stderr, "警告: %v\n", err)
 		}
 
 		return nil

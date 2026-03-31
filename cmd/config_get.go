@@ -17,11 +17,13 @@ var configGetCmd = &cobra.Command{
   app_secret           应用密钥（出于安全仅显示前 4 位）
   base_url             API 地址
   owner_email          文档所有者邮箱
+  owner_open_id        文档所有者 Open ID（优先于 owner_email）
   transfer_ownership   创建文档后是否转移所有权
   debug                调试模式
 
 示例:
   feishu-cli config get owner_email
+  feishu-cli config get owner_open_id
   feishu-cli config get transfer_ownership`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

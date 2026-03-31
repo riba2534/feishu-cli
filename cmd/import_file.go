@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -92,6 +93,11 @@ var importFileCmd = &cobra.Command{
 		fmt.Printf("  文档 Token: %s\n", docToken)
 		if url != "" {
 			fmt.Printf("  链接: %s\n", url)
+		}
+
+		// Auto-grant owner permission
+		if err := grantOwnerPermission(docToken, targetType); err != nil {
+			fmt.Fprintf(os.Stderr, "警告: %v\n", err)
 		}
 
 		return nil

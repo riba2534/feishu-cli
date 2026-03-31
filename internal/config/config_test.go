@@ -399,6 +399,7 @@ func TestInit_ConfigDefaultsExposedToViper(t *testing.T) {
 	}
 
 	os.Unsetenv("FEISHU_OWNER_EMAIL")
+	os.Unsetenv("FEISHU_OWNER_OPEN_ID")
 	os.Unsetenv("FEISHU_TRANSFER_OWNERSHIP")
 
 	if err := Init(configFile); err != nil {
@@ -408,6 +409,9 @@ func TestInit_ConfigDefaultsExposedToViper(t *testing.T) {
 	if !viper.IsSet("owner_email") {
 		t.Fatal("owner_email 应被识别为已设置默认值")
 	}
+	if !viper.IsSet("owner_open_id") {
+		t.Fatal("owner_open_id 应被识别为已设置默认值")
+	}
 	if !viper.IsSet("transfer_ownership") {
 		t.Fatal("transfer_ownership 应被识别为已设置默认值")
 	}
@@ -416,7 +420,93 @@ func TestInit_ConfigDefaultsExposedToViper(t *testing.T) {
 	if c.OwnerEmail != "" {
 		t.Errorf("OwnerEmail = %q, 期望空字符串", c.OwnerEmail)
 	}
+	if c.OwnerOpenID != "" {
+		t.Errorf("OwnerOpenID = %q, 期望空字符串", c.OwnerOpenID)
+	}
 	if c.TransferOwnership {
 		t.Errorf("TransferOwnership = %v, 期望 false", c.TransferOwnership)
+	}
+}
+
+func TestInit_OwnerOpenIDFromEnv(t *testing.T) {
+	resetConfig()
+
+	os.Setenv("FEISHU_OWNER_OPEN_ID", "ou_test123")
+	defer os.Unsetenv("FEISHU_OWNER_OPEN_ID")
+
+	err := Init("")
+	if err != nil {
+		t.Fatalf("Init() 返回错误: %v", err)
+	}
+
+	c := Get()
+	if c.OwnerOpenID != "ou_test123" {
+		t.Errorf("OwnerOpenID = %q, 期望 %q", c.OwnerOpenID, "ou_test123")
+	}
+}
+
+func TestInit_OwnerOpenIDFromConfigFile(t *testing.T) {
+	resetConfig()
+
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	content := `app_id: "test_id"
+app_secret: "test_secret"
+owner_open_id: "ou_file123"
+`
+	if err := os.WriteFile(configFile, []byte(content), 0600); err != nil {
+		t.Fatalf("创建配置文件失败: %v", err)
+	}
+
+	os.Unsetenv("FEISHU_OWNER_OPEN_ID")
+
+	if err := Init(configFile); err != nil {
+		t.Fatalf("Init() 返回错误: %v", err)
+	}
+
+	c := Get()
+	if c.OwnerOpenID != "ou_file123" {
+		t.Errorf("OwnerOpenID = %q, 期望 %q", c.OwnerOpenID, "ou_file123")
+	}
+}
+
+func TestGetOwner_OpenIDPriority(t *testing.T) {
+	c := &Config{
+		OwnerOpenID: "ou_test",
+		OwnerEmail:  "test@example.com",
+	}
+
+	memberType, memberID := c.GetOwner()
+	if memberType != "openid" {
+		t.Errorf("GetOwner() memberType = %q, 期望 %q", memberType, "openid")
+	}
+	if memberID != "ou_test" {
+		t.Errorf("GetOwner() memberID = %q, 期望 %q", memberID, "ou_test")
+	}
+}
+
+func TestGetOwner_EmailFallback(t *testing.T) {
+	c := &Config{
+		OwnerEmail: "test@example.com",
+	}
+
+	memberType, memberID := c.GetOwner()
+	if memberType != "email" {
+		t.Errorf("GetOwner() memberType = %q, 期望 %q", memberType, "email")
+	}
+	if memberID != "test@example.com" {
+		t.Errorf("GetOwner() memberID = %q, 期望 %q", memberID, "test@example.com")
+	}
+}
+
+func TestGetOwner_NeitherConfigured(t *testing.T) {
+	c := &Config{}
+
+	memberType, memberID := c.GetOwner()
+	if memberType != "" {
+		t.Errorf("GetOwner() memberType = %q, 期望空字符串", memberType)
+	}
+	if memberID != "" {
+		t.Errorf("GetOwner() memberID = %q, 期望空字符串", memberID)
 	}
 }

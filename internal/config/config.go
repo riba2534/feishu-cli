@@ -15,6 +15,7 @@ type Config struct {
 	UserAccessToken   string       `mapstructure:"user_access_token"`
 	BaseURL           string       `mapstructure:"base_url"`
 	OwnerEmail        string       `mapstructure:"owner_email"`
+	OwnerOpenID       string       `mapstructure:"owner_open_id"`
 	TransferOwnership bool         `mapstructure:"transfer_ownership"`
 	Debug             bool         `mapstructure:"debug"`
 	Export            ExportConfig `mapstructure:"export"`
@@ -56,6 +57,7 @@ func Init(cfgFile string) error {
 	// 2. 设置默认值
 	viper.SetDefault("base_url", "https://open.feishu.cn")
 	viper.SetDefault("owner_email", "")
+	viper.SetDefault("owner_open_id", "")
 	viper.SetDefault("transfer_ownership", false)
 	viper.SetDefault("debug", false)
 	viper.SetDefault("export.download_images", false)
@@ -72,6 +74,7 @@ func Init(cfgFile string) error {
 	_ = viper.BindEnv("user_access_token", "FEISHU_USER_ACCESS_TOKEN")
 	_ = viper.BindEnv("base_url", "FEISHU_BASE_URL")
 	_ = viper.BindEnv("owner_email", "FEISHU_OWNER_EMAIL")
+	_ = viper.BindEnv("owner_open_id", "FEISHU_OWNER_OPEN_ID")
 	_ = viper.BindEnv("transfer_ownership", "FEISHU_TRANSFER_OWNERSHIP")
 	_ = viper.BindEnv("debug", "FEISHU_DEBUG")
 
@@ -96,6 +99,7 @@ func Get() *Config {
 		return &Config{
 			BaseURL:           "https://open.feishu.cn",
 			OwnerEmail:        "",
+			OwnerOpenID:       "",
 			TransferOwnership: false,
 			Export: ExportConfig{
 				AssetsDir: "./assets",
@@ -106,6 +110,19 @@ func Get() *Config {
 		}
 	}
 	return cfg
+}
+
+// GetOwner returns the owner's member type and ID from config.
+// Priority: owner_open_id > owner_email.
+// Returns empty strings if neither is configured.
+func (c *Config) GetOwner() (memberType, memberID string) {
+	if c.OwnerOpenID != "" {
+		return "openid", c.OwnerOpenID
+	}
+	if c.OwnerEmail != "" {
+		return "email", c.OwnerEmail
+	}
+	return "", ""
 }
 
 // Validate validates the configuration
@@ -153,7 +170,8 @@ app_id: ""
 app_secret: ""
 base_url: "https://open.feishu.cn"
 owner_email: ""              # 文档创建后自动授权的邮箱（环境变量: FEISHU_OWNER_EMAIL）
-transfer_ownership: false    # 创建文档后是否转移所有权给 owner_email（默认仅添加 full_access）
+owner_open_id: ""            # 文档创建后自动授权的 Open ID（环境变量: FEISHU_OWNER_OPEN_ID，优先于 owner_email）
+transfer_ownership: false    # 创建文档后是否转移所有权给 owner（默认仅添加 full_access）
 debug: false
 
 # 导出配置

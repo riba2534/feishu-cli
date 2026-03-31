@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/spf13/cobra"
@@ -32,6 +33,12 @@ var bitableCreateCmd = &cobra.Command{
 		if app.URL != "" {
 			fmt.Printf("  URL: %s\n", app.URL)
 		}
+
+		// Auto-grant owner permission
+		if err := grantOwnerPermission(app.AppToken, "bitable"); err != nil {
+			fmt.Fprintf(os.Stderr, "警告: %v\n", err)
+		}
+
 		return nil
 	},
 }

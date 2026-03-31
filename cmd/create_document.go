@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -68,6 +69,11 @@ var createDocumentCmd = &cobra.Command{
 			fmt.Printf("  标题: %s\n", docTitle)
 			fmt.Printf("  版本: %d\n", revisionID)
 			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+		}
+
+		// Auto-grant owner permission
+		if err := grantOwnerPermission(documentID, "docx"); err != nil {
+			fmt.Fprintf(os.Stderr, "警告: %v\n", err)
 		}
 
 		return nil
