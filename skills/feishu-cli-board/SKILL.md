@@ -4,8 +4,9 @@ description: >-
   飞书画板全功能操作：创建画板、绘制架构图/流程图/看板（通过 create-notes API 精确控制节点位置和样式）、
   导入 Mermaid/PlantUML 图表、下载画板图片、获取/复制画板节点。
   当用户请求"画个图"、"画架构图"、"画流程图"、"画板"、"whiteboard"、"create-notes"、
-  "在飞书里画图"、"画个看板"、"可视化"、"节点图"时使用。
-  也适用于：用户给出一组实体和关系，期望在飞书文档中生成可视化图表的场景。
+  "在飞书里画图"、"画个看板"、"可视化"、"节点图"、"读取画板"、"分析画板"、"board nodes"时使用。
+  也适用于：用户给出一组实体和关系，期望在飞书文档中生成可视化图表的场景；
+  或用户需要理解/分析已有画板内容，通过 board nodes API 获取结构化数据而非导出 PNG。
   与 Mermaid 导入的区别：Mermaid 由飞书服务端自动排版，create-notes 可精确控制坐标、颜色、连线，
   适合需要精排的架构图和看板。
 argument-hint: "[whiteboard_id]"
@@ -109,6 +110,46 @@ feishu-cli board image $BOARD_ID output.png
 | `board image` | 下载画板为 PNG | `feishu-cli board image <id> output.png` |
 | `board nodes` | 获取画板所有节点 | `feishu-cli board nodes <id>` |
 | `doc add-board` | 在文档中添加空画板 | `feishu-cli doc add-board <doc_id> -o json` |
+
+## 读取与理解画板（board nodes）
+
+当需要理解一个已有画板的内容时，使用 `board nodes` 获取结构化数据，**无需导出 PNG 截图**。
+
+```bash
+feishu-cli board nodes <whiteboard_id>
+```
+
+**返回结构化 JSON，包含**：
+- 所有形状节点（文本内容、类型、填充颜色、坐标、尺寸）
+- 所有连接线（起点/终点节点 ID）
+- 完整的层级关系（z_index、parent_id）
+
+### 分析技巧
+
+**通过颜色分类节点**：画板中不同颜色通常代表不同角色，例如：
+- 红棕色节点 → 入口/终止节点
+- 黄色节点 → 判断/条件节点
+- 蓝色节点 → 过程/操作节点
+- 绿色节点 → 回复/输出节点
+
+**通过连接线还原流程路径**：连接线的 `start_object` / `end_object` 包含起点和终点节点 ID，可还原完整的流程走向。
+
+### 前置条件
+
+使用 `board nodes` 需要画板所在文档已添加文档应用（飞书机器人），并授予 `board:whiteboard` 权限。
+
+### 示例
+
+```bash
+# 获取画板结构化数据
+feishu-cli board nodes <whiteboard_id>
+
+# 导出为 JSON 文件（用于进一步分析或 Redraw）
+feishu-cli board nodes <whiteboard_id> > /tmp/board_data.json
+
+# 配合 jq 提取关键信息
+feishu-cli board nodes <whiteboard_id> | jq '.data.nodes[] | {type, text: .text.content}'
+```
 
 **传参方式**：
 

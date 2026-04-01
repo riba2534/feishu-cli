@@ -144,13 +144,50 @@ allowed-tools: Bash, Read, Grep
 | ------------------ | ------------------------------------------------------ |
 | Callout 高亮块     | `> [!NOTE]`、`> [!WARNING]` 等 6 种 GitHub-style alert |
 | 块级/行内公式      | `$formula$`（LaTeX 格式）                              |
-| 画板 (Board)       | `[画板/Whiteboard](feishu://board/...)` 链接           |
+| 画板 (Board)       | `[画板/Whiteboard](feishu://board/...)` 链接（见下方「画板读取」） |
 | ISV 块 (Mermaid)   | 画板链接                                               |
 | QuoteContainer     | `>` 引用语法（支持嵌套）                               |
 | AddOns/SyncedBlock | 透明展开子块内容                                       |
 | Iframe             | `<iframe>` HTML 标签                                   |
 
 使用 `--highlight` 参数时，带颜色的文本输出为 `<span style="color:...">` 标签。
+
+## 画板读取：优先使用结构化 API
+
+当文档中包含画板（Board/Whiteboard）时，导出的 Markdown 仅显示 `[画板/Whiteboard](feishu://board/<whiteboard_id>)` 链接，无法看到画板内容。
+
+**推荐方式**：使用 `feishu-cli board nodes` 获取完整结构化数据，而非导出 PNG 截图再视觉识别。
+
+```bash
+# 从画板链接中提取 whiteboard_id，然后获取结构化数据
+feishu-cli board nodes <whiteboard_id>
+```
+
+**返回内容包含**：
+- 所有形状节点：文本内容、节点类型、填充颜色、坐标位置、尺寸
+- 所有连接线：起点/终点节点 ID、连线方向
+- 完整的层级和分组关系
+
+**为什么优于 PNG 截图**：
+- **零信息丢失**：所有节点文字、分支条件、连线关系完整保留
+- **可分类分析**：通过颜色值可识别节点角色（如入口节点、判断节点、过程节点等）
+- **可追溯路径**：通过连接线的起点/终点 ID 可还原完整流程路径
+
+**前置条件**：画板所在的文档需要添加文档应用（飞书机器人），并授予 `board:whiteboard` 权限。
+
+### 处理流程
+
+```bash
+# 1. 导出文档，发现画板链接
+feishu-cli doc export <document_id> --output /tmp/doc.md
+# Markdown 中出现: [画板/Whiteboard](feishu://board/<whiteboard_id>)
+
+# 2. 获取画板结构化数据
+feishu-cli board nodes <whiteboard_id> > /tmp/board_nodes.json
+
+# 3. 分析节点数据（用 Read 工具读取 JSON）
+# 可通过颜色、类型、连线关系理解完整图表结构
+```
 
 ## 高级：Wiki 目录节点处理
 
