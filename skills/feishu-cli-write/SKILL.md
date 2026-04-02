@@ -92,38 +92,100 @@ feishu-cli doc create --title "文档标题" --output json
 
 ### 更新已有文档（增量更新）
 
-**原则**：只修改需要变更的部分，保留其余内容不动。
+**原则**：只修改需要变更的部分，保留其余内容不动。**优先使用 `content-update` 命令**，一条命令精准定位并替换。
 
-#### 场景 A：在文档末尾追加内容
+> **CRITICAL: 修改文档时禁止使用 append 模式**
+>
+> 当用户要求"修改"、"更新"、"替换"、"编辑"文档中某段内容时，**必须使用 `replace_range`
+> 或 `replace_all` 模式**，精准定位并替换目标内容。
+>
+> **禁止**将整个文档内容重新 Append 到末尾！这会导致文档内容重复。
+> `append` 模式**仅在**用户明确要求"追加新内容"、"在末尾加一段"时使用。
 
-最常见的场景。直接用 `doc add` 以 Markdown 格式追加：
+#### 决策树（按用户意图选择模式）
+
+| 用户意图 | 推荐命令 | 说明 |
+|---------|---------|------|
+| 替换/修改/更新某个章节 | `content-update --mode replace_range` | **最常用**，按标题定位后原地替换 |
+| 在某个章节前/后插入新内容 | `content-update --mode insert_before/insert_after` | 精准插入，不影响已有内容 |
+| 全文查找替换所有匹配 | `content-update --mode replace_all` | 批量替换 |
+| 删除某个章节 | `content-update --mode delete_range` | 精准删除 |
+| 在文档末尾追加新内容 | `content-update --mode append` | **仅追加**新内容时使用 |
+| 完全重写文档 | `content-update --mode overwrite` | 慎用，会丢失评论和画板 |
+
+**关键规则**：
+- 用户说"修改/更新/替换/编辑某个章节" → **必须用 `replace_range`**，禁止用 append
+- 用户说"添加/追加/新增内容到末尾" → 用 `append`
+- 用户说"在某处插入" → 用 `insert_before` 或 `insert_after`
+- 用户说"删除某段内容" → 用 `delete_range`
+
+#### 场景 A：替换某个章节（最常用）
 
 ```bash
-# 1. 准备要追加的内容（只写新增部分，不要包含已有内容）
+# 按标题定位并替换（从 H2 标题到下一个 H2，一条命令完成）
+feishu-cli doc content-update <document_id> --mode replace_range \
+  --selection-by-title "## 旧章节标题" \
+  --markdown-file /tmp/feishu_new_section.md
+
+# 也可以直接传 markdown 内容
+feishu-cli doc content-update <document_id> --mode replace_range \
+  --selection-by-title "## 旧章节标题" \
+  --markdown "## 新章节标题\n\n更新后的内容"
+```
+
+#### 场景 B：在文档指定位置插入内容
+
+```bash
+# 在"目标章节"后面插入新内容
+feishu-cli doc content-update <document_id> --mode insert_after \
+  --selection-by-title "## 目标章节" \
+  --markdown-file /tmp/feishu_insert.md
+
+# 在"目标章节"前面插入新内容
+feishu-cli doc content-update <document_id> --mode insert_before \
+  --selection-by-title "## 目标章节" \
+  --markdown "## 新增章节\n\n插入的内容"
+```
+
+#### 场景 C：在文档末尾追加新内容
+
+仅在确实需要追加新内容到末尾时使用：
+
+```bash
 cat > /tmp/feishu_append.md << 'EOF'
 ## 新增章节标题
 
 新增的内容...
 EOF
 
-# 2. 追加到文档末尾
-feishu-cli doc add <document_id> /tmp/feishu_append.md --content-type markdown
+feishu-cli doc content-update <document_id> --mode append \
+  --markdown-file /tmp/feishu_append.md
 ```
 
-#### 场景 B：在文档指定位置插入内容
+#### 场景 D：删除指定章节
 
 ```bash
-# 1. 获取文档块结构，找到插入点
-feishu-cli doc blocks <document_id>
+# 按标题定位并删除整个章节
+feishu-cli doc content-update <document_id> --mode delete_range \
+  --selection-by-title "## 废弃章节"
 
-# 2. 在指定父块的指定位置插入
-feishu-cli doc add <document_id> /tmp/feishu_insert.md \
-  --content-type markdown \
-  --block-id <parent_block_id> \
-  --index <position>
+# 按内容范围定位并删除
+feishu-cli doc content-update <document_id> --mode delete_range \
+  --selection-with-ellipsis "开始段落...结束段落"
 ```
 
-#### 场景 C：修改已有块的内容
+#### 场景 E：全文查找替换
+
+```bash
+# 替换所有匹配的块
+feishu-cli doc content-update <document_id> --mode replace_all \
+  --selection-with-ellipsis "旧文本" \
+  --markdown "新文本"
+```
+
+#### 场景 F：修改单个块的内容（低级 API）
+
+仅在需要精确控制单个块时使用：
 
 ```bash
 # 1. 获取文档块结构，找到要修改的 block_id
@@ -134,36 +196,8 @@ feishu-cli doc update <document_id> <block_id> \
   --content '{"update_text_elements":{"elements":[{"text_run":{"content":"更新后的文本"}}]}}'
 ```
 
-#### 场景 D：删除指定范围的块
-
-```bash
-# 删除父块下索引 2~4 的子块
-feishu-cli doc delete <document_id> <parent_block_id> --start 2 --end 5
-
-# 删除父块下所有子块
-feishu-cli doc delete <document_id> <parent_block_id> --all
-```
-
-#### 场景 E：替换某个章节
-
-先删除旧章节的块，再在同一位置插入新内容：
-
-```bash
-# 1. 获取块结构，定位章节的块范围
-feishu-cli doc blocks <document_id>
-
-# 2. 删除旧章节（假设在父块下索引 5~8）
-feishu-cli doc delete <document_id> <parent_block_id> --start 5 --end 9 -f
-
-# 3. 在同一位置插入新内容
-feishu-cli doc add <document_id> /tmp/feishu_new_section.md \
-  --content-type markdown \
-  --block-id <parent_block_id> \
-  --index 5
-```
-
 > **何时允许全量覆盖**：仅当用户明确说"重写整个文档"、"全量替换"时，才可使用
-> `feishu-cli doc import /tmp/file.md --document-id <id>`。默认必须增量更新。
+> `content-update --mode overwrite` 或 `doc import --document-id <id>`。默认必须增量更新。
 
 ## 支持的 Markdown 语法
 
@@ -408,29 +442,11 @@ feishu-cli doc media-insert <document_id> \
 | 文档创建成功但无法访问 | 确认已执行 `perm add` 授予 `full_access` 权限并 `perm transfer-owner` 转移所有权 |
 | 表格内容显示不全 | 飞书 API 单个表格限制 9 行 9 列，超出部分会自动拆分为多个表格，属于正常行为 |
 
-## doc content-update 命令
+## content-update 定位参考
 
-高级文档更新命令，支持 7 种模式，通过定位器精确操控文档内容。相比手动 `doc blocks` + `doc delete` + `doc add` 的多步操作，`content-update` 一条命令即可完成。
-
-```bash
-feishu-cli doc content-update <document_id> --mode <mode> [flags]
-```
-
-### 7 种模式
-
-| 模式 | 说明 | 是否需要定位 | 是否需要内容 |
-|------|------|:----------:|:----------:|
-| `append` | 追加到文档末尾 | 否 | 是 |
-| `overwrite` | 完全覆盖文档内容（先删后写） | 否 | 是 |
-| `replace_range` | 按定位替换一段内容（取第一个匹配） | 是 | 是 |
-| `replace_all` | 全文查找替换所有匹配（从后往前替换） | 是 | 是 |
-| `insert_before` | 在定位内容前插入 | 是 | 是 |
-| `insert_after` | 在定位内容后插入 | 是 | 是 |
-| `delete_range` | 删除定位的内容（从后往前删除） | 是 | 否 |
+> 完整的模式决策树和使用示例见上方"更新已有文档"部分。以下是定位方式的详细说明。
 
 ### 定位方式
-
-需要定位的模式（`replace_range`/`replace_all`/`insert_before`/`insert_after`/`delete_range`）必须提供以下两种定位方式之一：
 
 | 参数 | 说明 | 示例 |
 |------|------|------|
@@ -455,46 +471,6 @@ feishu-cli doc content-update <document_id> --mode <mode> [flags]
 | `-o json` | JSON 格式输出 |
 
 > `--markdown` 和 `--markdown-file` 不能同时使用。
-
-### 使用示例
-
-```bash
-# 追加内容到文档末尾
-feishu-cli doc content-update DOC_ID --mode append \
-  --markdown "## 新章节\n\n这是追加的内容"
-
-# 完全覆盖文档
-feishu-cli doc content-update DOC_ID --mode overwrite \
-  --markdown-file new_content.md
-
-# 按标题替换整个章节（从 H2 标题到下一个 H2）
-feishu-cli doc content-update DOC_ID --mode replace_range \
-  --selection-by-title "## 旧章节" \
-  --markdown "## 新章节\n\n更新后的内容"
-
-# 全文查找替换（替换所有匹配）
-feishu-cli doc content-update DOC_ID --mode replace_all \
-  --selection-with-ellipsis "旧文本" \
-  --markdown "新文本"
-
-# 在指定章节前插入
-feishu-cli doc content-update DOC_ID --mode insert_before \
-  --selection-by-title "## 目标章节" \
-  --markdown "## 插入的章节\n\n新增内容"
-
-# 在指定章节后插入
-feishu-cli doc content-update DOC_ID --mode insert_after \
-  --selection-by-title "## 目标章节" \
-  --markdown-file additional.md
-
-# 删除整个章节
-feishu-cli doc content-update DOC_ID --mode delete_range \
-  --selection-by-title "## 废弃章节"
-
-# 删除指定范围的内容
-feishu-cli doc content-update DOC_ID --mode delete_range \
-  --selection-with-ellipsis "开始段落...结束段落"
-```
 
 ## Markdown 扩展语法（HTML 标签）
 
