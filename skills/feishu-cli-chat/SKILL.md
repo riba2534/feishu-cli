@@ -83,13 +83,15 @@ feishu-cli msg history \
   --sort-type ByCreateTimeDesc \
   -o json
 
-# 按时间范围获取（--start-time 为毫秒级时间戳，仅返回该时间之后的消息）
+# 按时间范围获取（--start-time 为秒级时间戳，仅返回该时间之后的消息）
+# 获取"今天 00:00 至今"的消息示例：
+START_TS=$(python3 -c "from datetime import datetime,timezone,timedelta; tz=timezone(timedelta(hours=8)); print(int(datetime.now(tz).replace(hour=0,minute=0,second=0,microsecond=0).timestamp()))")
 feishu-cli msg history \
   --container-id oc_xxx \
   --container-id-type chat \
   --page-size 50 \
-  --start-time 1773778860000 \
-  --sort-type ByCreateTimeDesc \
+  --start-time $START_TS \
+  --sort-type ByCreateTimeAsc \
   -o json
 
 # 获取更早的消息（使用上一次返回的 page_token 翻页）
@@ -427,6 +429,48 @@ feishu-cli msg delete <message_id>
 | 获取群链接 | `chat link oc_xxx` | App |
 
 > 标记 **User** 的命令必须先 `auth login`，未登录会报错。标记 **App** 的命令使用应用身份，无需登录。
+
+---
+
+## 外部群 API 兼容性
+
+飞书群聊分为**内部群**和**外部群**（跨租户群，如与外部商家的协作群）。不同 API 对外部群的支持不同：
+
+| API / 命令 | 外部群可用 | 说明 |
+|-----------|:---------:|------|
+| `msg history` | ✅ | 获取群消息列表，返回完整 body.content |
+| `msg thread-messages` | ✅ | 获取话题回复，外部群正常工作 |
+| `msg search-chats` | ✅ | 搜索群聊，外部群正常工作 |
+| `chat get` / `chat member list` | ✅ | 查看群信息和成员 |
+| `msg get`（单条） | ❌ | 报错 230027 `no permission to operate external chats` |
+| `msg mget`（批量） | ❌ | 同上 |
+| `user info`（查发送者名字） | ❌ | 需要 `contact` 权限，外部租户用户无法查询 |
+
+**实际影响**：获取群聊内容**完全不依赖 `msg get`/`msg mget`**，`msg history` + `msg thread-messages` 已经覆盖所有需求。如果遇到 230027 错误，说明使用了错误的 API，应改用 `msg history`。
+
+### 发送者用户名获取
+
+`user info` API 对外部群成员不可用（缺 `contact` 权限），但可以通过消息中的 `mentions` 字段提取被 @的用户名：
+
+```python
+import json
+
+# 方法：从 mentions 字段构建名字映射
+name_map = {}
+for msg in messages:
+    for mention in msg.get('mentions', []):
+        name_map[mention['id']] = mention['name']
+
+# 解析 post 类型消息中的 @用户名
+content = json.loads(msg['body']['content'])
+for line in content.get('content', []):
+    for elem in line:
+        if elem.get('tag') == 'at':
+            user_name = elem.get('user_name', '')  # 直接可用
+            user_id = elem.get('user_id', '')      # @_user_1 之类的占位符
+```
+
+**注意**：仅被 @过的用户名字会出现在 `mentions` 中。未被 @过的用户只能显示 open_id，无法解析名字。
 
 ---
 
