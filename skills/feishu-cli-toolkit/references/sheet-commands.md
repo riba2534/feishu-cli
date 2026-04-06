@@ -155,6 +155,28 @@ feishu-cli sheet protect <token> <sheet_id> [--lock/--unlock]
 
 > 已知问题：V2 API 可能返回 "invalid operation"。
 
+## User Access Token 支持
+
+所有 30 个 sheet 命令均支持 `--user-access-token` 参数，用于以用户身份访问无 App 权限但用户有权限的表格。
+
+```bash
+# 通过参数指定
+feishu-cli sheet read <token> "Sheet1!A1:C10" --user-access-token "u-xxxx"
+
+# 通过环境变量
+export FEISHU_USER_ACCESS_TOKEN="u-xxxx"
+feishu-cli sheet read <token> "Sheet1!A1:C10"
+```
+
+**Token 读取优先级**：
+
+1. `--user-access-token` 命令行参数
+2. `FEISHU_USER_ACCESS_TOKEN` 环境变量
+3. `~/.feishu-cli/token.json`（`auth login` 保存的 Token）
+4. 配置文件中的 `user_access_token`
+
+未指定时自动回退到 App Token（租户身份）。
+
 ## API 限制
 
 | 限制 | 说明 |

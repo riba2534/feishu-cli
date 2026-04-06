@@ -93,7 +93,7 @@ var addCalloutCmd = &cobra.Command{
 		}
 
 		// 创建 callout 块
-		createdBlocks, err := client.CreateBlock(documentID, parentID, []*larkdocx.Block{calloutBlock}, index)
+		createdBlocks, _, err := client.CreateBlock(documentID, parentID, []*larkdocx.Block{calloutBlock}, index)
 		if err != nil {
 			return err
 		}
@@ -110,7 +110,7 @@ var addCalloutCmd = &cobra.Command{
 
 		// 飞书 API 创建 Callout 时会自动生成一个空的子文本块，
 		// 直接更新该子块的内容，避免产生多余的空行。
-		children, err := client.GetBlockChildren(documentID, calloutBlockID)
+		children, _, err := client.GetBlockChildren(documentID, calloutBlockID)
 		if err != nil {
 			return fmt.Errorf("获取高亮块子块失败: %w", err)
 		}
@@ -124,7 +124,7 @@ var addCalloutCmd = &cobra.Command{
 					},
 				},
 			}
-			err = client.UpdateBlock(documentID, *children[0].BlockId, updateContent)
+			_, err = client.UpdateBlock(documentID, *children[0].BlockId, updateContent)
 			if err != nil {
 				return fmt.Errorf("更新高亮块内容失败: %w", err)
 			}
@@ -143,7 +143,7 @@ var addCalloutCmd = &cobra.Command{
 					},
 				},
 			}
-			_, err = client.CreateBlock(documentID, calloutBlockID, []*larkdocx.Block{textBlock}, 0)
+			_, _, err = client.CreateBlock(documentID, calloutBlockID, []*larkdocx.Block{textBlock}, 0)
 			if err != nil {
 				return fmt.Errorf("添加高亮块内容失败: %w", err)
 			}

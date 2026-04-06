@@ -22,7 +22,9 @@ var sheetDeleteRowsCmd = &cobra.Command{
 			endIndex = startIndex + 1
 		}
 
-		err := client.DeleteDimension(client.Context(), spreadsheetToken, sheetID, "ROWS", startIndex, endIndex)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.DeleteDimension(client.Context(), spreadsheetToken, sheetID, "ROWS", startIndex, endIndex, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -37,5 +39,6 @@ func init() {
 
 	sheetDeleteRowsCmd.Flags().Int("start", 0, "起始行号（从 0 开始）")
 	sheetDeleteRowsCmd.Flags().Int("end", 0, "结束行号（不包含）")
+	sheetDeleteRowsCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 	mustMarkFlagRequired(sheetDeleteRowsCmd, "start")
 }

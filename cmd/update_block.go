@@ -51,7 +51,7 @@ var updateBlockCmd = &cobra.Command{
 			return fmt.Errorf("解析内容 JSON 失败: %w", err)
 		}
 
-		if err := client.UpdateBlock(documentID, blockID, updateContent); err != nil {
+		if _, err := client.UpdateBlock(documentID, blockID, updateContent); err != nil {
 			return err
 		}
 

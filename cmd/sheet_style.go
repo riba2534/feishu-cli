@@ -73,7 +73,9 @@ var sheetStyleCmd = &cobra.Command{
 			}
 		}
 
-		err := client.SetCellStyle(client.Context(), spreadsheetToken, rangeStr, style)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.SetCellStyle(client.Context(), spreadsheetToken, rangeStr, style, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -95,4 +97,5 @@ func init() {
 	sheetStyleCmd.Flags().String("fore-color", "", "字体颜色（如 #0000FF）")
 	sheetStyleCmd.Flags().String("formatter", "", "数字格式（如 yyyy/MM/dd）")
 	sheetStyleCmd.Flags().Bool("clean", false, "清除样式")
+	sheetStyleCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

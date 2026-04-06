@@ -23,7 +23,9 @@ var sheetInsertRowsCmd = &cobra.Command{
 			endIndex = startIndex + 1
 		}
 
-		err := client.InsertDimension(client.Context(), spreadsheetToken, sheetID, "ROWS", startIndex, endIndex, inheritStyle)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.InsertDimension(client.Context(), spreadsheetToken, sheetID, "ROWS", startIndex, endIndex, inheritStyle, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -39,5 +41,6 @@ func init() {
 	sheetInsertRowsCmd.Flags().Int("start", 0, "起始行号（从 0 开始）")
 	sheetInsertRowsCmd.Flags().Int("end", 0, "结束行号（不包含）")
 	sheetInsertRowsCmd.Flags().String("inherit-style", "", "继承样式: BEFORE, AFTER")
+	sheetInsertRowsCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 	mustMarkFlagRequired(sheetInsertRowsCmd, "start")
 }

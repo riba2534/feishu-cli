@@ -42,7 +42,9 @@ var sheetImageAddCmd = &cobra.Command{
 			OffsetY:         offsetY,
 		}
 
-		result, err := client.CreateFloatImage(client.Context(), spreadsheetToken, sheetID, image)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		result, err := client.CreateFloatImage(client.Context(), spreadsheetToken, sheetID, image, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -71,7 +73,9 @@ var sheetImageListCmd = &cobra.Command{
 		sheetID := args[1]
 		output, _ := cmd.Flags().GetString("output")
 
-		images, err := client.QueryFloatImages(client.Context(), spreadsheetToken, sheetID)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		images, err := client.QueryFloatImages(client.Context(), spreadsheetToken, sheetID, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -106,7 +110,9 @@ var sheetImageDeleteCmd = &cobra.Command{
 		sheetID := args[1]
 		floatImageID := args[2]
 
-		err := client.DeleteFloatImage(client.Context(), spreadsheetToken, sheetID, floatImageID)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.DeleteFloatImage(client.Context(), spreadsheetToken, sheetID, floatImageID, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -130,7 +136,11 @@ func init() {
 	sheetImageAddCmd.Flags().Float64("offset-x", 0, "水平偏移")
 	sheetImageAddCmd.Flags().Float64("offset-y", 0, "垂直偏移")
 	sheetImageAddCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
+	sheetImageAddCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 	mustMarkFlagRequired(sheetImageAddCmd, "token", "range")
 
 	sheetImageListCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
+	sheetImageListCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
+
+	sheetImageDeleteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

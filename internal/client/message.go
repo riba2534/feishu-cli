@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -894,7 +895,7 @@ func ListPins(chatID string, startTime, endTime, pageToken string, pageSize int,
 }
 
 // DownloadMessageResource 下载消息中的资源文件（图片/文件）
-func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userAccessToken string) error {
+func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userAccessToken string, timeout ...time.Duration) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -906,7 +907,8 @@ func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userA
 		Type(resourceType).
 		Build()
 
-	resp, err := client.Im.MessageResource.Get(Context(), req, UserTokenOption(userAccessToken)...)
+	t := resolveTimeout(downloadTimeout, timeout)
+	resp, err := client.Im.MessageResource.Get(ContextWithTimeout(t), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("下载消息资源失败: %w", err)
 	}

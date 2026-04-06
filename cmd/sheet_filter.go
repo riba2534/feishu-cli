@@ -27,7 +27,9 @@ var sheetFilterCreateCmd = &cobra.Command{
 		sheetID := args[1]
 		rangeStr := unescapeSheetRange(args[2])
 
-		err := client.CreateFilter(client.Context(), spreadsheetToken, sheetID, rangeStr, nil)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.CreateFilter(client.Context(), spreadsheetToken, sheetID, rangeStr, nil, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -47,7 +49,9 @@ var sheetFilterGetCmd = &cobra.Command{
 		sheetID := args[1]
 		output, _ := cmd.Flags().GetString("output")
 
-		info, err := client.GetFilter(client.Context(), spreadsheetToken, sheetID)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		info, err := client.GetFilter(client.Context(), spreadsheetToken, sheetID, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -77,7 +81,9 @@ var sheetFilterDeleteCmd = &cobra.Command{
 		spreadsheetToken := args[0]
 		sheetID := args[1]
 
-		err := client.DeleteFilter(client.Context(), spreadsheetToken, sheetID)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.DeleteFilter(client.Context(), spreadsheetToken, sheetID, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -95,4 +101,8 @@ func init() {
 	sheetFilterCmd.AddCommand(sheetFilterDeleteCmd)
 
 	sheetFilterGetCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
+
+	sheetFilterCreateCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
+	sheetFilterGetCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
+	sheetFilterDeleteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

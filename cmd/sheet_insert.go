@@ -83,7 +83,9 @@ var sheetInsertCmd = &cobra.Command{
 			}
 		}
 
-		err := client.InsertCellsV3(client.Context(), spreadsheetToken, sheetID, rangeStr, values, userIDType)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.InsertCellsV3(client.Context(), spreadsheetToken, sheetID, rangeStr, values, userIDType, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -104,4 +106,5 @@ func init() {
 	sheetInsertCmd.Flags().String("data-file", "", "数据文件路径")
 	sheetInsertCmd.Flags().String("user-id-type", "", "用户 ID 类型: open_id, union_id, user_id")
 	sheetInsertCmd.Flags().Bool("simple", false, "使用简单模式（二维数组自动转换）")
+	sheetInsertCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

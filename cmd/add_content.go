@@ -115,7 +115,7 @@ var addContentCmd = &cobra.Command{
 			return fmt.Errorf("没有内容可添加")
 		}
 
-		createdBlocks, err := client.CreateBlock(documentID, blockID, blocks, index)
+		createdBlocks, _, err := client.CreateBlock(documentID, blockID, blocks, index)
 		if err != nil {
 			return err
 		}
@@ -181,7 +181,7 @@ func addContentMarkdown(documentID, blockID, contentData, basePath string, uploa
 		}
 		batch := topLevelBlocks[i:end]
 
-		createdBlocks, err := client.CreateBlock(documentID, blockID, batch, currentIndex)
+		createdBlocks, _, err := client.CreateBlock(documentID, blockID, batch, currentIndex)
 		if err != nil {
 			return fmt.Errorf("添加内容失败: %w", err)
 		}

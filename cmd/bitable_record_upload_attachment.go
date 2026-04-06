@@ -38,7 +38,7 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 		fileName := filepath.Base(filePath)
 
 		// ===== 步骤 1：上传文件到 Drive =====
-		fileToken, err := client.UploadMedia(filePath, "bitable_file", appToken, fileName)
+		fileToken, _, err := client.UploadMedia(filePath, "bitable_file", appToken, fileName)
 		if err != nil {
 			return fmt.Errorf("步骤 1 失败 - 上传文件: %w", err)
 		}

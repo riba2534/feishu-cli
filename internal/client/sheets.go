@@ -194,11 +194,13 @@ type FilterInfo struct {
 // ==================== V3 API (通过 SDK) ====================
 
 // CreateSpreadsheet 创建电子表格 (V3 API)
-func CreateSpreadsheet(ctx context.Context, title string, folderToken string) (*SpreadsheetInfo, error) {
+func CreateSpreadsheet(ctx context.Context, title string, folderToken string, userAccessToken ...string) (*SpreadsheetInfo, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
+
+	uat := firstString(userAccessToken)
 
 	req := larksheets.NewCreateSpreadsheetReqBuilder().
 		Spreadsheet(larksheets.NewSpreadsheetBuilder().
@@ -207,7 +209,7 @@ func CreateSpreadsheet(ctx context.Context, title string, folderToken string) (*
 			Build()).
 		Build()
 
-	resp, err := client.Sheets.Spreadsheet.Create(ctx, req)
+	resp, err := client.Sheets.Spreadsheet.Create(ctx, req, UserTokenOption(uat)...)
 	if err != nil {
 		return nil, fmt.Errorf("创建电子表格失败: %w", err)
 	}
@@ -440,11 +442,13 @@ func FindCells(ctx context.Context, spreadsheetToken, sheetID string, findStr st
 }
 
 // ReplaceCells 替换单元格内容 (V3 API)
-func ReplaceCells(ctx context.Context, spreadsheetToken, sheetID string, findStr, replacement string, matchCase, matchEntireCell bool, rangeStr string) (*FindReplaceResult, error) {
+func ReplaceCells(ctx context.Context, spreadsheetToken, sheetID string, findStr, replacement string, matchCase, matchEntireCell bool, rangeStr string, userAccessToken ...string) (*FindReplaceResult, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
+
+	uat := firstString(userAccessToken)
 
 	conditionBuilder := larksheets.NewFindConditionBuilder().
 		MatchCase(matchCase).
@@ -469,7 +473,7 @@ func ReplaceCells(ctx context.Context, spreadsheetToken, sheetID string, findStr
 			Build()).
 		Build()
 
-	resp, err := client.Sheets.SpreadsheetSheet.Replace(ctx, req)
+	resp, err := client.Sheets.SpreadsheetSheet.Replace(ctx, req, UserTokenOption(uat)...)
 	if err != nil {
 		return nil, fmt.Errorf("替换单元格失败: %w", err)
 	}
@@ -848,11 +852,13 @@ func PrependCells(ctx context.Context, spreadsheetToken, rangeStr string, values
 }
 
 // BatchUpdateSheets 批量更新工作表（添加/删除/复制）(V2 API)
-func BatchUpdateSheets(ctx context.Context, spreadsheetToken string, requests []SheetRequest) ([]map[string]any, error) {
+func BatchUpdateSheets(ctx context.Context, spreadsheetToken string, requests []SheetRequest, userAccessToken ...string) ([]map[string]any, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/sheets_batch_update", spreadsheetToken)
 
@@ -860,7 +866,7 @@ func BatchUpdateSheets(ctx context.Context, spreadsheetToken string, requests []
 		"requests": requests,
 	}
 
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "POST", path, reqBody, uat)
 	if err != nil {
 		return nil, fmt.Errorf("批量更新工作表失败: %w", err)
 	}
@@ -885,7 +891,7 @@ func BatchUpdateSheets(ctx context.Context, spreadsheetToken string, requests []
 }
 
 // AddSheet 添加工作表
-func AddSheet(ctx context.Context, spreadsheetToken, title string, index int) (*SheetInfo, error) {
+func AddSheet(ctx context.Context, spreadsheetToken, title string, index int, userAccessToken ...string) (*SheetInfo, error) {
 	requests := []SheetRequest{
 		{
 			AddSheet: &AddSheetRequest{
@@ -897,7 +903,7 @@ func AddSheet(ctx context.Context, spreadsheetToken, title string, index int) (*
 		},
 	}
 
-	replies, err := BatchUpdateSheets(ctx, spreadsheetToken, requests)
+	replies, err := BatchUpdateSheets(ctx, spreadsheetToken, requests, firstString(userAccessToken))
 	if err != nil {
 		return nil, err
 	}
@@ -924,7 +930,7 @@ func AddSheet(ctx context.Context, spreadsheetToken, title string, index int) (*
 }
 
 // DeleteSheet 删除工作表
-func DeleteSheet(ctx context.Context, spreadsheetToken, sheetID string) error {
+func DeleteSheet(ctx context.Context, spreadsheetToken, sheetID string, userAccessToken ...string) error {
 	requests := []SheetRequest{
 		{
 			DeleteSheet: &DeleteSheetRequest{
@@ -933,12 +939,12 @@ func DeleteSheet(ctx context.Context, spreadsheetToken, sheetID string) error {
 		},
 	}
 
-	_, err := BatchUpdateSheets(ctx, spreadsheetToken, requests)
+	_, err := BatchUpdateSheets(ctx, spreadsheetToken, requests, firstString(userAccessToken))
 	return err
 }
 
 // CopySheet 复制工作表
-func CopySheet(ctx context.Context, spreadsheetToken, sourceSheetID, newTitle string) (*SheetInfo, error) {
+func CopySheet(ctx context.Context, spreadsheetToken, sourceSheetID, newTitle string, userAccessToken ...string) (*SheetInfo, error) {
 	requests := []SheetRequest{
 		{
 			CopySheet: &CopySheetRequest{
@@ -952,7 +958,7 @@ func CopySheet(ctx context.Context, spreadsheetToken, sourceSheetID, newTitle st
 		},
 	}
 
-	replies, err := BatchUpdateSheets(ctx, spreadsheetToken, requests)
+	replies, err := BatchUpdateSheets(ctx, spreadsheetToken, requests, firstString(userAccessToken))
 	if err != nil {
 		return nil, err
 	}
@@ -976,11 +982,13 @@ func CopySheet(ctx context.Context, spreadsheetToken, sourceSheetID, newTitle st
 }
 
 // AddDimension 添加行/列 (V2 API)
-func AddDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDimension string, length int) error {
+func AddDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDimension string, length int, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/dimension_range", spreadsheetToken)
 
@@ -992,7 +1000,7 @@ func AddDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDi
 		},
 	}
 
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "POST", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("添加行/列失败: %w", err)
 	}
@@ -1014,11 +1022,13 @@ func AddDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDi
 }
 
 // InsertDimension 插入行/列 (V2 API)
-func InsertDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDimension string, startIndex, endIndex int, inheritStyle string) error {
+func InsertDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDimension string, startIndex, endIndex int, inheritStyle string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/insert_dimension_range", spreadsheetToken)
 
@@ -1035,7 +1045,7 @@ func InsertDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 		reqBody["inheritStyle"] = inheritStyle
 	}
 
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "POST", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("插入行/列失败: %w", err)
 	}
@@ -1057,11 +1067,13 @@ func InsertDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 }
 
 // DeleteDimension 删除行/列 (V2 API)
-func DeleteDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDimension string, startIndex, endIndex int) error {
+func DeleteDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDimension string, startIndex, endIndex int, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/dimension_range", spreadsheetToken)
 
@@ -1074,7 +1086,7 @@ func DeleteDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 		},
 	}
 
-	respBody, err := v2APICall(client, ctx, "DELETE", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "DELETE", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("删除行/列失败: %w", err)
 	}
@@ -1146,11 +1158,13 @@ func UpdateDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 }
 
 // MergeCells 合并单元格 (V2 API)
-func MergeCells(ctx context.Context, spreadsheetToken, rangeStr, mergeType string) error {
+func MergeCells(ctx context.Context, spreadsheetToken, rangeStr, mergeType string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/merge_cells", spreadsheetToken)
 
@@ -1159,7 +1173,7 @@ func MergeCells(ctx context.Context, spreadsheetToken, rangeStr, mergeType strin
 		"mergeType": mergeType, // MERGE_ALL, MERGE_ROWS, MERGE_COLUMNS
 	}
 
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "POST", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("合并单元格失败: %w", err)
 	}
@@ -1181,11 +1195,13 @@ func MergeCells(ctx context.Context, spreadsheetToken, rangeStr, mergeType strin
 }
 
 // UnmergeCells 取消合并单元格 (V2 API)
-func UnmergeCells(ctx context.Context, spreadsheetToken, rangeStr string) error {
+func UnmergeCells(ctx context.Context, spreadsheetToken, rangeStr string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/unmerge_cells", spreadsheetToken)
 
@@ -1193,7 +1209,7 @@ func UnmergeCells(ctx context.Context, spreadsheetToken, rangeStr string) error 
 		"range": rangeStr,
 	}
 
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "POST", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("取消合并单元格失败: %w", err)
 	}
@@ -1215,11 +1231,13 @@ func UnmergeCells(ctx context.Context, spreadsheetToken, rangeStr string) error 
 }
 
 // SetCellStyle 设置单元格样式 (V2 API)
-func SetCellStyle(ctx context.Context, spreadsheetToken, rangeStr string, style *CellStyle) error {
+func SetCellStyle(ctx context.Context, spreadsheetToken, rangeStr string, style *CellStyle, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/style", spreadsheetToken)
 
@@ -1267,7 +1285,7 @@ func SetCellStyle(ctx context.Context, spreadsheetToken, rangeStr string, style 
 		},
 	}
 
-	respBody, err := v2APICall(client, ctx, "PUT", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "PUT", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("设置单元格样式失败: %w", err)
 	}
@@ -1289,11 +1307,13 @@ func SetCellStyle(ctx context.Context, spreadsheetToken, rangeStr string, style 
 }
 
 // SetCellStyleBatch 批量设置单元格样式 (V2 API)
-func SetCellStyleBatch(ctx context.Context, spreadsheetToken string, styles []map[string]any) error {
+func SetCellStyleBatch(ctx context.Context, spreadsheetToken string, styles []map[string]any, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/styles_batch_update", spreadsheetToken)
 
@@ -1301,7 +1321,7 @@ func SetCellStyleBatch(ctx context.Context, spreadsheetToken string, styles []ma
 		"data": styles,
 	}
 
-	respBody, err := v2APICall(client, ctx, "PUT", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "PUT", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("批量设置样式失败: %w", err)
 	}
@@ -1361,11 +1381,13 @@ func GetSpreadsheetMeta(ctx context.Context, spreadsheetToken string, extFields 
 // ==================== 筛选相关 (V3 API) ====================
 
 // CreateFilter 创建筛选 (V3 API)
-func CreateFilter(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, conditions map[string]any) error {
+func CreateFilter(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, conditions map[string]any, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	// 范围需要包含 sheetId 前缀
 	fullRange := rangeStr
@@ -1381,7 +1403,7 @@ func CreateFilter(ctx context.Context, spreadsheetToken, sheetID, rangeStr strin
 		CreateSheetFilter(filterBuilder.Build()).
 		Build()
 
-	resp, err := client.Sheets.SpreadsheetSheetFilter.Create(ctx, req)
+	resp, err := client.Sheets.SpreadsheetSheetFilter.Create(ctx, req, UserTokenOption(uat)...)
 	if err != nil {
 		return fmt.Errorf("创建筛选失败: %w", err)
 	}
@@ -1394,18 +1416,20 @@ func CreateFilter(ctx context.Context, spreadsheetToken, sheetID, rangeStr strin
 }
 
 // GetFilter 获取筛选信息 (V3 API)
-func GetFilter(ctx context.Context, spreadsheetToken, sheetID string) (*FilterInfo, error) {
+func GetFilter(ctx context.Context, spreadsheetToken, sheetID string, userAccessToken ...string) (*FilterInfo, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
+
+	uat := firstString(userAccessToken)
 
 	req := larksheets.NewGetSpreadsheetSheetFilterReqBuilder().
 		SpreadsheetToken(spreadsheetToken).
 		SheetId(sheetID).
 		Build()
 
-	resp, err := client.Sheets.SpreadsheetSheetFilter.Get(ctx, req)
+	resp, err := client.Sheets.SpreadsheetSheetFilter.Get(ctx, req, UserTokenOption(uat)...)
 	if err != nil {
 		return nil, fmt.Errorf("获取筛选信息失败: %w", err)
 	}
@@ -1426,18 +1450,20 @@ func GetFilter(ctx context.Context, spreadsheetToken, sheetID string) (*FilterIn
 }
 
 // DeleteFilter 删除筛选 (V3 API)
-func DeleteFilter(ctx context.Context, spreadsheetToken, sheetID string) error {
+func DeleteFilter(ctx context.Context, spreadsheetToken, sheetID string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	req := larksheets.NewDeleteSpreadsheetSheetFilterReqBuilder().
 		SpreadsheetToken(spreadsheetToken).
 		SheetId(sheetID).
 		Build()
 
-	resp, err := client.Sheets.SpreadsheetSheetFilter.Delete(ctx, req)
+	resp, err := client.Sheets.SpreadsheetSheetFilter.Delete(ctx, req, UserTokenOption(uat)...)
 	if err != nil {
 		return fmt.Errorf("删除筛选失败: %w", err)
 	}
@@ -1452,11 +1478,13 @@ func DeleteFilter(ctx context.Context, spreadsheetToken, sheetID string) error {
 // ==================== 浮动图片相关 (V3 API) ====================
 
 // CreateFloatImage 创建浮动图片 (V3 API)
-func CreateFloatImage(ctx context.Context, spreadsheetToken, sheetID string, image *FloatImage) (*FloatImage, error) {
+func CreateFloatImage(ctx context.Context, spreadsheetToken, sheetID string, image *FloatImage, userAccessToken ...string) (*FloatImage, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
+
+	uat := firstString(userAccessToken)
 
 	imgBuilder := larksheets.NewFloatImageBuilder().
 		FloatImageToken(image.FloatImageToken).
@@ -1477,7 +1505,7 @@ func CreateFloatImage(ctx context.Context, spreadsheetToken, sheetID string, ima
 		FloatImage(imgBuilder.Build()).
 		Build()
 
-	resp, err := client.Sheets.SpreadsheetSheetFloatImage.Create(ctx, req)
+	resp, err := client.Sheets.SpreadsheetSheetFloatImage.Create(ctx, req, UserTokenOption(uat)...)
 	if err != nil {
 		return nil, fmt.Errorf("创建浮动图片失败: %w", err)
 	}
@@ -1506,11 +1534,13 @@ func CreateFloatImage(ctx context.Context, spreadsheetToken, sheetID string, ima
 }
 
 // DeleteFloatImage 删除浮动图片 (V3 API)
-func DeleteFloatImage(ctx context.Context, spreadsheetToken, sheetID, floatImageID string) error {
+func DeleteFloatImage(ctx context.Context, spreadsheetToken, sheetID, floatImageID string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	req := larksheets.NewDeleteSpreadsheetSheetFloatImageReqBuilder().
 		SpreadsheetToken(spreadsheetToken).
@@ -1518,7 +1548,7 @@ func DeleteFloatImage(ctx context.Context, spreadsheetToken, sheetID, floatImage
 		FloatImageId(floatImageID).
 		Build()
 
-	resp, err := client.Sheets.SpreadsheetSheetFloatImage.Delete(ctx, req)
+	resp, err := client.Sheets.SpreadsheetSheetFloatImage.Delete(ctx, req, UserTokenOption(uat)...)
 	if err != nil {
 		return fmt.Errorf("删除浮动图片失败: %w", err)
 	}
@@ -1531,18 +1561,20 @@ func DeleteFloatImage(ctx context.Context, spreadsheetToken, sheetID, floatImage
 }
 
 // QueryFloatImages 查询所有浮动图片 (V3 API)
-func QueryFloatImages(ctx context.Context, spreadsheetToken, sheetID string) ([]*FloatImage, error) {
+func QueryFloatImages(ctx context.Context, spreadsheetToken, sheetID string, userAccessToken ...string) ([]*FloatImage, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
+
+	uat := firstString(userAccessToken)
 
 	req := larksheets.NewQuerySpreadsheetSheetFloatImageReqBuilder().
 		SpreadsheetToken(spreadsheetToken).
 		SheetId(sheetID).
 		Build()
 
-	resp, err := client.Sheets.SpreadsheetSheetFloatImage.Query(ctx, req)
+	resp, err := client.Sheets.SpreadsheetSheetFloatImage.Query(ctx, req, UserTokenOption(uat)...)
 	if err != nil {
 		return nil, fmt.Errorf("查询浮动图片失败: %w", err)
 	}
@@ -1578,11 +1610,13 @@ func QueryFloatImages(ctx context.Context, spreadsheetToken, sheetID string) ([]
 // ==================== 保护范围相关 (V2 API) ====================
 
 // CreateProtectedRange 创建保护范围 (V2 API)
-func CreateProtectedRange(ctx context.Context, spreadsheetToken string, ranges []*ProtectedRange) ([]string, error) {
+func CreateProtectedRange(ctx context.Context, spreadsheetToken string, ranges []*ProtectedRange, userAccessToken ...string) ([]string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/protected_dimension", spreadsheetToken)
 
@@ -1609,7 +1643,7 @@ func CreateProtectedRange(ctx context.Context, spreadsheetToken string, ranges [
 		"addProtectedDimension": addProtected,
 	}
 
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "POST", path, reqBody, uat)
 	if err != nil {
 		return nil, fmt.Errorf("创建保护范围失败: %w", err)
 	}
@@ -1644,11 +1678,13 @@ func CreateProtectedRange(ctx context.Context, spreadsheetToken string, ranges [
 }
 
 // DeleteProtectedRange 删除保护范围 (V2 API)
-func DeleteProtectedRange(ctx context.Context, spreadsheetToken string, protectIDs []string) error {
+func DeleteProtectedRange(ctx context.Context, spreadsheetToken string, protectIDs []string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/protected_range_batch_del", spreadsheetToken)
 
@@ -1656,7 +1692,7 @@ func DeleteProtectedRange(ctx context.Context, spreadsheetToken string, protectI
 		"protectIds": protectIDs,
 	}
 
-	respBody, err := v2APICall(client, ctx, "DELETE", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "DELETE", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("删除保护范围失败: %w", err)
 	}
@@ -1791,11 +1827,13 @@ type ValueRangeV3 struct {
 
 // WriteCellsV3 写入单元格数据 (V3 API)
 // POST /open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/:sheet_id/values/batch_update
-func WriteCellsV3(ctx context.Context, spreadsheetToken, sheetID string, valueRanges []*ValueRangeV3, userIDType string) error {
+func WriteCellsV3(ctx context.Context, spreadsheetToken, sheetID string, valueRanges []*ValueRangeV3, userIDType string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/batch_update", spreadsheetToken, sheetID)
 	if userIDType != "" {
@@ -1806,7 +1844,7 @@ func WriteCellsV3(ctx context.Context, spreadsheetToken, sheetID string, valueRa
 		"value_ranges": valueRanges,
 	}
 
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "POST", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("V3 写入单元格失败: %w", err)
 	}
@@ -1829,11 +1867,13 @@ func WriteCellsV3(ctx context.Context, spreadsheetToken, sheetID string, valueRa
 
 // InsertCellsV3 插入数据 (V3 API)
 // POST /open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/:sheet_id/values/:range/insert
-func InsertCellsV3(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, values [][][]*CellElement, userIDType string) error {
+func InsertCellsV3(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, values [][][]*CellElement, userIDType string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/%s/insert",
 		spreadsheetToken, sheetID, url.PathEscape(rangeStr))
@@ -1845,7 +1885,7 @@ func InsertCellsV3(ctx context.Context, spreadsheetToken, sheetID, rangeStr stri
 		"values": values,
 	}
 
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "POST", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("V3 插入数据失败: %w", err)
 	}
@@ -1868,11 +1908,13 @@ func InsertCellsV3(ctx context.Context, spreadsheetToken, sheetID, rangeStr stri
 
 // AppendCellsV3 追加数据 (V3 API)
 // POST /open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/:sheet_id/values/:range/append
-func AppendCellsV3(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, values [][][]*CellElement, userIDType string) error {
+func AppendCellsV3(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, values [][][]*CellElement, userIDType string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/%s/append",
 		spreadsheetToken, sheetID, url.PathEscape(rangeStr))
@@ -1884,7 +1926,7 @@ func AppendCellsV3(ctx context.Context, spreadsheetToken, sheetID, rangeStr stri
 		"values": values,
 	}
 
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "POST", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("V3 追加数据失败: %w", err)
 	}
@@ -2023,11 +2065,13 @@ func ReadCellsRichV3(ctx context.Context, spreadsheetToken, sheetID string, rang
 
 // ClearCellsV3 清除单元格内容 (V3 API)
 // POST /open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/:sheet_id/values/batch_clear
-func ClearCellsV3(ctx context.Context, spreadsheetToken, sheetID string, ranges []string) error {
+func ClearCellsV3(ctx context.Context, spreadsheetToken, sheetID string, ranges []string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/batch_clear",
 		spreadsheetToken, sheetID)
@@ -2036,7 +2080,7 @@ func ClearCellsV3(ctx context.Context, spreadsheetToken, sheetID string, ranges 
 		"ranges": ranges,
 	}
 
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "POST", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("V3 清除单元格失败: %w", err)
 	}

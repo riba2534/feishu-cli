@@ -25,7 +25,9 @@ var sheetMergeCmd = &cobra.Command{
 		rangeStr := unescapeSheetRange(args[1])
 		mergeType, _ := cmd.Flags().GetString("type")
 
-		err := client.MergeCells(client.Context(), spreadsheetToken, rangeStr, mergeType)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.MergeCells(client.Context(), spreadsheetToken, rangeStr, mergeType, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -39,4 +41,5 @@ func init() {
 	sheetCmd.AddCommand(sheetMergeCmd)
 
 	sheetMergeCmd.Flags().String("type", "MERGE_ALL", "合并类型: MERGE_ALL, MERGE_ROWS, MERGE_COLUMNS")
+	sheetMergeCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

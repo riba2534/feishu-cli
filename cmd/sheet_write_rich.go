@@ -82,7 +82,9 @@ var sheetWriteRichCmd = &cobra.Command{
 			return fmt.Errorf("解析数据失败（需要 value_ranges JSON 数组）: %w", err)
 		}
 
-		err := client.WriteCellsV3(client.Context(), spreadsheetToken, sheetID, valueRanges, userIDType)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.WriteCellsV3(client.Context(), spreadsheetToken, sheetID, valueRanges, userIDType, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -101,4 +103,5 @@ func init() {
 	sheetWriteRichCmd.Flags().StringP("data", "d", "", "要写入的数据（value_ranges JSON 数组）")
 	sheetWriteRichCmd.Flags().String("data-file", "", "数据文件路径")
 	sheetWriteRichCmd.Flags().String("user-id-type", "", "用户 ID 类型: open_id, union_id, user_id")
+	sheetWriteRichCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -15,13 +16,17 @@ var downloadMediaCmd = &cobra.Command{
 
 参数:
   --output, -o    输出文件路径（默认使用 file_token 作为文件名）
+  --timeout       下载超时时间（默认 5m，大文件可设置更长如 30m、1h）
 
 示例:
   # 下载到当前目录
   feishu-cli media download ABC123token456
 
   # 指定输出路径
-  feishu-cli media download ABC123token456 --output ./images/photo.png`,
+  feishu-cli media download ABC123token456 --output ./images/photo.png
+
+  # 大文件下载，设置 30 分钟超时
+  feishu-cli media download ABC123token456 -o large.bin --timeout 30m`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -30,6 +35,7 @@ var downloadMediaCmd = &cobra.Command{
 
 		fileToken := args[0]
 		output, _ := cmd.Flags().GetString("output")
+		timeoutStr, _ := cmd.Flags().GetString("timeout")
 
 		if output == "" {
 			output = safeOutputPath(fileToken, "")
@@ -40,17 +46,30 @@ var downloadMediaCmd = &cobra.Command{
 			return fmt.Errorf("输出路径不安全: %w", err)
 		}
 
+		var timeout time.Duration
+		if timeoutStr != "" {
+			var err error
+			timeout, err = time.ParseDuration(timeoutStr)
+			if err != nil {
+				return fmt.Errorf("无效的超时时间格式: %s（示例: 10m, 1h）", timeoutStr)
+			}
+		}
+
+		opts := client.DownloadMediaOptions{
+			Timeout: timeout,
+		}
+
 		// Try to get temp URL first
 		url, err := client.GetMediaTempURL(fileToken)
 		if err == nil {
-			if err := client.DownloadFromURL(url, output); err == nil {
+			if err := client.DownloadFromURL(url, output, timeout); err == nil {
 				fmt.Printf("已下载到 %s\n", output)
 				return nil
 			}
 		}
 
 		// Fallback to direct download
-		if err := client.DownloadMedia(fileToken, output); err != nil {
+		if err := client.DownloadMedia(fileToken, output, opts); err != nil {
 			return err
 		}
 
@@ -62,4 +81,5 @@ var downloadMediaCmd = &cobra.Command{
 func init() {
 	mediaCmd.AddCommand(downloadMediaCmd)
 	downloadMediaCmd.Flags().StringP("output", "o", "", "输出文件路径")
+	downloadMediaCmd.Flags().String("timeout", "", "下载超时时间（默认 5m，示例: 10m, 30m, 1h）")
 }

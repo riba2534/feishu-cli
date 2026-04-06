@@ -114,6 +114,10 @@ feishu-cli sheet export <spreadsheet_token> -o /tmp/report.xlsx --max-retries 50
 
 > **注意**：导出为 CSV 时必须指定 `--sheet-id`，因为 CSV 只能导出单个工作表。
 
+### User Access Token 支持
+
+所有 30 个 sheet 命令均支持 `--user-access-token` 参数，用于以用户身份访问无 App 权限但用户有权限的表格。Token 读取优先级：`--user-access-token` 参数 > `FEISHU_USER_ACCESS_TOKEN` 环境变量 > `~/.feishu-cli/token.json` > 配置文件。未指定时自动回退到 App Token（租户身份）。
+
 **详细参考**：读取 `references/sheet-commands.md` 获取 V3 富文本格式、工作表管理、单元格图片等完整说明。
 
 **权限要求**：`sheets:spreadsheet`
@@ -514,6 +518,9 @@ feishu-cli media upload image.png \
 
 # 下载素材
 feishu-cli media download <file_token> -o output.png
+
+# 下载大文件，设置更长超时时间（默认 5m）
+feishu-cli media download <file_token> -o output.png --timeout 10m
 ```
 
 ### parent-type 参数说明

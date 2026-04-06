@@ -407,7 +407,7 @@ func doOverwrite(documentID, markdown string, uploadImages bool, output string) 
 
 	// 2. 删除所有现有子块
 	if rootBlock.Children != nil && len(rootBlock.Children) > 0 {
-		if err := client.DeleteBlocks(documentID, documentID, 0, len(rootBlock.Children)); err != nil {
+		if _, err := client.DeleteBlocks(documentID, documentID, 0, len(rootBlock.Children)); err != nil {
 			return fmt.Errorf("删除现有内容失败: %w", err)
 		}
 	}
@@ -439,7 +439,7 @@ func doReplaceRange(documentID, markdown, selByTitle, selWithEllipsis string, up
 	r := ranges[0]
 
 	// 先删除匹配范围
-	if err := client.DeleteBlocks(documentID, documentID, r.startIndex, r.endIndex); err != nil {
+	if _, err := client.DeleteBlocks(documentID, documentID, r.startIndex, r.endIndex); err != nil {
 		return fmt.Errorf("删除目标内容失败: %w", err)
 	}
 
@@ -472,7 +472,7 @@ func doReplaceAll(documentID, markdown, selByTitle, selWithEllipsis string, uplo
 		r := ranges[i]
 
 		// 删除匹配范围
-		if err := client.DeleteBlocks(documentID, documentID, r.startIndex, r.endIndex); err != nil {
+		if _, err := client.DeleteBlocks(documentID, documentID, r.startIndex, r.endIndex); err != nil {
 			return fmt.Errorf("删除第 %d 个匹配内容失败: %w", i+1, err)
 		}
 
@@ -558,7 +558,7 @@ func doDeleteRange(documentID, selByTitle, selWithEllipsis string, output string
 	deleted := 0
 	for i := len(ranges) - 1; i >= 0; i-- {
 		r := ranges[i]
-		if err := client.DeleteBlocks(documentID, documentID, r.startIndex, r.endIndex); err != nil {
+		if _, err := client.DeleteBlocks(documentID, documentID, r.startIndex, r.endIndex); err != nil {
 			return fmt.Errorf("删除第 %d 个匹配内容失败: %w", i+1, err)
 		}
 		deleted += r.endIndex - r.startIndex

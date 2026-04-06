@@ -75,10 +75,10 @@ type ImportDiagramResult struct {
 }
 
 // ImportDiagram imports a diagram to whiteboard
-func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions) (*ImportDiagramResult, error) {
+func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions) (*ImportDiagramResult, http.Header, error) {
 	client, err := GetClient()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Default values
@@ -98,7 +98,7 @@ func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions
 		// Read from file
 		data, err := os.ReadFile(source)
 		if err != nil {
-			return nil, fmt.Errorf("读取图表文件失败: %w", err)
+			return nil, nil, fmt.Errorf("读取图表文件失败: %w", err)
 		}
 		content = string(data)
 	} else {
@@ -165,12 +165,14 @@ func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions
 
 	resp, err := client.Post(Context(), apiPath, reqBody, larkcore.AccessTokenTypeTenant)
 	if err != nil {
-		return nil, fmt.Errorf("导入图表失败: %w", err)
+		return nil, nil, fmt.Errorf("导入图表失败: %w", err)
 	}
+
+	headers := resp.Header
 
 	// 检查 HTTP 状态码
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("导入图表失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+		return nil, headers, fmt.Errorf("导入图表失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
 	}
 
 	// Parse response
@@ -184,11 +186,11 @@ func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions
 	}
 
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
+		return nil, headers, fmt.Errorf("解析响应失败: %w", err)
 	}
 
 	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("导入图表失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+		return nil, headers, fmt.Errorf("导入图表失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
 	}
 
 	nodeID := apiResp.Data.NodeID
@@ -198,7 +200,7 @@ func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions
 
 	return &ImportDiagramResult{
 		TicketID: nodeID,
-	}, nil
+	}, headers, nil
 }
 
 // CreateBoardNotesOptions contains options for creating board nodes

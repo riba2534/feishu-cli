@@ -365,6 +365,9 @@ feishu-cli doc media-download <file_token> -o /tmp/image.png
 
 # 下载文件素材
 feishu-cli doc media-download <file_token> -o /tmp/attachment.pdf
+
+# 下载大文件，设置更长超时时间
+feishu-cli doc media-download <file_token> -o /tmp/large_image.png --timeout 10m
 ```
 
 ### 画板缩略图下载
@@ -383,6 +386,7 @@ feishu-cli doc media-download <whiteboard_token> --type whiteboard -o /tmp/board
 | `<token>` | 素材 Token 或画板 Token | 必填 |
 | `--type` | 素材类型 `media`/`whiteboard` | `media` |
 | `-o, --output` | 输出文件路径 | — |
+| `--timeout` | 下载超时时间（Go duration 格式，如 `10m`、`30m`、`1h`） | `5m` |
 
 ### 两种下载模式的区别
 

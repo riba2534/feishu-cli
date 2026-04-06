@@ -57,7 +57,7 @@ var addBoardCmd = &cobra.Command{
 		}
 
 		// 创建画板块
-		createdBlocks, err := client.CreateBlock(documentID, parentID, []*larkdocx.Block{boardBlock}, index)
+		createdBlocks, _, err := client.CreateBlock(documentID, parentID, []*larkdocx.Block{boardBlock}, index)
 		if err != nil {
 			return err
 		}

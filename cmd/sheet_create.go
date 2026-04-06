@@ -16,7 +16,9 @@ var sheetCreateCmd = &cobra.Command{
 		folderToken, _ := cmd.Flags().GetString("folder")
 		output, _ := cmd.Flags().GetString("output")
 
-		info, err := client.CreateSpreadsheet(client.Context(), title, folderToken)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		info, err := client.CreateSpreadsheet(client.Context(), title, folderToken, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -42,4 +44,5 @@ func init() {
 	sheetCreateCmd.Flags().StringP("title", "t", "新建电子表格", "表格标题")
 	sheetCreateCmd.Flags().StringP("folder", "f", "", "目标文件夹 Token（可选）")
 	sheetCreateCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
+	sheetCreateCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

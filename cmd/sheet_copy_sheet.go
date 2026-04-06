@@ -18,7 +18,9 @@ var sheetCopySheetCmd = &cobra.Command{
 		newTitle, _ := cmd.Flags().GetString("title")
 		output, _ := cmd.Flags().GetString("output")
 
-		info, err := client.CopySheet(client.Context(), spreadsheetToken, sourceSheetID, newTitle)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		info, err := client.CopySheet(client.Context(), spreadsheetToken, sourceSheetID, newTitle, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -42,4 +44,5 @@ func init() {
 
 	sheetCopySheetCmd.Flags().StringP("title", "t", "", "新工作表标题（可选）")
 	sheetCopySheetCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
+	sheetCopySheetCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

@@ -85,7 +85,9 @@ var sheetAppendRichCmd = &cobra.Command{
 			}
 		}
 
-		err := client.AppendCellsV3(client.Context(), spreadsheetToken, sheetID, rangeStr, values, userIDType)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.AppendCellsV3(client.Context(), spreadsheetToken, sheetID, rangeStr, values, userIDType, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -106,4 +108,5 @@ func init() {
 	sheetAppendRichCmd.Flags().String("data-file", "", "数据文件路径")
 	sheetAppendRichCmd.Flags().String("user-id-type", "", "用户 ID 类型: open_id, union_id, user_id")
 	sheetAppendRichCmd.Flags().Bool("simple", false, "使用简单模式（二维数组自动转换）")
+	sheetAppendRichCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

@@ -58,7 +58,7 @@ var uploadMediaCmd = &cobra.Command{
 			fileName = filepath.Base(filePath)
 		}
 
-		token, err := client.UploadMedia(filePath, parentType, parentNode, fileName)
+		token, _, err := client.UploadMedia(filePath, parentType, parentNode, fileName)
 		if err != nil {
 			return err
 		}

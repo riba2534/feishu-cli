@@ -24,10 +24,10 @@ allowed-tools: Bash, Read
 
 1. **三阶段并发管道**：顺序创建块 → 并发处理图表/表格 → 失败回退
 2. **Mermaid/PlantUML → 飞书画板**：`mermaid`/`plantuml`/`puml` 代码块自动转换为飞书画板
-3. **图表故障容错**：语法错误自动降级为代码块展示，服务端错误自动重试（最多 10 次，1s 间隔）
+3. **图表故障容错**：语法错误自动降级为代码块展示，服务端错误自动重试（最多 20 次）
 4. **大表格自动拆分**：超过 9 行或 9 列的表格自动拆分为多个表格，行拆分保留表头，列拆分保留首列作为标识
 5. **表格列宽自动计算**：根据内容智能计算列宽（中英文区分，最小 80px，最大 400px）
-6. **API 限流处理**：自动重试，避免 429 错误
+6. **API 限流自动重试**：画板创建和图表导入遇到 HTTP 429 时自动重试，读取服务端 `x-ogw-ratelimit-reset` 响应头精确计算退避时间，采用指数退避策略，默认最多重试 20 次
 7. **并发控制**：图表和表格分别使用独立的 worker 池（默认图表 5、表格 3 并发）
 
 ## 核心概念
@@ -38,7 +38,7 @@ allowed-tools: Bash, Read
 
 - **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
 - 已配置 App Token（`FEISHU_APP_ID` + `FEISHU_APP_SECRET`），无需 `auth login`
-- Markdown 文件使用 UTF-8 编码
+- Markdown 文件使用 UTF-8 编码（导入前 CLI 会自动检测 U+FFFD 替换字符和非法 UTF-8 字节，不合格则拒绝导入）
 
 ## 使用方法
 
@@ -258,7 +258,7 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 | `{}` 花括号 | Mermaid 解析器将 `{text}` 识别为菱形节点 | 自动降级为代码块 |
 | `par...and...end` | 飞书解析器完全不支持 par 并行语法 | 用 `Note over X: 并行执行` 替代 |
 | 渲染复杂度组合超限 | 单一因素不会触发，但 10+ participant + 2+ alt 块 + 30+ 长消息标签组合时服务端返回 500 | 重试后降级为代码块 |
-| 服务端瞬时错误 | 偶发 HTTP 500（并发压力导致） | 自动重试（最多 10 次，1s 间隔） |
+| 服务端瞬时错误 | 偶发 HTTP 500（并发压力导致） | 自动重试（最多 20 次，指数退避） |
 | Parse error 不重试 | 语法错误直接降级 | 自动降级为代码块 |
 
 **渲染复杂度安全阈值**（二分法实测）：
@@ -272,7 +272,7 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 - API 端点：`/open-apis/board/v1/whiteboards/{id}/nodes/plantuml`
 - `syntax_type=1` 表示 PlantUML 语法，`syntax_type=2` 表示 Mermaid 语法
 - `diagram_type` 使用整数（0=auto, 6=flowchart 等）
-- 重试策略：固定 1s 间隔，Parse error 和 Invalid request parameter 不重试
+- 重试策略：指数退避 + 读取 `x-ogw-ratelimit-reset` 响应头精确退避，最多 20 次；Parse error 和 Invalid request parameter 不重试
 - 失败回退：删除空画板块，在原位置插入代码块
 - 支持的代码块标识：` ```mermaid `、` ```plantuml `、` ```puml `
 

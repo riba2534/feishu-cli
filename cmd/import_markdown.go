@@ -599,8 +599,7 @@ func phase1CreateBlocks(
 				batch := topLevelBlocks[i:end]
 
 				createResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-					blocks, err := client.CreateBlock(documentID, documentID, batch, -1)
-					return blocks, nil, err
+					return client.CreateBlock(documentID, documentID, batch, -1)
 				}, client.RetryConfig{
 					MaxRetries:       5,
 					RetryOnRateLimit: true,
@@ -636,8 +635,7 @@ func phase1CreateBlocks(
 							// 防御性检查：先获取子块列表，确认 index 0 确实是空文本块再删除
 							shouldDelete := false
 							childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-								blocks, err := client.GetBlockChildren(documentID, parentID)
-								return blocks, nil, err
+								return client.GetBlockChildren(documentID, parentID)
 							}, client.RetryConfig{
 								MaxRetries:       3,
 								RetryOnRateLimit: true,
@@ -663,8 +661,8 @@ func phase1CreateBlocks(
 
 							if shouldDelete {
 								delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
-									err := client.DeleteBlocks(documentID, parentID, 0, 1)
-									return struct{}{}, nil, err
+									headers, err := client.DeleteBlocks(documentID, parentID, 0, 1)
+									return struct{}{}, headers, err
 								}, client.RetryConfig{
 									MaxRetries:       5,
 									RetryOnRateLimit: true,
@@ -739,7 +737,7 @@ func phase1CreateBlocks(
 				},
 			}
 
-			createdBlocks, err := client.CreateBlock(documentID, documentID, equationBlocks, -1)
+			createdBlocks, _, err := client.CreateBlock(documentID, documentID, equationBlocks, -1)
 			if err != nil {
 				if verbose {
 					fmt.Printf("  ⚠ 公式块创建失败: %v\n", err)
@@ -761,8 +759,7 @@ func phase1CreateBlocks(
 
 			// 只创建画板占位块，不导入图表
 			createResult := client.DoWithRetry(func() (*client.AddBoardResult, http.Header, error) {
-				r, err := client.AddBoard(documentID, "", -1)
-				return r, nil, err
+				return client.AddBoard(documentID, "", -1)
 			}, client.RetryConfig{
 				MaxRetries:       5,
 				RetryOnRateLimit: true,
@@ -913,8 +910,7 @@ func processDiagramTask(task diagramTask, maxRetries int, verbose bool) diagramR
 	}
 
 	result := client.DoWithRetry(func() (*client.ImportDiagramResult, http.Header, error) {
-		r, err := client.ImportDiagram(task.whiteboardID, task.content, opts)
-		return r, nil, err // ImportDiagram 不返回 HTTP header
+		return client.ImportDiagram(task.whiteboardID, task.content, opts)
 	}, client.RetryConfig{
 		MaxRetries:       maxRetries,
 		MaxTotalAttempts: maxRetries + 5,
@@ -1033,8 +1029,7 @@ func processImageTask(documentID string, task imageTask, verbose bool) imageResu
 	}
 
 	uploadResult := client.DoWithRetry(func() (string, http.Header, error) {
-		token, err := client.UploadMediaWithExtra(localPath, "docx_image", task.imageBlockID, fileName, extra)
-		return token, nil, err
+		return client.UploadMediaWithExtra(localPath, "docx_image", task.imageBlockID, fileName, extra)
 	}, retryCfg)
 
 	if uploadResult.Err != nil {
@@ -1046,7 +1041,7 @@ func processImageTask(documentID string, task imageTask, verbose bool) imageResu
 
 	// 步骤 3: 替换 Image Block 的 token
 	replaceResult := client.DoVoidWithRetry(func() (http.Header, error) {
-		return nil, client.ReplaceImage(documentID, task.imageBlockID, fileToken)
+		return client.ReplaceImage(documentID, task.imageBlockID, fileToken)
 	}, retryCfg)
 
 	if replaceResult.Err != nil {
@@ -1141,8 +1136,7 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 		batch := childBlocks[i:end]
 
 		result := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-			blocks, err := client.CreateBlock(documentID, parentBlockID, batch, -1)
-			return blocks, nil, err
+			return client.CreateBlock(documentID, parentBlockID, batch, -1)
 		}, client.RetryConfig{
 			MaxRetries:       5,
 			RetryOnRateLimit: true,
@@ -1225,7 +1219,7 @@ func phase3HandleFallbacks(
 		}
 
 		// 1. 删除空画板块
-		err := client.DeleteBlocks(documentID, documentID, item.index, item.index+1)
+		_, err := client.DeleteBlocks(documentID, documentID, item.index, item.index+1)
 		if err != nil {
 			fmt.Printf("  ✗ %s %d 删除画板失败: %v\n", syntaxLabel, item.result.task.index, err)
 			stats.fallbackFailed++
@@ -1234,7 +1228,7 @@ func phase3HandleFallbacks(
 
 		// 2. 在同位置插入代码块
 		codeBlock := createDiagramCodeBlock(item.result.task.syntax, item.result.task.content)
-		_, err = client.CreateBlock(documentID, documentID, []*larkdocx.Block{codeBlock}, item.index)
+		_, _, err = client.CreateBlock(documentID, documentID, []*larkdocx.Block{codeBlock}, item.index)
 		if err != nil {
 			fmt.Printf("  ✗ %s %d 插入代码块失败: %v\n", syntaxLabel, item.result.task.index, err)
 			stats.fallbackFailed++

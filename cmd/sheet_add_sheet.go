@@ -18,7 +18,9 @@ var sheetAddSheetCmd = &cobra.Command{
 		index, _ := cmd.Flags().GetInt("index")
 		output, _ := cmd.Flags().GetString("output")
 
-		info, err := client.AddSheet(client.Context(), spreadsheetToken, title, index)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		info, err := client.AddSheet(client.Context(), spreadsheetToken, title, index, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -44,4 +46,5 @@ func init() {
 	sheetAddSheetCmd.Flags().StringP("title", "t", "新工作表", "工作表标题")
 	sheetAddSheetCmd.Flags().Int("index", 0, "工作表位置索引（0 表示第一个）")
 	sheetAddSheetCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
+	sheetAddSheetCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

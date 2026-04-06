@@ -16,7 +16,9 @@ var sheetDeleteSheetCmd = &cobra.Command{
 		spreadsheetToken := args[0]
 		sheetID := args[1]
 
-		err := client.DeleteSheet(client.Context(), spreadsheetToken, sheetID)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.DeleteSheet(client.Context(), spreadsheetToken, sheetID, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -28,4 +30,6 @@ var sheetDeleteSheetCmd = &cobra.Command{
 
 func init() {
 	sheetCmd.AddCommand(sheetDeleteSheetCmd)
+
+	sheetDeleteSheetCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

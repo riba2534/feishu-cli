@@ -66,8 +66,7 @@ var importDiagramCmd = &cobra.Command{
 		}
 
 		retryResult := client.DoWithRetry(func() (*client.ImportDiagramResult, http.Header, error) {
-			r, err := client.ImportDiagram(whiteboardID, source, opts)
-			return r, nil, err
+			return client.ImportDiagram(whiteboardID, source, opts)
 		}, client.RetryConfig{
 			MaxRetries:       5,
 			RetryOnRateLimit: true,

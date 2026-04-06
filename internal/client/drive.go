@@ -21,27 +21,27 @@ const maxDownloadSize = 100 * 1024 * 1024
 const downloadTimeout = 5 * time.Minute
 
 // UploadMedia uploads a file to Feishu drive
-func UploadMedia(filePath string, parentType string, parentNode string, fileName string) (string, error) {
+func UploadMedia(filePath string, parentType string, parentNode string, fileName string) (string, http.Header, error) {
 	return UploadMediaWithExtra(filePath, parentType, parentNode, fileName, "")
 }
 
 // UploadMediaWithExtra uploads a file to Feishu drive with extra parameter.
 // extra 为 JSON 字符串，用于指定扩展信息（如 {"drive_route_token":"documentID"}）。
-func UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra string) (string, error) {
+func UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra string) (string, http.Header, error) {
 	client, err := GetClient()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("打开文件失败: %w", err)
+		return "", nil, fmt.Errorf("打开文件失败: %w", err)
 	}
 	defer file.Close()
 
 	stat, err := file.Stat()
 	if err != nil {
-		return "", fmt.Errorf("获取文件信息失败: %w", err)
+		return "", nil, fmt.Errorf("获取文件信息失败: %w", err)
 	}
 	fileSize := int(stat.Size())
 
@@ -66,18 +66,19 @@ func UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra stri
 
 	resp, err := client.Drive.Media.UploadAll(Context(), req)
 	if err != nil {
-		return "", fmt.Errorf("上传素材失败: %w", err)
+		return "", nil, fmt.Errorf("上传素材失败: %w", err)
 	}
 
+	headers := resp.ApiResp.Header
 	if !resp.Success() {
-		return "", fmt.Errorf("上传素材失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		return "", headers, fmt.Errorf("上传素材失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	if resp.Data.FileToken == nil {
-		return "", fmt.Errorf("上传成功但未返回文件 Token")
+		return "", headers, fmt.Errorf("上传成功但未返回文件 Token")
 	}
 
-	return *resp.Data.FileToken, nil
+	return *resp.Data.FileToken, headers, nil
 }
 
 // DownloadMediaOptions holds optional parameters for DownloadMedia

@@ -29,7 +29,9 @@ var sheetReplaceCmd = &cobra.Command{
 		matchEntireCell, _ := cmd.Flags().GetBool("match-entire-cell")
 		output, _ := cmd.Flags().GetString("output")
 
-		result, err := client.ReplaceCells(client.Context(), spreadsheetToken, sheetID, findStr, replacement, matchCase, matchEntireCell, rangeStr)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		result, err := client.ReplaceCells(client.Context(), spreadsheetToken, sheetID, findStr, replacement, matchCase, matchEntireCell, rangeStr, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -58,4 +60,5 @@ func init() {
 	sheetReplaceCmd.Flags().Bool("match-case", false, "区分大小写")
 	sheetReplaceCmd.Flags().Bool("match-entire-cell", false, "完全匹配单元格")
 	sheetReplaceCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
+	sheetReplaceCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

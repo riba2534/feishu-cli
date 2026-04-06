@@ -41,7 +41,9 @@ var sheetProtectCmd = &cobra.Command{
 			},
 		}
 
-		protectIDs, err := client.CreateProtectedRange(client.Context(), spreadsheetToken, ranges)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		protectIDs, err := client.CreateProtectedRange(client.Context(), spreadsheetToken, ranges, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -73,7 +75,9 @@ var sheetUnprotectCmd = &cobra.Command{
 		spreadsheetToken := args[0]
 		protectIDs := args[1:]
 
-		err := client.DeleteProtectedRange(client.Context(), spreadsheetToken, protectIDs)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.DeleteProtectedRange(client.Context(), spreadsheetToken, protectIDs, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -92,5 +96,8 @@ func init() {
 	sheetProtectCmd.Flags().Int("end", 0, "结束索引")
 	sheetProtectCmd.Flags().String("lock-info", "", "锁定说明")
 	sheetProtectCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
+	sheetProtectCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 	mustMarkFlagRequired(sheetProtectCmd, "end")
+
+	sheetUnprotectCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

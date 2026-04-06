@@ -34,7 +34,7 @@ var deleteBlocksCmd = &cobra.Command{
 
 		if deleteAll {
 			// Get block children count first
-			children, err := client.GetBlockChildren(documentID, blockID)
+			children, _, err := client.GetBlockChildren(documentID, blockID)
 			if err != nil {
 				return fmt.Errorf("获取子块失败: %w", err)
 			}
@@ -66,7 +66,7 @@ var deleteBlocksCmd = &cobra.Command{
 			}
 		}
 
-		if err := client.DeleteBlocks(documentID, blockID, startIndex, endIndex); err != nil {
+		if _, err := client.DeleteBlocks(documentID, blockID, startIndex, endIndex); err != nil {
 			return err
 		}
 

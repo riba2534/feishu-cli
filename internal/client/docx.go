@@ -188,10 +188,10 @@ func GetBlock(documentID string, blockID string) (*larkdocx.Block, error) {
 }
 
 // CreateBlock creates a new block under a parent block
-func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, index int) ([]*larkdocx.Block, error) {
+func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, index int) ([]*larkdocx.Block, http.Header, error) {
 	client, err := GetClient()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	req := larkdocx.NewCreateDocumentBlockChildrenReqBuilder().
@@ -206,32 +206,33 @@ func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, 
 
 	resp, err := client.Docx.DocumentBlockChildren.Create(Context(), req)
 	if err != nil {
-		return nil, fmt.Errorf("创建块失败: %w", err)
+		return nil, nil, fmt.Errorf("创建块失败: %w", err)
 	}
 
+	headers := resp.ApiResp.Header
 	if !resp.Success() {
-		return nil, fmt.Errorf("创建块失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, headers, fmt.Errorf("创建块失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	return resp.Data.Children, nil
+	return resp.Data.Children, headers, nil
 }
 
 // UpdateBlock updates an existing block
-func UpdateBlock(documentID string, blockID string, updateContent any) error {
+func UpdateBlock(documentID string, blockID string, updateContent any) (http.Header, error) {
 	client, err := GetClient()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// The updateContent should be marshaled to the appropriate update request body
 	contentBytes, err := json.Marshal(updateContent)
 	if err != nil {
-		return fmt.Errorf("序列化更新内容失败: %w", err)
+		return nil, fmt.Errorf("序列化更新内容失败: %w", err)
 	}
 
 	var updateBody larkdocx.UpdateBlockRequest
 	if err := json.Unmarshal(contentBytes, &updateBody); err != nil {
-		return fmt.Errorf("反序列化更新内容失败: %w", err)
+		return nil, fmt.Errorf("反序列化更新内容失败: %w", err)
 	}
 
 	req := larkdocx.NewPatchDocumentBlockReqBuilder().
@@ -243,19 +244,20 @@ func UpdateBlock(documentID string, blockID string, updateContent any) error {
 
 	resp, err := client.Docx.DocumentBlock.Patch(Context(), req)
 	if err != nil {
-		return fmt.Errorf("更新块失败: %w", err)
+		return nil, fmt.Errorf("更新块失败: %w", err)
 	}
 
+	headers := resp.ApiResp.Header
 	if !resp.Success() {
-		return fmt.Errorf("更新块失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		return headers, fmt.Errorf("更新块失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	return nil
+	return headers, nil
 }
 
 // ReplaceImage replaces the image token of an Image block.
 // 用于图片三步法上传的第三步：将上传后的 fileToken 设置到 Image Block。
-func ReplaceImage(documentID, imageBlockID, fileToken string) error {
+func ReplaceImage(documentID, imageBlockID, fileToken string) (http.Header, error) {
 	return UpdateBlock(documentID, imageBlockID, map[string]any{
 		"replace_image": map[string]any{
 			"token": fileToken,
@@ -265,10 +267,10 @@ func ReplaceImage(documentID, imageBlockID, fileToken string) error {
 
 // DeleteBlocks deletes child blocks from a parent block by index range
 // startIndex is the starting index (0-based), endIndex is exclusive
-func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex int) error {
+func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex int) (http.Header, error) {
 	client, err := GetClient()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	req := larkdocx.NewBatchDeleteDocumentBlockChildrenReqBuilder().
@@ -283,14 +285,15 @@ func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex in
 
 	resp, err := client.Docx.DocumentBlockChildren.BatchDelete(Context(), req)
 	if err != nil {
-		return fmt.Errorf("删除块失败: %w", err)
+		return nil, fmt.Errorf("删除块失败: %w", err)
 	}
 
+	headers := resp.ApiResp.Header
 	if !resp.Success() {
-		return fmt.Errorf("删除块失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		return headers, fmt.Errorf("删除块失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	return nil
+	return headers, nil
 }
 
 // BatchUpdateBlocksOptions contains options for batch updating blocks
@@ -360,10 +363,10 @@ func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateB
 }
 
 // GetBlockChildren retrieves children of a block (first page only)
-func GetBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, error) {
+func GetBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, http.Header, error) {
 	client, err := GetClient()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	req := larkdocx.NewGetDocumentBlockChildrenReqBuilder().
@@ -373,14 +376,15 @@ func GetBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, err
 
 	resp, err := client.Docx.DocumentBlockChildren.Get(Context(), req)
 	if err != nil {
-		return nil, fmt.Errorf("获取子块失败: %w", err)
+		return nil, nil, fmt.Errorf("获取子块失败: %w", err)
 	}
 
+	headers := resp.ApiResp.Header
 	if !resp.Success() {
-		return nil, fmt.Errorf("获取子块失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, headers, fmt.Errorf("获取子块失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	return resp.Data.Items, nil
+	return resp.Data.Items, headers, nil
 }
 
 // GetAllBlockChildren retrieves all direct children of a block with pagination
@@ -437,7 +441,7 @@ type AddBoardResult struct {
 }
 
 // AddBoard adds a board block to document and returns the whiteboard ID
-func AddBoard(documentID string, parentID string, index int) (*AddBoardResult, error) {
+func AddBoard(documentID string, parentID string, index int) (*AddBoardResult, http.Header, error) {
 	if parentID == "" {
 		parentID = documentID
 	}
@@ -450,13 +454,13 @@ func AddBoard(documentID string, parentID string, index int) (*AddBoardResult, e
 	}
 
 	// 创建画板块
-	createdBlocks, err := CreateBlock(documentID, parentID, []*larkdocx.Block{boardBlock}, index)
+	createdBlocks, headers, err := CreateBlock(documentID, parentID, []*larkdocx.Block{boardBlock}, index)
 	if err != nil {
-		return nil, fmt.Errorf("创建画板块失败: %w", err)
+		return nil, headers, fmt.Errorf("创建画板块失败: %w", err)
 	}
 
 	if len(createdBlocks) == 0 {
-		return nil, fmt.Errorf("创建画板块失败：未返回块信息")
+		return nil, headers, fmt.Errorf("创建画板块失败：未返回块信息")
 	}
 
 	result := &AddBoardResult{
@@ -466,7 +470,7 @@ func AddBoard(documentID string, parentID string, index int) (*AddBoardResult, e
 		result.WhiteboardID = StringVal(createdBlocks[0].Board.Token)
 	}
 
-	return result, nil
+	return result, headers, nil
 }
 
 // FillTableCells fills table cells with plain text content.
@@ -562,13 +566,13 @@ func fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextEle
 	}
 
 	// 尝试更新已有子块（飞书创建表格时自动生成空文本块）
-	children, childErr := GetBlockChildren(documentID, cellID)
+	children, _, childErr := GetBlockChildren(documentID, cellID)
 	if childErr == nil && len(children) > 0 {
 		existingBlockID := StringVal(children[0].BlockId)
 		if existingBlockID != "" {
 			updateContent := buildCellUpdateContent(elements)
 			result := DoVoidWithRetry(func() (http.Header, error) {
-				return nil, UpdateBlock(documentID, existingBlockID, updateContent)
+				return UpdateBlock(documentID, existingBlockID, updateContent)
 			}, retryCfg)
 			if result.Err == nil {
 				return nil
@@ -583,8 +587,8 @@ func fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextEle
 		Text:      &larkdocx.Text{Elements: elements},
 	}
 	result := DoVoidWithRetry(func() (http.Header, error) {
-		_, err := CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, 0)
-		return nil, err
+		_, headers, err := CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, 0)
+		return headers, err
 	}, retryCfg)
 	return result.Err
 }
@@ -599,13 +603,13 @@ func fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, max
 
 	// 获取飞书自动创建的空文本块，更新其内容以避免留下空块
 	startIdx := 0
-	children, childErr := GetBlockChildren(documentID, cellID)
+	children, _, childErr := GetBlockChildren(documentID, cellID)
 	if childErr == nil && len(children) > 0 && len(groups) > 0 && len(groups[0].elements) > 0 {
 		existingBlockID := StringVal(children[0].BlockId)
 		if existingBlockID != "" {
 			updateContent := buildCellUpdateContent(groups[0].elements)
 			result := DoVoidWithRetry(func() (http.Header, error) {
-				return nil, UpdateBlock(documentID, existingBlockID, updateContent)
+				return UpdateBlock(documentID, existingBlockID, updateContent)
 			}, retryCfg)
 			if result.Err == nil {
 				startIdx = 1 // 第一组已通过更新处理
@@ -621,8 +625,8 @@ func fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, max
 		}
 		block := buildCellBlock(group)
 		result := DoVoidWithRetry(func() (http.Header, error) {
-			_, err := CreateBlock(documentID, cellID, []*larkdocx.Block{block}, -1)
-			return nil, err
+			_, headers, err := CreateBlock(documentID, cellID, []*larkdocx.Block{block}, -1)
+			return headers, err
 		}, retryCfg)
 		if result.Err != nil {
 			return result.Err

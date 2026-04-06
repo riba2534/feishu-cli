@@ -40,7 +40,9 @@ var sheetClearCmd = &cobra.Command{
 			return fmt.Errorf("单次最多只能清除 10 个范围，当前传入 %d 个", len(ranges))
 		}
 
-		err := client.ClearCellsV3(client.Context(), spreadsheetToken, sheetID, ranges)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.ClearCellsV3(client.Context(), spreadsheetToken, sheetID, ranges, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -55,4 +57,6 @@ var sheetClearCmd = &cobra.Command{
 
 func init() {
 	sheetCmd.AddCommand(sheetClearCmd)
+
+	sheetClearCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

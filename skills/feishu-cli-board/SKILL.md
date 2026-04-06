@@ -80,6 +80,12 @@ feishu-cli board import <whiteboard_id> --source-type content \
 feishu-cli board import <whiteboard_id> diagram.mmd --syntax mermaid
 ```
 
+#### 限流处理
+
+- 导入图表时遇到 HTTP 429 自动重试，采用指数退避 + 读取服务端 `x-ogw-ratelimit-reset` 响应头精确计算退避时间
+- 大批量图表导入（如文档中包含 100+ 图表）时，CLI 自动控制并发和重试，默认最多重试 20 次
+- verbose 模式下可观察重试日志，便于排查限流问题
+
 ### Step 3: 创建/更新并验证
 
 ```bash
@@ -105,7 +111,7 @@ feishu-cli board image $BOARD_ID output.png
 | 命令 | 说明 | 示例 |
 |------|------|------|
 | `board create-notes` | 批量创建节点（形状+连线） | `feishu-cli board create-notes <id> nodes.json -o json` |
-| `board import` | 导入 Mermaid/PlantUML | `feishu-cli board import <id> diagram.mmd --syntax mermaid` |
+| `board import` | 导入 Mermaid/PlantUML（429 自动重试） | `feishu-cli board import <id> diagram.mmd --syntax mermaid` |
 | `board image` | 下载画板为 PNG | `feishu-cli board image <id> output.png` |
 | `board nodes` | 获取画板所有节点 | `feishu-cli board nodes <id>` |
 | `doc add-board` | 在文档中添加空画板 | `feishu-cli doc add-board <doc_id> -o json` |

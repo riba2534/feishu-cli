@@ -19,7 +19,9 @@ var sheetUnmergeCmd = &cobra.Command{
 		spreadsheetToken := args[0]
 		rangeStr := unescapeSheetRange(args[1])
 
-		err := client.UnmergeCells(client.Context(), spreadsheetToken, rangeStr)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		err := client.UnmergeCells(client.Context(), spreadsheetToken, rangeStr, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -31,4 +33,6 @@ var sheetUnmergeCmd = &cobra.Command{
 
 func init() {
 	sheetCmd.AddCommand(sheetUnmergeCmd)
+
+	sheetUnmergeCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

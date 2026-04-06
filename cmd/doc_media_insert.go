@@ -93,7 +93,7 @@ var docMediaInsertCmd = &cobra.Command{
 				BlockType: &blockType,
 				File:      &larkdocx.File{Token: &emptyToken},
 			}
-			createdBlocks, createErr := client.CreateBlock(documentID, documentID, []*larkdocx.Block{newBlock}, insertIndex)
+			createdBlocks, _, createErr := client.CreateBlock(documentID, documentID, []*larkdocx.Block{newBlock}, insertIndex)
 			if createErr != nil {
 				return fmt.Errorf("步骤 2 失败 - 创建空文件块: %w", createErr)
 			}
@@ -114,7 +114,7 @@ var docMediaInsertCmd = &cobra.Command{
 			// 步骤 3：上传文件到 Drive，使用 File Block ID 作为 parent_node
 			extra := fmt.Sprintf(`{"drive_route_token":"%s"}`, documentID)
 			fileName := filepath.Base(filePath)
-			fileToken, err = client.UploadMediaWithExtra(filePath, parentType, fileBlockID, fileName, extra)
+			fileToken, _, err = client.UploadMediaWithExtra(filePath, parentType, fileBlockID, fileName, extra)
 			if err != nil {
 				rollbackErr := rollbackInsertedBlock(documentID, insertIndex)
 				if rollbackErr != nil {
@@ -124,7 +124,7 @@ var docMediaInsertCmd = &cobra.Command{
 			}
 
 			// 步骤 4：绑定文件 token 到文件块（使用 replace_file，非 replace_image）
-			err = client.UpdateBlock(documentID, fileBlockID, map[string]any{
+			_, err = client.UpdateBlock(documentID, fileBlockID, map[string]any{
 				"replace_file": map[string]any{
 					"token": fileToken,
 				},
@@ -144,7 +144,7 @@ var docMediaInsertCmd = &cobra.Command{
 				BlockType: &blockType,
 				Image:     &larkdocx.Image{},
 			}
-			createdBlocks, createErr := client.CreateBlock(documentID, documentID, []*larkdocx.Block{newBlock}, insertIndex)
+			createdBlocks, _, createErr := client.CreateBlock(documentID, documentID, []*larkdocx.Block{newBlock}, insertIndex)
 			if createErr != nil {
 				return fmt.Errorf("步骤 2 失败 - 创建空块: %w", createErr)
 			}
@@ -156,7 +156,7 @@ var docMediaInsertCmd = &cobra.Command{
 			// 步骤 3：上传文件到 Drive
 			extra := fmt.Sprintf(`{"drive_route_token":"%s"}`, documentID)
 			fileName := filepath.Base(filePath)
-			fileToken, err = client.UploadMediaWithExtra(filePath, parentType, newBlockID, fileName, extra)
+			fileToken, _, err = client.UploadMediaWithExtra(filePath, parentType, newBlockID, fileName, extra)
 			if err != nil {
 				rollbackErr := rollbackInsertedBlock(documentID, insertIndex)
 				if rollbackErr != nil {
@@ -173,7 +173,7 @@ var docMediaInsertCmd = &cobra.Command{
 			if caption != "" {
 				replaceReq["caption"] = map[string]string{"content": caption}
 			}
-			err = client.UpdateBlock(documentID, newBlockID, map[string]any{
+			_, err = client.UpdateBlock(documentID, newBlockID, map[string]any{
 				"replace_image": replaceReq,
 			})
 			if err != nil {
@@ -211,7 +211,8 @@ var docMediaInsertCmd = &cobra.Command{
 
 // rollbackInsertedBlock 回滚创建的空块
 func rollbackInsertedBlock(documentID string, blockIndex int) error {
-	return client.DeleteBlocks(documentID, documentID, blockIndex, blockIndex+1)
+	_, err := client.DeleteBlocks(documentID, documentID, blockIndex, blockIndex+1)
+	return err
 }
 
 func init() {
