@@ -203,11 +203,19 @@ func addContentMarkdown(documentID, blockID, contentData, basePath string, uploa
 	for idx, children := range nodeChildrenMap {
 		if idx < len(createdBlockIDs) {
 			parentID := createdBlockIDs[idx]
-			nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
+			nestedCount, nestedErr := createNestedChildren(documentID, parentID, children, false)
 			if nestedErr != nil {
 				fmt.Fprintf(os.Stderr, "[Warning] 嵌套子块创建失败: %v\n", nestedErr)
 			}
 			totalCreated += nestedCount
+
+			// 顶层 Callout / QuoteContainer 块：清理 API 自动生成的空文本子块
+			if idx < len(result.BlockNodes) {
+				node := result.BlockNodes[idx]
+				if node.Block != nil && node.Block.BlockType != nil {
+					cleanupContainerAutoEmptyChild(documentID, parentID, *node.Block.BlockType, false)
+				}
+			}
 		}
 	}
 

@@ -622,57 +622,13 @@ func phase1CreateBlocks(
 				if idx < len(createdBlockIDs) {
 					parentID := createdBlockIDs[idx]
 
-					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
+					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children, verbose)
 
-					// Callout / QuoteContainer 块：飞书 API 创建容器块时会自动生成一个空文本子块（位于 index 0），
-					// 在实际子块创建完成后将其删除，否则容器中会多出一个空行
+					// 顶层 Callout / QuoteContainer 块：清理 API 自动生成的空文本子块
 					if idx < len(result.BlockNodes) {
 						node := result.BlockNodes[idx]
-						if node.Block.BlockType != nil && (*node.Block.BlockType == int(converter.BlockTypeCallout) || *node.Block.BlockType == int(converter.BlockTypeQuoteContainer)) {
-							blockTypeName := "Callout"
-							if *node.Block.BlockType == int(converter.BlockTypeQuoteContainer) {
-								blockTypeName = "QuoteContainer"
-							}
-							// 防御性检查：先获取子块列表，确认 index 0 确实是空文本块再删除
-							shouldDelete := false
-							childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-								blocks, err := client.GetBlockChildren(documentID, parentID)
-								return blocks, nil, err
-							}, client.RetryConfig{
-								MaxRetries:       3,
-								RetryOnRateLimit: true,
-							})
-							if childrenResult.Err == nil && len(childrenResult.Value) > 0 {
-								firstChild := childrenResult.Value[0]
-								if firstChild.BlockType != nil && *firstChild.BlockType == int(converter.BlockTypeText) {
-									// 检查是否为空文本块（无 elements 或所有 TextRun 内容为空）
-									isEmpty := true
-									if firstChild.Text != nil && len(firstChild.Text.Elements) > 0 {
-										for _, elem := range firstChild.Text.Elements {
-											if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
-												isEmpty = false
-												break
-											}
-										}
-									}
-									shouldDelete = isEmpty
-								}
-							} else if childrenResult.Err != nil && verbose {
-								syncPrintf("  ⚠ %s 子块查询失败 (parent=%s): %v\n", blockTypeName, parentID, childrenResult.Err)
-							}
-
-							if shouldDelete {
-								delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
-									err := client.DeleteBlocks(documentID, parentID, 0, 1)
-									return struct{}{}, nil, err
-								}, client.RetryConfig{
-									MaxRetries:       5,
-									RetryOnRateLimit: true,
-								})
-								if delResult.Err != nil {
-									fmt.Fprintf(os.Stderr, "  ⚠ %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
-								}
-							}
+						if node.Block.BlockType != nil {
+							cleanupContainerAutoEmptyChild(documentID, parentID, *node.Block.BlockType, verbose)
 						}
 					}
 					if nestedErr != nil {
@@ -1106,7 +1062,7 @@ func resolveImageSource(source, basePath string) (string, string, func(), error)
 
 // createNestedChildren 递归创建嵌套子块（如嵌套列表的父子关系）
 // 返回创建的块总数和可能的错误
-func createNestedChildren(documentID string, parentBlockID string, children []*converter.BlockNode) (int, error) {
+func createNestedChildren(documentID string, parentBlockID string, children []*converter.BlockNode, verbose bool) (int, error) {
 	if len(children) == 0 {
 		return 0, nil
 	}
@@ -1148,16 +1104,92 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 
 	// 递归创建更深层的子块
 	for i, child := range children {
-		if len(child.Children) > 0 && i < len(createdBlockIDs) {
-			nestedCount, err := createNestedChildren(documentID, createdBlockIDs[i], child.Children)
+		if i >= len(createdBlockIDs) {
+			continue
+		}
+		if len(child.Children) > 0 {
+			nestedCount, err := createNestedChildren(documentID, createdBlockIDs[i], child.Children, verbose)
 			totalCreated += nestedCount
 			if err != nil {
 				return totalCreated, err
 			}
 		}
+		// 深层 Callout / QuoteContainer 同样需要清理 API 自动生成的空文本子块，
+		// 否则嵌套在列表项、引用块等容器内的容器块顶部会多出一个空行
+		if child.Block != nil && child.Block.BlockType != nil {
+			cleanupContainerAutoEmptyChild(documentID, createdBlockIDs[i], *child.Block.BlockType, verbose)
+		}
 	}
 
 	return totalCreated, nil
+}
+
+// cleanupContainerAutoEmptyChild 删除 Callout / QuoteContainer 容器块创建时
+// 飞书 API 自动生成的首个空文本子块（位于 index 0）。若 blockType 不是这两种
+// 容器块则直接返回。
+//
+// 背景：飞书 docx API 在创建 Callout / QuoteContainer 时会自动在容器内插入一个
+// 空文本块，上层业务填充完实际子块后需要显式删除它，否则容器顶部会多出一个空行。
+// 该清理逻辑必须在 phase1 顶层循环和 createNestedChildren 的每一层递归中都执行，
+// 以覆盖嵌套（如 blockquote 嵌 blockquote）场景。
+func cleanupContainerAutoEmptyChild(documentID, parentBlockID string, blockType int, verbose bool) {
+	if blockType != int(converter.BlockTypeCallout) && blockType != int(converter.BlockTypeQuoteContainer) {
+		return
+	}
+	blockTypeName := "Callout"
+	if blockType == int(converter.BlockTypeQuoteContainer) {
+		blockTypeName = "QuoteContainer"
+	}
+
+	// 防御性检查：先获取子块列表，确认 index 0 确实是空文本块再删除
+	childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+		blocks, err := client.GetBlockChildren(documentID, parentBlockID)
+		return blocks, nil, err
+	}, client.RetryConfig{
+		MaxRetries:       3,
+		RetryOnRateLimit: true,
+	})
+	if childrenResult.Err != nil {
+		if verbose {
+			syncPrintf("  ⚠ %s 子块查询失败 (parent=%s): %v\n", blockTypeName, parentBlockID, childrenResult.Err)
+		}
+		return
+	}
+	// 仅当容器内至少有 2 个子块时才清理：
+	// 删除后容器必须仍有其他真实子块，否则飞书 API 会自动再补一个空文本块，
+	// 清理等于白做。对没有真实子块的容器（如嵌套创建失败的场景）直接跳过。
+	if len(childrenResult.Value) < 2 {
+		return
+	}
+
+	firstChild := childrenResult.Value[0]
+	if firstChild.BlockType == nil || *firstChild.BlockType != int(converter.BlockTypeText) {
+		return
+	}
+	// 检查是否为空文本块（无 elements 或所有 TextRun 内容为空）
+	isEmpty := true
+	if firstChild.Text != nil && len(firstChild.Text.Elements) > 0 {
+		for _, elem := range firstChild.Text.Elements {
+			if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
+				isEmpty = false
+				break
+			}
+		}
+	}
+	if !isEmpty {
+		return
+	}
+
+	delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
+		err := client.DeleteBlocks(documentID, parentBlockID, 0, 1)
+		return struct{}{}, nil, err
+	}, client.RetryConfig{
+		MaxRetries:       5,
+		RetryOnRateLimit: true,
+	})
+	if delResult.Err != nil {
+		fmt.Fprintf(os.Stderr, "  ⚠ %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentBlockID, delResult.Err)
+	}
 }
 
 // phase3HandleFallbacks 处理失败的图表，降级为代码块
