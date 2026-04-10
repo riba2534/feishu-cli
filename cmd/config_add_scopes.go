@@ -39,7 +39,6 @@ var scopeDomains = map[string][]string{
 		"docx:document:readonly",
 		"wiki:wiki:readonly",
 		"drive:drive",
-		"drive:drive:readonly",
 	},
 	"im": {
 		"im:message",

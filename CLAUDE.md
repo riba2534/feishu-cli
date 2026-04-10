@@ -535,36 +535,40 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 
 ## 权限要求
 
-| 功能模块 | 所需权限 | 说明 |
-|---------|---------|------|
-| 文档操作 | `docx:document` | 文档读写 |
-| 知识库 | `wiki:wiki:readonly` | 知识库读取 |
-| 知识库成员 | `wiki:member` | 空间成员管理 |
-| 云空间文件 | `drive:drive`, `drive:drive:readonly` | 文件管理 |
-| 素材管理 | `subscriptions:image` | 上传下载，需单独申请 |
-| 评论 | `docs:document.comment` | 评论读写 |
-| 权限管理 | `docs:permission.member:create` | 添加协作者 |
-| 消息 | `im:message`, `im:message:send_as_bot` | 发送消息 |
-| 消息增强 | `im:message.pins`, `im:message.reactions` | Pin/Reaction/转发 |
-| 消息加急 | `im:message.urgent`, `im:message.urgent:phone`, `im:message.urgent:sms`, `im:message.urgent.status:write` | 消息加急（应用内/电话/短信，需审批） |
-| 群聊管理 | `im:chat` | 群聊 CRUD |
-| 群成员管理 | `im:chat.members` | 群成员操作 |
-| 会话历史 | `im:message:readonly` | 获取历史消息 |
-| 群消息读取（User 身份） | `im:message.group_msg:get_as_user` | User Token 读取群消息 |
-| 群聊搜索（User 身份） | `im:chat:read` | User Token 搜索群聊 |
-| 用户信息 | `contact:user.base:readonly` | 获取用户信息，需单独申请 |
-| 通讯录 | `contact:contact.base:readonly` | 需单独申请 |
-| 部分搜索 | `directory:department:search` | 需单独申请 |
-| 画板操作 | `board:whiteboard` | 画板读写 |
-| 电子表格 | `sheets:spreadsheet` | 电子表格读写 |
-| 多维表格 | `bitable:app` | 多维表格读写 |
-| 日历 | `calendar:calendar` | 需单独申请 |
-| 任务 | `task:task:read`, `task:task:write` | 需单独申请 |
-| 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
-| 审批定义查询 | `approval:approval:readonly` | 用于 `approval get` |
-| 审批任务查询 | `approval:task` | 用于 `approval task query`，并需完成用户授权 |
-| 搜索消息/应用 | 需要 User Access Token | 通过 `auth login` 或手动获取 |
-| 搜索文档 | 需要 User Access Token | 通过 `auth login` 或手动获取，支持 `search:read` 权限 |
+**推荐做法**：新用户无需手动配置权限，直接用 CLI 自带的工作流：
+
+```bash
+feishu-cli config create-app --save          # 一键创建飞书应用
+feishu-cli config add-scopes --domain all    # 一键申请所有常用权限
+feishu-cli auth login                        # OAuth 用户授权（搜索/审批等）
+```
+
+完整权限清单（tenant + user 两套共 350+ 个 scope）见 [README.md 权限要求](README.md#权限要求) — 直接复制 JSON 在飞书开放平台应用权限管理页面导入即可。
+
+**常见命令的核心权限**：
+
+| 命令类 | 关键 scope |
+|---|---|
+| doc 操作 | `docx:document:create`、`docx:document:readonly`、`docx:document:write_only`、`docs:document.media:download`、`docs:document.media:upload` |
+| wiki 操作 | `wiki:wiki:readonly`、`wiki:node:*`、`wiki:space:*`、`wiki:member:*` |
+| 云空间文件 | `drive:drive`、`drive:drive.metadata:readonly`、`drive:file:download`、`drive:file:upload`（注意：没有 `drive:drive:readonly`） |
+| 消息发送 | `im:message`、`im:message:send_as_bot` |
+| 消息加急 | `im:message.urgent`、`im:message.urgent:phone`、`im:message.urgent:sms`、`im:message.urgent.status:write` |
+| 群聊管理 | `im:chat:create/read/update/delete`、`im:chat.members:read/write_only` |
+| 会话历史 | `im:message:readonly` |
+| 电子表格 | `sheets:spreadsheet:create/read/write_only`、`sheets:spreadsheet.meta:read/write_only` |
+| 多维表格 | `base:app:*`、`base:table:*`、`base:record:*`、`base:field:*`、`base:view:*` |
+| 日历 | `calendar:calendar:*`、`calendar:calendar.event:*`、`calendar:calendar.free_busy:read` |
+| 任务 | `task:task:read/write`、`task:tasklist:read/write`、`task:comment:write` |
+| 审批定义查询 | `approval:approval:readonly` |
+| 审批任务查询 | `approval:task`（需 User Token） |
+| 画板 | `board:whiteboard:node:create/read/update/delete` |
+| 搜索（必需 User Token） | `search:docs:read`、`search:message` |
+| 群消息读取（User 身份） | `im:message.group_msg:get_as_user`、`im:message.p2p_msg:get_as_user` |
+| 用户/通讯录 | `contact:user.base:readonly`、`contact:contact.base:readonly` |
+| 视频会议（User 身份） | `vc:meeting:*`、`vc:note:read`、`vc:record` |
+| 邮件（User 身份） | `mail:user_mailbox:readonly`、`mail:user_mailbox.message.body:read` |
+| Refresh Token（User 身份） | `offline_access`（Device Flow 自动注入） |
 
 ## 发布 Release 规范
 

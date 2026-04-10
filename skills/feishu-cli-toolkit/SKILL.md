@@ -487,7 +487,7 @@ feishu-cli file stats <file_token> --doc-type docx        # 获取统计信息
 
 `docx`、`doc`、`sheet`、`bitable`、`mindnote`、`folder`、`file`
 
-**权限要求**：`drive:drive:readonly`（读取）、`drive:drive`（写操作）
+**权限要求**：`drive:drive.metadata:readonly`（读取元数据）、`drive:drive`（写操作）
 
 ---
 
@@ -539,7 +539,7 @@ feishu-cli media download <file_token> -o output.png --timeout 10m
 - 图片最大 20MB，支持 PNG/JPG/JPEG/GIF/BMP/SVG/WEBP
 - 文件最大 512MB，支持 PDF/DOC/DOCX/XLS/XLSX/PPT/PPTX/ZIP 等
 
-**权限要求**：`drive:drive:readonly`（下载）、`drive:drive`（上传）
+**权限要求**：`drive:file:download`（下载）、`drive:file:upload`（上传）
 
 ---
 
@@ -783,7 +783,7 @@ rm -f "$TMP_MD"
 **权限要求**：
 - `docx:document`（导出文档内容）
 - `drive:file:download`（下载文件附件，必需）
-- 或 `drive:drive` / `drive:drive:readonly`（云空间权限）
+- 或 `drive:drive`（完整云空间权限）
 
 ---
 
@@ -827,8 +827,8 @@ rm -f "$TMP_MD"
 | 任务 | `task:task:read`、`task:task:write`、`task:tasklist:read`、`task:tasklist:write` |
 | 群聊 | `im:chat`、`im:chat:read`、`im:chat:member` |
 | 画板 | `board:board` |
-| 文件 | `drive:drive`、`drive:drive:readonly` |
-| 素材 | `drive:drive`、`drive:drive:readonly` |
+| 文件 | `drive:drive`、`drive:drive.metadata:readonly`、`drive:file:download`、`drive:file:upload` |
+| 素材 | `drive:drive`、`drive:file:download`、`drive:file:upload` |
 | 评论 | `drive:drive.comment:readonly`、`drive:drive.comment:write` |
 | 知识库 | `wiki:wiki:readonly`、`wiki:wiki` |
 | 搜索 | 需要 User Access Token |
