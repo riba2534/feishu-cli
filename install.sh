@@ -30,20 +30,66 @@ detect_arch() {
 }
 
 # 获取最新版本号
+#
+# 优先使用 302 redirect 方式（https://github.com/OWNER/REPO/releases/latest
+# 会 302 跳转到 /releases/tag/vX.Y.Z，从 Location header 提取 tag 即可），
+# 这个路径走的是 github.com 网页路由而不是 api.github.com，**不消耗 API 配额**。
+#
+# Fallback 到 GitHub API（未认证 60 次/小时配额；设置 GITHUB_TOKEN 可提升到 5000 次/小时）。
+# 修复 #90: GitHub API 未认证配额共享同一出口 IP，多人共享网络/CI/容器场景下极易 403。
 get_latest_version() {
-    local url="https://api.github.com/repos/${REPO}/releases/latest"
-    local version
+    local version=""
+    local redirect_url="https://github.com/${REPO}/releases/latest"
 
+    # 方式 1：通过 302 redirect 提取 tag（零配额消耗）
     if command -v curl &>/dev/null; then
-        version=$(curl -fsSL "$url" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+        version=$(curl -sI "$redirect_url" 2>/dev/null \
+            | grep -i '^location:' \
+            | head -1 \
+            | sed 's|.*/tag/\([^[:space:]]*\).*|\1|' \
+            | tr -d '\r\n')
     elif command -v wget &>/dev/null; then
-        version=$(wget -qO- "$url" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
-    else
-        err "需要 curl 或 wget"; exit 1
+        version=$(wget --spider -S "$redirect_url" 2>&1 \
+            | grep -i '^[[:space:]]*location:' \
+            | head -1 \
+            | sed 's|.*/tag/\([^[:space:]]*\).*|\1|' \
+            | tr -d '\r\n')
+    fi
+
+    # 方式 2：fallback 到 GitHub API（60 次/小时；GITHUB_TOKEN 可提到 5000 次/小时）
+    if [ -z "$version" ]; then
+        info "302 redirect 未获取到版本号，回退到 GitHub API..."
+        local api_url="https://api.github.com/repos/${REPO}/releases/latest"
+        local token="${GITHUB_TOKEN:-}"
+        if command -v curl &>/dev/null; then
+            if [ -n "$token" ]; then
+                version=$(curl -fsSL -H "Authorization: Bearer $token" "$api_url" 2>/dev/null \
+                    | grep '"tag_name"' | head -1 \
+                    | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+            else
+                version=$(curl -fsSL "$api_url" 2>/dev/null \
+                    | grep '"tag_name"' | head -1 \
+                    | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+            fi
+        elif command -v wget &>/dev/null; then
+            if [ -n "$token" ]; then
+                version=$(wget -qO- --header="Authorization: Bearer $token" "$api_url" \
+                    | grep '"tag_name"' | head -1 \
+                    | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+            else
+                version=$(wget -qO- "$api_url" \
+                    | grep '"tag_name"' | head -1 \
+                    | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+            fi
+        else
+            err "需要 curl 或 wget"
+            exit 1
+        fi
     fi
 
     if [ -z "$version" ]; then
-        err "无法获取最新版本号"; exit 1
+        err "无法获取最新版本号（GitHub API 可能已达速率限制，可设置 GITHUB_TOKEN 环境变量提升配额到 5000/小时）"
+        exit 1
     fi
     echo "$version"
 }
