@@ -256,13 +256,11 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 			return ast.WalkSkipChildren, nil
 
 		case *ast.Paragraph:
-			block, err := c.convertParagraph(node)
+			nodes, err := c.convertParagraph(node)
 			if err != nil {
 				return ast.WalkStop, err
 			}
-			if block != nil {
-				result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: block})
-			}
+			result.BlockNodes = append(result.BlockNodes, nodes...)
 			return ast.WalkSkipChildren, nil
 
 		case *ast.FencedCodeBlock:
@@ -378,29 +376,47 @@ func (c *MarkdownToBlock) convertHeading(node *ast.Heading) (*larkdocx.Block, er
 	return block, nil
 }
 
-func (c *MarkdownToBlock) convertParagraph(node *ast.Paragraph) (*larkdocx.Block, error) {
+func (c *MarkdownToBlock) convertParagraph(node *ast.Paragraph) ([]*BlockNode, error) {
 	// Check if paragraph contains only an image
 	if node.ChildCount() == 1 {
 		if img, ok := node.FirstChild().(*ast.Image); ok {
-			return c.convertImage(img)
+			block, err := c.convertImage(img)
+			if err != nil {
+				return nil, err
+			}
+			if block == nil {
+				return nil, nil
+			}
+			return []*BlockNode{{Block: block}}, nil
 		}
 	}
 
 	// 检查段落是否只包含一个 <image> HTML 标签
 	if block := c.tryConvertHTMLImageParagraph(node); block != nil {
-		return block, nil
+		return []*BlockNode{{Block: block}}, nil
 	}
 
-	elements := c.extractTextElements(node)
-	if len(elements) == 0 {
+	// 按 SoftLineBreak 分行，每行创建独立的 Text 块
+	// 解决连续行（无空行分隔）被合并为一段的问题
+	lines := c.extractParagraphLines(node)
+	if len(lines) == 0 {
 		return nil, nil
 	}
 
-	blockType := int(BlockTypeText)
-	return &larkdocx.Block{
-		BlockType: &blockType,
-		Text:      &larkdocx.Text{Elements: elements},
-	}, nil
+	var nodes []*BlockNode
+	for _, lineElements := range lines {
+		if len(lineElements) == 0 {
+			continue
+		}
+		bt := int(BlockTypeText)
+		nodes = append(nodes, &BlockNode{
+			Block: &larkdocx.Block{
+				BlockType: &bt,
+				Text:      &larkdocx.Text{Elements: lineElements},
+			},
+		})
+	}
+	return nodes, nil
 }
 
 func (c *MarkdownToBlock) convertCodeBlock(node *ast.FencedCodeBlock) (*larkdocx.Block, error) {
@@ -946,6 +962,124 @@ func (c *MarkdownToBlock) extractQuoteLines(node ast.Node) [][]*larkdocx.TextEle
 	// 添加最后一行
 	if len(currentLine) > 0 {
 		lines = append(lines, currentLine)
+	}
+
+	return lines
+}
+
+// extractParagraphLines 从段落 AST 节点提取文本元素，按 SoftLineBreak 拆分为多行
+// 与 extractQuoteLines 逻辑相同，额外支持内联图片和行内公式后处理
+// 解决连续行（无空行分隔）被合并为一段的飞书文档问题
+//
+// Known limitation：换行符若位于行内容器（Emphasis/Strikethrough/Link）内部，
+// 如 **行一\n行二**，则不会触发分行（这些节点走 WalkSkipChildren）。
+// 此类写法在实际 Markdown 中极罕见，暂不处理。
+func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.TextElement {
+	var lines [][]*larkdocx.TextElement
+	var currentLine []*larkdocx.TextElement
+
+	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+
+		switch child := n.(type) {
+		case *ast.Text:
+			text := string(child.Segment.Value(c.source))
+			if text != "" {
+				currentLine = append(currentLine, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{Content: &text},
+				})
+			}
+			if child.SoftLineBreak() {
+				if len(currentLine) > 0 {
+					lines = append(lines, splitInlineMath(currentLine))
+					currentLine = nil
+				}
+			}
+
+		case *ast.String:
+			text := string(child.Value)
+			if text != "" {
+				currentLine = append(currentLine, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{Content: &text},
+				})
+			}
+
+		case *ast.Emphasis:
+			childElems := c.extractChildElements(child)
+			bold := child.Level == 2
+			italic := child.Level == 1
+			for _, elem := range childElems {
+				applyTextStyle(elem, bold, italic, false)
+				currentLine = append(currentLine, elem)
+			}
+			return ast.WalkSkipChildren, nil
+
+		case *ast.CodeSpan:
+			text := c.getNodeText(child)
+			if text != "" {
+				inlineCode := true
+				currentLine = append(currentLine, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{
+						Content:          &text,
+						TextElementStyle: &larkdocx.TextElementStyle{InlineCode: &inlineCode},
+					},
+				})
+			}
+			return ast.WalkSkipChildren, nil
+
+		case *east.Strikethrough:
+			childElems := c.extractChildElements(child)
+			for _, elem := range childElems {
+				applyTextStyle(elem, false, false, true)
+				currentLine = append(currentLine, elem)
+			}
+			return ast.WalkSkipChildren, nil
+
+		case *ast.Link:
+			text := c.getNodeText(child)
+			url := string(child.Destination)
+			if text != "" {
+				currentLine = append(currentLine, createLinkElement(text, url))
+			}
+			return ast.WalkSkipChildren, nil
+
+		case *ast.AutoLink:
+			linkURL := string(child.URL(c.source))
+			label := string(child.Label(c.source))
+			if label == "" {
+				label = linkURL
+			}
+			if linkURL != "" {
+				currentLine = append(currentLine, createLinkElement(label, linkURL))
+			}
+			return ast.WalkSkipChildren, nil
+
+		case *ast.Image:
+			// 内联图片：网络 URL 转为可点击链接，本地路径转为文本占位符
+			dest := string(child.Destination)
+			alt := c.getNodeText(child)
+			if alt == "" {
+				alt = dest
+			}
+			if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
+				currentLine = append(currentLine, createLinkElement(fmt.Sprintf("[图片: %s]", alt), dest))
+			} else {
+				placeholder := fmt.Sprintf("[Image: %s]", dest)
+				currentLine = append(currentLine, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{Content: &placeholder},
+				})
+			}
+			return ast.WalkSkipChildren, nil
+		}
+
+		return ast.WalkContinue, nil
+	})
+
+	// 添加最后一行
+	if len(currentLine) > 0 {
+		lines = append(lines, splitInlineMath(currentLine))
 	}
 
 	return lines
