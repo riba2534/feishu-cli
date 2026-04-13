@@ -619,28 +619,30 @@ func phase1CreateBlocks(
 			// 递归创建嵌套子块（如嵌套列表）
 			for idx, children := range nodeChildrenMap {
 				if idx < len(createdBlockIDs) {
-					parentID := createdBlockIDs[idx]
-
-					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
+					nestedCount, nestedErr := createNestedChildren(documentID, createdBlockIDs[idx], children)
 					if nestedErr != nil {
 						if verbose {
 							syncPrintf("  ⚠ 段落 %d 嵌套子块创建失败: %v\n", segIdx+1, nestedErr)
 						}
 					}
 					stats.totalBlocks += nestedCount
+				}
+			}
 
-					// QuoteContainer / Callout：在 createNestedChildren 完成后清理飞书 API 异步生成的空子块
-					if idx < len(result.BlockNodes) {
-						node := result.BlockNodes[idx]
-						if node.Block.BlockType != nil {
-							switch *node.Block.BlockType {
-							case int(converter.BlockTypeQuoteContainer):
-								deleteContainerAutoEmptyBlock(documentID, parentID, "QuoteContainer")
-							case int(converter.BlockTypeCallout):
-								deleteContainerAutoEmptyBlock(documentID, parentID, "Callout")
-							}
-						}
-					}
+			// QuoteContainer / Callout：遍历所有顶层节点清理飞书 API 异步生成的空子块。
+			// 在所有 createNestedChildren 完成后执行，覆盖有子块和无子块的容器节点。
+			for i, node := range result.BlockNodes {
+				if i >= len(createdBlockIDs) {
+					break
+				}
+				if node.Block.BlockType == nil {
+					continue
+				}
+				switch *node.Block.BlockType {
+				case int(converter.BlockTypeQuoteContainer):
+					deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "QuoteContainer")
+				case int(converter.BlockTypeCallout):
+					deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "Callout")
 				}
 			}
 

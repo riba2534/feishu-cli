@@ -156,8 +156,9 @@ func deleteContainerAutoEmptyBlock(documentID, parentID, blockTypeName string) {
 	if firstChild.Text != nil {
 		for _, elem := range firstChild.Text.Elements {
 			if elem.MentionUser != nil || elem.MentionDoc != nil || elem.File != nil ||
-				elem.Reminder != nil || elem.InlineBlock != nil || elem.Equation != nil {
-				return // 有非 TextRun 元素（@用户/@文档/附件/提醒/内联块/公式），不删
+				elem.Reminder != nil || elem.InlineBlock != nil || elem.Equation != nil ||
+				elem.Undefined != nil {
+				return // 有非 TextRun 元素（@用户/@文档/附件/提醒/内联块/公式/未知类型），不删
 			}
 			if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
 				return // 有非空文本，不删
@@ -246,25 +247,29 @@ func addContentMarkdown(documentID, blockID, contentData, basePath string, uploa
 	for idx, children := range nodeChildrenMap {
 		if idx < len(createdBlockIDs) {
 			parentID := createdBlockIDs[idx]
-
 			nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
 			if nestedErr != nil {
 				fmt.Fprintf(os.Stderr, "[Warning] 嵌套子块创建失败: %v\n", nestedErr)
 			}
 			totalCreated += nestedCount
+		}
+	}
 
-			// QuoteContainer / Callout：在 createNestedChildren 完成后清理飞书 API 自动生成的空子块
-			if idx < len(result.BlockNodes) {
-				node := result.BlockNodes[idx]
-				if node.Block.BlockType != nil {
-					switch *node.Block.BlockType {
-					case int(converter.BlockTypeQuoteContainer):
-						deleteContainerAutoEmptyBlock(documentID, parentID, "QuoteContainer")
-					case int(converter.BlockTypeCallout):
-						deleteContainerAutoEmptyBlock(documentID, parentID, "Callout")
-					}
-				}
-			}
+	// QuoteContainer / Callout：遍历所有顶层节点清理飞书 API 异步生成的空子块。
+	// 必须在所有 createNestedChildren 完成后执行，确保 API 已稳定。
+	// 覆盖有子块和无子块（不在 nodeChildrenMap 中）的容器节点。
+	for i, node := range result.BlockNodes {
+		if i >= len(createdBlockIDs) {
+			break
+		}
+		if node.Block.BlockType == nil {
+			continue
+		}
+		switch *node.Block.BlockType {
+		case int(converter.BlockTypeQuoteContainer):
+			deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "QuoteContainer")
+		case int(converter.BlockTypeCallout):
+			deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "Callout")
 		}
 	}
 
