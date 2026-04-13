@@ -203,11 +203,59 @@ func addContentMarkdown(documentID, blockID, contentData, basePath string, uploa
 	for idx, children := range nodeChildrenMap {
 		if idx < len(createdBlockIDs) {
 			parentID := createdBlockIDs[idx]
+
 			nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
 			if nestedErr != nil {
 				fmt.Fprintf(os.Stderr, "[Warning] 嵌套子块创建失败: %v\n", nestedErr)
 			}
 			totalCreated += nestedCount
+
+			// QuoteContainer / Callout：飞书 API 创建容器块后会异步在 index 0 生成一个空文本子块，
+			// 导致引用块顶部出现多余空行。在 createNestedChildren 完成后再检查并删除：
+			// 此时 API 已有足够时间生成该空块；我们的实际内容均非空，可安全判断 index 0 是否为自动生成的空块。
+			if idx < len(result.BlockNodes) {
+				node := result.BlockNodes[idx]
+				if node.Block.BlockType != nil &&
+					(*node.Block.BlockType == int(converter.BlockTypeCallout) ||
+						*node.Block.BlockType == int(converter.BlockTypeQuoteContainer)) {
+					blockTypeName := "Callout"
+					if *node.Block.BlockType == int(converter.BlockTypeQuoteContainer) {
+						blockTypeName = "QuoteContainer"
+					}
+					childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+						return client.GetBlockChildren(documentID, parentID)
+					}, client.RetryConfig{
+						MaxRetries:       3,
+						RetryOnRateLimit: true,
+					})
+					if childrenResult.Err == nil && len(childrenResult.Value) > 0 {
+						firstChild := childrenResult.Value[0]
+						if firstChild.BlockType != nil && *firstChild.BlockType == int(converter.BlockTypeText) {
+							isEmpty := true
+							if firstChild.Text != nil && len(firstChild.Text.Elements) > 0 {
+								for _, elem := range firstChild.Text.Elements {
+									if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
+										isEmpty = false
+										break
+									}
+								}
+							}
+							if isEmpty {
+								delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
+									headers, err := client.DeleteBlocks(documentID, parentID, 0, 1)
+									return struct{}{}, headers, err
+								}, client.RetryConfig{
+									MaxRetries:       5,
+									RetryOnRateLimit: true,
+								})
+								if delResult.Err != nil {
+									fmt.Fprintf(os.Stderr, "[Warning] %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 
