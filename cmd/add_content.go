@@ -138,9 +138,19 @@ var addContentCmd = &cobra.Command{
 // 飞书 API 在创建容器块时会异步在 index 0 插入一个空 Text 块，导致渲染时顶部出现多余空行。
 // 必须在 createNestedChildren 完成后调用，此时 API 已稳定：实际子块内容均非空，
 // 若 index 0 仍为空 Text 块则可安全判定为自动生成块并删除。
-func deleteContainerAutoEmptyBlock(documentID, parentID, blockTypeName string) {
+// 对非容器块类型直接 no-op，由调用方无条件传入 block type 即可。
+func deleteContainerAutoEmptyBlock(documentID, parentID string, blockType int, userAccessToken string) {
+	var blockTypeName string
+	switch blockType {
+	case int(converter.BlockTypeQuoteContainer):
+		blockTypeName = "QuoteContainer"
+	case int(converter.BlockTypeCallout):
+		blockTypeName = "Callout"
+	default:
+		return
+	}
 	childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-		return client.GetBlockChildren(documentID, parentID)
+		return client.GetBlockChildren(documentID, parentID, userAccessToken)
 	}, client.RetryConfig{
 		MaxRetries:       3,
 		RetryOnRateLimit: true,
@@ -159,15 +169,15 @@ func deleteContainerAutoEmptyBlock(documentID, parentID, blockTypeName string) {
 			if elem.MentionUser != nil || elem.MentionDoc != nil || elem.File != nil ||
 				elem.Reminder != nil || elem.InlineBlock != nil || elem.Equation != nil ||
 				elem.Undefined != nil {
-				return // 有非 TextRun 元素（@用户/@文档/附件/提醒/内联块/公式/未知类型），不删
+				return
 			}
 			if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
-				return // 有非空文本，不删
+				return
 			}
 		}
 	}
 	delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
-		headers, err := client.DeleteBlocks(documentID, parentID, 0, 1)
+		headers, err := client.DeleteBlocks(documentID, parentID, 0, 1, userAccessToken)
 		return struct{}{}, headers, err
 	}, client.RetryConfig{
 		MaxRetries:       5,
@@ -263,14 +273,8 @@ func addContentMarkdown(documentID, blockID, contentData, basePath string, uploa
 		if i >= len(createdBlockIDs) {
 			break
 		}
-		if node.Block.BlockType == nil {
-			continue
-		}
-		switch *node.Block.BlockType {
-		case int(converter.BlockTypeQuoteContainer):
-			deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "QuoteContainer")
-		case int(converter.BlockTypeCallout):
-			deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "Callout")
+		if node.Block.BlockType != nil {
+			deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], *node.Block.BlockType, userAccessToken)
 		}
 	}
 

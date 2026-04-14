@@ -687,14 +687,8 @@ func phase1CreateBlocks(
 				if i >= len(createdBlockIDs) {
 					break
 				}
-				if node.Block.BlockType == nil {
-					continue
-				}
-				switch *node.Block.BlockType {
-				case int(converter.BlockTypeQuoteContainer):
-					deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "QuoteContainer")
-				case int(converter.BlockTypeCallout):
-					deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "Callout")
+				if node.Block.BlockType != nil {
+					deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], *node.Block.BlockType, userAccessToken)
 				}
 			}
 
@@ -1186,12 +1180,7 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 		}
 		// QuoteContainer / Callout 嵌套场景：无论是否有子块，均清理 API 自动生成的空块
 		if child.Block.BlockType != nil {
-			switch *child.Block.BlockType {
-			case int(converter.BlockTypeQuoteContainer):
-				deleteContainerAutoEmptyBlock(documentID, childID, "QuoteContainer")
-			case int(converter.BlockTypeCallout):
-				deleteContainerAutoEmptyBlock(documentID, childID, "Callout")
-			}
+			deleteContainerAutoEmptyBlock(documentID, childID, *child.Block.BlockType, userAccessToken)
 		}
 	}
 
