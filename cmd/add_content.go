@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -134,10 +135,34 @@ var addContentCmd = &cobra.Command{
 	},
 }
 
+// isEmptyTextBlock 判断一个块是否为空文本块（API 自动生成的占位块）。
+// 只有 Elements 为空或全是 content="" 的 TextRun 才视为空块；
+// 含有 MentionUser/MentionDoc/File 等非 TextRun 元素的块不视为空。
+func isEmptyTextBlock(block *larkdocx.Block) bool {
+	if block.BlockType == nil || *block.BlockType != int(converter.BlockTypeText) {
+		return false
+	}
+	if block.Text == nil || len(block.Text.Elements) == 0 {
+		return true
+	}
+	for _, elem := range block.Text.Elements {
+		if elem.MentionUser != nil || elem.MentionDoc != nil || elem.File != nil ||
+			elem.Reminder != nil || elem.InlineBlock != nil || elem.Equation != nil ||
+			elem.Undefined != nil {
+			return false
+		}
+		if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // deleteContainerAutoEmptyBlock 删除 QuoteContainer/Callout 容器块中飞书 API 自动生成的空文本子块。
 // 飞书 API 在创建容器块时会异步在 index 0 插入一个空 Text 块，导致渲染时顶部出现多余空行。
-// 必须在 createNestedChildren 完成后调用，此时 API 已稳定：实际子块内容均非空，
-// 若 index 0 仍为空 Text 块则可安全判定为自动生成块并删除。
+// 必须在 createNestedChildren 完成后调用，此时实际子块内容均非空。
+// 仅检查 index 0 处的子块（自动生成块始终插入到 index 0），不会误删用户显式创建的段落间空行。
+// 如果首次未发现空块，会短暂等待后重试，以应对 API 异步插入空块的时序问题。
 // 对非容器块类型直接 no-op，由调用方无条件传入 block type 即可。
 func deleteContainerAutoEmptyBlock(documentID, parentID string, blockType int, userAccessToken string) {
 	var blockTypeName string
@@ -149,42 +174,42 @@ func deleteContainerAutoEmptyBlock(documentID, parentID string, blockType int, u
 	default:
 		return
 	}
-	childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-		return client.GetBlockChildren(documentID, parentID, userAccessToken)
-	}, client.RetryConfig{
-		MaxRetries:       3,
-		RetryOnRateLimit: true,
-	})
-	if childrenResult.Err != nil || len(childrenResult.Value) == 0 {
-		return
-	}
-	firstChild := childrenResult.Value[0]
-	if firstChild.BlockType == nil || *firstChild.BlockType != int(converter.BlockTypeText) {
-		return
-	}
-	// 检查是否为空文本块：任何非空 TextRun 或非 TextRun 类型的元素（Link/MentionUser 等）
-	// 均视为有内容，不删除；只有 Elements 为空或全是 content="" 的 TextRun 才是自动生成的空块
-	if firstChild.Text != nil {
-		for _, elem := range firstChild.Text.Elements {
-			if elem.MentionUser != nil || elem.MentionDoc != nil || elem.File != nil ||
-				elem.Reminder != nil || elem.InlineBlock != nil || elem.Equation != nil ||
-				elem.Undefined != nil {
-				return
-			}
-			if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
-				return
-			}
+
+	// 尝试多次查找并删除 index 0 处的自动生成空块，处理 API 异步插入的时序问题。
+	// 重试逻辑：首次立即检查；若 index 0 不是空块，说明自动生成块可能尚未出现或已被
+	// 我们的内容块推到其他位置，等待后重试以确保捕获异步插入的空块。
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(300 * time.Millisecond)
 		}
-	}
-	delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
-		headers, err := client.DeleteBlocks(documentID, parentID, 0, 1, userAccessToken)
-		return struct{}{}, headers, err
-	}, client.RetryConfig{
-		MaxRetries:       5,
-		RetryOnRateLimit: true,
-	})
-	if delResult.Err != nil {
-		fmt.Fprintf(os.Stderr, "[Warning] %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
+
+		childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+			return client.GetBlockChildren(documentID, parentID, userAccessToken)
+		}, client.RetryConfig{
+			MaxRetries:       3,
+			RetryOnRateLimit: true,
+		})
+		if childrenResult.Err != nil || len(childrenResult.Value) == 0 {
+			continue
+		}
+
+		firstChild := childrenResult.Value[0]
+		if !isEmptyTextBlock(firstChild) {
+			// index 0 不是空块，可能自动生成块尚未出现，重试
+			continue
+		}
+
+		delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
+			headers, err := client.DeleteBlocks(documentID, parentID, 0, 1, userAccessToken)
+			return struct{}{}, headers, err
+		}, client.RetryConfig{
+			MaxRetries:       5,
+			RetryOnRateLimit: true,
+		})
+		if delResult.Err != nil {
+			fmt.Fprintf(os.Stderr, "[Warning] %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
+		}
+		return
 	}
 }
 

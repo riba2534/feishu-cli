@@ -353,6 +353,21 @@ func (c *MarkdownToBlock) Convert() ([]*larkdocx.Block, error) {
 func (c *MarkdownToBlock) convertHeading(node *ast.Heading) (*larkdocx.Block, error) {
 	elements := c.extractTextElements(node)
 
+	// Check for {folded="true"} attribute in the last text element
+	folded := false
+	if len(elements) > 0 {
+		lastElem := elements[len(elements)-1]
+		if lastElem.TextRun != nil && lastElem.TextRun.Content != nil {
+			content := *lastElem.TextRun.Content
+			if strings.HasSuffix(strings.TrimSpace(content), `{folded="true"}`) {
+				folded = true
+				trimmed := strings.TrimSuffix(strings.TrimSpace(content), `{folded="true"}`)
+				trimmed = strings.TrimRight(trimmed, " ")
+				lastElem.TextRun.Content = &trimmed
+			}
+		}
+	}
+
 	level := node.Level
 	if level > 9 {
 		level = 9
@@ -365,6 +380,9 @@ func (c *MarkdownToBlock) convertHeading(node *ast.Heading) (*larkdocx.Block, er
 	}
 
 	headingText := &larkdocx.Text{Elements: elements}
+	if folded {
+		headingText.Style = &larkdocx.TextStyle{Folded: &folded}
+	}
 	switch level {
 	case 1:
 		block.Heading1 = headingText

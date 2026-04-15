@@ -382,6 +382,19 @@ var importMarkdownCmd = &cobra.Command{
 			documentID = *doc.DocumentId
 			fmt.Printf("已创建文档: %s\n", documentID)
 			fmt.Printf("链接: https://feishu.cn/docx/%s\n\n", documentID)
+		} else {
+			// --document-id was provided: clear existing content before importing
+			fmt.Println("清除已有文档内容...")
+			children, _, err := client.GetBlockChildren(documentID, documentID, userAccessToken)
+			if err != nil {
+				return fmt.Errorf("获取文档子块失败: %w", err)
+			}
+			if len(children) > 0 {
+				if _, err := client.DeleteBlocks(documentID, documentID, 0, len(children), userAccessToken); err != nil {
+					return fmt.Errorf("清除文档内容失败: %w", err)
+				}
+				fmt.Printf("已清除 %d 个块\n\n", len(children))
+			}
 		}
 
 		// 解析 Markdown 为片段
@@ -622,54 +635,6 @@ func phase1CreateBlocks(
 			for idx, children := range nodeChildrenMap {
 				if idx < len(createdBlockIDs) {
 					parentID := createdBlockIDs[idx]
-
-					// Callout / QuoteContainer 容器创建时飞书 API 会自动插入一个 index 0 的空文本子块。
-					// 必须在调用 createNestedChildren 之前删除它，否则 GetBlockChildren 可能因 API
-					// 一致性延迟返回不完整结果，导致自动子块残留、容器顶部出现多余空行。
-					if idx < len(result.BlockNodes) {
-						node := result.BlockNodes[idx]
-						if node.Block.BlockType != nil && (*node.Block.BlockType == int(converter.BlockTypeCallout) || *node.Block.BlockType == int(converter.BlockTypeQuoteContainer)) {
-							blockTypeName := "Callout"
-							if *node.Block.BlockType == int(converter.BlockTypeQuoteContainer) {
-								blockTypeName = "QuoteContainer"
-							}
-							childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-								return client.GetBlockChildren(documentID, parentID, userAccessToken)
-							}, client.RetryConfig{
-								MaxRetries:       3,
-								RetryOnRateLimit: true,
-							})
-							if childrenResult.Err == nil && len(childrenResult.Value) > 0 {
-								firstChild := childrenResult.Value[0]
-								if firstChild.BlockType != nil && *firstChild.BlockType == int(converter.BlockTypeText) {
-									// 检查是否为空文本块（无 elements 或所有 TextRun 内容为空）
-									isEmpty := true
-									if firstChild.Text != nil && len(firstChild.Text.Elements) > 0 {
-										for _, elem := range firstChild.Text.Elements {
-											if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
-												isEmpty = false
-												break
-											}
-										}
-									}
-									if isEmpty {
-										delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
-											headers, err := client.DeleteBlocks(documentID, parentID, 0, 1, userAccessToken)
-											return struct{}{}, headers, err
-										}, client.RetryConfig{
-											MaxRetries:       5,
-											RetryOnRateLimit: true,
-										})
-										if delResult.Err != nil {
-											fmt.Fprintf(os.Stderr, "  ⚠ %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
-										}
-									}
-								}
-							} else if childrenResult.Err != nil && verbose {
-								syncPrintf("  ⚠ %s 子块查询失败 (parent=%s): %v\n", blockTypeName, parentID, childrenResult.Err)
-							}
-						}
-					}
 
 					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children, userAccessToken)
 					if nestedErr != nil {
