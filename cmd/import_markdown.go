@@ -301,6 +301,9 @@ var importMarkdownCmd = &cobra.Command{
 		title, _ := cmd.Flags().GetString("title")
 		documentID, _ := cmd.Flags().GetString("document-id")
 		replace, _ := cmd.Flags().GetBool("replace")
+		if replace && documentID == "" {
+			return fmt.Errorf("--replace 需要配合 --document-id 使用")
+		}
 		uploadImages, _ := cmd.Flags().GetBool("upload-images")
 		folder, _ := cmd.Flags().GetString("folder")
 		verbose, _ := cmd.Flags().GetBool("verbose")
@@ -387,7 +390,7 @@ var importMarkdownCmd = &cobra.Command{
 		} else if replace {
 			// --replace: 清除已有文档内容后再导入
 			fmt.Println("清除已有文档内容...")
-			children, _, err := client.GetBlockChildren(documentID, documentID, userAccessToken)
+			children, err := client.GetAllBlockChildren(documentID, documentID, userAccessToken)
 			if err != nil {
 				return fmt.Errorf("获取文档子块失败: %w", err)
 			}
