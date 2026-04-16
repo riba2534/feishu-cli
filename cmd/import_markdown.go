@@ -288,6 +288,7 @@ var importMarkdownCmd = &cobra.Command{
 示例:
   feishu-cli doc import doc.md --title "我的文档"
   feishu-cli doc import doc.md --document-id ABC123def456
+  feishu-cli doc import doc.md --document-id ABC123def456 --replace
   feishu-cli doc import doc.md --title "我的文档" --verbose
   feishu-cli doc import doc.md --title "测试" --diagram-workers 5 --table-workers 8`,
 	Args: cobra.ExactArgs(1),
@@ -299,6 +300,7 @@ var importMarkdownCmd = &cobra.Command{
 		filePath := args[0]
 		title, _ := cmd.Flags().GetString("title")
 		documentID, _ := cmd.Flags().GetString("document-id")
+		replace, _ := cmd.Flags().GetBool("replace")
 		uploadImages, _ := cmd.Flags().GetBool("upload-images")
 		folder, _ := cmd.Flags().GetString("folder")
 		verbose, _ := cmd.Flags().GetBool("verbose")
@@ -382,6 +384,19 @@ var importMarkdownCmd = &cobra.Command{
 			documentID = *doc.DocumentId
 			fmt.Printf("已创建文档: %s\n", documentID)
 			fmt.Printf("链接: https://feishu.cn/docx/%s\n\n", documentID)
+		} else if replace {
+			// --replace: 清除已有文档内容后再导入
+			fmt.Println("清除已有文档内容...")
+			children, _, err := client.GetBlockChildren(documentID, documentID, userAccessToken)
+			if err != nil {
+				return fmt.Errorf("获取文档子块失败: %w", err)
+			}
+			if len(children) > 0 {
+				if _, err := client.DeleteBlocks(documentID, documentID, 0, len(children), userAccessToken); err != nil {
+					return fmt.Errorf("清除文档内容失败: %w", err)
+				}
+				fmt.Printf("已清除 %d 个块\n\n", len(children))
+			}
 		}
 
 		// 解析 Markdown 为片段
@@ -1291,6 +1306,7 @@ func init() {
 	docCmd.AddCommand(importMarkdownCmd)
 	importMarkdownCmd.Flags().StringP("title", "t", "", "文档标题 (用于新建文档)")
 	importMarkdownCmd.Flags().StringP("document-id", "d", "", "已有文档ID (用于更新)")
+	importMarkdownCmd.Flags().Bool("replace", false, "配合 --document-id 使用：先清除已有内容再导入（默认为追加）")
 	importMarkdownCmd.Flags().Bool("upload-images", true, "上传本地图片")
 	importMarkdownCmd.Flags().StringP("folder", "f", "", "新文档的文件夹 Token")
 	importMarkdownCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
