@@ -468,3 +468,54 @@ func MoveWikiNode(spaceID, nodeToken, targetSpaceID, targetParent string, userAc
 
 	return result, nil
 }
+
+// MoveDocsToWikiResult 移动云空间文档至知识空间的结果
+type MoveDocsToWikiResult struct {
+	WikiToken string `json:"wiki_token,omitempty"`
+	TaskID    string `json:"task_id,omitempty"`
+	Applied   bool   `json:"applied"`
+}
+
+// MoveDocsToWiki 将云空间（我的空间/共享空间）已有文档挂载到知识空间节点树下。
+//
+// 移动后文档从云空间相关入口消失，权限默认继承父页面。如果文档较大会返回 task_id
+// 异步执行；如果调用方无权限但 apply=true，会提交迁入申请（applied=true）。
+//
+// objType 可选：docx / doc / sheet / mindnote / bitable / file
+func MoveDocsToWiki(spaceID, objType, objToken, parentWikiToken string, apply bool, userAccessToken string) (*MoveDocsToWikiResult, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	bodyBuilder := larkwiki.NewMoveDocsToWikiSpaceNodeReqBodyBuilder().
+		ObjType(objType).
+		ObjToken(objToken).
+		Apply(apply)
+
+	if parentWikiToken != "" {
+		bodyBuilder.ParentWikiToken(parentWikiToken)
+	}
+
+	req := larkwiki.NewMoveDocsToWikiSpaceNodeReqBuilder().
+		SpaceId(spaceID).
+		Body(bodyBuilder.Build()).
+		Build()
+
+	resp, err := client.Wiki.SpaceNode.MoveDocsToWiki(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("移动云空间文档至知识空间失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("移动云空间文档至知识空间失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	result := &MoveDocsToWikiResult{}
+	if resp.Data != nil {
+		result.WikiToken = StringVal(resp.Data.WikiToken)
+		result.TaskID = StringVal(resp.Data.TaskId)
+		result.Applied = BoolVal(resp.Data.Applied)
+	}
+	return result, nil
+}

@@ -309,6 +309,7 @@ feishu-cli wiki get <node_token>                    # 获取节点
 feishu-cli wiki nodes <space_id>                    # 列出节点
 feishu-cli wiki export <node_token> -o doc.md       # 导出为 Markdown
 feishu-cli wiki create --space-id <id> --title "新节点"
+feishu-cli wiki move-docs <obj_token> --space-id <id>  # 移动云空间文档至知识空间
 feishu-cli wiki space-get <space_id>                # 获取知识空间详情
 
 # 知识空间成员管理
