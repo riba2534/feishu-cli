@@ -6,6 +6,44 @@
 
 ## 未发布
 
+### 新增 — `comment reply add`：为已有评论添加回复
+
+新增命令 `feishu-cli comment reply add <file_token> <comment_id> --text "..."`，补齐评论回复
+生命周期的最后一块拼图（此前只有 list / delete）。
+
+**背景**：飞书 Open SDK v3.5.3 的 `fileCommentReply` 只暴露 `List`/`Delete`/`Update`，没有
+`Create` 方法，而 Open API 本身是支持的（`POST /drive/v1/files/:token/comments/:comment_id/replies`）。
+此 PR 不依赖 SDK 升级，用通用 HTTP client（`client.Post`）直接调用 API 实现。
+
+**同时改进**：
+
+- `comment reply add` / `delete` / `list` 全部加上 `--user-access-token` 参数支持，并走
+  `resolveOptionalUserTokenWithFallback` 自动读取登录态，和 msg/chat/doc export 等模块保持一致
+- **重要修复**：`comment reply delete` 在 App Token（Bot 身份）下调用飞书侧会返回 `1069303
+  forbidden`——飞书只允许回复作者本人删除。现在命令默认优先使用 User Token（如果已登录），
+  行为才符合用户预期。命令帮助中也显式说明了这个权限模型
+- `comment reply add` 默认也走 User Token fallback，回复会以用户身份发布（而非显示为 Bot），
+  且该回复能被后续 `reply delete` 正常删除
+
+**权限要求**：`docs:document.comment:create`（User Token）
+
+**使用示例**：
+
+```bash
+feishu-cli auth login                       # 确保有 User Token
+feishu-cli comment reply add <file_token> <comment_id> --text "已处理"
+feishu-cli comment reply delete <file_token> <comment_id> <reply_id>  # 自动用 User Token
+```
+
+**代码影响范围**：
+
+- `internal/client/comment.go`：新增 `CreateCommentReply`（HTTP client 直调），
+  `ListCommentReplies` / `DeleteCommentReply` 签名增加 `userAccessToken` 参数
+- `cmd/comment_reply.go`：新增 `addReplyCmd`，三个子命令统一加 `--user-access-token` flag
+- `cmd/comment.go`：Long help 中补充 reply add 示例
+
+---
+
 ### Breaking Changes — 移除 `config add-scopes` 命令
 
 `feishu-cli config add-scopes` 子命令及其 `--domain` / `--scopes` / `--print-only` flag 全部删除。

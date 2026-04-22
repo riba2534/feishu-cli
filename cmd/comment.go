@@ -16,7 +16,7 @@ var commentCmd = &cobra.Command{
   delete      删除评论
   resolve     标记评论为已解决
   unresolve   标记评论为未解决
-  reply       评论回复管理（list/delete）
+  reply       评论回复管理（list/add/delete）
 
 文件类型（--type）:
   doc       旧版文档
@@ -40,7 +40,10 @@ var commentCmd = &cobra.Command{
   # 列出评论回复
   feishu-cli comment reply list <file_token> <comment_id> --type docx
 
-  # 删除评论回复
+  # 添加评论回复（推荐登录后以用户身份发布）
+  feishu-cli comment reply add <file_token> <comment_id> --text "回复内容"
+
+  # 删除评论回复（飞书只允许回复作者删除，需 User Token）
   feishu-cli comment reply delete <file_token> <comment_id> <reply_id> --type docx`,
 }
 

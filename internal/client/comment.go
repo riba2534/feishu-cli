@@ -1,7 +1,10 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 
 	larkdrive "github.com/larksuite/oapi-sdk-go/v3/service/drive/v1"
 )
@@ -215,7 +218,8 @@ type CommentReply struct {
 }
 
 // ListCommentReplies 获取评论回复列表
-func ListCommentReplies(fileToken, commentID, fileType string, pageSize int, pageToken string) ([]*CommentReply, string, bool, error) {
+// userAccessToken 非空时使用 User Token（用户身份），否则使用 App Token（租户身份）。
+func ListCommentReplies(fileToken, commentID, fileType string, pageSize int, pageToken, userAccessToken string) ([]*CommentReply, string, bool, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, "", false, err
@@ -233,7 +237,8 @@ func ListCommentReplies(fileToken, commentID, fileType string, pageSize int, pag
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Drive.FileCommentReply.List(Context(), reqBuilder.Build())
+	opts := UserTokenOption(userAccessToken)
+	resp, err := client.Drive.FileCommentReply.List(Context(), reqBuilder.Build(), opts...)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取评论回复列表失败: %w", err)
 	}
@@ -274,7 +279,9 @@ func ListCommentReplies(fileToken, commentID, fileType string, pageSize int, pag
 }
 
 // DeleteCommentReply 删除评论回复
-func DeleteCommentReply(fileToken, commentID, replyID, fileType string) error {
+// 注意：飞书 Open API 只允许回复作者本人删除（App Bot 身份会得到 1069303 forbidden），
+// 因此调用方几乎总是需要提供 userAccessToken（回复作者的 User Token）。
+func DeleteCommentReply(fileToken, commentID, replyID, fileType, userAccessToken string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -287,7 +294,8 @@ func DeleteCommentReply(fileToken, commentID, replyID, fileType string) error {
 		FileType(fileType).
 		Build()
 
-	resp, err := client.Drive.FileCommentReply.Delete(Context(), req)
+	opts := UserTokenOption(userAccessToken)
+	resp, err := client.Drive.FileCommentReply.Delete(Context(), req, opts...)
 	if err != nil {
 		return fmt.Errorf("删除评论回复失败: %w", err)
 	}
@@ -297,4 +305,90 @@ func DeleteCommentReply(fileToken, commentID, replyID, fileType string) error {
 	}
 
 	return nil
+}
+
+// CreateCommentReply 为已有评论添加回复
+//
+// 飞书 Open SDK v3.5.3 尚未封装此接口（只暴露 List/Delete/Update），
+// 此处用通用 HTTP client 直接调用 Open API：
+//
+//	POST /open-apis/drive/v1/files/{file_token}/comments/{comment_id}/replies?file_type=docx
+//
+// 权限要求（User Token）：docs:document.comment:create
+// App Token 同样可以调用（tenant 身份），但飞书侧多数场景推荐用户身份发起回复，
+// 否则回复人会显示为 Bot，且该回复无法通过 DeleteCommentReply 删除（只有作者能删）。
+func CreateCommentReply(fileToken, commentID, fileType, content, userAccessToken string) (*CommentReply, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	body := map[string]any{
+		"content": map[string]any{
+			"elements": []map[string]any{
+				{
+					"type": "text_run",
+					"text_run": map[string]any{
+						"text": content,
+					},
+				},
+			},
+		},
+	}
+
+	apiPath := fmt.Sprintf(
+		"/open-apis/drive/v1/files/%s/comments/%s/replies?file_type=%s",
+		url.PathEscape(fileToken),
+		url.PathEscape(commentID),
+		url.QueryEscape(fileType),
+	)
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := client.Post(Context(), apiPath, body, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("创建评论回复失败: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("创建评论回复失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			ReplyID    string `json:"reply_id"`
+			UserID     string `json:"user_id"`
+			CreateTime int    `json:"create_time"`
+			UpdateTime int    `json:"update_time"`
+			Content    *struct {
+				Elements []struct {
+					Type    string `json:"type"`
+					TextRun *struct {
+						Text string `json:"text"`
+					} `json:"text_run,omitempty"`
+				} `json:"elements"`
+			} `json:"content,omitempty"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("创建评论回复失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
+	reply := &CommentReply{
+		ReplyID:    apiResp.Data.ReplyID,
+		UserID:     apiResp.Data.UserID,
+		CreateTime: apiResp.Data.CreateTime,
+		UpdateTime: apiResp.Data.UpdateTime,
+	}
+	if apiResp.Data.Content != nil {
+		for _, el := range apiResp.Data.Content.Elements {
+			if el.TextRun != nil {
+				reply.Content += el.TextRun.Text
+			}
+		}
+	}
+	return reply, nil
 }
