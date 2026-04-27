@@ -37,7 +37,7 @@ func listMessagesViaSearch(chatID string, pageSize int, pageToken string, userAc
 		PageToken: searchResult.PageToken,
 	}
 	for _, msgID := range searchResult.MessageIDs {
-		msgResult, err := client.GetMessage(msgID, userAccessToken)
+		msgResult, err := client.GetMessage(msgID, userAccessToken, "")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[警告] 获取消息 %s 失败: %v\n", msgID, err)
 			continue

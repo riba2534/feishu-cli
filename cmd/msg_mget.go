@@ -14,11 +14,15 @@ var msgMgetCmd = &cobra.Command{
 	Long: `批量获取多条消息的详情。
 
 选项:
-  --message-ids  消息 ID 列表（逗号分隔，必填）
+  --message-ids         消息 ID 列表（逗号分隔，必填）
+  --card-content-type   interactive 卡片返回格式：user / raw（默认空，返回渲染版）
 
 示例:
   # 获取多条消息
-  feishu-cli msg mget --message-ids om_xxx,om_yyy,om_zzz`,
+  feishu-cli msg mget --message-ids om_xxx,om_yyy,om_zzz
+
+  # interactive 卡片返回原始 schema 2.0 JSON
+  feishu-cli msg mget --message-ids om_xxx,om_yyy --card-content-type user`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
@@ -32,7 +36,12 @@ var msgMgetCmd = &cobra.Command{
 			return fmt.Errorf("请提供至少一个消息 ID")
 		}
 
-		messages, err := client.BatchGetMessages(messageIDs, userToken)
+		cardContentType, err := resolveCardContentType(cmd)
+		if err != nil {
+			return err
+		}
+
+		messages, err := client.BatchGetMessages(messageIDs, userToken, cardContentType)
 		if err != nil {
 			return err
 		}
@@ -49,5 +58,6 @@ func init() {
 	msgCmd.AddCommand(msgMgetCmd)
 	msgMgetCmd.Flags().String("message-ids", "", "消息 ID 列表（逗号分隔）")
 	msgMgetCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addCardContentTypeFlag(msgMgetCmd)
 	mustMarkFlagRequired(msgMgetCmd, "message-ids")
 }

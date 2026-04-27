@@ -34,7 +34,10 @@ var listMessagesCmd = &cobra.Command{
   feishu-cli msg list --container-id oc_xxx --page-size 10
 
   # JSON 格式输出
-  feishu-cli msg list --container-id oc_xxx --output json`,
+  feishu-cli msg list --container-id oc_xxx --output json
+
+  # interactive 卡片返回原始 schema 2.0 JSON（开发者视角的 userDSL）
+  feishu-cli msg list --container-id oc_xxx --card-content-type user`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
@@ -53,6 +56,11 @@ var listMessagesCmd = &cobra.Command{
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 
+		cardContentType, err := resolveCardContentType(cmd)
+		if err != nil {
+			return err
+		}
+
 		opts := client.ListMessagesOptions{
 			ContainerIDType: containerIDType,
 			StartTime:       startTime,
@@ -60,6 +68,7 @@ var listMessagesCmd = &cobra.Command{
 			SortType:        sortType,
 			PageSize:        pageSize,
 			PageToken:       pageToken,
+			CardContentType: cardContentType,
 		}
 
 		result, err := client.ListMessages(containerID, opts, token)
@@ -139,5 +148,6 @@ func init() {
 	listMessagesCmd.Flags().String("page-token", "", "分页标记")
 	listMessagesCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	listMessagesCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addCardContentTypeFlag(listMessagesCmd)
 	mustMarkFlagRequired(listMessagesCmd, "container-id")
 }

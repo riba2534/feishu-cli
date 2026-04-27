@@ -16,15 +16,22 @@ var getMessageCmd = &cobra.Command{
 	Long: `获取指定消息的详细信息。
 
 参数:
-  message_id    消息 ID（必填）
-  --output, -o  输出格式（json）
+  message_id            消息 ID（必填）
+  --output, -o          输出格式（json）
+  --card-content-type   interactive 卡片返回格式：user / raw（默认空，返回渲染版）
 
 示例:
   # 获取消息详情
   feishu-cli msg get om_xxx
 
   # JSON 格式输出
-  feishu-cli msg get om_xxx --output json`,
+  feishu-cli msg get om_xxx --output json
+
+  # interactive 卡片返回原始 schema 2.0 JSON（开发者视角的 userDSL）
+  feishu-cli msg get om_xxx --card-content-type user
+
+  # interactive 卡片返回平台内部完整 cardDSL
+  feishu-cli msg get om_xxx --card-content-type raw`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -38,7 +45,12 @@ var getMessageCmd = &cobra.Command{
 
 		messageID := args[0]
 
-		result, err := client.GetMessage(messageID, token)
+		cardContentType, err := resolveCardContentType(cmd)
+		if err != nil {
+			return err
+		}
+
+		result, err := client.GetMessage(messageID, token, cardContentType)
 		if err != nil {
 			return err
 		}
@@ -108,4 +120,5 @@ func init() {
 	msgCmd.AddCommand(getMessageCmd)
 	getMessageCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	getMessageCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addCardContentTypeFlag(getMessageCmd)
 }

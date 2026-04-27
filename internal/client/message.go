@@ -12,9 +12,25 @@ import (
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/riba2534/feishu-cli/internal/config"
+)
+
+// 卡片消息内容返回格式枚举值（OAPI 参数 card_msg_content_type 的取值）
+//
+// 当查询消息（list/get/mget）命中 interactive 卡片时，OAPI 默认返回的是渲染后的
+// 文本（形如 `<card title="...">...</card>`）。通过传 card_msg_content_type 参数
+// 可拿到原始 JSON：
+//   - user_card_content：返回 userDSL（开发者构建卡片时的 schema 2.0 JSON，便于偷师/调试）
+//   - raw_card_content： 返回 cardDSL（平台内部完整描述，含默认补全字段）
+//
+// 文档来源（字节内部）：OAPI 卡片 2.0 兼容改造与返回结构优化技术方案
+// https://bytedance.larkoffice.com/docx/DxpUdWoFXosES6xCgqNcA62knWe
+const (
+	CardMsgContentTypeUser = "user_card_content"
+	CardMsgContentTypeRaw  = "raw_card_content"
 )
 
 // SendMessage sends a message to a user or chat
@@ -169,6 +185,9 @@ type ListMessagesOptions struct {
 	SortType        string
 	PageSize        int
 	PageToken       string
+	// CardContentType 控制 interactive 卡片的返回格式（取值 user_card_content / raw_card_content / 空）。
+	// 详见 CardMsgContentTypeUser/CardMsgContentTypeRaw 注释。
+	CardContentType string
 }
 
 // ListMessagesResult contains the result of listing messages
@@ -183,10 +202,18 @@ type ListMessagesResult struct {
 // tenant_access_token only, but the API actually supports user_access_token as well.
 // When a user access token is provided, we use a raw HTTP request to bypass the SDK's
 // client-side token type validation. See: https://open.feishu.cn/document/server-docs/im-v1/message/list
+//
+// 当 opts.CardContentType 非空时，SDK builder 不识别该字段，统一走 raw HTTP / SDK raw request
+// 路径，把 card_msg_content_type 加到 query params。
 func ListMessages(containerID string, opts ListMessagesOptions, userAccessToken string) (*ListMessagesResult, error) {
 	// When user access token is provided, use raw HTTP to bypass SDK token type restriction
 	if userAccessToken != "" {
 		return listMessagesWithUserToken(containerID, opts, userAccessToken)
+	}
+
+	// 当 SDK builder 不支持的参数（card_msg_content_type）需要传时，走 SDK raw request。
+	if opts.CardContentType != "" {
+		return listMessagesViaRawRequest(containerID, opts, "")
 	}
 
 	client, err := GetClient()
@@ -220,6 +247,71 @@ func ListMessages(containerID string, opts ListMessagesOptions, userAccessToken 
 	}
 
 	if !resp.Success() {
+		return nil, fmt.Errorf("获取消息列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return &ListMessagesResult{
+		Items:     resp.Data.Items,
+		PageToken: StringVal(resp.Data.PageToken),
+		HasMore:   BoolVal(resp.Data.HasMore),
+	}, nil
+}
+
+// listMessagesViaRawRequest calls /im/v1/messages via SDK raw request so that
+// query params (e.g. card_msg_content_type) unsupported by the typed SDK builder
+// can still be sent. tenant_access_token is auto-managed by the SDK; pass an
+// empty userAccessToken for tenant mode.
+func listMessagesViaRawRequest(containerID string, opts ListMessagesOptions, userAccessToken string) (*ListMessagesResult, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := &larkcore.ApiReq{
+		HttpMethod:  http.MethodGet,
+		ApiPath:     "/open-apis/im/v1/messages",
+		QueryParams: larkcore.QueryParams{},
+		SupportedAccessTokenTypes: []larkcore.AccessTokenType{
+			larkcore.AccessTokenTypeTenant,
+			larkcore.AccessTokenTypeUser,
+		},
+	}
+	if opts.ContainerIDType != "" {
+		req.QueryParams.Set("container_id_type", opts.ContainerIDType)
+	}
+	req.QueryParams.Set("container_id", containerID)
+	if opts.StartTime != "" {
+		req.QueryParams.Set("start_time", opts.StartTime)
+	}
+	if opts.EndTime != "" {
+		req.QueryParams.Set("end_time", opts.EndTime)
+	}
+	if opts.SortType != "" {
+		req.QueryParams.Set("sort_type", opts.SortType)
+	}
+	if opts.PageSize > 0 {
+		req.QueryParams.Set("page_size", strconv.Itoa(opts.PageSize))
+	}
+	if opts.PageToken != "" {
+		req.QueryParams.Set("page_token", opts.PageToken)
+	}
+	if opts.CardContentType != "" {
+		req.QueryParams.Set("card_msg_content_type", opts.CardContentType)
+	}
+
+	apiResp, err := cli.Do(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("获取消息列表失败: %w", err)
+	}
+	if apiResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("获取消息列表失败: HTTP %d, body: %s", apiResp.StatusCode, string(apiResp.RawBody))
+	}
+
+	var resp listMessagesRawResponse
+	if err := json.Unmarshal(apiResp.RawBody, &resp); err != nil {
+		return nil, fmt.Errorf("获取消息列表失败: 解析响应失败: %w", err)
+	}
+	if resp.Code != 0 {
 		return nil, fmt.Errorf("获取消息列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
@@ -267,6 +359,9 @@ func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, use
 	}
 	if opts.PageToken != "" {
 		params.Set("page_token", opts.PageToken)
+	}
+	if opts.CardContentType != "" {
+		params.Set("card_msg_content_type", opts.CardContentType)
 	}
 
 	reqURL := fmt.Sprintf("%s/open-apis/im/v1/messages?%s", baseURL, params.Encode())
@@ -439,13 +534,21 @@ type GetMessageResult struct {
 	Message *larkim.Message
 }
 
-// GetMessage gets a message by message ID
+// GetMessage gets a message by message ID.
+//
 // Note: The SDK incorrectly declares this API as tenant_access_token only,
 // but it actually supports user_access_token. When a user token is provided,
 // we use raw HTTP to bypass the SDK's client-side token type validation.
-func GetMessage(messageID string, userAccessToken string) (*GetMessageResult, error) {
+//
+// 当 cardContentType 非空时（user_card_content / raw_card_content），SDK builder 不识别该
+// 字段，统一走 raw 路径把 card_msg_content_type 加到 query params。
+func GetMessage(messageID, userAccessToken, cardContentType string) (*GetMessageResult, error) {
 	if userAccessToken != "" {
-		return getMessageWithUserToken(messageID, userAccessToken)
+		return getMessageWithUserToken(messageID, userAccessToken, cardContentType)
+	}
+
+	if cardContentType != "" {
+		return getMessageViaRawRequest(messageID, cardContentType, "")
 	}
 
 	client, err := GetClient()
@@ -477,7 +580,9 @@ func GetMessage(messageID string, userAccessToken string) (*GetMessageResult, er
 
 // getMessageWithUserToken calls the Get Message API via raw HTTP,
 // bypassing the SDK's token type validation.
-func getMessageWithUserToken(messageID string, userAccessToken string) (*GetMessageResult, error) {
+//
+// cardContentType 透传到 query params；空字符串则不传，保持向后兼容。
+func getMessageWithUserToken(messageID, userAccessToken, cardContentType string) (*GetMessageResult, error) {
 	cfg := config.Get()
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
@@ -485,6 +590,11 @@ func getMessageWithUserToken(messageID string, userAccessToken string) (*GetMess
 	}
 
 	reqURL := fmt.Sprintf("%s/open-apis/im/v1/messages/%s", baseURL, messageID)
+	if cardContentType != "" {
+		params := url.Values{}
+		params.Set("card_msg_content_type", cardContentType)
+		reqURL = reqURL + "?" + params.Encode()
+	}
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("获取消息详情失败: %w", err)
@@ -516,6 +626,52 @@ func getMessageWithUserToken(messageID string, userAccessToken string) (*GetMess
 		return nil, fmt.Errorf("消息不存在")
 	}
 
+	return &GetMessageResult{
+		Message: resp.Data.Items[0],
+	}, nil
+}
+
+// getMessageViaRawRequest calls /im/v1/messages/:message_id via SDK raw request.
+// 用于 tenant 模式 + 需要传 SDK builder 不识别的字段（card_msg_content_type）的场景。
+func getMessageViaRawRequest(messageID, cardContentType, userAccessToken string) (*GetMessageResult, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := &larkcore.ApiReq{
+		HttpMethod:  http.MethodGet,
+		ApiPath:     "/open-apis/im/v1/messages/:message_id",
+		PathParams:  larkcore.PathParams{},
+		QueryParams: larkcore.QueryParams{},
+		SupportedAccessTokenTypes: []larkcore.AccessTokenType{
+			larkcore.AccessTokenTypeTenant,
+			larkcore.AccessTokenTypeUser,
+		},
+	}
+	req.PathParams.Set("message_id", messageID)
+	if cardContentType != "" {
+		req.QueryParams.Set("card_msg_content_type", cardContentType)
+	}
+
+	apiResp, err := cli.Do(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("获取消息详情失败: %w", err)
+	}
+	if apiResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("获取消息详情失败: HTTP %d, body: %s", apiResp.StatusCode, string(apiResp.RawBody))
+	}
+
+	var resp listMessagesRawResponse
+	if err := json.Unmarshal(apiResp.RawBody, &resp); err != nil {
+		return nil, fmt.Errorf("获取消息详情失败: 解析响应失败: %w", err)
+	}
+	if resp.Code != 0 {
+		return nil, fmt.Errorf("获取消息详情失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+	if len(resp.Data.Items) == 0 {
+		return nil, fmt.Errorf("消息不存在")
+	}
 	return &GetMessageResult{
 		Message: resp.Data.Items[0],
 	}, nil
@@ -1063,10 +1219,12 @@ func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userA
 }
 
 // BatchGetMessages 批量获取消息详情（逐条调用 GetMessage）
-func BatchGetMessages(messageIDs []string, userAccessToken string) ([]*larkim.Message, error) {
+//
+// cardContentType 透传给每次 GetMessage 调用；空字符串则维持原渲染版返回。
+func BatchGetMessages(messageIDs []string, userAccessToken, cardContentType string) ([]*larkim.Message, error) {
 	var results []*larkim.Message
 	for _, id := range messageIDs {
-		msgResult, err := GetMessage(id, userAccessToken)
+		msgResult, err := GetMessage(id, userAccessToken, cardContentType)
 		if err != nil {
 			return nil, fmt.Errorf("获取消息 %s 失败: %w", id, err)
 		}

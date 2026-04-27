@@ -712,6 +712,12 @@ feishu-cli msg mget --message-ids om_xxx,om_yyy
 feishu-cli msg resource-download <message_id> <file_key> --type image -o photo.png
 feishu-cli msg thread-messages <thread_id> --page-size 20
 
+# interactive 卡片返回原始 schema（不再返回渲染后的 <card title> 文本）
+feishu-cli msg get om_xxx --card-content-type user             # userDSL（开发者视角的 schema 2.0 JSON）
+feishu-cli msg get om_xxx --card-content-type raw              # cardDSL（平台内部完整描述）
+feishu-cli msg mget --message-ids om_xxx,om_yyy --card-content-type user
+feishu-cli msg list --container-id oc_xxx --card-content-type user
+
 # 文档增强
 feishu-cli doc content-update <doc_id> --mode append --markdown "## 新内容"
 feishu-cli doc content-update <doc_id> --mode overwrite --markdown "# 全新文档"
