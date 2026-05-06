@@ -1598,7 +1598,7 @@ func TestConvertSheet(t *testing.T) {
 		return
 	}
 	got = strings.TrimSpace(got)
-	want := `<sheet token="sheet_token456"/>`
+	want := `<sheet token="sheet" id="token456"/>`
 	if got != want {
 		t.Errorf("Convert() got:\n%s\n\nwant:\n%s", got, want)
 	}

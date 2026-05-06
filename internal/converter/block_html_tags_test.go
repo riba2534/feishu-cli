@@ -138,21 +138,41 @@ func TestImportSheetDefault(t *testing.T) {
 }
 
 func TestImportSheetWithAttrs(t *testing.T) {
-	md := "<sheet rows=\"5\" cols=\"8\" token=\"sheet_xyz\"/>\n"
-	conv := NewMarkdownToBlock([]byte(md), ConvertOptions{}, "")
-	result, err := conv.ConvertWithTableData()
-	if err != nil {
-		t.Fatalf("error = %v", err)
+	tests := []struct {
+		name      string
+		md        string
+		wantToken string
+	}{
+		{
+			name:      "legacy combined token",
+			md:        "<sheet rows=\"5\" cols=\"8\" token=\"sheet_xyz\"/>\n",
+			wantToken: "sheet_xyz",
+		},
+		{
+			name:      "split token and id",
+			md:        "<sheet rows=\"5\" cols=\"8\" token=\"sheet\" id=\"xyz\"/>\n",
+			wantToken: "sheet_xyz",
+		},
 	}
-	block := result.BlockNodes[0].Block
-	if *block.Sheet.RowSize != 5 {
-		t.Errorf("expected RowSize=5, got %d", *block.Sheet.RowSize)
-	}
-	if *block.Sheet.ColumnSize != 8 {
-		t.Errorf("expected ColumnSize=8, got %d", *block.Sheet.ColumnSize)
-	}
-	if *block.Sheet.Token != "sheet_xyz" {
-		t.Errorf("expected token 'sheet_xyz', got %q", *block.Sheet.Token)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conv := NewMarkdownToBlock([]byte(tt.md), ConvertOptions{}, "")
+			result, err := conv.ConvertWithTableData()
+			if err != nil {
+				t.Fatalf("error = %v", err)
+			}
+			block := result.BlockNodes[0].Block
+			if *block.Sheet.RowSize != 5 {
+				t.Errorf("expected RowSize=5, got %d", *block.Sheet.RowSize)
+			}
+			if *block.Sheet.ColumnSize != 8 {
+				t.Errorf("expected ColumnSize=8, got %d", *block.Sheet.ColumnSize)
+			}
+			if *block.Sheet.Token != tt.wantToken {
+				t.Errorf("expected token %q, got %q", tt.wantToken, *block.Sheet.Token)
+			}
+		})
 	}
 }
 
@@ -333,7 +353,7 @@ func TestExportSheetWithRowsCols(t *testing.T) {
 		t.Fatalf("Convert() error = %v", err)
 	}
 	got = strings.TrimSpace(got)
-	want := `<sheet token="sheet_xyz" rows="5" cols="8"/>`
+	want := `<sheet token="sheet" id="xyz" rows="5" cols="8"/>`
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}

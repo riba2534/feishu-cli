@@ -2399,9 +2399,14 @@ func (c *MarkdownToBlock) handleHTMLSheetBlock(tag *HTMLTag) []*BlockNode {
 		ColumnSize: &cols,
 	}
 
-	// 若有 token 属性，设置（用于 roundtrip）
+	// 若有 token/id 属性，设置（用于 roundtrip）
 	if token := tag.Attrs["token"]; token != "" {
-		sheet.Token = &token
+		if id := tag.Attrs["id"]; id != "" {
+			combined := token + "_" + id
+			sheet.Token = &combined
+		} else {
+			sheet.Token = &token
+		}
 	}
 
 	return []*BlockNode{{Block: &larkdocx.Block{

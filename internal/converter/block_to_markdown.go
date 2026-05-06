@@ -1079,7 +1079,13 @@ func (c *BlockToMarkdown) convertSheet(block *larkdocx.Block) (string, error) {
 
 	var attrs []string
 	if block.Sheet.Token != nil && *block.Sheet.Token != "" {
-		attrs = append(attrs, fmt.Sprintf("token=\"%s\"", *block.Sheet.Token))
+		token := *block.Sheet.Token
+		if idx := strings.Index(token, "_"); idx != -1 {
+			attrs = append(attrs, fmt.Sprintf("token=\"%s\"", token[:idx]))
+			attrs = append(attrs, fmt.Sprintf("id=\"%s\"", token[idx+1:]))
+		} else {
+			attrs = append(attrs, fmt.Sprintf("token=\"%s\"", token))
+		}
 	}
 	if block.Sheet.RowSize != nil && *block.Sheet.RowSize > 0 {
 		attrs = append(attrs, fmt.Sprintf("rows=\"%d\"", *block.Sheet.RowSize))
