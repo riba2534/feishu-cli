@@ -111,6 +111,19 @@ feishu-cli search docs "季度报告" --count 20 --offset 20
 feishu-cli search docs "产品需求" -o json
 ```
 
+### v1 vs v2：何时用 `drive search`？
+
+`search docs`（v1，本节）走 `/open-apis/suite/docs-api/search/object`，filter 简单（owner_ids / chat_ids / docs_types）。
+**`drive search`**（v2，详见 `feishu-cli-drive` 技能 §9）走 `/open-apis/search/v2/doc_wiki/search`，支持更精细的扁平 filter：
+
+- `--folder-tokens` 限定云盘文件夹（与 `--space-ids` 互斥）
+- `--space-ids` 限定知识库 space
+- `--creator-ids` / `--sharer-ids` 多人扇出
+- `--only-title` / `--only-comment` 维度限定
+- `--sort` 排序（edit_time / open_time / create_time / default）
+
+两者都需要 `search:docs:read`，按需选择：粗筛用 v1，精筛用 v2。
+
 ### JSON 输出格式
 
 ```json

@@ -4,10 +4,13 @@ description: >-
   飞书云盘增强命令组。分块上传大文件（>20MB 自动 3 段式）、流式下载、
   文档异步导出（markdown 快捷路径 / sheet+bitable csv / sub-id / 有界轮询 + resume）、
   文档异步导入、文件/文件夹移动（folder 自动轮询）、富文本评论（text/mention_user/link
-  + wiki URL 解析 + 局部评论）、通用异步任务查询。
+  + wiki URL 解析 + 局部评论）、通用异步任务查询、本地 ↔ 云盘单向镜像
+  （pull/push/status，SHA-256 内容 diff + --delete-* --yes 双确认）、
+  v2 doc_wiki/search 扁平 filter 搜索（folder-tokens / space-ids / creator-ids / only-title）。
   当用户请求"上传大文件"、"下载云盘文件"、"导出为 pdf/markdown/xlsx"、"导入 docx
   到云文档"、"移动文件夹"、"添加文档评论"、"@某人评论文档"、"从 wiki 链接评论"、
-  "查询异步任务状态"、"drive 任务 resume"、"分块上传"、"feishu drive"、"lark drive"时使用。
+  "查询异步任务状态"、"drive 任务 resume"、"分块上传"、"云盘镜像"、"目录同步"、
+  "本地与云盘对照"、"SHA 比对"、"按文件夹搜文档"、"feishu drive"、"lark drive"时使用。
   本 skill 与老的 file/media/comment 命令组并存，提供更强能力（User Token 支持、
   异步 resume、富文本评论），基础场景仍可用 file/media。
 user-invocable: true
@@ -169,6 +172,63 @@ feishu-cli drive task-result --scenario task_check --task-id taskxxx
 
 三种 scenario：`import` / `export` / `task_check`。用于 `drive export` / `drive import` / `drive move` 超时后的接力完成。
 
+### 8. 本地 ↔ 云盘单向镜像（pull/push/status）
+
+把云盘文件夹与本地目录做单向镜像，含 SHA-256 内容比对和 `--delete-* --yes` 双确认安全开关。**只镜像 type=file 条目**，docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不参与（没有等价本地二进制）。
+
+```bash
+# status：双向 SHA-256 对照，只读，不动文件
+feishu-cli drive status --folder-token fldxxx --local-dir ./mirror
+# 输出 4 个桶：new_local / new_remote / modified / unchanged
+
+# pull：云盘 → 本地，递归下载
+feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror
+feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --if-exists skip
+feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --delete-local --yes
+
+# push：本地 → 云盘，递归上传，自动 create_folder 镜像目录结构
+feishu-cli drive push --folder-token fldxxx --local-dir ./mirror              # 默认 --if-exists=skip
+feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --if-exists overwrite
+feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --delete-remote --yes
+```
+
+**安全语义**：
+- `--local-dir` 走 `filepath.EvalSymlinks` + 限定在 cwd 子树内，防 symlink 越界
+- `--delete-local` / `--delete-remote` 必须配 `--yes`，不传 `--yes` 直接拒绝执行
+- 上传/下载阶段有失败时**自动跳过 `--delete-*` 阶段**，避免「已删孤儿但部分文件没传成功」的半同步状态
+- pull 默认 `--if-exists=overwrite`（保持本地 = 远端），push 默认 `--if-exists=skip`（不动远端已有文件，更安全）
+
+### 9. v2 端点搜索（drive search，扁平 filter）
+
+走 `/open-apis/search/v2/doc_wiki/search` 端点，比 `search docs`（v1）支持更丰富的扁平 filter：
+
+```bash
+# 关键字 + 类型过滤 + 排序
+feishu-cli drive search --query "季度报告" --doc-types DOCX,SHEET --sort edit_time
+
+# 限定在某些云盘文件夹（与 --space-ids 互斥）
+feishu-cli drive search --query "API 设计" --folder-tokens fldxxx,fldyyy
+
+# 限定在知识库 space
+feishu-cli drive search --query "RFC" --space-ids spcxxx
+
+# 仅匹配标题（避免正文里命中无关结果）
+feishu-cli drive search --query "项目周会" --only-title
+
+# 按创建人
+feishu-cli drive search --query "复盘" --creator-ids ou_xxx,ou_yyy
+
+# JSON 输出 + 分页
+feishu-cli drive search --query "项目" --page-size 20 -o json
+feishu-cli drive search --query "项目" --page-token "<上一页 page_token>"
+```
+
+**关键点**：
+- `--doc-types` 取值大写：`DOC` / `DOCX` / `SHEET` / `BITABLE` / `MINDNOTE` / `FILE` / `WIKI` / `FOLDER` / `CATALOG` / `SLIDES` / `SHORTCUT`
+- `--folder-tokens` 与 `--space-ids` 互斥（doc / wiki 两个范围）
+- 标题字段含 `<h>...</h>` 高亮标记，CLI 自动剥离
+- 与 `search docs`（v1 `/suite/docs-api/search/object`）共存：v1 走 owner_ids/chat_ids 简单过滤，v2 走 doc_filter+wiki_filter 双路精细过滤
+
 ## 典型工作流
 
 ### 工作流 A：大文件分块上传 + 查看进度
@@ -252,6 +312,9 @@ feishu-cli drive import --file big_sheet.xlsx --type sheet --folder-token fldxxx
 | `drive move` | `space:document:move` |
 | `drive add-comment` | `docs:document.comment:create`、`docs:document.comment:write_only`、`docx:document:readonly`（若 docx）、`wiki:node:read`（若 wiki URL） |
 | `drive task-result` | `drive:drive.metadata:readonly` |
+| `drive pull` / `status` | `drive:drive` 或 `drive:drive:readonly`（列举文件夹）、`drive:file:download` |
+| `drive push` | `drive:drive` 或 `drive:drive:readonly`、`drive:file:upload`、`space:folder:create`；带 `--delete-remote` 还需要文件删除权限 |
+| `drive search` | `search:docs:read`（必需 User Token） |
 
 ## 注意事项
 

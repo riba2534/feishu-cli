@@ -287,6 +287,11 @@ feishu-cli task update <task_id> --summary "新标题"
 feishu-cli task complete <task_id>
 feishu-cli task delete <task_id>
 
+# 附件直传（一行命令，省去 drive upload + 手动关联两步）
+feishu-cli task upload-attachment --task-guid <task_guid> --file ./report.pdf       # 默认 task
+feishu-cli task upload-attachment --task-guid <task_guid> --file ./img.png --resource-type task_delivery
+# 注意：单文件 ≤ 50MB；scope 需 task:attachment:write 或 task:attachment:upload
+
 # 子任务
 feishu-cli task subtask create <task_guid> --summary "子任务标题"
 feishu-cli task subtask list <task_guid>
@@ -680,6 +685,10 @@ feishu-cli wiki nodes <space_id> [--parent <node_token>]
 
 # 获取空间详情
 feishu-cli wiki space-get <space_id>
+
+# 删除整个知识空间（异步任务自动轮询直至完成）
+feishu-cli wiki delete-space <space_id> --yes        # 高危且不可逆，必须加 --yes
+# 同步完成时直接返回 ready=true；后端转异步时自动轮询 wiki/v2/tasks 直到 success/failure/超时
 
 # 空间成员管理
 feishu-cli wiki member add <space_id> --member-type userid --member-id <USER_ID> --role admin

@@ -77,6 +77,10 @@ feishu-cli bitable record batch-create --base-token xxx --table-id tblxxx --conf
 feishu-cli bitable record batch-update --base-token xxx --table-id tblxxx --config-file records.json
 feishu-cli bitable record delete      --base-token xxx --table-id tblxxx --record-id recxxx
 
+# batch-delete：POST /records/batch_delete，单次最多 500 条；--record-ids CSV 或 --from-file 任选其一
+feishu-cli bitable record batch-delete --base-token xxx --table-id tblxxx --record-ids rec_1,rec_2,rec_3
+feishu-cli bitable record batch-delete --base-token xxx --table-id tblxxx --from-file ids.txt   # 每行一个 record_id
+
 # history-list：GET + query params（不是 POST body），--record-id 必填
 feishu-cli bitable record history-list --base-token xxx --table-id tblxxx --record-id recxxx
 feishu-cli bitable record history-list --base-token xxx --table-id tblxxx --record-id recxxx --page-size 50 --max-version 20
