@@ -10,26 +10,30 @@ func TestResolveCardContentType(t *testing.T) {
 	tests := []struct {
 		name      string
 		flagValue string
+		setFlag   bool
 		want      string
 		wantErr   bool
 	}{
-		{"未传 flag 默认空", "", "", false},
-		{"短写 user", "user", "user_card_content", false},
-		{"短写 raw", "raw", "raw_card_content", false},
-		{"全名 user_card_content", "user_card_content", "user_card_content", false},
-		{"全名 raw_card_content", "raw_card_content", "raw_card_content", false},
-		{"大小写不敏感 USER", "USER", "user_card_content", false},
-		{"大小写不敏感 Raw", "Raw", "raw_card_content", false},
-		{"前后空格被裁剪", "  user  ", "user_card_content", false},
-		{"非法值报错", "userdsl", "", true},
-		{"乱写报错", "abc", "", true},
+		{"未传 flag 默认 user", "", false, "user_card_content", false},
+		{"显式空值走渲染版", "", true, "", false},
+		{"短写 user", "user", true, "user_card_content", false},
+		{"短写 raw", "raw", true, "raw_card_content", false},
+		{"短写 rendered", "rendered", true, "", false},
+		{"旧行为别名 default", "default", true, "", false},
+		{"全名 user_card_content", "user_card_content", true, "user_card_content", false},
+		{"全名 raw_card_content", "raw_card_content", true, "raw_card_content", false},
+		{"大小写不敏感 USER", "USER", true, "user_card_content", false},
+		{"大小写不敏感 Raw", "Raw", true, "raw_card_content", false},
+		{"前后空格被裁剪", "  user  ", true, "user_card_content", false},
+		{"非法值报错", "userdsl", true, "", true},
+		{"乱写报错", "abc", true, "", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &cobra.Command{}
 			addCardContentTypeFlag(cmd)
-			if tt.flagValue != "" {
+			if tt.setFlag {
 				if err := cmd.Flags().Set("card-content-type", tt.flagValue); err != nil {
 					t.Fatalf("flag set 失败: %v", err)
 				}

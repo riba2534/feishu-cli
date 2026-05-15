@@ -26,6 +26,7 @@ var getMessageHistoryCmd = &cobra.Command{
   --page-size           分页大小 (1-50)，默认 50
   --page-token          分页标记
   --output, -o          输出格式 (json)
+  --card-content-type   interactive 卡片返回格式：user / raw / rendered（默认 user）
 
 示例:
   # 群聊
@@ -39,7 +40,10 @@ var getMessageHistoryCmd = &cobra.Command{
 
   # 指定时间范围 + 升序
   feishu-cli msg history --user-email user@example.com \
-    --start-time 1704067200 --sort-type ByCreateTimeAsc`,
+    --start-time 1704067200 --sort-type ByCreateTimeAsc
+
+  # 保留 OAPI 原始渲染版/降级版
+  feishu-cli msg history --container-id oc_xxx --card-content-type rendered -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
@@ -60,6 +64,10 @@ var getMessageHistoryCmd = &cobra.Command{
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
+		cardContentType, err := resolveCardContentType(cmd)
+		if err != nil {
+			return err
+		}
 
 		// 三种入口互斥，必须恰好一个
 		entryCount := 0
@@ -116,6 +124,7 @@ var getMessageHistoryCmd = &cobra.Command{
 			SortType:        sortType,
 			PageSize:        pageSize,
 			PageToken:       pageToken,
+			CardContentType: cardContentType,
 		}
 
 		result, err := client.ListMessages(containerID, opts, token)
@@ -132,9 +141,7 @@ var getMessageHistoryCmd = &cobra.Command{
 
 		if needFallback {
 			fmt.Fprintf(cmd.ErrOrStderr(), "[提示] bot 不在此群中，通过搜索方式获取消息...\n")
-			// msg history 命令暂未暴露 --card-content-type flag，传空保持渲染版默认行为；
-			// 如未来给 msg history 也加 flag，把 resolveCardContentType 的结果接进来即可。
-			fallbackResult, fallbackErr := listMessagesViaSearch(containerID, pageSize, pageToken, token, "")
+			fallbackResult, fallbackErr := listMessagesViaSearch(containerID, pageSize, pageToken, token, cardContentType)
 			if fallbackErr != nil {
 				if err != nil {
 					return err
@@ -159,8 +166,18 @@ var getMessageHistoryCmd = &cobra.Command{
 				"page_token":   result.PageToken,
 				"sender_names": senderNames,
 			}
+			if cardTextMap := client.ExtractCardTextMap(result.Items); len(cardTextMap) > 0 {
+				enriched["card_texts"] = cardTextMap
+			}
 			if len(result.MergeForwardSubMessages) > 0 {
 				enriched["merge_forward_sub_messages"] = result.MergeForwardSubMessages
+				var subMsgs []*larkim.Message
+				for _, subs := range result.MergeForwardSubMessages {
+					subMsgs = append(subMsgs, subs...)
+				}
+				if cardTextMap := client.ExtractCardTextMap(subMsgs); len(cardTextMap) > 0 {
+					enriched["merge_forward_card_texts"] = cardTextMap
+				}
 			}
 			if err := printJSON(enriched); err != nil {
 				return err
@@ -217,4 +234,5 @@ func init() {
 	getMessageHistoryCmd.Flags().String("page-token", "", "分页标记")
 	getMessageHistoryCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	getMessageHistoryCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addCardContentTypeFlag(getMessageHistoryCmd)
 }

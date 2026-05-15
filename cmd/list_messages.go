@@ -38,7 +38,7 @@ var listMessagesCmd = &cobra.Command{
   # JSON 格式输出
   feishu-cli msg list --container-id oc_xxx --output json
 
-  # interactive 卡片返回原始 schema 2.0 JSON（开发者视角的 userDSL）
+  # interactive 卡片返回 schema 2.0 JSON，并额外提取 card_texts（默认）
   feishu-cli msg list --container-id oc_xxx --card-content-type user`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -111,8 +111,18 @@ var listMessagesCmd = &cobra.Command{
 				"has_more":     result.HasMore,
 				"sender_names": senderNames,
 			}
+			if cardTextMap := client.ExtractCardTextMap(result.Items); len(cardTextMap) > 0 {
+				payload["card_texts"] = cardTextMap
+			}
 			if len(result.MergeForwardSubMessages) > 0 {
 				payload["merge_forward_sub_messages"] = result.MergeForwardSubMessages
+				var subMsgs []*larkim.Message
+				for _, subs := range result.MergeForwardSubMessages {
+					subMsgs = append(subMsgs, subs...)
+				}
+				if cardTextMap := client.ExtractCardTextMap(subMsgs); len(cardTextMap) > 0 {
+					payload["merge_forward_card_texts"] = cardTextMap
+				}
 			}
 			if err := printJSON(payload); err != nil {
 				return err

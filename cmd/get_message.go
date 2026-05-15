@@ -18,7 +18,7 @@ var getMessageCmd = &cobra.Command{
 参数:
   message_id            消息 ID（必填）
   --output, -o          输出格式（json）
-  --card-content-type   interactive 卡片返回格式：user / raw（默认空，返回渲染版）
+  --card-content-type   interactive 卡片返回格式：user / raw / rendered（默认 user）
 
 示例:
   # 获取消息详情
@@ -27,11 +27,14 @@ var getMessageCmd = &cobra.Command{
   # JSON 格式输出
   feishu-cli msg get om_xxx --output json
 
-  # interactive 卡片返回原始 schema 2.0 JSON（开发者视角的 userDSL）
+  # interactive 卡片返回 schema 2.0 JSON，并额外提取 card_texts（默认）
   feishu-cli msg get om_xxx --card-content-type user
 
   # interactive 卡片返回平台内部完整 cardDSL
-  feishu-cli msg get om_xxx --card-content-type raw`,
+  feishu-cli msg get om_xxx --card-content-type raw
+
+  # 保留 OAPI 原始渲染版/降级版
+  feishu-cli msg get om_xxx --card-content-type rendered`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -68,8 +71,14 @@ var getMessageCmd = &cobra.Command{
 				"message":      msg,
 				"sender_names": senderNames,
 			}
+			if cardTexts := client.ExtractCardTexts(msg); len(cardTexts) > 0 {
+				enriched["card_texts"] = cardTexts
+			}
 			if len(result.SubMessages) > 0 {
 				enriched["sub_messages"] = result.SubMessages
+				if cardTextMap := client.ExtractCardTextMap(result.SubMessages); len(cardTextMap) > 0 {
+					enriched["sub_message_card_texts"] = cardTextMap
+				}
 			}
 			if err := printJSON(enriched); err != nil {
 				return err
@@ -117,6 +126,12 @@ var getMessageCmd = &cobra.Command{
 			}
 			if msg.Body != nil && msg.Body.Content != nil {
 				fmt.Printf("  消息内容: %s\n", *msg.Body.Content)
+			}
+			if cardTexts := client.ExtractCardTexts(msg); len(cardTexts) > 0 {
+				fmt.Printf("  卡片文本:\n")
+				for _, text := range cardTexts {
+					fmt.Printf("    %s\n", text)
+				}
 			}
 			if len(result.SubMessages) > 0 {
 				fmt.Printf("  嵌套子消息: %d 条（含递归展开，使用 --output json 查看完整内容）\n", len(result.SubMessages))

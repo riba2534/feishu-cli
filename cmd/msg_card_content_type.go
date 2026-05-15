@@ -8,34 +8,37 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// cardContentTypeFlagDesc 是 msg get/mget/list 三个查询命令共用的 flag 帮助文本。
+// cardContentTypeFlagDesc 是 msg get/mget/list/history 查询命令共用的 flag 帮助文本。
 //
-// 飞书 OAPI 对 interactive 卡片消息默认返回**渲染后**的文本（形如
-// `<card title="...">...</card>`）。要拿到原始 schema JSON，必须传
-// card_msg_content_type 参数。这里支持简写（user/raw）和完整 OAPI 值，便于在 CLI
-// 里少敲几个字符。
-const cardContentTypeFlagDesc = "卡片消息返回格式：user / raw（默认空，返回渲染版）。" +
-	"user → user_card_content（开发者构建时的 schema 2.0 JSON，便于偷师/调试）；" +
-	"raw → raw_card_content（平台内部完整 cardDSL）"
+// 飞书 OAPI 不传 card_msg_content_type 时，部分 interactive 卡片只返回“请升级客户端”
+// 的降级内容。CLI 默认请求 user_card_content，并额外提取 card_texts 方便阅读。
+const cardContentTypeFlagDesc = "卡片消息返回格式：user / raw / rendered（默认 user）。" +
+	"user → user_card_content（schema 2.0 JSON，CLI 会提取 card_texts）；" +
+	"raw → raw_card_content（平台内部完整 cardDSL）；" +
+	"rendered → 不传 card_msg_content_type，保留 OAPI 渲染版/降级版"
 
 // addCardContentTypeFlag 把 --card-content-type flag 注册到目标命令上。
 func addCardContentTypeFlag(c *cobra.Command) {
 	c.Flags().String("card-content-type", "", cardContentTypeFlagDesc)
 }
 
-// resolveCardContentType 把 flag 值（user/raw 或完整 OAPI 名）规范化为 OAPI 接受的字符串。
-// 空字符串保持空，让 client 层走原有渲染版返回路径，向后兼容。
+// resolveCardContentType 把 flag 值（user/raw/rendered 或完整 OAPI 名）规范化为 OAPI 接受的字符串。
+// 未显式传 flag 时默认 user_card_content，避免 interactive 卡片只返回“请升级客户端”。
+// 显式传 rendered/default/legacy 时保持空字符串，让 client 层走 OAPI 原有渲染版返回路径。
 func resolveCardContentType(cmd *cobra.Command) (string, error) {
 	v, _ := cmd.Flags().GetString("card-content-type")
 	v = strings.TrimSpace(v)
+	if !cmd.Flags().Changed("card-content-type") && v == "" {
+		return client.CardMsgContentTypeUser, nil
+	}
 	switch strings.ToLower(v) {
-	case "":
+	case "", "rendered", "default", "legacy":
 		return "", nil
 	case "user", client.CardMsgContentTypeUser:
 		return client.CardMsgContentTypeUser, nil
 	case "raw", client.CardMsgContentTypeRaw:
 		return client.CardMsgContentTypeRaw, nil
 	default:
-		return "", fmt.Errorf("无效的 --card-content-type 取值 %q（合法值：user / raw / user_card_content / raw_card_content）", v)
+		return "", fmt.Errorf("无效的 --card-content-type 取值 %q（合法值：user / raw / rendered / user_card_content / raw_card_content）", v)
 	}
 }
