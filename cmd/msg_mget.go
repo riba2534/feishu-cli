@@ -17,13 +17,13 @@ var msgMgetCmd = &cobra.Command{
 
 选项:
   --message-ids         消息 ID 列表（逗号分隔，必填）
-  --card-content-type   interactive 卡片返回格式：user / raw（默认空，返回渲染版）
+  --card-content-type   interactive 卡片返回格式：user / raw / rendered（默认 user）
 
 示例:
   # 获取多条消息
   feishu-cli msg mget --message-ids om_xxx,om_yyy,om_zzz
 
-  # interactive 卡片返回原始 schema 2.0 JSON
+  # interactive 卡片返回 schema 2.0 JSON，并额外提取 card_texts（默认）
   feishu-cli msg mget --message-ids om_xxx,om_yyy --card-content-type user`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -59,8 +59,18 @@ var msgMgetCmd = &cobra.Command{
 			"messages":     result.Messages,
 			"sender_names": senderNames,
 		}
+		if cardTextMap := client.ExtractCardTextMap(result.Messages); len(cardTextMap) > 0 {
+			out["card_texts"] = cardTextMap
+		}
 		if len(result.MergeForwardSubMessages) > 0 {
 			out["merge_forward_sub_messages"] = result.MergeForwardSubMessages
+			var subMsgs []*larkim.Message
+			for _, subs := range result.MergeForwardSubMessages {
+				subMsgs = append(subMsgs, subs...)
+			}
+			if cardTextMap := client.ExtractCardTextMap(subMsgs); len(cardTextMap) > 0 {
+				out["merge_forward_card_texts"] = cardTextMap
+			}
 		}
 		return printJSON(out)
 	},

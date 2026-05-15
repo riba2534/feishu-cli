@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"os"
 
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+
 	"github.com/riba2534/feishu-cli/internal/client"
 )
 
 // listMessagesViaSearch 通过搜索+逐条获取的方式获取消息列表
 // 当 ListMessages API 返回空结果（bot 不在群）时作为降级方案
 //
-// cardContentType 透传到每条 GetMessage 调用：当上层 cobra 命令带
-// `--card-content-type user|raw` flag 时，fallback 路径同样请求原始
-// schema JSON，避免出现"主路径返回 raw、search 降级路径返回渲染版"的语义不一致。
-// 调用方未启用 flag 时传空字符串即可。
+// cardContentType 透传到每条 GetMessage 调用，fallback 路径与主路径保持一致；
+// 例如默认的 user_card_content、显式 raw_card_content，或 rendered 旧行为对应的空字符串。
 func listMessagesViaSearch(chatID string, pageSize int, pageToken, userAccessToken, cardContentType string) (*client.ListMessagesResult, error) {
 	if pageSize <= 0 {
 		pageSize = 20
@@ -41,6 +41,7 @@ func listMessagesViaSearch(chatID string, pageSize int, pageToken, userAccessTok
 		HasMore:   searchResult.HasMore,
 		PageToken: searchResult.PageToken,
 	}
+	subMap := make(map[string][]*larkim.Message)
 	for _, msgID := range searchResult.MessageIDs {
 		msgResult, err := client.GetMessage(msgID, userAccessToken, cardContentType)
 		if err != nil {
@@ -48,6 +49,15 @@ func listMessagesViaSearch(chatID string, pageSize int, pageToken, userAccessTok
 			continue
 		}
 		result.Items = append(result.Items, msgResult.Message)
+		if msgResult.Message != nil && len(msgResult.SubMessages) > 0 {
+			containerID := client.StringVal(msgResult.Message.MessageId)
+			if containerID != "" {
+				subMap[containerID] = msgResult.SubMessages
+			}
+		}
+	}
+	if len(subMap) > 0 {
+		result.MergeForwardSubMessages = subMap
 	}
 
 	return result, nil
