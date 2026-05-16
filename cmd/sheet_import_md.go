@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +11,11 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	east "github.com/yuin/goldmark/extension/ast"
+	textpkg "github.com/yuin/goldmark/text"
 )
 
 var sheetImportMDCmd = &cobra.Command{
@@ -56,124 +63,155 @@ var sheetImportMDCmd = &cobra.Command{
   feishu-cli sheet import-md report.md --user-access-token <token>`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		mdPath := args[0]
-		if !strings.HasSuffix(strings.ToLower(mdPath), ".md") && !strings.HasSuffix(strings.ToLower(mdPath), ".markdown") {
-			fmt.Fprintf(os.Stderr, "提示: 文件扩展名不是 .md/.markdown，仍按 Markdown 解析\n")
-		}
-
-		raw, err := os.ReadFile(mdPath)
-		if err != nil {
-			return fmt.Errorf("读取文件失败: %w", err)
-		}
-
-		tableIndex, _ := cmd.Flags().GetInt("table-index")
-		title, _ := cmd.Flags().GetString("title")
-		folderToken, _ := cmd.Flags().GetString("folder-token")
-		output, _ := cmd.Flags().GetString("output")
-
-		if title == "" {
-			base := filepath.Base(mdPath)
-			ext := filepath.Ext(base)
-			title = strings.TrimSuffix(base, ext)
-			if title == "" {
-				title = "Markdown 导入"
-			}
-		}
-
-		// 1. 解析 markdown，挑出第 N 张 GFM 表格
-		tables := extractGFMTables(string(raw))
-		if len(tables) == 0 {
-			return fmt.Errorf("文件里找不到任何 GFM 表格: %s", mdPath)
-		}
-		if tableIndex < 0 || tableIndex >= len(tables) {
-			return fmt.Errorf("--table-index %d 超出范围（文件里共 %d 张表，0-based）", tableIndex, len(tables))
-		}
-		rows := tables[tableIndex]
-		if len(rows) == 0 {
-			return fmt.Errorf("第 %d 张表是空的", tableIndex)
-		}
-
-		// 客户端预检：飞书 sheets v2 PUT /values 单次最多 5000 行 × 100 列
-		const (
-			maxRows = 5000
-			maxCols = 100
-		)
-		if len(rows) > maxRows {
-			return fmt.Errorf("表格行数 %d 超过飞书 API 单次写入上限 %d 行，请拆分", len(rows), maxRows)
-		}
-		if len(rows[0]) > maxCols {
-			return fmt.Errorf("表格列数 %d 超过飞书 API 单次写入上限 %d 列，请拆分", len(rows[0]), maxCols)
-		}
-
-		fmt.Printf("解析到表格 #%d：%d 行 × %d 列\n", tableIndex, len(rows), len(rows[0]))
-
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
-		ctx := client.Context()
-
-		// 2. 创建空电子表格
-		fmt.Printf("正在创建电子表格 %q ...\n", title)
-		info, err := client.CreateSpreadsheet(ctx, title, folderToken, userAccessToken)
-		if err != nil {
-			return err
-		}
-
-		// 3. 拿默认 sheet_id
-		sheets, err := client.QuerySheets(ctx, info.SpreadsheetToken, userAccessToken)
-		if err != nil {
-			return fmt.Errorf("查询工作表列表失败: %w", err)
-		}
-		if len(sheets) == 0 {
-			return fmt.Errorf("新建电子表格没有默认工作表（不应该发生）")
-		}
-		sheetID := sheets[0].SheetID
-
-		// 4. 写入数据到 A1
-		colCount := len(rows[0])
-		rowCount := len(rows)
-		rangeStr := fmt.Sprintf("%s!A1:%s%d", sheetID, colIndexToLetter(colCount), rowCount)
-
-		values := make([][]any, rowCount)
-		for i, row := range rows {
-			values[i] = make([]any, colCount)
-			for j := 0; j < colCount; j++ {
-				if j < len(row) {
-					values[i][j] = row[j]
-				} else {
-					values[i][j] = ""
-				}
-			}
-		}
-
-		fmt.Printf("正在写入 %s ...\n", rangeStr)
-		if _, err := client.WriteCells(ctx, info.SpreadsheetToken, rangeStr, values, userAccessToken); err != nil {
-			return err
-		}
-
-		// 5. 输出
-		if output == "json" {
-			return printJSON(sheetImportMDResult{
-				SpreadsheetToken: info.SpreadsheetToken,
-				Title:            info.Title,
-				URL:              info.URL,
-				Rows:             rowCount,
-				Cols:             colCount,
-				TableIndex:       tableIndex,
-				SourceFile:       mdPath,
-			})
-		}
-
-		fmt.Println()
-		fmt.Println("=== 导入完成 ===")
-		fmt.Printf("  Token: %s\n", info.SpreadsheetToken)
-		fmt.Printf("  标题: %s\n", info.Title)
-		fmt.Printf("  URL: %s\n", info.URL)
-		fmt.Printf("  数据: %d 行 × %d 列（来自 %s 第 %d 张表）\n", rowCount, colCount, mdPath, tableIndex)
-		return nil
+		return runSheetImportMD(cmd, args, defaultSheetImportMDDeps())
 	},
+}
+
+type sheetImportMDDeps struct {
+	validate          func() error
+	resolveUserToken  func(*cobra.Command) string
+	createSpreadsheet func(context.Context, string, string, string) (*client.SpreadsheetInfo, error)
+	querySheets       func(context.Context, string, string) ([]*client.SheetInfo, error)
+	writeCells        func(context.Context, string, string, [][]any, string) (*client.CellRange, error)
+}
+
+func defaultSheetImportMDDeps() sheetImportMDDeps {
+	return sheetImportMDDeps{
+		validate:         config.Validate,
+		resolveUserToken: resolveOptionalUserTokenWithFallback,
+		createSpreadsheet: func(ctx context.Context, title, folderToken, userAccessToken string) (*client.SpreadsheetInfo, error) {
+			return client.CreateSpreadsheet(ctx, title, folderToken, userAccessToken)
+		},
+		querySheets: func(ctx context.Context, spreadsheetToken, userAccessToken string) ([]*client.SheetInfo, error) {
+			return client.QuerySheets(ctx, spreadsheetToken, userAccessToken)
+		},
+		writeCells: func(ctx context.Context, spreadsheetToken, rangeStr string, values [][]any, userAccessToken string) (*client.CellRange, error) {
+			return client.WriteCells(ctx, spreadsheetToken, rangeStr, values, userAccessToken)
+		},
+	}
+}
+
+func runSheetImportMD(cmd *cobra.Command, args []string, deps sheetImportMDDeps) error {
+	if err := deps.validate(); err != nil {
+		return err
+	}
+
+	mdPath := args[0]
+	if !strings.HasSuffix(strings.ToLower(mdPath), ".md") && !strings.HasSuffix(strings.ToLower(mdPath), ".markdown") {
+		fmt.Fprintf(cmd.ErrOrStderr(), "提示: 文件扩展名不是 .md/.markdown，仍按 Markdown 解析\n")
+	}
+
+	raw, err := os.ReadFile(mdPath)
+	if err != nil {
+		return fmt.Errorf("读取文件失败: %w", err)
+	}
+
+	tableIndex, _ := cmd.Flags().GetInt("table-index")
+	title, _ := cmd.Flags().GetString("title")
+	folderToken, _ := cmd.Flags().GetString("folder")
+	if cmd.Flags().Changed("folder-token") {
+		folderToken, _ = cmd.Flags().GetString("folder-token")
+	}
+	output, _ := cmd.Flags().GetString("output")
+
+	if title == "" {
+		base := filepath.Base(mdPath)
+		ext := filepath.Ext(base)
+		title = strings.TrimSuffix(base, ext)
+		if title == "" {
+			title = "Markdown 导入"
+		}
+	}
+
+	// 1. 解析 markdown，挑出第 N 张 GFM 表格
+	tables := extractGFMTables(string(raw))
+	if len(tables) == 0 {
+		return fmt.Errorf("文件里找不到任何 GFM 表格: %s", mdPath)
+	}
+	if tableIndex < 0 || tableIndex >= len(tables) {
+		return fmt.Errorf("--table-index %d 超出范围（文件里共 %d 张表，0-based）", tableIndex, len(tables))
+	}
+	rows := tables[tableIndex]
+	if len(rows) == 0 {
+		return fmt.Errorf("第 %d 张表是空的", tableIndex)
+	}
+	if err := validateSheetImportMDSize(rows); err != nil {
+		return err
+	}
+
+	sheetImportMDProgress(cmd, output, "解析到表格 #%d：%d 行 × %d 列\n", tableIndex, len(rows), len(rows[0]))
+
+	userAccessToken := deps.resolveUserToken(cmd)
+	ctx := client.Context()
+
+	// 2. 创建空电子表格
+	sheetImportMDProgress(cmd, output, "正在创建电子表格 %q ...\n", title)
+	info, err := deps.createSpreadsheet(ctx, title, folderToken, userAccessToken)
+	if err != nil {
+		return err
+	}
+
+	// 3. 拿默认 sheet_id
+	sheets, err := deps.querySheets(ctx, info.SpreadsheetToken, userAccessToken)
+	if err != nil {
+		return fmt.Errorf("查询工作表列表失败: %w", err)
+	}
+	if len(sheets) == 0 {
+		return fmt.Errorf("新建电子表格没有默认工作表（不应该发生）")
+	}
+	sheetID := sheets[0].SheetID
+
+	// 4. 写入数据到 A1
+	colCount := len(rows[0])
+	rowCount := len(rows)
+	rangeStr := fmt.Sprintf("%s!A1:%s%d", sheetID, colIndexToLetter(colCount), rowCount)
+
+	values := make([][]any, rowCount)
+	for i, row := range rows {
+		values[i] = make([]any, colCount)
+		for j := 0; j < colCount; j++ {
+			if j < len(row) {
+				values[i][j] = row[j]
+			} else {
+				values[i][j] = ""
+			}
+		}
+	}
+
+	sheetImportMDProgress(cmd, output, "正在写入 %s ...\n", rangeStr)
+	if _, err := deps.writeCells(ctx, info.SpreadsheetToken, rangeStr, values, userAccessToken); err != nil {
+		return err
+	}
+
+	// 5. 输出
+	if output == "json" {
+		return printJSON(sheetImportMDResult{
+			SpreadsheetToken: info.SpreadsheetToken,
+			Title:            info.Title,
+			URL:              info.URL,
+			Rows:             rowCount,
+			Cols:             colCount,
+			TableIndex:       tableIndex,
+			SourceFile:       mdPath,
+		})
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "=== 导入完成 ===")
+	fmt.Fprintf(out, "  Token: %s\n", info.SpreadsheetToken)
+	fmt.Fprintf(out, "  标题: %s\n", info.Title)
+	fmt.Fprintf(out, "  URL: %s\n", info.URL)
+	fmt.Fprintf(out, "  数据: %d 行 × %d 列（来自 %s 第 %d 张表）\n", rowCount, colCount, mdPath, tableIndex)
+	return nil
+}
+
+func sheetImportMDProgress(cmd *cobra.Command, output, format string, args ...any) {
+	out := cmd.OutOrStdout()
+	if output == "json" {
+		out = cmd.ErrOrStderr()
+	}
+	fmt.Fprintf(out, format, args...)
 }
 
 // sheetImportMDResult 是 --output json 模式下的稳定输出 schema。
@@ -187,56 +225,110 @@ type sheetImportMDResult struct {
 	SourceFile       string `json:"source_file"`
 }
 
+const maxSheetImportMDCells = 5000
+
+func validateSheetImportMDSize(rows [][]string) error {
+	if len(rows) == 0 || len(rows[0]) == 0 {
+		return nil
+	}
+	cells := len(rows) * len(rows[0])
+	if cells > maxSheetImportMDCells {
+		return fmt.Errorf("表格单次写入单元格数 %d（%d 行 × %d 列）超过飞书 API 上限 %d，请拆分", cells, len(rows), len(rows[0]), maxSheetImportMDCells)
+	}
+	return nil
+}
+
 // extractGFMTables 从 Markdown 文本中解析所有 GFM 表格，按出现顺序返回。
-//
-// GFM 表格的判定规则：
-//   - 表头行（含至少一个 "|"）+ 紧跟一行分隔线（每个 cell 是 :?-+:?，可有对齐冒号）
-//   - 之后连续的「也含 | 的行」是数据行，遇到非表格行停止
-//
-// 兼容两种写法：
-//   - 标准 |...| 双边竖线
-//   - 无前导/尾部竖线（GitHub 也支持）
 func extractGFMTables(text string) [][][]string {
-	lines := strings.Split(text, "\n")
 	var tables [][][]string
 
-	i := 0
-	for i < len(lines) {
-		// 候选表头：至少 1 个 "|" 且不是分隔线本身
-		if !looksLikeTableLine(lines[i]) || isSeparatorLine(lines[i]) {
-			i++
-			continue
-		}
-		// 下一行必须是分隔线
-		if i+1 >= len(lines) || !isSeparatorLine(lines[i+1]) {
-			i++
-			continue
+	md := goldmark.New(goldmark.WithExtensions(extension.GFM))
+	source := []byte(text)
+	doc := md.Parser().Parse(textpkg.NewReader(source))
+
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
 		}
 
-		// 找到一张表的开头：解析表头 + 分隔线 + 数据行
-		headerCells := splitTableRow(lines[i])
-		// 分隔线决定列数（GFM 严格按分隔线列数）
-		sepCells := splitTableRow(lines[i+1])
-		colCount := len(sepCells)
-		if colCount == 0 {
-			i++
-			continue
+		table, ok := n.(*east.Table)
+		if !ok {
+			return ast.WalkContinue, nil
 		}
 
-		var rows [][]string
-		rows = append(rows, padRow(headerCells, colCount))
-
-		j := i + 2
-		for j < len(lines) && looksLikeTableLine(lines[j]) && !isSeparatorLine(lines[j]) {
-			rows = append(rows, padRow(splitTableRow(lines[j]), colCount))
-			j++
+		rows := tableToRows(table, source)
+		if len(rows) > 0 {
+			tables = append(tables, rows)
 		}
-
-		tables = append(tables, rows)
-		i = j
-	}
+		return ast.WalkSkipChildren, nil
+	})
 
 	return tables
+}
+
+func tableToRows(table *east.Table, source []byte) [][]string {
+	var rows [][]string
+	colCount := len(table.Alignments)
+	if colCount == 0 {
+		return nil
+	}
+
+	for row := table.FirstChild(); row != nil; row = row.NextSibling() {
+		switch r := row.(type) {
+		case *east.TableHeader:
+			if r.ChildCount() != colCount {
+				return nil
+			}
+			rows = append(rows, tableRowToCells(r, source, colCount))
+		case *east.TableRow:
+			rows = append(rows, tableRowToCells(r, source, colCount))
+		}
+	}
+	return rows
+}
+
+func tableRowToCells(row ast.Node, source []byte, colCount int) []string {
+	cells := make([]string, 0, colCount)
+	for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+		if tc, ok := cell.(*east.TableCell); ok {
+			cells = append(cells, strings.TrimSpace(tableCellText(tc, source)))
+		}
+	}
+	return padRow(cells, colCount)
+}
+
+func tableCellText(node ast.Node, source []byte) string {
+	var buf bytes.Buffer
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		switch n := child.(type) {
+		case *ast.Text:
+			buf.WriteString(unescapeMDTableCellText(string(n.Segment.Value(source))))
+		case *ast.String:
+			buf.Write(n.Value)
+		case *ast.RawHTML:
+			raw := strings.TrimSpace(strings.ToLower(rawHTMLText(n, source)))
+			if raw == "<br>" || raw == "<br/>" || raw == "<br />" {
+				buf.WriteByte('\n')
+			}
+		default:
+			buf.WriteString(tableCellText(child, source))
+		}
+	}
+	return buf.String()
+}
+
+func rawHTMLText(node *ast.RawHTML, source []byte) string {
+	var buf bytes.Buffer
+	for i := 0; i < node.Segments.Len(); i++ {
+		segment := node.Segments.At(i)
+		buf.Write(segment.Value(source))
+	}
+	return buf.String()
+}
+
+func unescapeMDTableCellText(s string) string {
+	replacer := strings.NewReplacer(`\|`, "|", `\\`, `\`)
+	return replacer.Replace(s)
 }
 
 // looksLikeTableLine 行里至少一个 "|"（已 unescape \|）且非空。
@@ -340,8 +432,10 @@ func padRow(row []string, colCount int) []string {
 func init() {
 	sheetCmd.AddCommand(sheetImportMDCmd)
 	sheetImportMDCmd.Flags().StringP("title", "t", "", "电子表格标题（默认用文件名去后缀）")
-	sheetImportMDCmd.Flags().StringP("folder-token", "f", "", "目标文件夹 Token（可选）")
+	sheetImportMDCmd.Flags().StringP("folder", "f", "", "目标文件夹 Token（可选）")
+	sheetImportMDCmd.Flags().String("folder-token", "", "目标文件夹 Token（兼容旧参数，建议使用 --folder）")
 	sheetImportMDCmd.Flags().Int("table-index", 0, "选第几张 GFM 表格（0-based，默认第 0 张）")
 	sheetImportMDCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
 	sheetImportMDCmd.Flags().String("user-access-token", "", "User Access Token（可选；默认优先使用 auth login 登录态，失败时回退 App Token）")
+	_ = sheetImportMDCmd.Flags().MarkDeprecated("folder-token", "请改用 --folder")
 }

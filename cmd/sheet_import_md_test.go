@@ -1,8 +1,18 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/spf13/cobra"
 )
 
 func TestExtractGFMTables_Standard(t *testing.T) {
@@ -121,6 +131,29 @@ just | a single | pipe but no separator line
 	tables := extractGFMTables(md)
 	if len(tables) != 0 {
 		t.Fatalf("expected 0 tables, got %d", len(tables))
+	}
+}
+
+func TestExtractGFMTables_SkipsFencedCodeBlock(t *testing.T) {
+	md := "```markdown\n| fake | table |\n| --- | --- |\n| no | import |\n```\n\n| real | table |\n| --- | --- |\n| yes | import |\n"
+	tables := extractGFMTables(md)
+	if len(tables) != 1 {
+		t.Fatalf("expected 1 real table, got %d: %#v", len(tables), tables)
+	}
+	want := [][]string{{"real", "table"}, {"yes", "import"}}
+	if !reflect.DeepEqual(tables[0], want) {
+		t.Errorf("table mismatch: got %v want %v", tables[0], want)
+	}
+}
+
+func TestExtractGFMTables_HeaderSeparatorColumnMismatch(t *testing.T) {
+	md := `| a | b | c |
+| --- | --- |
+| 1 | 2 | 3 |
+`
+	tables := extractGFMTables(md)
+	if len(tables) != 0 {
+		t.Fatalf("expected mismatched header/separator not to be recognized, got %#v", tables)
 	}
 }
 
@@ -284,4 +317,187 @@ func TestPadRow(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateSheetImportMDSize_RejectsOver5000Cells(t *testing.T) {
+	rows := make([][]string, 51)
+	for i := range rows {
+		rows[i] = make([]string, 100)
+	}
+	err := validateSheetImportMDSize(rows)
+	if err == nil {
+		t.Fatal("expected over 5000 cells to be rejected")
+	}
+	if !strings.Contains(err.Error(), "5100") || !strings.Contains(err.Error(), "5000") {
+		t.Fatalf("error should mention actual and limit cells, got: %v", err)
+	}
+}
+
+func TestRunSheetImportMD_JSONStdoutIsPureJSON(t *testing.T) {
+	mdPath := writeTempMarkdown(t, `| name | age |
+| --- | --- |
+| Alice | 30 |
+`)
+	cmd := newSheetImportMDTestCommand(t)
+	if err := cmd.Flags().Set("output", "json"); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	deps := sheetImportMDTestDeps(t, func(ctx context.Context, title, folderToken, userAccessToken string) (*client.SpreadsheetInfo, error) {
+		return &client.SpreadsheetInfo{
+			SpreadsheetToken: "sht_test",
+			Title:            title,
+			URL:              "https://feishu.cn/sheets/sht_test",
+		}, nil
+	})
+
+	stdout := captureStdout(t, func() {
+		if err := runSheetImportMD(cmd, []string{mdPath}, deps); err != nil {
+			t.Fatalf("runSheetImportMD returned error: %v", err)
+		}
+	})
+
+	var got sheetImportMDResult
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout should be pure JSON, got %q, error: %v", stdout, err)
+	}
+	if got.SpreadsheetToken != "sht_test" || got.Rows != 2 || got.Cols != 2 {
+		t.Fatalf("unexpected JSON result: %+v", got)
+	}
+	if strings.Contains(stdout, "解析到表格") || strings.Contains(stdout, "正在") {
+		t.Fatalf("stdout contains progress text: %q", stdout)
+	}
+	if !strings.Contains(stderr.String(), "解析到表格") || !strings.Contains(stderr.String(), "正在写入") {
+		t.Fatalf("expected progress on stderr in json mode, got: %q", stderr.String())
+	}
+}
+
+func TestRunSheetImportMD_PrecheckRejectsBeforeCreate(t *testing.T) {
+	mdPath := writeTempMarkdown(t, buildMarkdownTable(51, 100))
+	cmd := newSheetImportMDTestCommand(t)
+	deps := sheetImportMDTestDeps(t, func(ctx context.Context, title, folderToken, userAccessToken string) (*client.SpreadsheetInfo, error) {
+		t.Fatal("CreateSpreadsheet should not be called when precheck fails")
+		return nil, nil
+	})
+
+	err := runSheetImportMD(cmd, []string{mdPath}, deps)
+	if err == nil {
+		t.Fatal("expected precheck error")
+	}
+	if !strings.Contains(err.Error(), "5100") || !strings.Contains(err.Error(), "5000") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunSheetImportMD_FolderFlagPreferred(t *testing.T) {
+	mdPath := writeTempMarkdown(t, `| name | age |
+| --- | --- |
+| Alice | 30 |
+`)
+	cmd := newSheetImportMDTestCommand(t)
+	if err := cmd.Flags().Set("folder", "fld_preferred"); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+
+	deps := sheetImportMDTestDeps(t, func(ctx context.Context, title, folderToken, userAccessToken string) (*client.SpreadsheetInfo, error) {
+		if folderToken != "fld_preferred" {
+			t.Fatalf("folder token = %q, want fld_preferred", folderToken)
+		}
+		return &client.SpreadsheetInfo{
+			SpreadsheetToken: "sht_test",
+			Title:            title,
+			URL:              "https://feishu.cn/sheets/sht_test",
+		}, nil
+	})
+
+	if err := runSheetImportMD(cmd, []string{mdPath}, deps); err != nil {
+		t.Fatalf("runSheetImportMD returned error: %v", err)
+	}
+}
+
+func newSheetImportMDTestCommand(t *testing.T) *cobra.Command {
+	t.Helper()
+	cmd := &cobra.Command{Use: "import-md"}
+	cmd.Flags().StringP("title", "t", "", "")
+	cmd.Flags().StringP("folder", "f", "", "")
+	cmd.Flags().String("folder-token", "", "")
+	cmd.Flags().Int("table-index", 0, "")
+	cmd.Flags().StringP("output", "o", "text", "")
+	cmd.Flags().String("user-access-token", "", "")
+	return cmd
+}
+
+func sheetImportMDTestDeps(t *testing.T, create func(context.Context, string, string, string) (*client.SpreadsheetInfo, error)) sheetImportMDDeps {
+	t.Helper()
+	return sheetImportMDDeps{
+		validate:          func() error { return nil },
+		resolveUserToken:  func(*cobra.Command) string { return "user-token" },
+		createSpreadsheet: create,
+		querySheets: func(ctx context.Context, spreadsheetToken, userAccessToken string) ([]*client.SheetInfo, error) {
+			return []*client.SheetInfo{{SheetID: "sheet1"}}, nil
+		},
+		writeCells: func(ctx context.Context, spreadsheetToken, rangeStr string, values [][]any, userAccessToken string) (*client.CellRange, error) {
+			if rangeStr != "sheet1!A1:B2" {
+				t.Fatalf("unexpected range: %s", rangeStr)
+			}
+			return &client.CellRange{Range: rangeStr, Values: values}, nil
+		},
+	}
+}
+
+func writeTempMarkdown(t *testing.T, content string) string {
+	t.Helper()
+	path := t.TempDir() + "/input.md"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	defer func() {
+		os.Stdout = oldStdout
+	}()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
+func buildMarkdownTable(rows, cols int) string {
+	var b strings.Builder
+	for c := 0; c < cols; c++ {
+		fmt.Fprintf(&b, "| h%d ", c)
+	}
+	b.WriteString("|\n")
+	for c := 0; c < cols; c++ {
+		b.WriteString("| --- ")
+	}
+	b.WriteString("|\n")
+	for r := 1; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			fmt.Fprintf(&b, "| %d-%d ", r, c)
+		}
+		b.WriteString("|\n")
+	}
+	return b.String()
 }
