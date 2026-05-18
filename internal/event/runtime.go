@@ -232,9 +232,14 @@ func (r *Runtime) emit(ev *larkevent.EventReq) error {
 		}
 	}
 	if _, err := r.opts.Out.Write(append(line, '\n')); err != nil {
-		// stdout 关闭（pipe broken）= 退出
+		// stdout 关闭（下游 pipe broken）= 立刻退出。
+		// ★ 必须主动 cancel，否则 Run 卡在 select{<-subCtx.Done()}
+		//   直到外部 Ctrl-C；这是 fix 引入 stopOnce 控制 cancel 后的对称要求。
 		if !r.stopOnce.Swap(true) {
-			// reason 在 Run 里赋值，但 pipe 错误也算 signal
+			r.setReason("signal") // pipe broken 归 signal（与 Ctrl-C 同义）
+			if r.cancel != nil {
+				r.cancel()
+			}
 		}
 		return err
 	}
