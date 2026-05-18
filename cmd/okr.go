@@ -11,7 +11,7 @@ var okrCmd = &cobra.Command{
   cycle      OKR 周期相关（list）
   progress   OKR 进展记录相关（list / create）
 
-权限要求（User Token）:
+权限要求（应用 Token / Tenant，实测 user token 被服务端拒：99991668）:
   cycle list           okr:okr:readonly 或 okr:okr.period:readonly
   progress list        okr:okr:readonly 或 okr:okr.progress:readonly
   progress create      okr:okr 或 okr:okr.progress:writeonly
@@ -29,8 +29,8 @@ var okrCmd = &cobra.Command{
     --content "本周完成核心模块联调"
 
 提示:
-  - OKR API 默认走 User Token，命令会自动读取 ~/.feishu-cli/token.json
-  - 未登录或 token 过期时请先执行 feishu-cli auth login`,
+  - OKR API 走应用身份（Tenant Token），无需 auth login
+  - scope 需在飞书应用后台开通（缺时报 99991672 + 给出申请链接）`,
 }
 
 var okrCycleCmd = &cobra.Command{
