@@ -13,6 +13,8 @@ import (
 const defaultMaxEmbeddedRows = 100
 const defaultMaxEmbeddedCols = 50
 
+var baseV3Call = client.BaseV3Call
+
 type feishuEmbeddedTableFetcher struct{}
 
 func (feishuEmbeddedTableFetcher) FetchSheet(token, sheetID string, maxRows, maxCols int, userAccessToken string) (*EmbeddedTableData, error) {
@@ -42,7 +44,7 @@ func (feishuEmbeddedTableFetcher) FetchBitable(baseToken, tableID string, maxRow
 	}
 	rowLimit := normalizedMaxEmbeddedRows(maxRows)
 	colLimit := normalizedMaxEmbeddedCols(maxCols)
-	headers, err := fetchBitableHeaders(baseToken, tableID, userAccessToken)
+	headers, err := fetchBitableHeaders(baseToken, tableID, colLimit, userAccessToken)
 	if err != nil {
 		return nil, err
 	}
@@ -158,31 +160,48 @@ func anyRowsToStringRows(values [][]any) [][]string {
 	return rows
 }
 
-func fetchBitableHeaders(baseToken, tableID, userAccessToken string) ([]string, error) {
-	data, err := client.BaseV3Call("GET", client.BaseV3Path("bases", baseToken, "tables", tableID, "fields"), map[string]any{"page_size": 100}, nil, userAccessToken)
-	if err != nil {
-		return nil, err
-	}
-	items, _ := data["items"].([]any)
-	headers := make([]string, 0, len(items))
-	if fields, ok := data["fields"].([]any); ok {
-		items = fields
-	}
-	for _, item := range items {
-		m, _ := item.(map[string]any)
-		name, _ := m["field_name"].(string)
-		if name == "" {
-			name, _ = m["name"].(string)
+func fetchBitableHeaders(baseToken, tableID string, maxCols int, userAccessToken string) ([]string, error) {
+	headers := make([]string, 0, maxCols)
+	pageToken := ""
+	for {
+		params := map[string]any{"page_size": 100}
+		if pageToken != "" {
+			params["page_token"] = pageToken
 		}
-		if name != "" {
-			headers = append(headers, name)
+		data, err := baseV3Call("GET", client.BaseV3Path("bases", baseToken, "tables", tableID, "fields"), params, nil, userAccessToken)
+		if err != nil {
+			return nil, err
+		}
+		items, _ := data["items"].([]any)
+		if fields, ok := data["fields"].([]any); ok {
+			items = fields
+		}
+		for _, item := range items {
+			m, _ := item.(map[string]any)
+			name, _ := m["field_name"].(string)
+			if name == "" {
+				name, _ = m["name"].(string)
+			}
+			if name != "" {
+				headers = append(headers, name)
+				if len(headers) >= maxCols {
+					return headers, nil
+				}
+			}
+		}
+		if !boolValue(data["has_more"]) {
+			break
+		}
+		pageToken = stringValue(data["page_token"])
+		if pageToken == "" {
+			break
 		}
 	}
 	return headers, nil
 }
 
 func fetchBitableRecords(baseToken, tableID string, limit int, userAccessToken string) ([]map[string]any, bool, error) {
-	data, err := client.BaseV3Call("GET", client.BaseV3Path("bases", baseToken, "tables", tableID, "records"), map[string]any{"page_size": limit}, nil, userAccessToken)
+	data, err := baseV3Call("GET", client.BaseV3Path("bases", baseToken, "tables", tableID, "records"), map[string]any{"page_size": limit}, nil, userAccessToken)
 	if err != nil {
 		return nil, false, err
 	}
@@ -234,6 +253,11 @@ func boolValue(v any) bool {
 	return b
 }
 
+func stringValue(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
 func inferBitableHeaders(records []map[string]any) []string {
 	seen := map[string]bool{}
 	for _, record := range records {
@@ -254,9 +278,9 @@ func embeddedCellString(v any) string {
 	case nil:
 		return ""
 	case string:
-		return sanitizeMarkdownTableCell(x)
+		return strings.TrimSpace(x)
 	case fmt.Stringer:
-		return sanitizeMarkdownTableCell(x.String())
+		return strings.TrimSpace(x.String())
 	case json.Number:
 		return x.String()
 	case bool:
@@ -276,15 +300,15 @@ func embeddedCellString(v any) string {
 	case map[string]any:
 		for _, key := range []string{"text", "name", "title", "link", "url", "email", "en_name", "id"} {
 			if s, ok := x[key].(string); ok && s != "" {
-				return sanitizeMarkdownTableCell(s)
+				return strings.TrimSpace(s)
 			}
 		}
 		if data, err := json.Marshal(x); err == nil {
-			return sanitizeMarkdownTableCell(string(data))
+			return string(data)
 		}
 		return ""
 	default:
-		return sanitizeMarkdownTableCell(fmt.Sprintf("%v", x))
+		return strings.TrimSpace(fmt.Sprintf("%v", x))
 	}
 }
 

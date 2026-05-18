@@ -2,6 +2,7 @@ package converter
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -137,5 +138,76 @@ func TestConvertNonGridBitableKeepsPlaceholder(t *testing.T) {
 	want := `<bitable token="bas123_tbl456" view="kanban"/>`
 	if !strings.Contains(got, want) {
 		t.Fatalf("expected placeholder %q, got:\n%s", want, got)
+	}
+}
+
+func TestEmbeddedCellStringDefersMarkdownTableEscaping(t *testing.T) {
+	got := embeddedCellString("A|B\nC")
+	if got != "A|B\nC" {
+		t.Fatalf("embeddedCellString() = %q, want raw trimmed text", got)
+	}
+
+	table := tableDataFromRows([][]string{{"标题|列"}, {got}}, 10, 10)
+	md := formatMarkdownTable(table.Headers, table.Rows, table.TruncatedRows)
+	if !strings.Contains(md, "| 标题\\|列 |") {
+		t.Fatalf("expected header escaped once, got:\n%s", md)
+	}
+	if !strings.Contains(md, "| A\\|B<br>C |") {
+		t.Fatalf("expected cell escaped once, got:\n%s", md)
+	}
+	if strings.Contains(md, `A\\|B`) {
+		t.Fatalf("cell was double escaped:\n%s", md)
+	}
+}
+
+func TestFetchBitableHeadersPaginates(t *testing.T) {
+	oldBaseV3Call := baseV3Call
+	defer func() { baseV3Call = oldBaseV3Call }()
+
+	calls := 0
+	baseV3Call = func(method, path string, params map[string]any, body any, userAccessToken string) (map[string]any, error) {
+		calls++
+		if method != "GET" {
+			t.Fatalf("method = %s, want GET", method)
+		}
+		if userAccessToken != "user-token" {
+			t.Fatalf("userAccessToken = %q, want user-token", userAccessToken)
+		}
+		switch calls {
+		case 1:
+			if _, ok := params["page_token"]; ok {
+				t.Fatalf("first request should not include page_token: %#v", params)
+			}
+			return map[string]any{
+				"items": []any{
+					map[string]any{"field_name": "一列"},
+					map[string]any{"field_name": "二列"},
+				},
+				"has_more":   true,
+				"page_token": "next-page",
+			}, nil
+		case 2:
+			if params["page_token"] != "next-page" {
+				t.Fatalf("page_token = %#v, want next-page", params["page_token"])
+			}
+			return map[string]any{
+				"items": []any{
+					map[string]any{"field_name": "三列"},
+				},
+				"has_more": false,
+			}, nil
+		default:
+			t.Fatalf("unexpected extra call %d", calls)
+		}
+		return nil, nil
+	}
+
+	got, err := fetchBitableHeaders("base", "table", 10, "user-token")
+	if err != nil {
+		t.Fatalf("fetchBitableHeaders() error = %v", err)
+	}
+	want := []string{"一列", "二列", "三列"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("fetchBitableHeaders() = %#v, want %#v", got, want)
 	}
 }
