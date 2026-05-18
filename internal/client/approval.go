@@ -530,10 +530,19 @@ func CreateApprovalInstance(opts CreateApprovalInstanceOptions, userAccessToken 
 		return nil, fmt.Errorf("form 不能为空")
 	}
 
+	// 飞书 approval/v4/instances POST 把 user_id 和 open_id 当成两个独立 body 字段
+	// （不像 cancel/cc/task 是通过 user_id_type query 区分），user_id 优先级高于 open_id。
+	// 所以 --user-id-type=open_id + ou_xxx 输入时必须放到 open_id 字段，否则服务端找不到用户。
 	body := map[string]any{
 		"approval_code": opts.ApprovalCode,
-		"user_id":       opts.UserID,
 		"form":          opts.Form,
+	}
+	switch opts.UserIDType {
+	case "open_id":
+		body["open_id"] = opts.UserID
+	default:
+		// user_id / union_id / 空 (默认走 user_id 字段，由 user_id_type query 决定语义)
+		body["user_id"] = opts.UserID
 	}
 	if opts.DepartmentID != "" {
 		body["department_id"] = opts.DepartmentID

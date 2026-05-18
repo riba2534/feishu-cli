@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -23,7 +24,7 @@ func scanAndUploadInlineImages(htmlBody, mailboxID, userToken string) (string, [
 	}
 
 	// 解析 open_id：drive upload parent_node 必填
-	openID, err := resolveCurrentUserOpenID()
+	openID, err := resolveCurrentUserOpenID(userToken)
 	if err != nil {
 		return "", nil, fmt.Errorf("--inline-images-auto-scan 需要 open_id：%w", err)
 	}
@@ -66,15 +67,22 @@ func scanAndUploadInlineImages(htmlBody, mailboxID, userToken string) (string, [
 	return rewritten, parts, nil
 }
 
-// resolveCurrentUserOpenID 从 ~/.feishu-cli/user_profile.json 读出当前登录用户 open_id
-// 没有缓存或为空时返回明确错误，提示用户先 auth login
-func resolveCurrentUserOpenID() (string, error) {
-	cache, err := auth.LoadCurrentUserCache()
+// resolveCurrentUserOpenID 拿当前 active user token 对应的真实 open_id
+// 优先 cache（且校验 token 一致性），cache 不命中或与 active token 不一致就回源 /authen/v1/user_info
+// 修复 codex review P2 finding：之前只读 cache 不校验 token，多 profile / 显式传 --user-access-token 时会拿到错误 open_id
+func resolveCurrentUserOpenID(userToken string) (string, error) {
+	if strings.TrimSpace(userToken) == "" {
+		return "", fmt.Errorf("解析 open_id 需要有效的 user access token")
+	}
+	if cache, err := auth.LoadCurrentUserCache(); err == nil && cache != nil && cache.OpenID != "" && cache.MatchesToken(userToken) {
+		return cache.OpenID, nil
+	}
+	info, err := client.GetCurrentUserInfo(userToken)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("调用 /authen/v1/user_info 拉取 open_id 失败（请确认 token 有效且 scope 含 auth:user.id:read）: %w", err)
 	}
-	if cache == nil || cache.OpenID == "" {
-		return "", fmt.Errorf("未找到当前用户 open_id，请先执行 `feishu-cli auth login` 完成登录")
+	if info == nil || info.OpenID == "" {
+		return "", fmt.Errorf("/authen/v1/user_info 未返回 open_id")
 	}
-	return cache.OpenID, nil
+	return info.OpenID, nil
 }

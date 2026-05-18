@@ -20,7 +20,10 @@ func TestParseOnly(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {
-			got := parseOnly(tc.input)
+			got, err := parseOnly(tc.input)
+			if err != nil {
+				t.Fatalf("parseOnly(%q) unexpected error: %v", tc.input, err)
+			}
 			if tc.nilMap {
 				if got != nil {
 					t.Errorf("parseOnly(%q) = %v, want nil", tc.input, got)
@@ -36,6 +39,44 @@ func TestParseOnly(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestParseOnlyRejectsUnknown 验证 --only 包含未知 check 名时报错（修复 codex P2 finding）
+func TestParseOnlyRejectsUnknown(t *testing.T) {
+	cases := []string{"user_tokn", "user_token,unknown_check", "totally_made_up"}
+	for _, in := range cases {
+		t.Run(in, func(t *testing.T) {
+			_, err := parseOnly(in)
+			if err == nil {
+				t.Errorf("parseOnly(%q) should return error for unknown check name", in)
+			}
+		})
+	}
+}
+
+// TestRedactProxyURLStripsPassword 验证 redactProxyURL 去掉 userinfo password（修复 codex P2 finding）
+func TestRedactProxyURLStripsPassword(t *testing.T) {
+	tests := []struct {
+		in           string
+		mustMask     bool
+		mustKeepHost string
+	}{
+		{"https://user:secret123@proxy.example", true, "proxy.example"},
+		{"https://user@proxy.example", false, "proxy.example"},
+		{"https://proxy.example:8080", false, "proxy.example"},
+		{"", false, ""},
+	}
+	for _, tc := range tests {
+		out := redactProxyURL(tc.in)
+		if tc.mustMask {
+			if strings.Contains(out, "secret123") {
+				t.Errorf("redactProxyURL(%q) = %q still contains secret123", tc.in, out)
+			}
+		}
+		if tc.mustKeepHost != "" && !strings.Contains(out, tc.mustKeepHost) {
+			t.Errorf("redactProxyURL(%q) = %q lost host %q", tc.in, out, tc.mustKeepHost)
+		}
 	}
 }
 

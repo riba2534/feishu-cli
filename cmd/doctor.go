@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	buildinfo "runtime/debug"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -70,7 +72,10 @@ var doctorCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		only := parseOnly(doctorOnly)
+		only, parseErr := parseOnly(doctorOnly)
+		if parseErr != nil {
+			return parseErr
+		}
 		var results []checkResult
 
 		// 1. config_file
@@ -123,16 +128,48 @@ func init() {
 	rootCmd.AddCommand(doctorCmd)
 }
 
-// parseOnly 解析 --only 参数；空字符串表示全部
-func parseOnly(s string) map[string]bool {
+// validOnlyNames doctor 支持的所有 check 名（与 shouldRun 调用处同步）。
+// 新增 check 时务必同步更新；缺失时 --only 会拒接收以避免 CI 静默 pass。
+var validOnlyNames = map[string]bool{
+	"config_file":        true,
+	"user_token":         true,
+	"endpoint_open":      true,
+	"endpoint_larksuite": true,
+	"proxy":              true,
+	"dependencies":       true,
+}
+
+// parseOnly 解析 --only 参数；空字符串表示全部；包含未知 name 返回 error
+func parseOnly(s string) (map[string]bool, error) {
 	if strings.TrimSpace(s) == "" {
-		return nil
+		return nil, nil
 	}
 	m := make(map[string]bool)
-	for _, name := range strings.Split(s, ",") {
-		m[strings.TrimSpace(name)] = true
+	var bad []string
+	for _, raw := range strings.Split(s, ",") {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		if !validOnlyNames[name] {
+			bad = append(bad, name)
+			continue
+		}
+		m[name] = true
 	}
-	return m
+	if len(bad) > 0 {
+		valid := make([]string, 0, len(validOnlyNames))
+		for k := range validOnlyNames {
+			valid = append(valid, k)
+		}
+		sort.Strings(valid)
+		return nil, fmt.Errorf("--only 包含未知 check 名: %s（合法值: %s）",
+			strings.Join(bad, ", "), strings.Join(valid, ", "))
+	}
+	if len(m) == 0 {
+		return nil, fmt.Errorf("--only 为空（去除空白后）")
+	}
+	return m, nil
 }
 
 func shouldRun(name string, only map[string]bool) bool {
@@ -237,7 +274,7 @@ func checkProxy() checkResult {
 			missing = append(missing, d)
 		}
 	}
-	msg := fmt.Sprintf("HTTPS_PROXY=%s", httpProxy)
+	msg := fmt.Sprintf("HTTPS_PROXY=%s", redactProxyURL(httpProxy))
 	if len(missing) > 0 {
 		return checkWarn("proxy", msg,
 			fmt.Sprintf("NO_PROXY 缺少飞书域：%v；建议加入 NO_PROXY 避免代理拦截内部域", missing))
@@ -320,4 +357,24 @@ func outputPretty(results []checkResult) error {
 	}
 	fmt.Println("\n全部通过 ✓")
 	return nil
+}
+
+// redactProxyURL 去掉 proxy URL 中的 user:password userinfo，避免 doctor 输出泄露凭证。
+// 入参不是合法 URL 时原样返回（仅尝试 net/url 解析）。
+func redactProxyURL(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	if u.User.Username() == "" {
+		return raw
+	}
+	// 保留 username 提示型存在但 mask password；如果只有 password 也整体替成 ***
+	if _, hasPwd := u.User.Password(); hasPwd {
+		u.User = url.UserPassword(u.User.Username(), "***")
+	}
+	return u.String()
 }

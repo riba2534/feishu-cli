@@ -62,13 +62,14 @@ var markdownOverwriteCmd = &cobra.Command{
 			return fmt.Errorf("请提供 --content 或 --content-file")
 		}
 
-		// 确定新文件名：优先 --name；其次 --content-file basename；最后兜底 fileToken.md。
+		// 确定新文件名：优先 --name；其次 --content-file basename；不再兜底 fileToken.md
+		// （codex review 反馈：fallback fileToken.md 会默默重命名远端文件违反 help 承诺）
 		fileName := strings.TrimSpace(name)
 		if fileName == "" && contentFile != "" {
 			fileName = filepath.Base(contentFile)
 		}
 		if fileName == "" {
-			fileName = fileToken + ".md"
+			return fmt.Errorf("使用 --content 时必须提供 --name 指定远端文件名（保留原名请加 --name <现有文件名>.md）")
 		}
 		if !strings.HasSuffix(strings.ToLower(fileName), ".md") {
 			return fmt.Errorf("--name 必须以 .md 结尾，得到 %q", fileName)

@@ -26,7 +26,7 @@ var okrProgressCreateCmd = &cobra.Command{
 
 可选参数:
   --progress-percent  进度百分比（数字，配合 --progress-status 一起使用）
-  --progress-status   进度状态：normal / overdue / done
+  --progress-status   进度状态：normal / risky / overdue
   --source-title      来源标题（默认 "created by feishu-cli"）
   --source-url        来源 URL（飞书 API 必填字段；默认 "https://www.feishu.cn/okr/progress"，
                       可改成进展实际跳转地址）
@@ -99,7 +99,7 @@ var okrProgressCreateCmd = &cobra.Command{
 			if progressStatus != "" {
 				status, ok := client.ParseOKRProgressStatus(progressStatus)
 				if !ok {
-					return fmt.Errorf("--progress-status 必须为 normal / overdue / done")
+					return fmt.Errorf("--progress-status 必须为 normal / risky / overdue")
 				}
 				rate.Status = &status
 			}
@@ -202,7 +202,7 @@ func init() {
 	okrProgressCreateCmd.Flags().String("content", "", "进展内容（纯文本，自动包装为 ContentBlock）")
 	okrProgressCreateCmd.Flags().String("content-json", "", "进展内容（原始 ContentBlock JSON 字符串）")
 	okrProgressCreateCmd.Flags().String("progress-percent", "", "进度百分比（数字）")
-	okrProgressCreateCmd.Flags().String("progress-status", "", "进度状态：normal / overdue / done")
+	okrProgressCreateCmd.Flags().String("progress-status", "", "进度状态：normal / risky / overdue")
 	okrProgressCreateCmd.Flags().String("source-title", "", "来源标题（默认 'created by feishu-cli'）")
 	okrProgressCreateCmd.Flags().String("source-url", "", "来源 URL（用于卡片点击跳转）")
 	okrProgressCreateCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型：open_id / union_id / user_id")

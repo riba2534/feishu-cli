@@ -662,6 +662,17 @@ func MigrateLegacy(opts MigrateLegacyOpts) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// --force 语义：dst 旧文件必须被清空，避免「src 缺一份 + dst 留旧版本」
+	// 导致 stale token 与新 config.yaml 混搭（codex review 报告的真 bug）。
+	if opts.Force {
+		for _, f := range []string{configFileName, tokenFileName, userCacheName} {
+			dst := filepath.Join(dstDir, f)
+			if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+				return "", fmt.Errorf("清理旧 %s 失败: %w", f, err)
+			}
+		}
+	}
+
 	for _, f := range []string{configFileName, tokenFileName, userCacheName} {
 		src := filepath.Join(root, f)
 		if !fileExists(src) {

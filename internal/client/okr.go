@@ -486,23 +486,25 @@ func ParseOKRTargetType(s string) (OKRProgressTargetType, bool) {
 }
 
 // OKRProgressStatus 进展状态
+// 飞书官方枚举：normal / risky / overdue（无 done；undefined 不暴露给 CLI）
+// 服务端 SDK docs: https://open.feishu.cn/document/server-docs/okr-v1/progress_record/create
 type OKRProgressStatus int
 
 const (
 	OKRProgressStatusNormal  OKRProgressStatus = 0
-	OKRProgressStatusOverdue OKRProgressStatus = 1
-	OKRProgressStatusDone    OKRProgressStatus = 2
+	OKRProgressStatusRisky   OKRProgressStatus = 1
+	OKRProgressStatusOverdue OKRProgressStatus = 2
 )
 
-// ParseOKRProgressStatus 把 normal / overdue / done 转为枚举
+// ParseOKRProgressStatus 把 normal / risky / overdue 转为枚举
 func ParseOKRProgressStatus(s string) (OKRProgressStatus, bool) {
 	switch s {
 	case "normal", "0":
 		return OKRProgressStatusNormal, true
-	case "overdue", "1":
+	case "risky", "1":
+		return OKRProgressStatusRisky, true
+	case "overdue", "2":
 		return OKRProgressStatusOverdue, true
-	case "done", "2":
-		return OKRProgressStatusDone, true
 	}
 	return 0, false
 }
@@ -511,10 +513,10 @@ func (s OKRProgressStatus) String() string {
 	switch s {
 	case OKRProgressStatusNormal:
 		return "normal"
+	case OKRProgressStatusRisky:
+		return "risky"
 	case OKRProgressStatusOverdue:
 		return "overdue"
-	case OKRProgressStatusDone:
-		return "done"
 	}
 	return ""
 }
