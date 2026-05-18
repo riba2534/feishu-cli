@@ -93,16 +93,32 @@ type ImageInfo struct {
 
 // ConvertOptions holds conversion options
 type ConvertOptions struct {
-	DownloadImages      bool
-	AssetsDir           string
-	UploadImages        bool
-	DocumentID          string
-	UserAccessToken     string // User Access Token，用于下载图片和画板等需要权限的资源
-	Debug               bool   // 为 true 时，输出下载失败等调试信息到 stderr
-	DegradeDeepHeadings bool   // 为 true 时，Heading 7-9 输出为粗体段落而非 ######
-	FrontMatter         bool   // 为 true 时，导出时添加 YAML front matter
-	Highlight           bool   // 为 true 时，导出文本颜色和背景色为 HTML span
-	ExpandMentions      bool   // 导出时展开 @用户为友好格式（默认 false，CLI 默认 true）
+	DownloadImages       bool
+	AssetsDir            string
+	UploadImages         bool
+	DocumentID           string
+	UserAccessToken      string               // User Access Token，用于下载图片和画板等需要权限的资源
+	MaxEmbeddedRows      int                  // 嵌入 sheet/bitable 展开为 Markdown 表格时最多导出的数据行数（不含表头）
+	MaxEmbeddedCols      int                  // 嵌入 sheet/bitable 展开为 Markdown 表格时最多导出的列数
+	ExpandEmbeddedTables bool                 // 为 true 时把嵌入 sheet/bitable 展开为 Markdown 表格
+	Debug                bool                 // 为 true 时，输出下载失败等调试信息到 stderr
+	DegradeDeepHeadings  bool                 // 为 true 时，Heading 7-9 输出为粗体段落而非 ######
+	FrontMatter          bool                 // 为 true 时，导出时添加 YAML front matter
+	Highlight            bool                 // 为 true 时，导出文本颜色和背景色为 HTML span
+	ExpandMentions       bool                 // 导出时展开 @用户为友好格式（默认 false，CLI 默认 true）
+	EmbeddedTableFetcher EmbeddedTableFetcher // 测试或调用方可注入嵌入表格读取实现；为空时使用飞书 API
+}
+
+// EmbeddedTableFetcher 负责把嵌入的 Sheet/Bitable 读取为二维表格。
+type EmbeddedTableFetcher interface {
+	FetchSheet(token, sheetID string, maxRows, maxCols int, userAccessToken string) (*EmbeddedTableData, error)
+	FetchBitable(baseToken, tableID string, maxRows, maxCols int, userAccessToken string) (*EmbeddedTableData, error)
+}
+
+type EmbeddedTableData struct {
+	Headers       []string
+	Rows          [][]string
+	TruncatedRows int
 }
 
 // ConvertResult contains converted blocks and table data

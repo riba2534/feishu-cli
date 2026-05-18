@@ -54,20 +54,25 @@ var exportMarkdownCmd = &cobra.Command{
 
 		frontMatter, _ := cmd.Flags().GetBool("front-matter")
 		highlight, _ := cmd.Flags().GetBool("highlight")
+		maxEmbeddedRows, _ := cmd.Flags().GetInt("max-embedded-rows")
+		maxEmbeddedCols, _ := cmd.Flags().GetInt("max-embedded-cols")
 
 		expandMentions, _ := cmd.Flags().GetBool("expand-mentions")
 
 		// Convert to Markdown
 		cfg := config.Get()
 		options := converter.ConvertOptions{
-			DownloadImages:  downloadImages,
-			AssetsDir:       assetsDir,
-			DocumentID:      documentID,
-			UserAccessToken: userAccessToken,
-			Debug:           cfg.Debug,
-			FrontMatter:     frontMatter,
-			Highlight:       highlight,
-			ExpandMentions:  expandMentions,
+			DownloadImages:       downloadImages,
+			AssetsDir:            assetsDir,
+			DocumentID:           documentID,
+			UserAccessToken:      userAccessToken,
+			MaxEmbeddedRows:      maxEmbeddedRows,
+			MaxEmbeddedCols:      maxEmbeddedCols,
+			ExpandEmbeddedTables: true,
+			Debug:                cfg.Debug,
+			FrontMatter:          frontMatter,
+			Highlight:            highlight,
+			ExpandMentions:       expandMentions,
 		}
 
 		var conv *converter.BlockToMarkdown
@@ -133,5 +138,7 @@ func init() {
 	exportMarkdownCmd.Flags().Bool("front-matter", false, "添加 YAML front matter (标题和文档 ID)")
 	exportMarkdownCmd.Flags().Bool("highlight", false, "保留文本颜色和背景色 (输出为 HTML span)")
 	exportMarkdownCmd.Flags().Bool("expand-mentions", true, "展开 @用户为友好格式 (需要 contact:user.base:readonly 权限)")
+	exportMarkdownCmd.Flags().Int("max-embedded-rows", 100, "嵌入 sheet/bitable 展开为 Markdown 表格时最多导出的数据行数（不含表头）")
+	exportMarkdownCmd.Flags().Int("max-embedded-cols", 50, "嵌入 sheet/bitable 展开为 Markdown 表格时最多导出的列数")
 	exportMarkdownCmd.Flags().String("user-access-token", "", "User Access Token（用于访问无 App 权限的文档，自动从 auth login 读取）")
 }

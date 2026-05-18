@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -907,31 +908,11 @@ func (c *BlockToMarkdown) convertTable(block *larkdocx.Block) (string, error) {
 		table = append(table, row)
 	}
 
-	// Build markdown table
-	var sb strings.Builder
-
-	// Header row
-	if len(table) > 0 {
-		sb.WriteString("| ")
-		sb.WriteString(strings.Join(table[0], " | "))
-		sb.WriteString(" |\n")
-
-		// Separator
-		sb.WriteString("|")
-		for range table[0] {
-			sb.WriteString(" --- |")
-		}
-		sb.WriteString("\n")
-
-		// Data rows
-		for i := 1; i < len(table); i++ {
-			sb.WriteString("| ")
-			sb.WriteString(strings.Join(table[i], " | "))
-			sb.WriteString(" |\n")
-		}
+	if len(table) == 0 {
+		return "", nil
 	}
 
-	return sb.String(), nil
+	return formatMarkdownTablePresanitized(table[0], table[1:], 0), nil
 }
 
 func (c *BlockToMarkdown) getCellTextWithDepth(block *larkdocx.Block, depth int) string {
@@ -963,6 +944,85 @@ func (c *BlockToMarkdown) getCellTextWithDepth(block *larkdocx.Block, depth int)
 		return result
 	}
 	return ""
+}
+
+func formatMarkdownTable(headers []string, rows [][]string, truncatedRows int) string {
+	return formatMarkdownTableWithSanitize(headers, rows, truncatedRows, true)
+}
+
+func formatMarkdownTablePresanitized(headers []string, rows [][]string, truncatedRows int) string {
+	return formatMarkdownTableWithSanitize(headers, rows, truncatedRows, false)
+}
+
+func formatMarkdownTableWithSanitize(headers []string, rows [][]string, truncatedRows int, sanitize bool) string {
+	if len(headers) == 0 {
+		return ""
+	}
+
+	normalizedRows := make([][]string, len(rows))
+	for i, row := range rows {
+		normalizedRows[i] = normalizeMarkdownTableRow(row, len(headers), sanitize)
+	}
+	headers = normalizeMarkdownTableRow(headers, len(headers), sanitize)
+
+	var sb strings.Builder
+	sb.WriteString("| ")
+	sb.WriteString(strings.Join(headers, " | "))
+	sb.WriteString(" |\n|")
+	for range headers {
+		sb.WriteString(" --- |")
+	}
+	sb.WriteString("\n")
+	for _, row := range normalizedRows {
+		sb.WriteString("| ")
+		sb.WriteString(strings.Join(row, " | "))
+		sb.WriteString(" |\n")
+	}
+	if truncatedRows > 0 {
+		sb.WriteString(fmt.Sprintf("\n> 还有 %d 行未导出（设置 --max-embedded-rows 调整）\n", truncatedRows))
+	}
+	return sb.String()
+}
+
+func normalizeMarkdownTableRow(row []string, cols int, sanitize bool) []string {
+	out := make([]string, cols)
+	for i := 0; i < cols && i < len(row); i++ {
+		if sanitize {
+			out[i] = sanitizeMarkdownTableCell(row[i])
+		} else {
+			out[i] = row[i]
+		}
+	}
+	return out
+}
+
+func (c *BlockToMarkdown) embeddedTableFetcher() EmbeddedTableFetcher {
+	if c.options.EmbeddedTableFetcher != nil {
+		return c.options.EmbeddedTableFetcher
+	}
+	return feishuEmbeddedTableFetcher{}
+}
+
+func (c *BlockToMarkdown) shouldFetchEmbeddedTables() bool {
+	return c.options.EmbeddedTableFetcher != nil || c.options.ExpandEmbeddedTables
+}
+
+func splitEmbeddedToken(token string) (string, string) {
+	if idx := strings.Index(token, "_"); idx != -1 {
+		return token[:idx], token[idx+1:]
+	}
+	return token, ""
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func (c *BlockToMarkdown) isBitableGridView(block *larkdocx.Block) bool {
+	return block.Bitable.ViewType == nil || *block.Bitable.ViewType == 1
 }
 
 func (c *BlockToMarkdown) convertCallout(block *larkdocx.Block) (string, error) {
@@ -1150,6 +1210,26 @@ func (c *BlockToMarkdown) convertBitable(block *larkdocx.Block) (string, error) 
 		return "", nil
 	}
 
+	fallback := c.bitablePlaceholder(block)
+	baseToken, tableID := splitEmbeddedToken(derefString(block.Bitable.Token))
+	if baseToken != "" && tableID != "" && c.isBitableGridView(block) && c.shouldFetchEmbeddedTables() {
+		start := time.Now()
+		data, err := c.embeddedTableFetcher().FetchBitable(baseToken, tableID, c.options.MaxEmbeddedRows, c.options.MaxEmbeddedCols, c.options.UserAccessToken)
+		if err == nil && data != nil && len(data.Headers) > 0 {
+			if c.options.Debug {
+				fmt.Fprintf(os.Stderr, "[Debug] 展开嵌入 bitable: base=%s table=%s rows=%d elapsed=%s\n", baseToken, tableID, len(data.Rows), time.Since(start))
+			}
+			return formatMarkdownTable(data.Headers, data.Rows, data.TruncatedRows), nil
+		}
+		if c.options.Debug {
+			fmt.Fprintf(os.Stderr, "[Debug] 展开嵌入 bitable 失败，保留占位: %v\n", err)
+		}
+	}
+
+	return fallback, nil
+}
+
+func (c *BlockToMarkdown) bitablePlaceholder(block *larkdocx.Block) string {
 	var attrs []string
 	if block.Bitable.Token != nil && *block.Bitable.Token != "" {
 		attrs = append(attrs, fmt.Sprintf("token=\"%s\"", *block.Bitable.Token))
@@ -1172,7 +1252,7 @@ func (c *BlockToMarkdown) convertBitable(block *larkdocx.Block) (string, error) 
 	}
 	attrs = append(attrs, fmt.Sprintf("view=\"%s\"", viewStr))
 
-	return fmt.Sprintf("<bitable %s/>\n", strings.Join(attrs, " ")), nil
+	return fmt.Sprintf("<bitable %s/>\n", strings.Join(attrs, " "))
 }
 
 func (c *BlockToMarkdown) convertSheet(block *larkdocx.Block) (string, error) {
@@ -1180,6 +1260,30 @@ func (c *BlockToMarkdown) convertSheet(block *larkdocx.Block) (string, error) {
 		return "", nil
 	}
 
+	fallback := c.sheetPlaceholder(block)
+	spreadsheetToken, sheetID := splitEmbeddedToken(derefString(block.Sheet.Token))
+	if spreadsheetToken != "" && sheetID != "" && c.shouldFetchEmbeddedTables() {
+		start := time.Now()
+		maxCols := c.options.MaxEmbeddedCols
+		if maxCols <= 0 && block.Sheet.ColumnSize != nil {
+			maxCols = *block.Sheet.ColumnSize
+		}
+		data, err := c.embeddedTableFetcher().FetchSheet(spreadsheetToken, sheetID, c.options.MaxEmbeddedRows, maxCols, c.options.UserAccessToken)
+		if err == nil && data != nil && len(data.Headers) > 0 {
+			if c.options.Debug {
+				fmt.Fprintf(os.Stderr, "[Debug] 展开嵌入 sheet: token=%s sheet=%s rows=%d elapsed=%s\n", spreadsheetToken, sheetID, len(data.Rows), time.Since(start))
+			}
+			return formatMarkdownTable(data.Headers, data.Rows, data.TruncatedRows), nil
+		}
+		if c.options.Debug {
+			fmt.Fprintf(os.Stderr, "[Debug] 展开嵌入 sheet 失败，保留占位: %v\n", err)
+		}
+	}
+
+	return fallback, nil
+}
+
+func (c *BlockToMarkdown) sheetPlaceholder(block *larkdocx.Block) string {
 	var attrs []string
 	if block.Sheet.Token != nil && *block.Sheet.Token != "" {
 		token := *block.Sheet.Token
@@ -1197,7 +1301,7 @@ func (c *BlockToMarkdown) convertSheet(block *larkdocx.Block) (string, error) {
 		attrs = append(attrs, fmt.Sprintf("cols=\"%d\"", *block.Sheet.ColumnSize))
 	}
 
-	return fmt.Sprintf("<sheet %s/>\n", strings.Join(attrs, " ")), nil
+	return fmt.Sprintf("<sheet %s/>\n", strings.Join(attrs, " "))
 }
 
 func (c *BlockToMarkdown) convertChatCard(block *larkdocx.Block) (string, error) {
