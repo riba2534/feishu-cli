@@ -6,6 +6,35 @@
 
 ## 未发布
 
+### 新增 — `approval` 写流程：发起 / 撤回 / 抄送 / 通过 / 拒绝
+
+补齐审批模块的写能力，原本只有 `approval get`（定义查询）和 `approval task query`（任务列表查询）两条只读命令，现在可以完整完成审批生命周期：
+
+- `feishu-cli approval instance create` — 发起一条审批实例，`--form` 或 `--form-file` 传表单 JSON
+- `feishu-cli approval instance cancel` — 撤回（取消）已发起的审批实例
+- `feishu-cli approval instance cc` — 把审批实例抄送给一个或多个用户（`--cc-user-ids ou_a,ou_b`）
+- `feishu-cli approval task approve` — 通过指定审批任务，可附 `--comment`
+- `feishu-cli approval task reject` — 拒绝指定审批任务，建议在 `--comment` 中填写原因
+
+**权限要求**：User Token + `approval:approval` scope（实例侧 `approval:instance:write` / 任务侧 `approval:task:write` 已包含其中）。
+
+**底层 API**：
+
+- `POST /open-apis/approval/v4/instances`
+- `POST /open-apis/approval/v4/instances/cancel`
+- `POST /open-apis/approval/v4/instances/cc`
+- `POST /open-apis/approval/v4/tasks/approve`
+- `POST /open-apis/approval/v4/tasks/reject`
+
+不在本 MVP 范围（后续按需补）：`tasks/transfer`（转交）、`tasks/rollback`（退回）、`tasks/add_sign`（加签）、`tasks/remind`（催办）。
+
+**代码影响范围**：
+
+- `internal/client/approval.go`：新增 5 个 client 函数（`CreateApprovalInstance` / `CancelApprovalInstance` / `CCApprovalInstance` / `ApproveApprovalTask` / `RejectApprovalTask`）+ 4 个对应 Options 结构 + 共享 POST helper `doApprovalPost`
+- `cmd/approval_instance.go`：新增 `approval instance` 父命令
+- `cmd/approval_instance_{create,cancel,cc}.go`：3 条实例侧子命令
+- `cmd/approval_task_{approve,reject}.go`：2 条任务侧子命令，复用 `readApprovalTaskActionFlags` 校验
+
 ### 新增 — `comment reply add`：为已有评论添加回复
 
 新增命令 `feishu-cli comment reply add <file_token> <comment_id> --text "..."`，补齐评论回复
