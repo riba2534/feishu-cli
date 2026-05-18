@@ -21,7 +21,7 @@ var okrProgressListCmd = &cobra.Command{
   --user-id-type      用户 ID 类型：open_id（默认） / union_id / user_id
   --output, -o        输出格式：json
 
-权限要求（User Token）:
+权限要求（应用 Token / Tenant，实测 user token 被服务端拒：99991668）:
   okr:okr:readonly 或 okr:okr.progress:readonly
 
 示例:

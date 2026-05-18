@@ -18,9 +18,9 @@ var msgFlagListCmd = &cobra.Command{
 
 输出:
   完整 JSON，包含 flag_items / delete_flag_items / messages / has_more / page_token。
-  其中 flag_items[i].item_type 与 flag_type 为整数枚举：
-    item_type:  0=default, 1=thread, 2=msg_thread
-    flag_type:  1=message, 2=feed
+  其中 flag_items[i].item_type 与 flag_type 为整数枚举（与服务端 OpenAPI 对齐）：
+    item_type:  0=default, 4=thread, 11=msg_thread
+    flag_type:  1=feed, 2=message
 
 示例:
   feishu-cli msg flag list
