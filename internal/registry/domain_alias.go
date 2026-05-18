@@ -161,6 +161,25 @@ var extraDomainScopes = map[string][]string{
 	"whiteboard": {
 		"board:whiteboard:node:read", "board:whiteboard:node:create", "board:whiteboard:node:delete",
 	},
+
+	// event shortcuts: list / schema / consume / status / stop
+	// WebSocket 实时事件订阅；具体 scope 因 EventKey 而异，这里列出常用 EventKey 的并集。
+	// 完整对照见 `feishu-cli event schema <key>`。
+	"event": {
+		// IM 事件最常用
+		"im:message", "im:message.group_msg", "im:message:readonly",
+		"im:chat", "im:chat.members", "im:chat:readonly",
+		// 联系人
+		"contact:user.base:readonly",
+		// 日历
+		"calendar:calendar.event:read", "calendar:calendar.acl:read",
+		// 云盘
+		"drive:drive",
+		// 审批
+		"approval:approval",
+		// VC
+		"vc:meeting",
+	},
 }
 
 // domainDescriptions provides descriptions for alias/composite/fallback domains.
@@ -170,6 +189,7 @@ var domainDescriptions = map[string]struct{ Zh, En string }{
 	"drive":      {"云空间上传/下载/导出/导入/评论", "Drive upload, download, export, import & comments"},
 	"doc_access": {"用户 Token 访问文档/知识库", "User Token document & wiki access"},
 	"search":     {"文档和消息搜索", "Document and message search"},
+	"event":      {"WebSocket 实时事件订阅（IM/联系人/日历/云盘/审批/VC）", "WebSocket real-time event subscription"},
 }
 
 // ResolveProjects expands a domain name to meta project names.

@@ -6,6 +6,85 @@
 
 ## 未发布
 
+### 新增 — `event` 模块（WebSocket 实时事件订阅 + daemon 进程管理）
+
+新增 `feishu-cli event` 命令族，对齐 lark-cli `event` shortcut（list / schema / consume / status / stop），
+通过飞书 WebSocket 长连接接收应用事件并以 NDJSON 输出到 stdout。
+
+**背景**：lark-cli 提供了完整的 `event consume <EventKey>` 实时事件订阅链路（含 daemon + bus.json 状态文件），
+feishu-cli 之前完全没有事件订阅能力，AI Agent 想做 bot 实时响应只能切换到 lark-cli 或自写 WebSocket
+客户端。本 PR 在 feishu-cli 代码风格下重新实现，让单工具栈即可完成消息接收、群成员变更监听、审批
+事件订阅等长连接场景。
+
+**新增子命令**：
+
+- `event list [--json]` — 列出所有支持的 EventKey（按 domain 分组：im / contact / calendar / drive / approval / vc 共 22+ 个）
+- `event schema <key> [--json]` — 查看某个 EventKey 的 EventType / scope / payload schema 示例
+- `event consume <key>` — 启动 WebSocket 长连接订阅（阻塞，事件流→stdout NDJSON）
+- `event status [--json]` — 查看本机所有 consume 进程（PID/EventKey/启动时间/uptime）
+- `event stop {--pid N | --event-key K | --all} [--force] [--json]` — 停止 consume 进程
+
+**Consume 关键 flag**：
+
+- `--max-events N` — 接收 N 条事件后退出（0=不限制）
+- `--timeout 30s` — 运行时长上限（0=不限制）
+- `--jq .event.message` — 极简点路径过滤（不支持完整 jq 语法，用 pipe 接外部 jq）
+- `--output-dir ./events` — 每条事件 dump 为 `<event_id>.json` 落盘
+- `--quiet` — 抑制 stderr 诊断（AI Agent 慎用，会一起抑制 ready marker）
+
+**Daemon / 进程模型**：
+
+- 每个 `event consume` 进程 = 一个独立 OS 进程 + 一个 WebSocket 长连接（一个 EventKey）
+- 状态文件 `~/.feishu-cli/events/<app_id>/bus.json`（每个 AppID 一个目录）：consume 启动写入 PID/EventKey/启动时间，退出时移除
+- 跨进程互斥 `~/.feishu-cli/events/<app_id>/bus.lock`（flock 文件锁，fd 关闭自动释放）
+- 原子写：tmp + os.Rename 防止半写
+- 进程探活：signal(0) 检测 PID 存活，status 命令自动清理僵尸条目
+- 重连策略：复用 oapi-sdk-go v3 `ws.Client.WithAutoReconnect(true)`，断线无限重试（间隔 2 分钟 + 首次随机抖动）
+- 与 lark-cli 差异：lark-cli 用独立 daemon + Unix socket 做事件 fan-out；feishu-cli 简化为每个 consume 直连 WebSocket，
+  不做事件分发——足够覆盖 AI Agent 单 EventKey 订阅的主线场景，省去 IPC 复杂度
+
+**Subprocess 协议**（兼容 AI Agent 子进程调度）：
+
+- 启动后 stderr 立即输出 `[event] ready event_key=<key>`，父进程应阻塞 stderr 等该行出现后再读 stdout
+- 非 TTY 模式下 stdin EOF = shutdown 信号（适配 `< /dev/null` / `nohup` 等场景）
+- 退出码 0：正常退出（达到 --max-events / --timeout / SIGTERM / Ctrl-C），非 0：startup 失败或 ws 不可恢复错误
+
+**Scope 要求**：默认 App Token；具体 scope 因 EventKey 而异（`event schema <key>` 查看）。已加入
+`--domain event --recommend` 推荐列表，覆盖 IM/联系人/日历/云盘/审批/VC 常用 scope 并集。
+
+**代码影响范围**：
+
+- 新增 `cmd/event.go`（顶层命令）+ `cmd/event_{list,schema,consume,status,stop}.go`（5 个子命令）
+- 新增 `internal/event/{keys,bus,runtime}.go`（EventKey 注册表 + bus.json 状态管理 + WebSocket runtime）
+- 新增 `cmd/event_test.go` + `internal/event/{keys,bus,runtime}_test.go`（mock 单测）
+- 新增 `cmd/event_smoke_test.go`（`//go:build smoke` 本地真实 WebSocket 端到端测试）
+- 修改 `internal/registry/domain_alias.go`：新增 `event` domain scope 推荐列表
+- 修改 `go.sum`：补全 `larksuite/oapi-sdk-go/v3/ws` 子包的传递依赖（gorilla/websocket、gogo/protobuf；均为 indirect，无新顶层依赖）
+
+**使用示例**：
+
+```bash
+feishu-cli auth login --domain event --recommend
+
+# 列出所有 EventKey
+feishu-cli event list
+
+# 查看 IM 接收消息事件的字段
+feishu-cli event schema im.message.receive_v1
+
+# 订阅（Ctrl-C 退出）
+feishu-cli event consume im.message.receive_v1
+
+# 调试：抓 5 条事件后自动退出
+feishu-cli event consume im.message.receive_v1 --max-events 5 --timeout 60s
+
+# 并发订阅多个 EventKey（每个进程一个 EventKey）
+feishu-cli event consume im.message.receive_v1 > receive.ndjson 2> receive.log &
+feishu-cli event consume im.chat.member.user.added_v1 > member.ndjson 2> member.log &
+feishu-cli event status                       # 查看活跃进程
+feishu-cli event stop --all                   # 一键停止
+```
+
 ### 新增 — `doctor` 命令（健康检查 / 配置 / 认证 / 网络 / 依赖一把验）
 
 新增 `feishu-cli doctor` 命令，对齐 lark-cli `doctor` 体验，跑一组本地诊断快速验证 CLI 状态。
