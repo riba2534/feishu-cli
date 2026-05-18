@@ -13,14 +13,12 @@ var attendanceCmd = &cobra.Command{
   user-stats query   查询用户考勤统计数据（user_stats_datas.query）
 
 身份要求:
-  全部命令需要 User Access Token（先 ` + "`feishu-cli auth login`" + `）。
+  全部命令走 tenant_access_token（应用身份），无需 ` + "`auth login`" + `；
+  larksuite/oapi-sdk-go v3.5.3 中相关接口仅支持 Tenant token。
 
-Scope:
+Scope（在飞书开放平台「应用权限管理」页面授予应用）:
   attendance:task:readonly  打卡 / 统计查询（推荐）
   attendance:task           打卡读写
-
-授权时可使用:
-  feishu-cli auth login --domain attendance --recommend
 
 日期格式:
   接受 YYYY-MM-DD 或 YYYYMMDD（飞书 API 内部统一用 yyyyMMdd 整数）。

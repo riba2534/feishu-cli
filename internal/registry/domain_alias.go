@@ -145,10 +145,10 @@ var extraDomainScopes = map[string][]string{
 		"approval:task",
 	},
 
-	// attendance shortcuts: user-task query / user-stats query (read-only)
-	"attendance": {
-		"attendance:task:readonly",
-	},
+	// 注意：attendance 顶层命令（user-task query / user-stats query）走 tenant_access_token
+	// （larksuite/oapi-sdk-go v3.5.3 中 Attendance.UserTask.Query / UserStatsData.Query 的
+	// SupportedAccessTokenTypes 仅含 Tenant），故不进入 auth login --domain 列表——
+	// `attendance:task:readonly` 权限需在飞书开放平台「应用权限管理」页面授予应用。
 
 	// doc shortcuts: +search, +create, +fetch, +update, +media-insert, +media-preview, +media-download
 	"docs": {

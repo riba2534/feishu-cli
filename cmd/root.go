@@ -41,6 +41,7 @@ var rootCmd = &cobra.Command{
   bitable   多维表格操作（数据表、字段、记录、视图管理）
   task      任务操作（创建、查看、更新、完成）
   approval  审批操作（定义详情、当前登录用户任务查询）
+  attendance  考勤操作（打卡记录查询、统计数据查询；tenant token）
   calendar  日历操作（日历、日程管理）
   vc        视频会议（多维搜索、纪要/AI 产物/逐字稿、录制查询；User Token）
   minutes   妙记（基础信息、AI 产物、媒体下载；User Token）

@@ -30,7 +30,8 @@ var attendanceUserTaskQueryCmd = &cobra.Command{
 	Long: `查询指定用户在某段日期内的考勤打卡记录（上下班实际打卡结果）。
 
 对应 OpenAPI: POST /open-apis/attendance/v1/user_tasks/query
-权限要求（User Token）: attendance:task:readonly
+权限要求: tenant_access_token；应用需获得 attendance:task:readonly 权限
+（larksuite/oapi-sdk-go v3.5.3 该接口仅支持 tenant token）
 
 参数:
   --employee-type        用户 ID 类型 employee_id|open_id|user_id|employee_no（默认 employee_id）
@@ -40,7 +41,6 @@ var attendanceUserTaskQueryCmd = &cobra.Command{
   --need-overtime        是否包含加班班段打卡（默认 false）
   --ignore-invalid-users 忽略无效/无权限用户（默认 true）
   --include-terminated   包含离职员工数据（默认 false）
-  --user-access-token    用户访问令牌（默认从登录态读取）
   --output, -o           输出格式：text（默认）/ json
 
 示例:
@@ -61,11 +61,6 @@ var attendanceUserTaskQueryCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken, err := requireUserToken(cmd, "attendance user-task query")
-		if err != nil {
-			return err
-		}
-
 		employeeType, _ := cmd.Flags().GetString("employee-type")
 		userIDsRaw, _ := cmd.Flags().GetString("user-ids")
 		startStr, _ := cmd.Flags().GetString("start")
@@ -76,6 +71,16 @@ var attendanceUserTaskQueryCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		userIDs := splitAndTrim(userIDsRaw)
+		// 局部去重（不改公共 helper splitAndTrim，避免影响其他模块）
+		seen := make(map[string]bool)
+		unique := make([]string, 0, len(userIDs))
+		for _, id := range userIDs {
+			if !seen[id] {
+				seen[id] = true
+				unique = append(unique, id)
+			}
+		}
+		userIDs = unique
 		if len(userIDs) == 0 {
 			return fmt.Errorf("--user-ids 不能为空")
 		}
@@ -103,7 +108,6 @@ var attendanceUserTaskQueryCmd = &cobra.Command{
 			needOvertime,
 			ignoreInvalid,
 			includeTerminated,
-			userAccessToken,
 		)
 		if err != nil {
 			return err
@@ -197,7 +201,6 @@ func init() {
 	attendanceUserTaskQueryCmd.Flags().Bool("need-overtime", false, "是否包含加班班段打卡结果")
 	attendanceUserTaskQueryCmd.Flags().Bool("ignore-invalid-users", true, "忽略无效或无权限用户，仅返回有效数据")
 	attendanceUserTaskQueryCmd.Flags().Bool("include-terminated", false, "包含离职员工数据")
-	attendanceUserTaskQueryCmd.Flags().String("user-access-token", "", "用户访问令牌（可选；默认从登录态读取）")
 	attendanceUserTaskQueryCmd.Flags().StringP("output", "o", "text", "输出格式：text | json")
 
 	mustMarkFlagRequired(attendanceUserTaskQueryCmd, "user-ids", "start", "end")

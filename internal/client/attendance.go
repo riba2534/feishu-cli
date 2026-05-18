@@ -91,7 +91,10 @@ func ParseAttendanceDate(s string) (int, error) {
 // QueryAttendanceUserTasks 查询用户考勤打卡记录
 //
 // 对应 OpenAPI: POST /open-apis/attendance/v1/user_tasks/query
-// 权限要求（User Token）: attendance:task:readonly
+// 权限要求: tenant_access_token（应用需获得 attendance:task:readonly 权限）
+//
+// 注：larksuite/oapi-sdk-go v3.5.3 中该接口 SupportedAccessTokenTypes 仅含 Tenant，
+// SDK 在 validateTokenType 会拒绝 user_access_token，故本函数走默认 tenant token。
 //
 // employeeType 取值：employee_id（默认）/ open_id / user_id / employee_no
 // userIDs 长度 ≤ 50，dateFrom/dateTo 为 yyyyMMdd
@@ -103,7 +106,6 @@ func QueryAttendanceUserTasks(
 	needOvertime bool,
 	ignoreInvalidUsers bool,
 	includeTerminatedUser bool,
-	userAccessToken string,
 ) (*AttendanceQueryUserTaskResult, error) {
 	cli, err := GetClient()
 	if err != nil {
@@ -133,7 +135,7 @@ func QueryAttendanceUserTasks(
 		IncludeTerminatedUser(includeTerminatedUser).
 		Body(body)
 
-	resp, err := cli.Attendance.UserTask.Query(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
+	resp, err := cli.Attendance.UserTask.Query(Context(), reqBuilder.Build())
 	if err != nil {
 		return nil, fmt.Errorf("查询考勤打卡记录失败: %w", err)
 	}
@@ -183,7 +185,10 @@ func QueryAttendanceUserTasks(
 // QueryAttendanceUserStats 查询用户考勤统计数据
 //
 // 对应 OpenAPI: POST /open-apis/attendance/v1/user_stats_datas/query
-// 权限要求（User Token）: attendance:task:readonly
+// 权限要求: tenant_access_token（应用需获得 attendance:task:readonly 权限）
+//
+// 注：larksuite/oapi-sdk-go v3.5.3 中该接口 SupportedAccessTokenTypes 仅含 Tenant，
+// SDK 在 validateTokenType 会拒绝 user_access_token，故本函数走默认 tenant token。
 //
 // statsType: daily（日度）/ month（月度）
 // userID 是发起人的用户 ID（同 查询统计设置 中的 user_id）
@@ -198,7 +203,6 @@ func QueryAttendanceUserStats(
 	locale string,
 	needHistory bool,
 	currentGroupOnly bool,
-	userAccessToken string,
 ) (*AttendanceQueryUserStatsResult, error) {
 	cli, err := GetClient()
 	if err != nil {
@@ -237,7 +241,7 @@ func QueryAttendanceUserStats(
 		EmployeeType(employeeType).
 		Body(bodyBuilder.Build())
 
-	resp, err := cli.Attendance.UserStatsData.Query(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
+	resp, err := cli.Attendance.UserStatsData.Query(Context(), reqBuilder.Build())
 	if err != nil {
 		return nil, fmt.Errorf("查询考勤统计失败: %w", err)
 	}

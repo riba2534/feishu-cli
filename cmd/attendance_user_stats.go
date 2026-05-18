@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -30,7 +32,8 @@ var attendanceUserStatsQueryCmd = &cobra.Command{
 	Long: `查询日度或月度的考勤统计数据。
 
 对应 OpenAPI: POST /open-apis/attendance/v1/user_stats_datas/query
-权限要求（User Token）: attendance:task:readonly
+权限要求: tenant_access_token；应用需获得 attendance:task:readonly 权限
+（larksuite/oapi-sdk-go v3.5.3 该接口仅支持 tenant token）
 
 参数:
   --employee-type      用户 ID 类型 employee_id|open_id|user_id|employee_no（默认 employee_id）
@@ -42,7 +45,6 @@ var attendanceUserStatsQueryCmd = &cobra.Command{
   --locale             语言：zh / en / ja
   --need-history       是否返回历史数据（默认 false）
   --current-group-only 仅展示当前考勤组（默认 false）
-  --user-access-token  用户访问令牌（默认从登录态读取）
   --output, -o         输出格式：text（默认）/ json
 
 示例:
@@ -62,11 +64,6 @@ var attendanceUserStatsQueryCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken, err := requireUserToken(cmd, "attendance user-stats query")
-		if err != nil {
-			return err
-		}
-
 		employeeType, _ := cmd.Flags().GetString("employee-type")
 		statsType, _ := cmd.Flags().GetString("stats-type")
 		userIDsRaw, _ := cmd.Flags().GetString("user-ids")
@@ -83,6 +80,16 @@ var attendanceUserStatsQueryCmd = &cobra.Command{
 		}
 
 		userIDs := splitAndTrim(userIDsRaw)
+		// 局部去重（不改公共 helper splitAndTrim，避免影响其他模块）
+		seen := make(map[string]bool)
+		unique := make([]string, 0, len(userIDs))
+		for _, id := range userIDs {
+			if !seen[id] {
+				seen[id] = true
+				unique = append(unique, id)
+			}
+		}
+		userIDs = unique
 		if len(userIDs) == 0 {
 			return fmt.Errorf("--user-ids 不能为空")
 		}
@@ -101,6 +108,12 @@ var attendanceUserStatsQueryCmd = &cobra.Command{
 		if startDate > endDate {
 			return fmt.Errorf("--start (%d) 不能晚于 --end (%d)", startDate, endDate)
 		}
+		// OpenAPI 限制：单次查询跨度 ≤ 31 天
+		tStart, _ := time.Parse("20060102", strconv.Itoa(startDate))
+		tEnd, _ := time.Parse("20060102", strconv.Itoa(endDate))
+		if tEnd.Sub(tStart) > 31*24*time.Hour {
+			return fmt.Errorf("--start 到 --end 跨度不能超过 31 天（当前 %.0f 天，请缩短范围或多次查询）", tEnd.Sub(tStart).Hours()/24)
+		}
 
 		result, err := client.QueryAttendanceUserStats(
 			employeeType,
@@ -112,7 +125,6 @@ var attendanceUserStatsQueryCmd = &cobra.Command{
 			locale,
 			needHistory,
 			currentGroupOnly,
-			userAccessToken,
 		)
 		if err != nil {
 			return err
@@ -172,7 +184,6 @@ func init() {
 	attendanceUserStatsQueryCmd.Flags().String("locale", "", "语言：zh / en / ja")
 	attendanceUserStatsQueryCmd.Flags().Bool("need-history", false, "是否返回历史数据")
 	attendanceUserStatsQueryCmd.Flags().Bool("current-group-only", false, "仅展示当前考勤组")
-	attendanceUserStatsQueryCmd.Flags().String("user-access-token", "", "用户访问令牌（可选；默认从登录态读取）")
 	attendanceUserStatsQueryCmd.Flags().StringP("output", "o", "text", "输出格式：text | json")
 
 	mustMarkFlagRequired(attendanceUserStatsQueryCmd, "user-ids", "start", "end")

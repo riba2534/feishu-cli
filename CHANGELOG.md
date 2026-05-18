@@ -23,10 +23,13 @@
   `-o json` 直出归一化结构体，便于 AI Agent 与脚本消费
 - 同时打印 `invalid_user_ids` / `unauthorized_user_ids`，提示无效或无权限用户
 - user-task ≤ 50、user-stats ≤ 200 用户数本地预校验，避免无谓远程请求
-- 全部命令强制 User Token（`requireUserToken`），与 mail / vc 等模块行为一致
+- user-stats 起止跨度 > 31 天本地预校验，避免触发 OpenAPI 报错
+- 全部命令走 tenant_access_token（即应用身份）：larksuite/oapi-sdk-go v3.5.3 中
+  `Attendance.UserTask.Query` / `Attendance.UserStatsData.Query` 的
+  `SupportedAccessTokenTypes` 仅含 `Tenant`，传入 user token 会被 SDK 拒绝
 
-**权限要求**：`attendance:task:readonly`（User Token）。新增 `auth login --domain
-attendance --recommend` 一键申请。
+**权限要求**：应用需在飞书开放平台「应用权限管理」页面获得
+`attendance:task:readonly` 权限（tenant 级），无需 `auth login`。
 
 **使用示例**：
 
