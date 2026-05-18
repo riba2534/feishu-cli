@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/profile"
 )
 
 // CurrentUserCache stores the current logged-in user's profile metadata.
@@ -26,11 +28,11 @@ type CurrentUserCache struct {
 var userCachePathFunc = originalUserCachePath
 
 func originalUserCachePath() (string, error) {
-	home, err := os.UserHomeDir()
+	path, err := profile.UserCacheFilePath()
 	if err != nil {
-		return "", fmt.Errorf("获取用户目录失败: %w", err)
+		return "", fmt.Errorf("解析当前 profile 失败: %w", err)
 	}
-	return filepath.Join(home, ".feishu-cli", "user_profile.json"), nil
+	return path, nil
 }
 
 // UserCachePath returns the current user cache path (~/.feishu-cli/user_profile.json).

@@ -51,9 +51,6 @@ const (
 	// profilesDirName profile 子目录名。
 	profilesDirName = "profiles"
 
-	// lockFileName 写操作锁文件名。
-	lockFileName = ".profile.lock"
-
 	// 单 profile 目录下的内容文件名（与旧布局保持一致）。
 	configFileName = "config.yaml"
 	tokenFileName  = "token.json"
@@ -67,7 +64,7 @@ const (
 var nameRegex = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // 进程内锁，用于 active-profile / previous-profile 指针文件的串行化。
-// 跨进程的并发由 .profile.lock 文件锁兜底（best-effort，POSIX 平台）。
+// 仅 sync.Mutex 保护进程内并发；跨进程并发场景应用层避免。
 var writeMu sync.Mutex
 
 // ErrNotConfigured 当未配置 profile 系统时返回（无 profiles/ 目录）。

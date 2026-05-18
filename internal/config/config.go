@@ -122,13 +122,26 @@ func Validate() error {
 	if cfg == nil {
 		return fmt.Errorf("配置未初始化")
 	}
+	cfgPath := activeConfigPathForError()
 	if cfg.AppID == "" {
-		return fmt.Errorf("缺少 app_id，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_ID=xxx\n  2. 配置文件: ~/.feishu-cli/config.yaml")
+		return fmt.Errorf("缺少 app_id，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_ID=xxx\n  2. 配置文件: %s", cfgPath)
 	}
 	if cfg.AppSecret == "" {
-		return fmt.Errorf("缺少 app_secret，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_SECRET=xxx\n  2. 配置文件: ~/.feishu-cli/config.yaml")
+		return fmt.Errorf("缺少 app_secret，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_SECRET=xxx\n  2. 配置文件: %s", cfgPath)
 	}
 	return nil
+}
+
+// activeConfigPathForError 返回当前 profile 的 config.yaml 路径（用于错误提示）。
+// 解析失败时回退到旧布局占位符，避免 Validate 报错叠加二次错误。
+func activeConfigPathForError() string {
+	if path, err := profile.ConfigFilePath(); err == nil && path != "" {
+		return path
+	}
+	if root, err := profile.RootDir(); err == nil && root != "" {
+		return filepath.Join(root, "config.yaml")
+	}
+	return "~/.feishu-cli/config.yaml"
 }
 
 // CreateDefaultConfig creates a default configuration file in the active profile
