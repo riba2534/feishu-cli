@@ -6,6 +6,33 @@
 
 ## 未发布
 
+### 新增 — `doctor` 命令（健康检查 / 配置 / 认证 / 网络 / 依赖一把验）
+
+新增 `feishu-cli doctor` 命令，对齐 lark-cli `doctor` 体验，跑一组本地诊断快速验证 CLI 状态。
+
+**6 项检查**：
+- `config_file` — app_id / app_secret 是否就位
+- `user_token` — token.json 状态（valid / needs_refresh / expired）
+- `endpoint_open` — `open.feishu.cn` HTTPS 可达性 + RTT
+- `endpoint_larksuite` — `open.larksuite.com` HTTPS 可达性 + RTT
+- `proxy` — HTTPS_PROXY 与 NO_PROXY 配置（缺飞书域 warn）
+- `dependencies` — Go 版本 + larksuite/oapi-sdk-go 版本
+
+**flag**：`--json` 机器可读输出 / `--offline` 跳过网络检查 / `--only user_token,proxy` 仅运行指定项。
+
+**退出码**：0 = 全 pass / 1 = 任一 fail。
+
+**使用示例**：
+
+```bash
+feishu-cli doctor                              # pretty 输出全检查
+feishu-cli doctor --json                       # JSON 输出（AI agent 自检友好）
+feishu-cli doctor --offline                    # 跳过网络
+feishu-cli doctor --only user_token,proxy      # 仅跑指定项
+```
+
+**代码影响范围**：新增 `cmd/doctor.go`（6 项检查 + pretty/JSON 输出）和 `cmd/doctor_test.go`（parseOnly / shouldRun / proxy / dependencies 单测）；不引入新依赖。
+
 ### 新增 — `comment reply add`：为已有评论添加回复
 
 新增命令 `feishu-cli comment reply add <file_token> <comment_id> --text "..."`，补齐评论回复
