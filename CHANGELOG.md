@@ -6,6 +6,67 @@
 
 ## 未发布
 
+### 新增 — `profile`：多配置（profile）管理
+
+新增 `feishu-cli profile` 顶层命令，让一台机器在多个飞书账号 / 应用之间快速切换。
+解决长期痛点：原 `~/.feishu-cli/{config.yaml,token.json}` 单实例布局，切账号必须手动备份/恢复
+或者来回 `mv`，对同时需要 work / personal、或者 feishu.cn / larksuite.com 双端的用户极不友好。
+
+**子命令**：
+
+- `profile add <name> [--app-id ... --app-secret ... --base-url ... --use]` 新建 profile
+- `profile list` (alias `ls`) 列出所有 profile，标注 active 列；`--json` 适合脚本/AI Agent
+- `profile use <name>` (alias `switch`/`checkout`) 切换 active；`use -` 切回上一个
+- `profile current` 显示当前 active profile 名 + 目录
+- `profile rename <old> <new>` (alias `mv`) 重命名，自动同步指针
+- `profile remove <name>` (alias `rm`/`delete`) 删除 profile；`--force` 跳过二次确认
+- `profile migrate [--name default] [--force]` 把旧布局 `~/.feishu-cli/{config,token}.json` 拷到 `profiles/<name>/`（原文件保留，让用户确认无误后手动清理）
+
+**目录布局**：
+
+```
+~/.feishu-cli/
+  config.yaml                # 旧布局，profile 系统未启用时仍读这里（无感升级）
+  token.json
+  active-profile             # 一行文本：当前 profile 名
+  previous-profile           # 一行文本：上一个 profile 名（支持 use -）
+  profiles/
+    work/
+      config.yaml
+      token.json
+      user_profile.json
+    personal/
+      ...
+```
+
+**向后兼容设计**：
+
+- 没有任何 profile 时，`internal/config` 和 `internal/auth` 仍走旧路径，老用户零感知升级
+- `profile add` **不会** 自动迁移旧文件——避免静默丢数据；要迁就显式 `profile migrate`
+- `FEISHU_PROFILE=<name>` 环境变量临时覆盖（不写指针文件），适合 CI / 一次性切换
+
+**安全**：
+
+- profile 名仅允许 `[A-Za-z0-9_-]{1,64}`，禁止 `.`/`..`/路径分隔符等注入字符
+- 保留名 `profiles` / `cache` 不可作为 profile 名
+- 写入操作通过进程内 mutex 串行化；指针文件原子写（`.tmp` + rename）
+- 所有 profile 目录默认 `0700` 权限，含 token.json 等敏感文件
+
+**测试**：`internal/profile/store_test.go` 21 个测试，全部用 `t.TempDir()` 隔离，覆盖
+ValidateName / List 字典序 / Create / Remove / Rename / Use 含 `-` 切换 / `MigrateLegacy`
+含 `--force` 覆盖 / `FEISHU_PROFILE` 环境变量优先级 / `ActiveDir` 新旧布局切换。
+
+**示例**：
+
+```bash
+# 从旧布局开始（已有 config.yaml 和 token.json）
+feishu-cli profile migrate                              # → profiles/default/，指针指 default
+feishu-cli profile add personal --use --app-id cli_yyy  # 新建 personal 并切过去
+feishu-cli profile list                                 # 看哪个 active
+feishu-cli profile use -                                # 切回 default
+FEISHU_PROFILE=personal feishu-cli msg send ...         # 一次性临时切换
+```
+
 ### 新增 — `comment reply add`：为已有评论添加回复
 
 新增命令 `feishu-cli comment reply add <file_token> <comment_id> --text "..."`，补齐评论回复
