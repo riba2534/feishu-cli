@@ -426,3 +426,235 @@ func approvalTaskAPIToInfo(task *approvalTaskAPIInfo) *ApprovalTaskInfo {
 
 	return info
 }
+
+// CreateApprovalInstanceOptions represents options for creating an approval instance.
+// 创建审批实例参数（POST /open-apis/approval/v4/instances）
+type CreateApprovalInstanceOptions struct {
+	ApprovalCode string // 必填：审批定义 code
+	UserID       string // 必填：发起人 ID（open_id/user_id/union_id）
+	Form         string // 必填：表单数据 JSON 字符串
+	UserIDType   string // 可选：open_id / user_id / union_id，默认 open_id
+	DepartmentID string // 可选：发起人部门
+	OpenChatID   string // 可选：发送结果到的群聊
+	NodeApproverUserIDList json.RawMessage // 可选：节点指定审批人，JSON 原文
+	NodeCCUserIDList       json.RawMessage // 可选：节点指定抄送人，JSON 原文
+}
+
+// CreateApprovalInstanceResult 创建实例返回结果，仅暴露常用字段。
+type CreateApprovalInstanceResult struct {
+	InstanceCode string `json:"instance_code"`
+}
+
+// CancelApprovalInstanceOptions represents options for cancelling an approval instance.
+// 取消审批实例参数（POST /open-apis/approval/v4/instances/cancel）
+type CancelApprovalInstanceOptions struct {
+	ApprovalCode string // 必填：审批定义 code
+	InstanceCode string // 必填：审批实例 code
+	UserID       string // 必填：执行操作的用户 ID
+	UserIDType   string // 可选：open_id / user_id / union_id
+}
+
+// CCApprovalInstanceOptions represents options for cc'ing an approval instance.
+// 抄送审批实例参数（POST /open-apis/approval/v4/instances/cc）
+type CCApprovalInstanceOptions struct {
+	ApprovalCode string   // 必填：审批定义 code
+	InstanceCode string   // 必填：审批实例 code
+	UserID       string   // 必填：执行抄送的用户 ID
+	CCUserIDs    []string // 必填：被抄送用户 ID 列表
+	Comment      string   // 可选：抄送备注
+	UserIDType   string   // 可选：open_id / user_id / union_id
+}
+
+// ApprovalTaskActionOptions represents shared options for task approve/reject.
+// 通过/拒绝审批任务参数（POST /open-apis/approval/v4/tasks/{approve,reject}）
+type ApprovalTaskActionOptions struct {
+	ApprovalCode string // 必填：审批定义 code
+	InstanceCode string // 必填：审批实例 code
+	TaskID       string // 必填：审批任务 ID
+	UserID       string // 必填：操作人 ID
+	Comment      string // 可选：审批意见
+	Form         string // 可选：表单数据（更新表单时使用），JSON 字符串
+	UserIDType   string // 可选：open_id / user_id / union_id
+}
+
+// genericApprovalAPIResp 解析审批写接口的通用响应（多数返回 data 为空或仅含 instance_code）。
+type genericApprovalAPIResp struct {
+	Code int             `json:"code"`
+	Msg  string          `json:"msg"`
+	Data json.RawMessage `json:"data"`
+}
+
+// doApprovalPost 统一发起审批 POST 调用，支持透传 user_id_type 查询参数 + user/tenant token。
+func doApprovalPost(apiPath string, body map[string]any, userIDType, userAccessToken, action string) (json.RawMessage, error) {
+	c, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	if userIDType != "" {
+		sep := "?"
+		if strings.Contains(apiPath, "?") {
+			sep = "&"
+		}
+		apiPath = apiPath + sep + "user_id_type=" + userIDType
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := c.Post(Context(), apiPath, body, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("%s失败: %w", action, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s失败: HTTP %d, body: %s", action, resp.StatusCode, string(resp.RawBody))
+	}
+
+	var apiResp genericApprovalAPIResp
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析%s响应失败: %w", action, err)
+	}
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("%s失败: code=%d, msg=%s", action, apiResp.Code, apiResp.Msg)
+	}
+	return apiResp.Data, nil
+}
+
+// CreateApprovalInstance 创建一条审批实例，返回 instance_code。
+func CreateApprovalInstance(opts CreateApprovalInstanceOptions, userAccessToken string) (*CreateApprovalInstanceResult, error) {
+	if strings.TrimSpace(opts.ApprovalCode) == "" {
+		return nil, fmt.Errorf("approval_code 不能为空")
+	}
+	if strings.TrimSpace(opts.UserID) == "" {
+		return nil, fmt.Errorf("user_id 不能为空")
+	}
+	if strings.TrimSpace(opts.Form) == "" {
+		return nil, fmt.Errorf("form 不能为空")
+	}
+
+	body := map[string]any{
+		"approval_code": opts.ApprovalCode,
+		"user_id":       opts.UserID,
+		"form":          opts.Form,
+	}
+	if opts.DepartmentID != "" {
+		body["department_id"] = opts.DepartmentID
+	}
+	if opts.OpenChatID != "" {
+		body["open_chat_id"] = opts.OpenChatID
+	}
+	if len(opts.NodeApproverUserIDList) > 0 {
+		var v any
+		if err := json.Unmarshal(opts.NodeApproverUserIDList, &v); err != nil {
+			return nil, fmt.Errorf("解析 node_approver_user_id_list 失败: %w", err)
+		}
+		body["node_approver_user_id_list"] = v
+	}
+	if len(opts.NodeCCUserIDList) > 0 {
+		var v any
+		if err := json.Unmarshal(opts.NodeCCUserIDList, &v); err != nil {
+			return nil, fmt.Errorf("解析 node_cc_user_id_list 失败: %w", err)
+		}
+		body["node_cc_user_id_list"] = v
+	}
+
+	data, err := doApprovalPost("/open-apis/approval/v4/instances", body, opts.UserIDType, userAccessToken, "创建审批实例")
+	if err != nil {
+		return nil, err
+	}
+
+	result := &CreateApprovalInstanceResult{}
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, result); err != nil {
+			return nil, fmt.Errorf("解析创建审批实例响应失败: %w", err)
+		}
+	}
+	return result, nil
+}
+
+// CancelApprovalInstance 取消（撤回）已发起的审批实例。
+func CancelApprovalInstance(opts CancelApprovalInstanceOptions, userAccessToken string) error {
+	if strings.TrimSpace(opts.ApprovalCode) == "" {
+		return fmt.Errorf("approval_code 不能为空")
+	}
+	if strings.TrimSpace(opts.InstanceCode) == "" {
+		return fmt.Errorf("instance_code 不能为空")
+	}
+	if strings.TrimSpace(opts.UserID) == "" {
+		return fmt.Errorf("user_id 不能为空")
+	}
+
+	body := map[string]any{
+		"approval_code": opts.ApprovalCode,
+		"instance_code": opts.InstanceCode,
+		"user_id":       opts.UserID,
+	}
+	_, err := doApprovalPost("/open-apis/approval/v4/instances/cancel", body, opts.UserIDType, userAccessToken, "取消审批实例")
+	return err
+}
+
+// CCApprovalInstance 抄送审批实例给指定用户。
+func CCApprovalInstance(opts CCApprovalInstanceOptions, userAccessToken string) error {
+	if strings.TrimSpace(opts.ApprovalCode) == "" {
+		return fmt.Errorf("approval_code 不能为空")
+	}
+	if strings.TrimSpace(opts.InstanceCode) == "" {
+		return fmt.Errorf("instance_code 不能为空")
+	}
+	if strings.TrimSpace(opts.UserID) == "" {
+		return fmt.Errorf("user_id 不能为空")
+	}
+	if len(opts.CCUserIDs) == 0 {
+		return fmt.Errorf("cc_user_ids 不能为空")
+	}
+
+	body := map[string]any{
+		"approval_code":  opts.ApprovalCode,
+		"instance_code":  opts.InstanceCode,
+		"user_id":        opts.UserID,
+		"cc_user_ids":    opts.CCUserIDs,
+	}
+	if opts.Comment != "" {
+		body["comment"] = opts.Comment
+	}
+	_, err := doApprovalPost("/open-apis/approval/v4/instances/cc", body, opts.UserIDType, userAccessToken, "抄送审批实例")
+	return err
+}
+
+// ApproveApprovalTask 通过指定审批任务。
+func ApproveApprovalTask(opts ApprovalTaskActionOptions, userAccessToken string) error {
+	return runApprovalTaskAction("/open-apis/approval/v4/tasks/approve", opts, userAccessToken, "通过审批任务")
+}
+
+// RejectApprovalTask 拒绝指定审批任务。
+func RejectApprovalTask(opts ApprovalTaskActionOptions, userAccessToken string) error {
+	return runApprovalTaskAction("/open-apis/approval/v4/tasks/reject", opts, userAccessToken, "拒绝审批任务")
+}
+
+func runApprovalTaskAction(apiPath string, opts ApprovalTaskActionOptions, userAccessToken, action string) error {
+	if strings.TrimSpace(opts.ApprovalCode) == "" {
+		return fmt.Errorf("approval_code 不能为空")
+	}
+	if strings.TrimSpace(opts.InstanceCode) == "" {
+		return fmt.Errorf("instance_code 不能为空")
+	}
+	if strings.TrimSpace(opts.TaskID) == "" {
+		return fmt.Errorf("task_id 不能为空")
+	}
+	if strings.TrimSpace(opts.UserID) == "" {
+		return fmt.Errorf("user_id 不能为空")
+	}
+
+	body := map[string]any{
+		"approval_code": opts.ApprovalCode,
+		"instance_code": opts.InstanceCode,
+		"task_id":       opts.TaskID,
+		"user_id":       opts.UserID,
+	}
+	if opts.Comment != "" {
+		body["comment"] = opts.Comment
+	}
+	if opts.Form != "" {
+		body["form"] = opts.Form
+	}
+	_, err := doApprovalPost(apiPath, body, opts.UserIDType, userAccessToken, action)
+	return err
+}
