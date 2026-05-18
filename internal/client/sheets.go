@@ -2194,3 +2194,201 @@ func IndexToColumn(index int) string {
 	}
 	return result
 }
+
+// ==================== 筛选视图相关 (V3 API) ====================
+
+// FilterViewSummary 筛选视图摘要
+type FilterViewSummary struct {
+	FilterViewID   string `json:"filter_view_id"`
+	FilterViewName string `json:"filter_view_name"`
+	Range          string `json:"range"`
+}
+
+// CreateFilterView 创建筛选视图 (V3 API)。
+// name / filterViewID 可选；若不传，飞书侧自动生成。
+func CreateFilterView(ctx context.Context, spreadsheetToken, sheetID, rangeStr, name, filterViewID string, userAccessToken ...string) (*FilterViewSummary, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	uat := firstString(userAccessToken)
+
+	// 范围需要包含 sheetId 前缀
+	fullRange := rangeStr
+	if !strings.Contains(rangeStr, "!") {
+		fullRange = sheetID + "!" + rangeStr
+	}
+
+	builder := larksheets.NewFilterViewBuilder().Range(fullRange)
+	if name != "" {
+		builder.FilterViewName(name)
+	}
+	if filterViewID != "" {
+		builder.FilterViewId(filterViewID)
+	}
+
+	req := larksheets.NewCreateSpreadsheetSheetFilterViewReqBuilder().
+		SpreadsheetToken(spreadsheetToken).
+		SheetId(sheetID).
+		FilterView(builder.Build()).
+		Build()
+
+	resp, err := client.Sheets.SpreadsheetSheetFilterView.Create(ctx, req, UserTokenOption(uat)...)
+	if err != nil {
+		return nil, fmt.Errorf("创建筛选视图失败: %w", err)
+	}
+	if !resp.Success() {
+		return nil, fmt.Errorf("创建筛选视图失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	out := &FilterViewSummary{}
+	if resp.Data != nil && resp.Data.FilterView != nil {
+		fv := resp.Data.FilterView
+		if fv.FilterViewId != nil {
+			out.FilterViewID = *fv.FilterViewId
+		}
+		if fv.FilterViewName != nil {
+			out.FilterViewName = *fv.FilterViewName
+		}
+		if fv.Range != nil {
+			out.Range = *fv.Range
+		}
+	}
+	return out, nil
+}
+
+// ListFilterViews 列出工作表的所有筛选视图 (V3 API)
+func ListFilterViews(ctx context.Context, spreadsheetToken, sheetID string, userAccessToken ...string) ([]*FilterViewSummary, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	uat := firstString(userAccessToken)
+
+	req := larksheets.NewQuerySpreadsheetSheetFilterViewReqBuilder().
+		SpreadsheetToken(spreadsheetToken).
+		SheetId(sheetID).
+		Build()
+
+	resp, err := client.Sheets.SpreadsheetSheetFilterView.Query(ctx, req, UserTokenOption(uat)...)
+	if err != nil {
+		return nil, fmt.Errorf("查询筛选视图失败: %w", err)
+	}
+	if !resp.Success() {
+		return nil, fmt.Errorf("查询筛选视图失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	result := make([]*FilterViewSummary, 0)
+	if resp.Data != nil {
+		for _, fv := range resp.Data.Items {
+			item := &FilterViewSummary{}
+			if fv.FilterViewId != nil {
+				item.FilterViewID = *fv.FilterViewId
+			}
+			if fv.FilterViewName != nil {
+				item.FilterViewName = *fv.FilterViewName
+			}
+			if fv.Range != nil {
+				item.Range = *fv.Range
+			}
+			result = append(result, item)
+		}
+	}
+	return result, nil
+}
+
+// DeleteFilterView 删除筛选视图 (V3 API)
+func DeleteFilterView(ctx context.Context, spreadsheetToken, sheetID, filterViewID string, userAccessToken ...string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	uat := firstString(userAccessToken)
+
+	req := larksheets.NewDeleteSpreadsheetSheetFilterViewReqBuilder().
+		SpreadsheetToken(spreadsheetToken).
+		SheetId(sheetID).
+		FilterViewId(filterViewID).
+		Build()
+
+	resp, err := client.Sheets.SpreadsheetSheetFilterView.Delete(ctx, req, UserTokenOption(uat)...)
+	if err != nil {
+		return fmt.Errorf("删除筛选视图失败: %w", err)
+	}
+	if !resp.Success() {
+		return fmt.Errorf("删除筛选视图失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+	return nil
+}
+
+// ==================== 下拉菜单（数据验证）相关 (V2 API) ====================
+
+// SetDropdown 在指定区域设置下拉菜单（list 类型数据验证）。
+// rangeStr 必须是带 sheetId 前缀的全范围格式 "<sheetId>!A1:A100"。
+// options 是下拉选项（≤ 500 项，每项 ≤ 100 字符；通过 CSV 传入时不含逗号，含逗号请用 --options-json）。
+// multiple 为 true 时启用多选；colors 长度需与 options 一致（为 nil 时不上色）。
+func SetDropdown(ctx context.Context, spreadsheetToken, rangeStr string, options []string, multiple bool, colors []string, userAccessToken ...string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	if !strings.Contains(rangeStr, "!") {
+		return fmt.Errorf("--range 必须包含 sheetId 前缀（例如 <sheetId>!A1:A100）")
+	}
+	if len(options) == 0 {
+		return fmt.Errorf("下拉选项不能为空")
+	}
+	if colors != nil && len(colors) != len(options) {
+		return fmt.Errorf("--colors 长度(%d)必须与选项数(%d)一致", len(colors), len(options))
+	}
+
+	condValues := make([]any, len(options))
+	for i, s := range options {
+		condValues[i] = s
+	}
+
+	dv := map[string]any{
+		"conditionValues": condValues,
+	}
+	opts := map[string]any{
+		"multipleValues": multiple,
+	}
+	if colors != nil {
+		colorVals := make([]any, len(colors))
+		for i, c := range colors {
+			colorVals[i] = c
+		}
+		opts["colors"] = colorVals
+		opts["highlightValidData"] = true
+	}
+	dv["options"] = opts
+
+	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/dataValidation", spreadsheetToken)
+	reqBody := map[string]any{
+		"range":              rangeStr,
+		"dataValidationType": "list",
+		"dataValidation":     dv,
+	}
+
+	uat := firstString(userAccessToken)
+	respBody, err := v2APICallWithToken(client, ctx, "POST", path, reqBody, uat)
+	if err != nil {
+		return fmt.Errorf("设置下拉菜单失败: %w", err)
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return fmt.Errorf("解析响应失败: %w", err)
+	}
+	if apiResp.Code != 0 {
+		return fmt.Errorf("设置下拉菜单失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+	return nil
+}
