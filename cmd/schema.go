@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +12,20 @@ import (
 	"github.com/riba2534/feishu-cli/internal/registry"
 	"github.com/spf13/cobra"
 )
+
+// writeJSON 把 v 编码为 2 空格缩进 JSON 写入 w（HTML 不转义）。
+// 与全局 printJSON 等价但目标 writer 可注入，便于测试断言 JSON 输出。
+func writeJSON(w io.Writer, v any) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return fmt.Errorf("JSON 序列化失败: %w", err)
+	}
+	_, err := w.Write(buf.Bytes())
+	return err
+}
 
 var (
 	schemaFormat string
@@ -81,7 +97,7 @@ func runSchema(w io.Writer, path, format string) error {
 	}
 	if len(parts) == 1 {
 		if format == "json" {
-			return printJSON(spec)
+			return writeJSON(w, spec)
 		}
 		return printResourceList(w, spec)
 	}
@@ -98,9 +114,14 @@ func runSchema(w io.Writer, path, format string) error {
 	}
 	if len(remaining) == 0 {
 		if format == "json" {
-			return printJSON(resource)
+			return writeJSON(w, resource)
 		}
 		return printResourceDetail(w, serviceName, resName, resource)
+	}
+	if len(remaining) > 1 {
+		// remaining 多于 1 段时不能静默吞掉 — 视为用户输入路径过深
+		return fmt.Errorf("路径过深: %s（期望格式 <service>.<resource>.<method>，多余片段: %s）",
+			path, strings.Join(remaining[1:], "."))
 	}
 	methodName := remaining[0]
 	methods, _ := resource["methods"].(map[string]interface{})
@@ -115,7 +136,7 @@ func runSchema(w io.Writer, path, format string) error {
 			serviceName, resName, methodName, strings.Join(names, ", "))
 	}
 	if format == "json" {
-		return printJSON(method)
+		return writeJSON(w, method)
 	}
 	return printMethodDetail(w, spec, resName, methodName, method)
 }
@@ -148,7 +169,7 @@ func printServices(w io.Writer, format string) error {
 				"servicePath": registry.GetStrFromMap(spec, "servicePath"),
 			})
 		}
-		return printJSON(list)
+		return writeJSON(w, list)
 	}
 	fmt.Fprintln(w, "可用 service（共", len(services), "个）：")
 	fmt.Fprintln(w)

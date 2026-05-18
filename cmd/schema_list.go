@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/registry"
 	"github.com/spf13/cobra"
@@ -45,7 +46,8 @@ func runSchemaList(w io.Writer, service, format string) error {
 	}
 	spec := registry.LoadFromMeta(service)
 	if spec == nil {
-		return fmt.Errorf("未知 service: %s", service)
+		available := strings.Join(registry.ListFromMetaProjects(), ", ")
+		return fmt.Errorf("未知 service: %s\n可用 service: %s", service, available)
 	}
 	if format == "json" {
 		// Return flat list of {service, resource, method, httpMethod, description}
@@ -66,7 +68,7 @@ func runSchemaList(w io.Writer, service, format string) error {
 				})
 			}
 		}
-		return printJSON(rows)
+		return writeJSON(w, rows)
 	}
 	return printResourceList(w, spec)
 }
