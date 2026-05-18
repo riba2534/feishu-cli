@@ -149,3 +149,48 @@ feishu-cli mail draft-edit --draft-id $DRAFT_ID --to user@example.com --subject 
 - **In-Reply-To / References**：`reply/reply-all` 自动从原邮件的 `smtp_message_id` / `references` 继承，确保邮件客户端正确展示对话线程。
 - **附件 / CID 图片暂不支持**：首期 EML builder 是简化版。如需附件，请在 feishu Web 手动处理或等后续迭代。
 - **批量 messages 上限**：取决于飞书 API 端；本命令不做数量校验，但通常建议 ≤50 条。
+
+## 高级能力（v1.23+ mail-advanced）
+
+### CID 内联图片自动扫描
+
+`mail send --inline-images-auto-scan` 自动扫描 HTML body 中
+`<img src="本地路径">` → 上传 drive (parent_type=email) → 重写为 `cid:xxx` →
+multipart/related 拼装。
+
+- 路径安全：拒 `..` 路径遍历；限 cwd / home 子树内
+- 多媒体合规：RFC 2046 multipart/related CRLF 严格（每 part body 末尾 `\r\n` + 边界前 `\r\n` 隔离）
+- 跳过已有 scheme：`cid:` / `http(s):` / `data:` / `//cdn` 等不重复上传
+- 仅 HTML body 生效；纯文本下静默跳过
+- 需要 `auth login` 缓存里有当前用户 `open_id`（drive upload 的 `parent_node` 必填）
+
+```bash
+# 自动扫描内嵌图，HTML body 中 <img src="./figs/chart.png"> 会被改写为 cid:xxx
+feishu-cli mail send --to user@example.com --subject "周报" \
+  --body "$(cat report.html)" --html --inline-images-auto-scan --confirm-send
+```
+
+### 邮件模板 CRUD
+
+```bash
+# 创建模板（body 支持 @file 读盘）
+feishu-cli mail template create --name "周报模板" \
+  --subject "本周进度" --body @template.html
+
+# 列出全部模板（接口不分页，一次性返回 id+name）
+feishu-cli mail template list
+feishu-cli mail template list -o json
+```
+
+⚠️ **mail scope 字节租户未开放**：`mail:user.email.template` 在字节租户暂未开放，
+UAT 调用可能返回 401 / scope 校验失败。建议先预检：
+
+```bash
+feishu-cli auth check --scope "mail:user_mailbox:readonly mail:user_mailbox.message:modify mail:user.email.template"
+```
+
+功能代码已完整，等飞书侧开放 scope 后即可使用；其他租户（如个人 lark）通常可用。
+
+### 未做（暂未 MVP）
+
+receipt send/decline / watch (WebSocket) / share-to-chat / template update / template delete

@@ -18,7 +18,7 @@ var mailSendCmd = &cobra.Command{
   1. 默认: 构造 EML 并保存为草稿，返回 draft_id
   2. --confirm-send: 保存草稿后立即发送，返回 message_id
 
-⚠️ 首期限制: 仅支持纯文本 body 和 HTML body（body 含 HTML 标签自动检测），不支持附件和 CID 内联图片。
+⚠️ 首期限制: 暂不支持普通附件；CID 内联图片走 --inline-images-auto-scan 自动扫描上传。
 
 必填:
   --to        收件人（逗号分隔多个地址，支持 "Name <email>" 或 "email"）
@@ -26,13 +26,14 @@ var mailSendCmd = &cobra.Command{
   --body      正文（自动检测纯文本/HTML）
 
 可选:
-  --cc / --bcc    抄送/密送
-  --from          发件人地址（默认使用登录账号的 primary_email_address）
-  --from-name     发件人显示名
-  --mailbox       邮箱 ID（默认 me）
-  --confirm-send  保存草稿后立即发送
-  --html          强制视为 HTML（即使不含 HTML 标签）
-  --plain-text    强制视为纯文本
+  --cc / --bcc                   抄送/密送
+  --from                         发件人地址（默认使用登录账号的 primary_email_address）
+  --from-name                    发件人显示名
+  --mailbox                      邮箱 ID（默认 me）
+  --confirm-send                 保存草稿后立即发送
+  --html                         强制视为 HTML（即使不含 HTML 标签）
+  --plain-text                   强制视为纯文本
+  --inline-images-auto-scan      扫描 HTML 中 <img src="本地路径"> → 上传到飞书云盘 → 改写为 cid: 引用
 
 权限:
   - User Access Token
@@ -62,6 +63,7 @@ var mailSendCmd = &cobra.Command{
 		confirmSend, _ := cmd.Flags().GetBool("confirm-send")
 		forceHTML, _ := cmd.Flags().GetBool("html")
 		plainText, _ := cmd.Flags().GetBool("plain-text")
+		autoScanInline, _ := cmd.Flags().GetBool("inline-images-auto-scan")
 		output, _ := cmd.Flags().GetString("output")
 
 		to, err := parseEmailList(toRaw)
@@ -109,6 +111,17 @@ var mailSendCmd = &cobra.Command{
 			input.BodyHTML = body
 		} else {
 			input.BodyText = body
+		}
+
+		// --inline-images-auto-scan: 扫 <img src="local-path"> → drive 上传 → 改写为 cid:xxx
+		// 仅在 HTML body 下生效；纯文本下跳过
+		if autoScanInline && input.BodyHTML != "" {
+			rewritten, parts, scanErr := scanAndUploadInlineImages(input.BodyHTML, mailbox, token)
+			if scanErr != nil {
+				return scanErr
+			}
+			input.BodyHTML = rewritten
+			input.InlineImages = parts
 		}
 
 		rawB64, err := buildEMLBase64URL(input)
@@ -182,6 +195,7 @@ func init() {
 	mailSendCmd.Flags().Bool("confirm-send", false, "保存草稿后立即发送")
 	mailSendCmd.Flags().Bool("html", false, "强制视为 HTML body")
 	mailSendCmd.Flags().Bool("plain-text", false, "强制视为纯文本")
+	mailSendCmd.Flags().Bool("inline-images-auto-scan", false, "扫描 HTML body 中 <img src=\"local-path\"> 自动上传飞书云盘并改写为 cid: 引用")
 	mailSendCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailSendCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(mailSendCmd, "to", "subject", "body")

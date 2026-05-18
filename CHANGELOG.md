@@ -204,6 +204,41 @@ feishu-cli doctor --only user_token,proxy      # 仅跑指定项
 
 - 创建：`slides:presentation:create` 或 `slides:presentation:write_only`
 - 上传：`docs:document.media:upload`
+### 新增 — `mail` 高级能力：CID 内联图片 + 邮件模板（MVP）
+
+为 `mail` 模块补齐两块进阶能力，对齐 lark-cli `mail +send` / `mail +template-create` 的核心子集。
+
+**1. `mail send --inline-images-auto-scan`（CID 内联图片）**
+
+HTML body 中所有 `<img src="本地相对/绝对路径">` 会被自动扫描：
+
+1. 跳过已经是 `cid:` / `http(s):` / `data:` / `//` scheme 的引用
+2. 同一本地路径只上传一次（去重）
+3. 每张图独立生成 20-hex CID
+4. 走 `drive/v1/medias/upload_all`（`parent_type=email`，`parent_node = 当前登录用户 open_id`）
+5. EML 走 `multipart/related`：HTML 段 + 每张图一个 `Content-ID: <cid>`、`Content-Disposition: inline` 的 part
+6. 改写 `src` 为 `cid:<cid>` 后回写到 body
+
+依赖 `~/.feishu-cli/user_profile.json` 中缓存的 open_id（`auth login` 后自动写入）。
+
+**2. `mail template create` / `mail template list`（邮件模板 MVP）**
+
+- `mail template create --name xxx --subject xxx --body xxx [--to ... --cc ... --bcc ... --plain-text]`
+  调用 `POST /open-apis/mail/v1/user_mailboxes/{id}/templates`
+- `mail template list [--mailbox me]`
+  调用 `GET /open-apis/mail/v1/user_mailboxes/{id}/templates`（接口不分页，一次返回所有 id+name）
+
+底层 client 也实现了 `GetMailTemplate` / `UpdateMailTemplate` / `DeleteMailTemplate`，但 CLI 层目前只暴露 create/list（MVP）。
+
+**权限要求**：
+
+- User Access Token
+- `mail:user_mailbox:readonly` / `mail:user_mailbox.message:modify` / `mail:user_mailbox.message:send`
+- 模板相关 scope：`mail:user.email.template`
+
+⚠️ **字节租户 `mail:user.email.template` 暂未开放** —— 命令本身实现完整、参数校验完整、EML/JSON payload
+正确，但调用模板 API 时可能返回 scope 校验失败（401/permission denied）；等飞书侧开放该 scope 后立即可用。
+CID 内联图片功能不依赖此 scope，已可正常使用。
 
 **示例**：
 
@@ -352,6 +387,16 @@ Markdown 源码的场景。
 
 **权限**：User Access Token + `drive:file:upload` / `drive:file:download`
 （或 `drive:drive`）。
+
+# 内联图片
+feishu-cli mail send --to user@example.com --subject "周报" \
+    --body '<p>看附图</p><img src="./screenshot.png">' \
+    --inline-images-auto-scan --confirm-send
+
+# 模板创建+列表
+feishu-cli mail template create --name "周报" --subject "本周进度" --body "<p>模板</p>"
+feishu-cli mail template list
+```
 
 ### 新增 — `comment reply add`：为已有评论添加回复
 
