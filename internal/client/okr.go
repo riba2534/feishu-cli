@@ -23,17 +23,14 @@ type OKROwner struct {
 	UserID    string `json:"user_id,omitempty"`
 }
 
-// OKRCycle OKR 周期（v2 接口实体）
+// OKRCycle OKR 周期（v1 /open-apis/okr/v1/periods 接口实体，租户级全局周期）
 type OKRCycle struct {
-	ID            string   `json:"id"`
-	CreateTime    string   `json:"create_time,omitempty"`
-	UpdateTime    string   `json:"update_time,omitempty"`
-	TenantCycleID string   `json:"tenant_cycle_id,omitempty"`
-	Owner         OKROwner `json:"owner"`
-	StartTime     string   `json:"start_time,omitempty"`
-	EndTime       string   `json:"end_time,omitempty"`
-	CycleStatus   string   `json:"cycle_status,omitempty"`
-	Score         *float64 `json:"score,omitempty"`
+	ID          string `json:"id"`
+	ZhName      string `json:"zh_name,omitempty"`
+	EnName      string `json:"en_name,omitempty"`
+	StartTime   string `json:"start_time,omitempty"`
+	EndTime     string `json:"end_time,omitempty"`
+	CycleStatus string `json:"cycle_status,omitempty"`
 }
 
 // OKRKeyResult 关键结果
@@ -100,10 +97,11 @@ func (o *okrRawOwner) toOwner() OKROwner {
 	return out
 }
 
-type okrCycleStatus int32
+type okrCycleStatus int
 
 const (
-	okrCycleStatusNormal  okrCycleStatus = 1
+	okrCycleStatusNormal  okrCycleStatus = 0
+	okrCycleStatusPending okrCycleStatus = 1
 	okrCycleStatusInvalid okrCycleStatus = 2
 	okrCycleStatusHidden  okrCycleStatus = 3
 )
@@ -112,6 +110,8 @@ func (s okrCycleStatus) String() string {
 	switch s {
 	case okrCycleStatusNormal:
 		return "normal"
+	case okrCycleStatusPending:
+		return "pending"
 	case okrCycleStatusInvalid:
 		return "invalid"
 	case okrCycleStatusHidden:
@@ -120,16 +120,14 @@ func (s okrCycleStatus) String() string {
 	return ""
 }
 
+// okrRawCycle 与 /open-apis/okr/v1/periods 响应字段对齐
 type okrRawCycle struct {
-	ID            string          `json:"id"`
-	CreateTime    string          `json:"create_time,omitempty"`
-	UpdateTime    string          `json:"update_time,omitempty"`
-	TenantCycleID string          `json:"tenant_cycle_id,omitempty"`
-	Owner         okrRawOwner     `json:"owner"`
-	StartTime     string          `json:"start_time,omitempty"`
-	EndTime       string          `json:"end_time,omitempty"`
-	CycleStatus   *okrCycleStatus `json:"cycle_status,omitempty"`
-	Score         *float64        `json:"score,omitempty"`
+	ID              string          `json:"id"`
+	ZhName          string          `json:"zh_name,omitempty"`
+	EnName          string          `json:"en_name,omitempty"`
+	Status          *okrCycleStatus `json:"status,omitempty"`
+	PeriodStartTime string          `json:"period_start_time,omitempty"`
+	PeriodEndTime   string          `json:"period_end_time,omitempty"`
 }
 
 func (c *okrRawCycle) toCycle() *OKRCycle {
@@ -137,17 +135,14 @@ func (c *okrRawCycle) toCycle() *OKRCycle {
 		return nil
 	}
 	cycle := &OKRCycle{
-		ID:            c.ID,
-		CreateTime:    formatOKRTimestamp(c.CreateTime),
-		UpdateTime:    formatOKRTimestamp(c.UpdateTime),
-		TenantCycleID: c.TenantCycleID,
-		Owner:         c.Owner.toOwner(),
-		StartTime:     formatOKRTimestamp(c.StartTime),
-		EndTime:       formatOKRTimestamp(c.EndTime),
-		Score:         c.Score,
+		ID:        c.ID,
+		ZhName:    c.ZhName,
+		EnName:    c.EnName,
+		StartTime: formatOKRTimestamp(c.PeriodStartTime),
+		EndTime:   formatOKRTimestamp(c.PeriodEndTime),
 	}
-	if c.CycleStatus != nil {
-		cycle.CycleStatus = c.CycleStatus.String()
+	if c.Status != nil {
+		cycle.CycleStatus = c.Status.String()
 	}
 	return cycle
 }
@@ -248,24 +243,18 @@ func formatOKRTimestamp(ts string) string {
 	return timeUnixMilliLocalString(ms)
 }
 
-// --------- OKR 周期列表（v2，分页拉取）---------
+// --------- OKR 周期列表（v1 /open-apis/okr/v1/periods，租户级，分页拉取）---------
 
-// ListOKRCyclesOptions 列出周期的选项
-type ListOKRCyclesOptions struct {
-	UserID     string
-	UserIDType string // open_id / union_id / user_id
-}
+// ListOKRCyclesOptions 列出周期的选项（v1/periods 是租户级全局周期，无 user 过滤参数）
+type ListOKRCyclesOptions struct{}
 
-// ListOKRCycles 拉取指定用户的所有周期，自动分页（page_size=100）。
+// ListOKRCycles 拉取租户的所有 OKR 周期，自动分页（page_size=100）。
+// 注意：飞书 /open-apis/okr/v1/periods 是租户级全局周期列表，不按用户过滤。
 // userAccessToken 必填（OKR 接口默认要求 User Token）。
 func ListOKRCycles(opts ListOKRCyclesOptions, userAccessToken string) ([]*OKRCycle, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
-	}
-
-	if opts.UserIDType == "" {
-		opts.UserIDType = "open_id"
 	}
 
 	tokenType, reqOpts := resolveTokenOpts(userAccessToken)
@@ -274,8 +263,6 @@ func ListOKRCycles(opts ListOKRCyclesOptions, userAccessToken string) ([]*OKRCyc
 	pageToken := ""
 	for page := 0; ; page++ {
 		query := larkcore.QueryParams{}
-		query.Set("user_id", opts.UserID)
-		query.Set("user_id_type", opts.UserIDType)
 		query.Set("page_size", "100")
 		if pageToken != "" {
 			query.Set("page_token", pageToken)
@@ -283,7 +270,7 @@ func ListOKRCycles(opts ListOKRCyclesOptions, userAccessToken string) ([]*OKRCyc
 
 		req := &larkcore.ApiReq{
 			HttpMethod:                http.MethodGet,
-			ApiPath:                   "/open-apis/okr/v2/cycles",
+			ApiPath:                   "/open-apis/okr/v1/periods",
 			QueryParams:               query,
 			SupportedAccessTokenTypes: []larkcore.AccessTokenType{tokenType},
 		}
@@ -573,17 +560,20 @@ func CreateOKRProgress(opts CreateOKRProgressOptions, userAccessToken string) (*
 	if opts.SourceTitle == "" {
 		opts.SourceTitle = "created by feishu-cli"
 	}
+	if opts.SourceURL == "" {
+		// 飞书 OKR progress create API 要求 source_url 必填，留空会 422；
+		// 给一个 placeholder 兜底，调用方可显式覆盖为真实跳转地址。
+		opts.SourceURL = "https://www.feishu.cn/okr/progress"
+	}
 	if opts.UserIDType == "" {
 		opts.UserIDType = "open_id"
 	}
 
 	bodyBuilder := larkokr.NewCreateProgressRecordReqBodyBuilder().
 		SourceTitle(opts.SourceTitle).
+		SourceUrl(opts.SourceURL).
 		TargetId(opts.TargetID).
 		TargetType(int(opts.TargetType))
-	if opts.SourceURL != "" {
-		bodyBuilder = bodyBuilder.SourceUrl(opts.SourceURL)
-	}
 	if contentBlock != nil {
 		bodyBuilder = bodyBuilder.Content(contentBlock)
 	}

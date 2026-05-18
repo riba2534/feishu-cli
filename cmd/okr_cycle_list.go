@@ -10,45 +10,33 @@ import (
 
 var okrCycleListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "获取指定用户的 OKR 周期列表",
-	Long: `获取指定用户的 OKR 周期列表（v2 接口，自动分页）。
+	Short: "获取当前租户的 OKR 周期列表",
+	Long: `获取当前租户的 OKR 周期列表（/open-apis/okr/v1/periods，自动分页）。
+
+注意：飞书 v1/periods 是租户级全局周期列表，不按用户过滤，所有成员看到的周期一致。
 
 参数:
-  --user-id        用户 ID（必填）
-  --user-id-type   用户 ID 类型：open_id（默认） / union_id / user_id
   --output, -o     输出格式：json
 
 权限要求（User Token）:
   okr:okr:readonly 或 okr:okr.period:readonly
 
 示例:
-  # 查询用户 OKR 周期列表（默认 open_id）
-  feishu-cli okr cycle list --user-id ou_xxx
-
-  # 用 user_id 查询
-  feishu-cli okr cycle list --user-id 123456 --user-id-type user_id
+  # 查询当前租户所有 OKR 周期
+  feishu-cli okr cycle list
 
   # JSON 输出（适合脚本消费）
-  feishu-cli okr cycle list --user-id ou_xxx --output json`,
+  feishu-cli okr cycle list --output json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
 		}
 
-		userID, _ := cmd.Flags().GetString("user-id")
-		userIDType, _ := cmd.Flags().GetString("user-id-type")
 		output, _ := cmd.Flags().GetString("output")
-
-		if err := validateUserIDType(userIDType); err != nil {
-			return err
-		}
 
 		token := resolveOptionalUserTokenWithFallback(cmd)
 
-		cycles, err := client.ListOKRCycles(client.ListOKRCyclesOptions{
-			UserID:     userID,
-			UserIDType: userIDType,
-		}, token)
+		cycles, err := client.ListOKRCycles(client.ListOKRCyclesOptions{}, token)
 		if err != nil {
 			return err
 		}
@@ -67,15 +55,20 @@ var okrCycleListCmd = &cobra.Command{
 
 		fmt.Printf("共找到 %d 个 OKR 周期\n", len(cycles))
 		for idx, c := range cycles {
-			fmt.Printf("[%d] %s\n", idx+1, c.ID)
+			name := c.ZhName
+			if name == "" {
+				name = c.EnName
+			}
+			if name == "" {
+				fmt.Printf("[%d] %s\n", idx+1, c.ID)
+			} else {
+				fmt.Printf("[%d] %s (%s)\n", idx+1, name, c.ID)
+			}
 			if c.StartTime != "" || c.EndTime != "" {
 				fmt.Printf("    时间: %s ~ %s\n", c.StartTime, c.EndTime)
 			}
 			if c.CycleStatus != "" {
 				fmt.Printf("    状态: %s\n", c.CycleStatus)
-			}
-			if c.TenantCycleID != "" {
-				fmt.Printf("    租户周期 ID: %s\n", c.TenantCycleID)
 			}
 		}
 
@@ -96,9 +89,6 @@ func validateUserIDType(t string) error {
 func init() {
 	okrCycleCmd.AddCommand(okrCycleListCmd)
 
-	okrCycleListCmd.Flags().String("user-id", "", "用户 ID（必填）")
-	okrCycleListCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型：open_id / union_id / user_id")
 	okrCycleListCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	okrCycleListCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌，留空则自动读取登录态）")
-	mustMarkFlagRequired(okrCycleListCmd, "user-id")
 }

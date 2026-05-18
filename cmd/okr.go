@@ -17,8 +17,8 @@ var okrCmd = &cobra.Command{
   progress create      okr:okr 或 okr:okr.progress:writeonly
 
 示例:
-  # 查询当前用户的所有 OKR 周期
-  feishu-cli okr cycle list --user-id ou_xxx
+  # 查询当前租户的所有 OKR 周期（租户级全局列表）
+  feishu-cli okr cycle list
 
   # 查询某个目标的所有进展记录
   feishu-cli okr progress list --objective-id 7123456789012345678
@@ -39,10 +39,10 @@ var okrCycleCmd = &cobra.Command{
 	Long: `OKR 周期相关命令。
 
 子命令:
-  list   获取指定用户的 OKR 周期列表
+  list   获取当前租户的 OKR 周期列表
 
 示例:
-  feishu-cli okr cycle list --user-id ou_xxx`,
+  feishu-cli okr cycle list`,
 }
 
 var okrProgressCmd = &cobra.Command{

@@ -28,7 +28,8 @@ var okrProgressCreateCmd = &cobra.Command{
   --progress-percent  进度百分比（数字，配合 --progress-status 一起使用）
   --progress-status   进度状态：normal / overdue / done
   --source-title      来源标题（默认 "created by feishu-cli"）
-  --source-url        来源 URL（用于卡片点击跳转）
+  --source-url        来源 URL（飞书 API 必填字段；默认 "https://www.feishu.cn/okr/progress"，
+                      可改成进展实际跳转地址）
   --user-id-type      用户 ID 类型：open_id（默认） / union_id / user_id
   --output, -o        输出格式：json
 

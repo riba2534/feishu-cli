@@ -47,6 +47,7 @@ var rootCmd = &cobra.Command{
   mail      邮箱（发送/回复/转发/草稿/查询；User Token）
   drive     云盘增强（分块上传、有界轮询导出/导入、富文本评论、通用 task-result）
   search    搜索操作（消息、应用搜索，需要用户授权）
+  okr       OKR 操作（周期列表、进展记录列表与创建）
   config    配置管理（初始化配置）
 
 注意：bitable 命令已切换到 base/v3 API，flag 使用 --base-token。

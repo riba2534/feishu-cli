@@ -10,17 +10,18 @@
 
 新增 `feishu-cli okr` 命令组，覆盖 OKR 最高频的 3 个操作：
 
-- `okr cycle list --user-id ou_xxx` — 获取指定用户的所有 OKR 周期（v2 接口，自动分页）
+- `okr cycle list` — 获取当前租户的所有 OKR 周期（`/open-apis/okr/v1/periods`，租户级全局列表，自动分页）
 - `okr progress list --objective-id 7xxx | --key-result-id 7xxx` — 列出某个目标 / 关键结果下的所有进展记录
 - `okr progress create --objective-id 7xxx | --key-result-id 7xxx --content "..."` — 创建一条进展记录，
   支持纯文本（`--content`，自动包装为 ContentBlock）或原始富文本（`--content-json`）；
-  可附带 `--progress-percent` + `--progress-status` 标记进度
+  可附带 `--progress-percent` + `--progress-status` 标记进度；
+  `--source-url` 飞书侧必填，CLI 默认填 `https://www.feishu.cn/okr/progress` placeholder，可显式覆盖
 
 **实现要点**：
 
 - `progress create` 走飞书 Open SDK v3.5.3 的 `Okr.ProgressRecord.Create`；
-  `cycle list` / `progress list` 走通用 HTTP client 直调 `/open-apis/okr/v2/...`
-  （v2 接口在当前 SDK 版本未封装）
+  `cycle list` 走通用 HTTP client 直调 `/open-apis/okr/v1/periods`（v1/periods 是租户级，不按用户过滤）；
+  `progress list` 走通用 HTTP client 直调 `/open-apis/okr/v2/...`
 - 所有命令默认使用 User Token，会自动读取 `~/.feishu-cli/token.json`；
   也可以通过 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 显式覆盖
 - 时间戳统一格式化为本地时区 `YYYY-MM-DD HH:MM:SS`，方便人眼阅读
@@ -37,7 +38,7 @@
 
 ```bash
 feishu-cli auth login --scope "okr:okr"
-feishu-cli okr cycle list --user-id ou_xxx
+feishu-cli okr cycle list
 feishu-cli okr progress list --objective-id 7xxx
 feishu-cli okr progress create --key-result-id 7xxx --content "本周完成核心模块联调"
 ```
