@@ -49,6 +49,29 @@ func buildEMLBase64URL(input mailMessageInput) (string, error) {
 	if len(input.To) == 0 {
 		return "", fmt.Errorf("邮件至少需要一个 --to")
 	}
+	// 安全：拒绝 header 值含 CR/LF，避免 SMTP header injection（构造任意额外 header 或 split message）
+	for name, val := range map[string]string{
+		"--from":        input.From,
+		"--from-name":   input.FromName,
+		"--subject":     input.Subject,
+		"--in-reply-to": input.InReplyTo,
+		"--references":  input.References,
+	} {
+		if strings.ContainsAny(val, "\r\n") {
+			return "", fmt.Errorf("%s 不能含 CR/LF 字符（防 header injection）", name)
+		}
+	}
+	for _, addr := range append(append(append([]string{}, input.To...), input.CC...), input.BCC...) {
+		if strings.ContainsAny(addr, "\r\n") {
+			return "", fmt.Errorf("收件人地址 %q 不能含 CR/LF 字符（防 header injection）", addr)
+		}
+	}
+	// inline 图片 filename 也走相同 sanitize（用于 Content-Type name= 和 Content-Disposition filename=）
+	for _, img := range input.InlineImages {
+		if strings.ContainsAny(img.Filename, "\r\n") || strings.ContainsAny(img.CID, "\r\n") {
+			return "", fmt.Errorf("内嵌图片 filename/cid 不能含 CR/LF 字符（防 MIME header injection）")
+		}
+	}
 
 	var b strings.Builder
 

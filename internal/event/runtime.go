@@ -245,9 +245,14 @@ func (r *Runtime) emit(ev *larkevent.EventReq) error {
 	}
 
 	// 写文件（可选）
+	// 安全：event_id 来自服务端 payload，恶意/异常 ID 含路径分隔符或 .. 会写到 OutputDir 外面，
+	// 必须用 allowlist 限制为 [A-Za-z0-9_-]，并把生成 filename 限制在 OutputDir 子树内。
 	if r.opts.OutputDir != "" && meta.Header.EventID != "" {
-		filename := filepath.Join(r.opts.OutputDir, meta.Header.EventID+".json")
-		_ = os.WriteFile(filename, body, 0600)
+		safeID := sanitizeEventID(meta.Header.EventID)
+		if safeID != "" {
+			filename := filepath.Join(r.opts.OutputDir, safeID+".json")
+			_ = os.WriteFile(filename, body, 0600)
+		}
 	}
 
 	// 计数 + 触发 max-events 退出
@@ -338,4 +343,28 @@ func (l *quietLogger) Warn(_ context.Context, args ...interface{}) {
 }
 func (l *quietLogger) Error(_ context.Context, args ...interface{}) {
 	fmt.Fprintln(l.out, append([]interface{}{"[event/sdk]"}, args...)...)
+}
+
+// sanitizeEventID 把 event_id 限制为 allowlist 字符 [A-Za-z0-9_-]，长度 ≤ 128。
+// 不合法字符直接丢弃；结果为空时调用方应跳过文件写入避免空文件名。
+// 用于防御 event_id 路径穿越（来自服务端 payload 不可信）。
+func sanitizeEventID(id string) string {
+	if len(id) > 128 {
+		id = id[:128]
+	}
+	var b strings.Builder
+	b.Grow(len(id))
+	for _, r := range id {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '_' || r == '-':
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

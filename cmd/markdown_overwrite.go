@@ -78,6 +78,10 @@ var markdownOverwriteCmd = &cobra.Command{
 		// 准备字节内容：--content 走字符串；--content-file 读盘。
 		var payload []byte
 		if content != "" {
+			const maxOverwriteSize = 20 * 1024 * 1024
+			if len(content) > maxOverwriteSize {
+				return fmt.Errorf("--content 大小 %d 字节超过 20MB API 上限", len(content))
+			}
 			payload = []byte(content)
 		} else {
 			stat, err := os.Stat(contentFile)
@@ -86,6 +90,11 @@ var markdownOverwriteCmd = &cobra.Command{
 			}
 			if stat.IsDir() {
 				return fmt.Errorf("--content-file 必须指向文件，不是目录")
+			}
+			// drive/v1/files/upload_all API 单次上传 ≤ 20MB（参 internal/client/markdown.go OverwriteFileWithToken 注释）
+			const maxOverwriteSize = 20 * 1024 * 1024
+			if stat.Size() > maxOverwriteSize {
+				return fmt.Errorf("--content-file 大小 %d 字节超过 20MB API 上限，请切分或用多次 fetch+overwrite", stat.Size())
 			}
 			data, err := os.ReadFile(contentFile)
 			if err != nil {

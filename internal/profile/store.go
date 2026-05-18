@@ -23,7 +23,10 @@
 // 设计要点：
 //   - 向后兼容：旧用户的 ~/.feishu-cli/config.yaml + token.json 仍然能读，
 //     一旦执行 `profile add` 才会创建 profiles/ 目录并迁移旧布局到默认 profile。
-//   - 写操作（创建/重命名/删除/切换）通过 flock 串行化，避免并发写损坏。
+//   - 写操作（创建/重命名/删除/切换）通过 sync.Mutex 进程内串行化。
+//     注：跨进程并发场景（如多 cmux session 同时跑 profile use）当前未加文件锁，
+//     生产高并发推荐 wrap 应用层避免；CLI 本地单用户场景多进程并发罕见。
+//     TODO（codex P1 follow-up）：用 syscall.Flock 加跨进程锁，参考 internal/event/bus.go 实现。
 //   - 名称合法字符：[A-Za-z0-9_-]，长度 1-64，禁止 "." ".." 等路径注入。
 package profile
 
@@ -289,7 +292,11 @@ func ActiveName() (string, error) {
 		return "", err
 	}
 	if name == "" {
-		// 有 profile 但没指针，回退到字典序第一个
+		// 有 profile 但没指针。codex review P2 finding：legacy 文件存在时优先 legacy，
+		// 避免 profile add 后未 use 就被悄悄切走（zero-touch upgrade 破坏）。
+		if hasLegacyLayout() {
+			return "", nil // caller (ActiveDir) 会用 RootDir() 走旧布局
+		}
 		all, err := List()
 		if err != nil {
 			return "", err
@@ -400,6 +407,21 @@ func Describe() ([]Info, error) {
 }
 
 // fileExists 测试文件是否存在。
+// hasLegacyLayout 检测旧布局是否存在（~/.feishu-cli/config.yaml 或 token.json 任一即视为 legacy）。
+// 用于 ActiveName 在指针缺失时优先 legacy 而非自动切到字典序第一个 profile。
+func hasLegacyLayout() bool {
+	root, err := RootDir()
+	if err != nil {
+		return false
+	}
+	for _, f := range []string{configFileName, tokenFileName} {
+		if fileExists(filepath.Join(root, f)) {
+			return true
+		}
+	}
+	return false
+}
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil

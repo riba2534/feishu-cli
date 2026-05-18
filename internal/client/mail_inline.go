@@ -163,10 +163,28 @@ func LoadInlineImageBytes(ref *MailInlineImageRef) error {
 	if err != nil {
 		return fmt.Errorf("解析路径失败 %s: %w", ref.LocalPath, err)
 	}
-	if err := assertPathInSafeRoots(abs); err != nil {
+	// 安全 #1：用 EvalSymlinks 解软链后再做 safe-root 校验，
+	// 否则 cwd/home 子树内的符号链接可指向外部敏感文件（codex review P0 finding）。
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return fmt.Errorf("解析符号链接失败 %s: %w", ref.LocalPath, err)
+	}
+	if err := assertPathInSafeRoots(resolved); err != nil {
 		return err
 	}
-	data, err := os.ReadFile(abs)
+	// 安全 #2：拒绝非常规文件（设备文件 / FIFO / socket）和过大文件。
+	info, err := os.Lstat(resolved)
+	if err != nil {
+		return fmt.Errorf("stat 失败 %s: %w", resolved, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("内嵌图片必须是普通文件: %s", resolved)
+	}
+	const maxInlineImageSize = 10 * 1024 * 1024 // 10MB；飞书 drive upload_all 单次 ≤ 20MB，内嵌图片实际远小于此
+	if info.Size() > maxInlineImageSize {
+		return fmt.Errorf("内嵌图片大小 %d 字节超过 10MB 限制: %s", info.Size(), resolved)
+	}
+	data, err := os.ReadFile(resolved)
 	if err != nil {
 		return fmt.Errorf("读取本地图片失败 %s: %w", abs, err)
 	}

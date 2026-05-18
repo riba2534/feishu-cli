@@ -157,9 +157,10 @@ var extraDomainScopes = map[string][]string{
 		"docs:document.media:upload", "docs:document.media:download",
 	},
 
-	// slides shortcuts: +create
+	// slides shortcuts: +create, +media-upload
 	"slides": {
 		"slides:presentation:create", "slides:presentation:write_only",
+		"docs:document.media:upload",
 	},
 
 	// whiteboard shortcuts: +query, +update

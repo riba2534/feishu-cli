@@ -12,7 +12,7 @@ import (
 var mailTemplateCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "创建邮件模板（personal mail template）",
-	Long: `创建一个个人邮件模板，可在 mail send --template-id 引用复用。
+	Long: `创建一个个人邮件模板。注意 mail send 当前没有 --template-id 引用 flag（飞书 API 暂未支持），模板用于以后查询/复用，不影响立即可读取的 template_id 输出。
 
 必填:
   --name        模板名（≤ 100 字符）
