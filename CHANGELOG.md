@@ -145,6 +145,29 @@ feishu-cli slides create --title "Q2 OKR" --output json
 feishu-cli slides media-upload --file ./cover.png \
     --presentation-token <xml_presentation_id>
 ```
+### 新增 — `schema` 命令：本地浏览飞书 OpenAPI 方法（path / 参数 / scope）
+
+新增 `feishu-cli schema [service.resource.method]` 子命令，无需 token、纯本地查询飞书
+开放平台 OpenAPI 方法的 HTTP path / 动词 / 参数 / 请求体 / 响应体 / scope / 文档链接。
+对齐 `larksuite/cli` 的 `schema` 子命令，便于 AI Agent 和脚本作者快速查找参数。
+
+**用法**：
+
+```bash
+feishu-cli schema                                # 列出所有可用 service（12 个）
+feishu-cli schema im                             # 列出 im 域下所有 resource.method
+feishu-cli schema im.messages                    # 列出 messages 资源下所有 method
+feishu-cli schema im.messages.delete             # 查看具体 method 详情
+feishu-cli schema im.messages.delete --format json   # JSON 输出（AI Agent 推荐）
+feishu-cli schema list --service drive           # 等价于 schema drive，支持 --format json
+```
+
+**数据源**：`internal/registry/meta_data.json`（编译期 embed），与认证模块复用同一份元数据。
+当前覆盖 12 个 service：approval / attendance / calendar / drive / im / mail / minutes /
+sheets / slides / task / vc / wiki。
+
+**输出含**：HTTP verb + 完整 path、parameters（含 path / query / required 标记）、
+requestBody（嵌套字段）、responseBody、accessTokens（user / tenant）、scopes、docUrl。
 
 ### 新增 — `comment reply add`：为已有评论添加回复
 
