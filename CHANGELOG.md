@@ -396,6 +396,45 @@ feishu-cli mail send --to user@example.com --subject "周报" \
 # 模板创建+列表
 feishu-cli mail template create --name "周报" --subject "本周进度" --body "<p>模板</p>"
 feishu-cli mail template list
+### 新增 — `calendar` 智能化三件套（suggestion / room-find / rsvp）
+
+针对 AI Agent 自动排会场景，补齐三条飞书日历开放能力，使整条「选时段 → 选会议室 → 答复邀请」
+流水线全部可在 CLI 完成。
+
+- **`calendar suggestion`**：智能时段建议。直调 `POST /open-apis/calendar/v4/freebusy/suggestion`，
+  按 `--attendee-ids ou_xxx,oc_yyy` + `--duration 30m/1h30m/90` 推荐可用时段；支持
+  `--start`/`--end` 搜索窗口（默认当天）、`--exclude start~end,...` 排除午休/已占用时段、
+  `--event-rrule` 周期性规则、`--timezone`。返回带「推荐理由」+「AI 行动指引」。
+- **`calendar room-find`**：会议室查找。直调 `POST /open-apis/calendar/v4/freebusy/room_find`，
+  支持多个 `--slot start~end` 并发查询（worker=10），可按 `--city`/`--building`/`--floor`/
+  `--room-name`（逗号分隔多个）/`--min-capacity`/`--max-capacity` 多维度过滤；可选
+  `--attendee-ids` 让服务端结合参与者位置筛选。
+- **`calendar rsvp`**：答复日程邀请。走 SDK Reply 接口，`--calendar-id`（可省略，默认主日历）+
+  `--event-id` + `--action accept|decline|tentative`。与既有的 `calendar event-reply`
+  位置参数风格互为补充——rsvp 全 flag 风格、calendar-id 可省，更适合 AI Agent 调度。
+
+**SDK 现状**：v3.5.3 暴露 `Reply` 但未暴露 `freebusy/suggestion` 和 `freebusy/room_find`，
+故 suggestion / room-find 走 `client.Post` 通用 HTTP 直调 OpenAPI；新增 client 函数集中在
+`internal/client/calendar_smart.go`，包括 `SuggestFreebusy`、`FindMeetingRoom`、
+`FindMeetingRoomBatch`（并发+排序）、`SplitAttendeeIDs`（按 `ou_`/`oc_` 前缀分流）。
+
+**权限要求**：
+- suggestion / room-find：`calendar:calendar.free_busy:read`（User Token 或 App Token 均可）
+- rsvp：`calendar:calendar.event:reply`（推荐 User Token，以本人身份答复）
+
+**典型用法**：
+
+```bash
+# 1. 先让飞书推荐可用时段
+feishu-cli calendar suggestion --attendee-ids ou_aaa,ou_bbb --duration 30m
+
+# 2. 锁定时段后查会议室
+feishu-cli calendar room-find \
+  --slot 2024-01-22T09:00:00+08:00~2024-01-22T09:30:00+08:00 \
+  --building "飞书大厦" --min-capacity 6
+
+# 3. 收到邀请后答复
+feishu-cli calendar rsvp --event-id EVENT_xxx --action accept
 ```
 
 ### 新增 — `comment reply add`：为已有评论添加回复
