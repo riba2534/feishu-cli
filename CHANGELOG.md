@@ -6,6 +6,40 @@
 
 ## 未发布
 
+### 新增 — `slides` 模块：Slides 演示文稿创建与媒体上传
+
+新增 `feishu-cli slides` 顶层命令，提供两个子命令支撑 Slides 演示文稿的最小可用工作流：
+
+- `slides create [--title <name>] [--width <px>] [--height <px>] [--output json]`
+  调用 `POST /open-apis/slides_ai/v1/xml_presentations` 创建空白演示文稿，返回 `xml_presentation_id` /
+  `revision_id` / `title`。默认尺寸 960x540。
+- `slides media-upload --file <path> --presentation-token <xml_presentation_id> [--output json]`
+  本地图片走 `/open-apis/drive/v1/medias/upload_all` 上传到指定演示文稿，返回 `file_token`
+  可直接作为 slide XML 中 `<img src="...">` 引用。
+
+**关键实现细节**：
+
+- 上传 `parent_type` 固定为 `slide_file`（lark-cli 实测：`slide_image` / `slides_image` /
+  `slides_file` 都会被拒）；`parent_node` 必须为目标 `xml_presentation_id`
+- 单文件上限 20 MB（多分片 `upload_prepare` 不接受 `parent_type=slide_file`）
+- 共用 `internal/client/drive.go::UploadMediaWithExtra` 上传链路
+
+**权限要求**：
+
+- 创建：`slides:presentation:create` 或 `slides:presentation:write_only`
+- 上传：`docs:document.media:upload`
+
+**示例**：
+
+```bash
+# 创建一个标题为 "Q2 OKR" 的演示文稿
+feishu-cli slides create --title "Q2 OKR" --output json
+
+# 把封面图上传到该演示文稿
+feishu-cli slides media-upload --file ./cover.png \
+    --presentation-token <xml_presentation_id>
+```
+
 ### 新增 — `comment reply add`：为已有评论添加回复
 
 新增命令 `feishu-cli comment reply add <file_token> <comment_id> --text "..."`，补齐评论回复
