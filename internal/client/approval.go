@@ -431,7 +431,7 @@ func approvalTaskAPIToInfo(task *approvalTaskAPIInfo) *ApprovalTaskInfo {
 // 创建审批实例参数（POST /open-apis/approval/v4/instances）
 type CreateApprovalInstanceOptions struct {
 	ApprovalCode           string          // 必填：审批定义 code
-	UserID                 string          // 必填：发起人 ID（open_id/user_id/union_id）
+	UserID                 string          // 必填：发起人 ID（open_id 或 user_id，对应 UserIDType；endpoint 不支持 union_id）
 	Form                   string          // 必填：表单数据 JSON 字符串
 	UserIDType             string          // 可选：open_id / user_id，默认 open_id（v4/instances body 只接受这两种；union_id 会被拒绝）
 	DepartmentID           string          // 可选：发起人部门
@@ -518,22 +518,24 @@ func doApprovalPost(apiPath string, body map[string]any, userIDType, userAccessT
 	return apiResp.Data, nil
 }
 
-// buildCreateApprovalInstanceBody 装配 POST /approval/v4/instances 的 body map，
-// 并做完整 validation + user_id_type normalize/reject。提到包级让单测能不打 HTTP 验证字段映射。
+// buildCreateApprovalInstanceBody 装配 POST /approval/v4/instances 的 body map +
+// 返回 normalized user_id_type 给调用方拼 query。**返回的 normUIDType 同 body 字段映射一致**，
+// 保证 body 落 open_id 字段时 query 也是 user_id_type=open_id；早期实现 body 用 normalized、
+// query 用 raw opts.UserIDType（含 leading/trailing 空白）会导致 HTTP 请求 body/query 不一致。
 //
 // 关键语义（飞书审批 v4 文档 + oapi-sdk-go InstanceCreate struct 双向校对）：
 //   - 该端点 body 只有 user_id 和 open_id 两个身份字段，**不接受 union_id**
 //   - user_id 优先级高于 open_id（同时存在时 open_id 被忽略），所以 ou_xxx 必须落 open_id 字段
 //   - 空 UserIDType normalize 成 open_id，与 cmd 层默认一致
-func buildCreateApprovalInstanceBody(opts CreateApprovalInstanceOptions) (map[string]any, error) {
+func buildCreateApprovalInstanceBody(opts CreateApprovalInstanceOptions) (map[string]any, string, error) {
 	if strings.TrimSpace(opts.ApprovalCode) == "" {
-		return nil, fmt.Errorf("approval_code 不能为空")
+		return nil, "", fmt.Errorf("approval_code 不能为空")
 	}
 	if strings.TrimSpace(opts.UserID) == "" {
-		return nil, fmt.Errorf("user_id 不能为空")
+		return nil, "", fmt.Errorf("user_id 不能为空")
 	}
 	if strings.TrimSpace(opts.Form) == "" {
-		return nil, fmt.Errorf("form 不能为空")
+		return nil, "", fmt.Errorf("form 不能为空")
 	}
 
 	body := map[string]any{
@@ -550,7 +552,7 @@ func buildCreateApprovalInstanceBody(opts CreateApprovalInstanceOptions) (map[st
 	case "user_id":
 		body["user_id"] = opts.UserID
 	default:
-		return nil, fmt.Errorf("approval/v4/instances 不支持 user_id_type=%q（仅支持 open_id / user_id；"+
+		return nil, "", fmt.Errorf("approval/v4/instances 不支持 user_id_type=%q（仅支持 open_id / user_id；"+
 			"该端点 body 只有 open_id 和 user_id 两个字段，参 SDK InstanceCreate struct）", opts.UserIDType)
 	}
 	if opts.DepartmentID != "" {
@@ -562,28 +564,29 @@ func buildCreateApprovalInstanceBody(opts CreateApprovalInstanceOptions) (map[st
 	if len(opts.NodeApproverUserIDList) > 0 {
 		var v any
 		if err := json.Unmarshal(opts.NodeApproverUserIDList, &v); err != nil {
-			return nil, fmt.Errorf("解析 node_approver_user_id_list 失败: %w", err)
+			return nil, "", fmt.Errorf("解析 node_approver_user_id_list 失败: %w", err)
 		}
 		body["node_approver_user_id_list"] = v
 	}
 	if len(opts.NodeCCUserIDList) > 0 {
 		var v any
 		if err := json.Unmarshal(opts.NodeCCUserIDList, &v); err != nil {
-			return nil, fmt.Errorf("解析 node_cc_user_id_list 失败: %w", err)
+			return nil, "", fmt.Errorf("解析 node_cc_user_id_list 失败: %w", err)
 		}
 		body["node_cc_user_id_list"] = v
 	}
-	return body, nil
+	return body, uidType, nil
 }
 
 // CreateApprovalInstance 创建一条审批实例，返回 instance_code。
 func CreateApprovalInstance(opts CreateApprovalInstanceOptions, userAccessToken string) (*CreateApprovalInstanceResult, error) {
-	body, err := buildCreateApprovalInstanceBody(opts)
+	body, normUIDType, err := buildCreateApprovalInstanceBody(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	data, err := doApprovalPost("/open-apis/approval/v4/instances", body, opts.UserIDType, userAccessToken, "创建审批实例")
+	// 传 normalized uidType（不传 raw opts.UserIDType，避免 body/query 不一致 + 空白 query encoding 异常）
+	data, err := doApprovalPost("/open-apis/approval/v4/instances", body, normUIDType, userAccessToken, "创建审批实例")
 	if err != nil {
 		return nil, err
 	}

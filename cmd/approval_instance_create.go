@@ -17,10 +17,10 @@ var approvalInstanceCreateCmd = &cobra.Command{
 
 参数:
   --approval-code   审批定义 code（必填）
-  --user-id         发起人 ID（必填，open_id/user_id/union_id）
+  --user-id         发起人 ID（必填，open_id 或 user_id，对应 --user-id-type）
   --form            表单数据 JSON 字符串（与 --form-file 二选一）
   --form-file       表单数据 JSON 文件路径（与 --form 二选一）
-  --user-id-type    open_id（默认）/user_id/union_id
+  --user-id-type    open_id（默认）/user_id（v4/instances endpoint 不支持 union_id）
   --department-id   发起人部门 ID（可选）
   --open-chat-id    审批结果推送到的群（可选）
   --output, -o      输出格式：json
@@ -99,7 +99,7 @@ func init() {
 	approvalInstanceCreateCmd.Flags().String("user-id", "", "发起人用户 ID（必填）")
 	approvalInstanceCreateCmd.Flags().String("form", "", "表单数据 JSON 字符串（与 --form-file 二选一）")
 	approvalInstanceCreateCmd.Flags().String("form-file", "", "表单数据 JSON 文件路径")
-	approvalInstanceCreateCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型：open_id/user_id/union_id")
+	approvalInstanceCreateCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型：open_id/user_id（endpoint 不支持 union_id）")
 	approvalInstanceCreateCmd.Flags().String("department-id", "", "发起人部门 ID（可选）")
 	approvalInstanceCreateCmd.Flags().String("open-chat-id", "", "结果推送的群 ID（可选）")
 	approvalInstanceCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")

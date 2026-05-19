@@ -6,25 +6,29 @@ import (
 	"testing"
 )
 
-// TestBuildCreateApprovalInstanceBody_FieldMapping 直接断言 body 字段名称：
-//   - open_id / 空 UserIDType 一律落 body["open_id"]（normalize）
-//   - user_id 落 body["user_id"]
+// TestBuildCreateApprovalInstanceBody_FieldMapping 直接断言 body 字段名称 +
+// 返回的 normUIDType 与 body 字段映射一致（保证调用方拼 query 不会与 body 不同步）：
+//   - open_id / 空 UserIDType 一律落 body["open_id"]（normalize）+ normUIDType=="open_id"
+//   - user_id 落 body["user_id"] + normUIDType=="user_id"
 //   - 不存在的字段名（如 union_id）不出现
+//   - 含空白的 UserIDType 也得 trim 干净（防 body 用 trimmed、query 用 raw 的不一致）
 func TestBuildCreateApprovalInstanceBody_FieldMapping(t *testing.T) {
 	cases := []struct {
 		name        string
 		uidType     string
-		wantField   string // 该字段应等于 opts.UserID
-		absentField string // 该字段应缺失
+		wantField   string // body 中应等于 opts.UserID 的字段
+		absentField string // body 中应缺失的字段
+		wantNormUID string // builder 返回的 normalized UIDType（用于拼 query）
 	}{
-		{"empty defaults to open_id", "", "open_id", "user_id"},
-		{"explicit open_id", "open_id", "open_id", "user_id"},
-		{"explicit user_id", "user_id", "user_id", "open_id"},
-		{"whitespace open_id", "  open_id  ", "open_id", "user_id"},
+		{"empty defaults to open_id", "", "open_id", "user_id", "open_id"},
+		{"explicit open_id", "open_id", "open_id", "user_id", "open_id"},
+		{"explicit user_id", "user_id", "user_id", "open_id", "user_id"},
+		{"whitespace open_id trimmed", "  open_id  ", "open_id", "user_id", "open_id"},
+		{"whitespace user_id trimmed", "\tuser_id\n", "user_id", "open_id", "user_id"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body, err := buildCreateApprovalInstanceBody(CreateApprovalInstanceOptions{
+			body, normUID, err := buildCreateApprovalInstanceBody(CreateApprovalInstanceOptions{
 				ApprovalCode: "AC-1",
 				UserID:       "ou_xxx",
 				Form:         "[]",
@@ -42,6 +46,9 @@ func TestBuildCreateApprovalInstanceBody_FieldMapping(t *testing.T) {
 			if _, ok := body["union_id"]; ok {
 				t.Errorf("body should never contain union_id field")
 			}
+			if normUID != tc.wantNormUID {
+				t.Errorf("normUIDType = %q, want %q (body/query 不一致会导致 HTTP 请求两端 user_id_type 漂移)", normUID, tc.wantNormUID)
+			}
 		})
 	}
 }
@@ -49,7 +56,7 @@ func TestBuildCreateApprovalInstanceBody_FieldMapping(t *testing.T) {
 // TestBuildCreateApprovalInstanceBody_RejectsUnionID 验证 endpoint 不支持的 union_id 被显式拒绝。
 // 早期实现把 union_id 错误映射到 user_id 字段（飞书 SDK InstanceCreate struct 不含 union_id 字段）。
 func TestBuildCreateApprovalInstanceBody_RejectsUnionID(t *testing.T) {
-	_, err := buildCreateApprovalInstanceBody(CreateApprovalInstanceOptions{
+	_, _, err := buildCreateApprovalInstanceBody(CreateApprovalInstanceOptions{
 		ApprovalCode: "AC-1",
 		UserID:       "on_xxx",
 		Form:         "[]",
@@ -68,7 +75,7 @@ func TestBuildCreateApprovalInstanceBody_RejectsUnionID(t *testing.T) {
 
 // TestBuildCreateApprovalInstanceBody_RejectsInvalid 验证完全乱写的 user_id_type 也被拒绝。
 func TestBuildCreateApprovalInstanceBody_RejectsInvalid(t *testing.T) {
-	_, err := buildCreateApprovalInstanceBody(CreateApprovalInstanceOptions{
+	_, _, err := buildCreateApprovalInstanceBody(CreateApprovalInstanceOptions{
 		ApprovalCode: "AC-1",
 		UserID:       "ou_xxx",
 		Form:         "[]",
@@ -103,7 +110,7 @@ func TestBuildCreateApprovalInstanceBody_RequiredFields(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := base
 			tc.mutate(&opts)
-			_, err := buildCreateApprovalInstanceBody(opts)
+			_, _, err := buildCreateApprovalInstanceBody(opts)
 			if err == nil {
 				t.Fatalf("expected error for %s", tc.name)
 			}
@@ -116,7 +123,7 @@ func TestBuildCreateApprovalInstanceBody_RequiredFields(t *testing.T) {
 
 // TestBuildCreateApprovalInstanceBody_NodeListsParsed 验证 NodeApprover/NodeCC 原文 JSON 被解析进 body。
 func TestBuildCreateApprovalInstanceBody_NodeListsParsed(t *testing.T) {
-	body, err := buildCreateApprovalInstanceBody(CreateApprovalInstanceOptions{
+	body, _, err := buildCreateApprovalInstanceBody(CreateApprovalInstanceOptions{
 		ApprovalCode:           "AC-1",
 		UserID:                 "ou_xxx",
 		Form:                   "[]",
@@ -135,8 +142,10 @@ func TestBuildCreateApprovalInstanceBody_NodeListsParsed(t *testing.T) {
 	}
 }
 
-// 兼容旧测试名（保留 normalize/reject 入口校验外层 CreateApprovalInstance 行为不变）。
-func TestCreateApprovalInstanceNormalizesEmptyUserIDType(t *testing.T) {
+// TestCreateApprovalInstance_RequiredFieldsRegression 外层入口的必填校验回归（不打 HTTP）。
+// 早期名 TestCreateApprovalInstanceNormalizesEmptyUserIDType 称 normalize 测试但实际只触发
+// 必填短路、根本没走到 body/query 构造。重命名为 RequiredFieldsRegression 反映真实意图。
+func TestCreateApprovalInstance_RequiredFieldsRegression(t *testing.T) {
 	_, err := CreateApprovalInstance(CreateApprovalInstanceOptions{
 		ApprovalCode: "",
 		UserID:       "ou_xxx",
@@ -151,7 +160,8 @@ func TestCreateApprovalInstanceNormalizesEmptyUserIDType(t *testing.T) {
 	}
 }
 
-func TestCreateApprovalInstanceRejectsInvalidUserIDType(t *testing.T) {
+// TestCreateApprovalInstance_RejectsInvalidUserIDType 外层入口的非法 user_id_type 回归（不打 HTTP）。
+func TestCreateApprovalInstance_RejectsInvalidUserIDType(t *testing.T) {
 	_, err := CreateApprovalInstance(CreateApprovalInstanceOptions{
 		ApprovalCode: "OK",
 		UserID:       "ou_xxx",
