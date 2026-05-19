@@ -519,12 +519,14 @@ func doApprovalPost(apiPath string, body map[string]any, userIDType, userAccessT
 }
 
 // buildCreateApprovalInstanceBody 装配 POST /approval/v4/instances 的 body map +
-// 返回 normalized user_id_type 给调用方拼 query。**返回的 normUIDType 同 body 字段映射一致**，
-// 保证 body 落 open_id 字段时 query 也是 user_id_type=open_id；早期实现 body 用 normalized、
-// query 用 raw opts.UserIDType（含 leading/trailing 空白）会导致 HTTP 请求 body/query 不一致。
+// 返回 normalized user_id_type（仅用于错误信息 / 单测断言 / 未来 endpoint 扩展，**不用于拼 query**）。
 //
-// 关键语义（飞书审批 v4 文档 + oapi-sdk-go InstanceCreate struct 双向校对）：
+// 关键语义（飞书审批 v4 文档 + oapi-sdk-go InstanceCreate struct + CreateInstanceReqBuilder 三方校对）：
 //   - 该端点 body 只有 user_id 和 open_id 两个身份字段，**不接受 union_id**
+//   - SDK CreateInstanceReqBuilder (oapi-sdk-go/v3 model.go L13990-14015) **不暴露
+//     UserIdType() builder method**，对比 cancel/cc/task builder 显式有 UserIdType
+//     设置 QueryParams——证明该端点不依赖 user_id_type query；CreateApprovalInstance
+//     调 doApprovalPost 传 "" 不附加 query 是正确做法
 //   - user_id 优先级高于 open_id（同时存在时 open_id 被忽略），所以 ou_xxx 必须落 open_id 字段
 //   - 空 UserIDType normalize 成 open_id，与 cmd 层默认一致
 func buildCreateApprovalInstanceBody(opts CreateApprovalInstanceOptions) (map[string]any, string, error) {
@@ -580,13 +582,15 @@ func buildCreateApprovalInstanceBody(opts CreateApprovalInstanceOptions) (map[st
 
 // CreateApprovalInstance 创建一条审批实例，返回 instance_code。
 func CreateApprovalInstance(opts CreateApprovalInstanceOptions, userAccessToken string) (*CreateApprovalInstanceResult, error) {
-	body, normUIDType, err := buildCreateApprovalInstanceBody(opts)
+	body, _, err := buildCreateApprovalInstanceBody(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	// 传 normalized uidType（不传 raw opts.UserIDType，避免 body/query 不一致 + 空白 query encoding 异常）
-	data, err := doApprovalPost("/open-apis/approval/v4/instances", body, normUIDType, userAccessToken, "创建审批实例")
+	// 不传 user_id_type query —— 该端点用 body 字段（open_id / user_id）区分身份，
+	// SDK CreateInstanceReqBuilder 也不暴露 UserIdType()。传 normalized 进 query 服务端
+	// 会忽略，是无意义的额外 byte。（cancel/cc/task 端点才依赖 query，那几条路径仍传 opts.UserIDType）
+	data, err := doApprovalPost("/open-apis/approval/v4/instances", body, "", userAccessToken, "创建审批实例")
 	if err != nil {
 		return nil, err
 	}

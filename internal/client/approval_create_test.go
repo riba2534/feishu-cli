@@ -7,18 +7,23 @@ import (
 )
 
 // TestBuildCreateApprovalInstanceBody_FieldMapping 直接断言 body 字段名称 +
-// 返回的 normUIDType 与 body 字段映射一致（保证调用方拼 query 不会与 body 不同步）：
+// 返回的 normUIDType（builder 内部 normalize 结果，与 body 字段映射对齐）：
 //   - open_id / 空 UserIDType 一律落 body["open_id"]（normalize）+ normUIDType=="open_id"
 //   - user_id 落 body["user_id"] + normUIDType=="user_id"
 //   - 不存在的字段名（如 union_id）不出现
-//   - 含空白的 UserIDType 也得 trim 干净（防 body 用 trimmed、query 用 raw 的不一致）
+//   - 含空白的 UserIDType 也得 trim 干净
+//
+// 注意：normUIDType **不用于拼 query** —— /approval/v4/instances 端点 body 字段区分身份，
+// SDK CreateInstanceReqBuilder 不暴露 UserIdType()。CreateApprovalInstance 实际调
+// doApprovalPost(..., "", ...) 传空字符串。此处仍返回 normUIDType 是为错误信息 +
+// 单测断言 normalize 行为 + 未来 endpoint 扩展可能。
 func TestBuildCreateApprovalInstanceBody_FieldMapping(t *testing.T) {
 	cases := []struct {
 		name        string
 		uidType     string
 		wantField   string // body 中应等于 opts.UserID 的字段
 		absentField string // body 中应缺失的字段
-		wantNormUID string // builder 返回的 normalized UIDType（用于拼 query）
+		wantNormUID string // builder 返回的 normalized UIDType（不拼 query，见函数注释）
 	}{
 		{"empty defaults to open_id", "", "open_id", "user_id", "open_id"},
 		{"explicit open_id", "open_id", "open_id", "user_id", "open_id"},

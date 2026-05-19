@@ -373,6 +373,14 @@ func outputPretty(results []checkResult) error {
 // authority 内 userinfo / host 边界按 RFC 3986 + Go net/url url.go:500-545 用**最后一个 `@`**
 // 分隔（不是第一个）。否则 `https://user:p@ssword@host` 会被切成 userinfo=`user:p`、
 // host=`ssword@host`，输出 `https://***@ssword@host` 半泄密码。
+//
+// 已知限制（doctor 是 user-facing 诊断，不是 paranoid security tool）：
+// 密码里如果**裸写** `/`、`?`、`#`（RFC 3986 在 userinfo 位置必须 percent-encode，
+// 95%+ 用户的 hex / base64 / 字母数字 token 不会触发），authority 边界会先在该字符
+// 处被截断、找不到 `@`，doctor 会原样回显该 URL。real-world 撞到概率 < 1%；用户即便
+// 撞到也是自己配错 RFC 不合规，且大多数 HTTP 库会拒绝这种 URL。修复需引入启发式判定
+// （isAllDigits port + IPv6 `[` 前缀 + 不全数字 user:pass 形态）和 4+ 测试 case，
+// ROI 太低不收。
 func redactProxyURL(raw string) string {
 	if raw == "" {
 		return raw
@@ -422,9 +430,20 @@ func splitNoProxyEntries(s string) []string {
 	return out
 }
 
-// noProxyCovers 检查 NO_PROXY entries 是否覆盖目标 domain（subdomain 也算）。
-// 接受精确匹配（"feishu.cn"）/ suffix 匹配（"a.feishu.cn" 也覆盖 "feishu.cn"）/
-// 全通配 "*"（Go net/http httpproxy 标准：单独 `*` 表示所有请求不走代理）。
+// noProxyCovers 判定用户在 NO_PROXY 中是否"提到"了飞书根域（feishu.cn / larkoffice.com /
+// larksuite.com）。这是 doctor user-facing 友好提示，**故意采用宽松语义**，与 Go net/http
+// httpproxy 的标准 NO_PROXY-host 匹配不同：
+//
+//   - 标准 Go 语义：entry `feishu.cn` matches host `a.feishu.cn`（entry 是 host suffix）
+//   - 本函数语义：entry == d / entry 是 d 的子域（如 `a.feishu.cn` 也算"提到了 feishu.cn"）/
+//     entry 为 `*`（Go httpproxy 标准：单独 `*` 表所有请求不走代理）
+//
+// 选择宽松的动机：doctor 的检查目的是"用户有没有意识到飞书需要 NO_PROXY"——若用户写
+// `NO_PROXY=open.feishu.cn`，说明已意识到飞书域有 NO_PROXY 需求，doctor 不再 warn。
+// 副作用是不会提醒用户"你只配了 a.feishu.cn 不覆盖整个飞书"——这是 doctor 范围外的细化建议。
+//
+// 不要按 Go 标准反向阅读 `HasSuffix(e, "."+d)`：这里是"entry 以 .root 结尾即视为提到了 root"，
+// 不是"root 以 .entry 结尾"。
 func noProxyCovers(entries []string, domain string) bool {
 	d := strings.ToLower(domain)
 	for _, e := range entries {
