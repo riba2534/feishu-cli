@@ -79,7 +79,7 @@ const flagsAPIPath = "/open-apis/im/v1/flags"
 
 // CreateFlag 为指定消息创建书签。
 // itemType / flagType 必须是合法组合，否则服务端会返回错误。
-// 权限：user token，scope `im:flag`。
+// 权限：user token，scope `im:feed.flag:write`。
 func CreateFlag(messageID string, itemType, flagType int, userAccessToken string) (map[string]any, error) {
 	client, err := GetClient()
 	if err != nil {
@@ -117,7 +117,7 @@ func CreateFlag(messageID string, itemType, flagType int, userAccessToken string
 
 // ListFlags 列出当前用户的消息书签。
 // pageSize 取值范围 1-50，默认 50；pageToken 用于翻页（服务端要求即使首页也传该参数）。
-// 权限：user token，scope `im:flag`（feed 类型书签若需取消息正文，还需 im:message.* 相关 scope）。
+// 权限：user token，scope `im:feed.flag:read`（feed 类型书签若需取消息正文，还需 im:message.* 相关 scope）。
 func ListFlags(pageSize int, pageToken string, userAccessToken string) (*FlagListResult, error) {
 	client, err := GetClient()
 	if err != nil {
@@ -164,7 +164,7 @@ func ListFlags(pageSize int, pageToken string, userAccessToken string) (*FlagLis
 
 // CancelFlag 取消（删除）指定消息的书签。
 // 服务端使用 POST /open-apis/im/v1/flags/cancel，请求体与 Create 同构。
-// 权限：user token，scope `im:flag`。
+// 权限：user token，scope `im:feed.flag:write`。
 func CancelFlag(messageID string, itemType, flagType int, userAccessToken string) (map[string]any, error) {
 	client, err := GetClient()
 	if err != nil {

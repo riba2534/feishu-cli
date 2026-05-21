@@ -31,6 +31,18 @@ var (
 	schemaFormat string
 )
 
+func normalizeSchemaFormat(format string) (string, error) {
+	if format == "" {
+		return "pretty", nil
+	}
+	switch format {
+	case "pretty", "json":
+		return format, nil
+	default:
+		return "", fmt.Errorf("未知输出格式 %q（支持: pretty, json）", format)
+	}
+}
+
 var schemaCmd = &cobra.Command{
 	Use:   "schema [service.resource.method]",
 	Short: "查询 OpenAPI Schema（path/verb/参数/scope）",
@@ -85,6 +97,11 @@ func init() {
 //	"service.resource"           → list methods in resource
 //	"service.resource.method"    → method detail
 func runSchema(w io.Writer, path, format string) error {
+	var err error
+	format, err = normalizeSchemaFormat(format)
+	if err != nil {
+		return err
+	}
 	if path == "" {
 		return printServices(w, format)
 	}

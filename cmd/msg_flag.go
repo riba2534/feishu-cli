@@ -17,7 +17,7 @@ var msgFlagCmd = &cobra.Command{
   cancel   取消（删除）书签
 
 权限要求:
-  必须使用 User Access Token；scope: im:flag
+  必须使用 User Access Token；list 需要 im:feed.flag:read，create/cancel 需要 im:feed.flag:write
 
 支持的 item_type × flag_type 组合:
   default     + message  消息层（最常见）

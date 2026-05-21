@@ -28,7 +28,7 @@ var mailForwardCmd = &cobra.Command{
 
 示例:
   feishu-cli mail forward --message-id msg_xxx --to user@example.com
-  feishu-cli mail forward --message-id msg_xxx --to team@x.com --body "请关注此邮件"`,
+  feishu-cli mail forward --message-id msg_xxx --to team@example.com --body "请关注此邮件"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err

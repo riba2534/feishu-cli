@@ -163,5 +163,5 @@ func init() {
 	eventConsumeCmd.Flags().Duration("timeout", 0, "运行 D 时长后退出（如 30s / 5m，0=不限制）")
 	eventConsumeCmd.Flags().String("jq", "", "极简点路径过滤，如 .event.message（不支持完整 jq 语法）")
 	eventConsumeCmd.Flags().String("output-dir", "", "把每条事件 dump 为 <event_id>.json 到该目录（不影响 stdout）")
-	eventConsumeCmd.Flags().Bool("quiet", false, "静默模式：抑制 stderr 诊断（不影响 stdout 事件流；AI Agent 慎用——会一起抑制 ready marker）")
+	eventConsumeCmd.Flags().Bool("quiet", false, "静默模式：抑制 stderr 诊断（不影响 stdout 事件流；ready marker 仍会输出，便于父进程判断就绪）")
 }

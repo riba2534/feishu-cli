@@ -42,7 +42,7 @@ var mailSendCmd = &cobra.Command{
 示例:
   feishu-cli mail send --to user@example.com --subject "test" --body "hi"                   # 默认草稿
   feishu-cli mail send --to user@example.com --subject "test" --body "hi" --confirm-send    # 立即发送
-  feishu-cli mail send --to a@x.com,b@x.com --cc c@x.com --subject "会议" --body "<b>议程</b>"`,
+  feishu-cli mail send --to user1@example.com,user2@example.com --cc user3@example.com --subject "会议" --body "<b>议程</b>"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err

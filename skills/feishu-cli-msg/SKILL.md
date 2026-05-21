@@ -382,7 +382,7 @@ feishu-cli msg reply om_xxx --text "这里开个话题" --reply-in-thread
 ## 消息书签（msg flag，v1.23+ 新增）
 
 服务端称 message flag，用于把消息加 Feed 标记，把消息推上用户 Feed/书签。
-对应 HTTP API `POST/GET/PATCH /open-apis/im/v1/flags`。需 User Access Token，scope `im:flag`。
+对应 HTTP API `POST/GET/PATCH /open-apis/im/v1/flags`。需 User Access Token：`list` 需要 `im:feed.flag:read`，`create/cancel` 需要 `im:feed.flag:write`。
 
 ### 命令速查
 

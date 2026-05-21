@@ -53,7 +53,7 @@ var rootCmd = &cobra.Command{
   slides    Slides 演示文稿（创建 + 媒体上传）
   okr       OKR 操作（周期列表、进展记录列表与创建）
   schema    本地浏览飞书 OpenAPI 方法（纯本地查询，不需 token；service.resource.method 路径）
-  sheet     电子表格（基础读写 + filter-view CRUD + dropdown 数据验证）
+  sheet     电子表格（基础读写 + filter-view 创建/列表/删除 + dropdown 数据验证）
   chat      群聊管理（拉人/踢人/改名/成员列表；reaction/pin 等互动）
   profile   多 App 配置切换（add/list/use/current/rename/remove/migrate）
   doctor    环境健康检查（6 项：config / user_token / endpoints / proxy / deps）

@@ -91,5 +91,4 @@ func init() {
 	okrCycleCmd.AddCommand(okrCycleListCmd)
 
 	okrCycleListCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	okrCycleListCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌，留空则自动读取登录态）")
 }

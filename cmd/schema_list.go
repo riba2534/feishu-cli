@@ -41,6 +41,11 @@ func init() {
 }
 
 func runSchemaList(w io.Writer, service, format string) error {
+	var err error
+	format, err = normalizeSchemaFormat(format)
+	if err != nil {
+		return err
+	}
 	if service == "" {
 		return printServices(w, format)
 	}

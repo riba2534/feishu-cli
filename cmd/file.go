@@ -54,6 +54,7 @@ var fileCmd = &cobra.Command{
 
   # 删除文件
   feishu-cli file delete <file_token> --type docx
+  feishu-cli file delete <file_token> --type slides
 
   # 文件版本管理
   feishu-cli file version list <file_token> --obj-type docx

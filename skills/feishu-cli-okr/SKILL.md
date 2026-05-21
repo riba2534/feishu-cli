@@ -36,15 +36,13 @@ allowed-tools: Bash, Read
 - **Objective ID 和 Key Result ID 二选一**（不是同时）：每条进展记录只能挂在一个目标 *或* 一个关键结果上。
 - **进展记录可以独立于周期**：API 不需要传 period_id，但通常一个 O/KR 都属于一个 period。
 
-### 身份：默认 User Token
+### 身份：应用 Token / Tenant Token
 
-OKR 模块默认使用 **User Token（用户身份）**，不是 App Token。
+OKR 模块当前强制使用 **应用 Token / Tenant Token**。实测 OKR 服务端拒绝 User Token（`99991668 user access token not support`），因此命令不读取 `--user-access-token`，也不需要 `auth login`。
 
-- 命令会自动读取 `~/.feishu-cli/token.json`（Device Flow OAuth 登录态）
-- 未登录或 token 过期请先 `feishu-cli auth login --scope "okr:okr"`
-- 也可以通过 `--user-access-token` 或环境变量 `FEISHU_USER_ACCESS_TOKEN` 覆盖
-
-**为什么必须 User Token**：飞书 OKR 是个人维度的目标管理，API 设计层面就要求"以用户身份操作"——查的是"当前用户能看到的周期"、创建的进展归属"当前用户"。Bot 身份没有 OKR 数据。
+- 需要在飞书开放平台为应用开通 OKR tenant scopes
+- 本地只需配置 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 或 `config.yaml`
+- 如服务端返回 `99991672`，按错误里的开放平台链接申请对应应用权限
 
 ## 命令速查
 
@@ -199,7 +197,7 @@ GET /open-apis/okr/v2/cycles    ❌ 不存在，404
 
 不要试图传 `--user-id` 给 `cycle list`——周期是全租户共享的，所有成员看到的都是同一份列表。这点容易被"OKR 是个人目标"的直觉误导。
 
-## 权限要求（User Token scope）
+## 权限要求（应用 Token / Tenant scope）
 
 | 命令 | 所需 scope（任一即可） |
 |------|----------------------|
@@ -207,17 +205,7 @@ GET /open-apis/okr/v2/cycles    ❌ 不存在，404
 | `progress list` | `okr:okr:readonly` 或 `okr:okr.progress:readonly` |
 | `progress create` | `okr:okr` 或 `okr:okr.progress:writeonly` |
 
-**一键申请全部**：
-
-```bash
-feishu-cli auth login --scope "okr:okr"
-```
-
-或预检：
-
-```bash
-feishu-cli auth check --scope "okr:okr"
-```
+这些是应用权限，不是 OAuth 用户授权；用开放平台应用权限管理页面开通。
 
 ## 典型工作流
 
@@ -282,11 +270,11 @@ done
 | `--progress-status 必须配合 --progress-percent 一起使用` | 单独传 status | 加上 `--progress-percent` |
 | `--content-json 不是合法 JSON` | JSON 语法错误 | 用 `jq .` 校验后再传 |
 | `source_url is required` 或类似 | 飞书 API 强制必填 | CLI 已默认填占位，理论上不会触发；如出现请显式传 `--source-url` |
-| `token expired` / 401 | User Token 过期 | `feishu-cli auth login --scope "okr:okr"` 重新登录 |
-| `scope not authorized` | 缺少 OKR scope | `feishu-cli auth check --scope "okr:okr"` 预检后重登 |
+| `99991672` / `scope not authorized` | 应用缺少 OKR tenant scope | 到开放平台应用权限管理开通 `okr:okr*` 相关权限 |
+| `99991668 user access token not support` | 使用了 User Token | 不传用户 token，使用应用身份运行 |
 
 ## 相关技能
 
-- **feishu-cli-auth** — OAuth 登录、scope 配置、token 管理
+- **feishu-cli-auth** — 通用认证诊断；OKR scopes 需要在开放平台应用权限管理开通
 - **feishu-cli-msg** — 发飞书消息（进展同步后通知 leader/小组）
 - **feishu-cli-toolkit** — 综合工具箱（任务、日历等其他周报相关工具）

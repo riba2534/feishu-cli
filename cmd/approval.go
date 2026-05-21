@@ -27,7 +27,7 @@ var approvalCmd = &cobra.Command{
   feishu-cli approval instance create --approval-code <code> --user-id ou_xxx --form-file form.json
 
   # 通过审批任务
-  feishu-cli approval task approve --approval-code <code> --instance-code <ic> --task-id <task> --user-id ou_xxx`,
+  feishu-cli approval task approve --instance-code <ic> --task-id <task>`,
 }
 
 func init() {

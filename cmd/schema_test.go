@@ -74,6 +74,28 @@ func TestSchemaJSONFormat(t *testing.T) {
 	}
 }
 
+func TestSchemaRejectsUnknownFormat(t *testing.T) {
+	var buf bytes.Buffer
+	err := runSchema(&buf, "im.messages.delete", "yaml")
+	if err == nil {
+		t.Fatal("expected error for unsupported schema format")
+	}
+	if !strings.Contains(err.Error(), "未知输出格式") {
+		t.Fatalf("error should mention unknown format, got: %v", err)
+	}
+}
+
+func TestSchemaListRejectsUnknownFormat(t *testing.T) {
+	var buf bytes.Buffer
+	err := runSchemaList(&buf, "im", "yaml")
+	if err == nil {
+		t.Fatal("expected error for unsupported schema list format")
+	}
+	if !strings.Contains(err.Error(), "未知输出格式") {
+		t.Fatalf("error should mention unknown format, got: %v", err)
+	}
+}
+
 func keys(m map[string]interface{}) []string {
 	var out []string
 	for k := range m {

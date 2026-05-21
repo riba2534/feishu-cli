@@ -59,7 +59,7 @@ feishu-cli markdown create --name plan.md --content-file ./plan.md -o json
 
 | flag | 说明 |
 |------|------|
-| `--name` | 远端文件名，**必须 `.md` 结尾**。`create`：`--content` 时必填、`--content-file` 时可省取本地 basename。`overwrite`：可省（保留原远端名）；显式传入 = 同时改名（API 限制：不允许 fallback `<fileToken>.md` 默默改名，需用户显式确认）|
+| `--name` | 远端文件名，**必须 `.md` 结尾**。`create`：`--content` 时必填、`--content-file` 时可省取本地 basename。`overwrite`：`--content` 时必填、`--content-file` 时可省取本地 basename；显式传入 = 同时改名 |
 | `--content` | 字符串内容（与 `--content-file` 二选一） |
 | `--content-file` | 本地 `.md` 文件路径 |
 | `--folder-token` | 目标文件夹（缺省 Drive 根目录） |
@@ -71,17 +71,17 @@ feishu-cli markdown create --name plan.md --content-file ./plan.md -o json
 ### 2. `markdown fetch` — 下载云盘 .md
 
 ```bash
-# 打印到 stdout（缺省 --output 时，行为与 lark-cli markdown +fetch 一致）
+# 打印到 stdout（缺省 --output-path 时，行为与 lark-cli markdown +fetch 一致）
 feishu-cli markdown fetch --file-token boxcnxxx
 
 # 落盘到本地路径
-feishu-cli markdown fetch --file-token boxcnxxx --output ./local.md
+feishu-cli markdown fetch --file-token boxcnxxx --output-path ./local.md
 
 # 路径已存在时强制覆盖
-feishu-cli markdown fetch --file-token boxcnxxx --output ./local.md --overwrite
+feishu-cli markdown fetch --file-token boxcnxxx --output-path ./local.md --overwrite
 
 # JSON 输出（含 content 字符串）
-feishu-cli markdown fetch --file-token boxcnxxx --output-format json
+feishu-cli markdown fetch --file-token boxcnxxx -o json
 ```
 
 **关键 flag**：
@@ -89,15 +89,15 @@ feishu-cli markdown fetch --file-token boxcnxxx --output-format json
 | flag | 说明 |
 |------|------|
 | `--file-token` | Markdown 文件 token（必填） |
-| `--output` | 本地保存路径；**目录时拼 `<fileToken>.md`**；缺省打印 stdout |
+| `--output-path` | 本地保存路径；**目录时拼 `<fileToken>.md`**；缺省打印 stdout |
 | `--overwrite` | 本地文件已存在时覆盖（缺省直接报错） |
-| `--output-format json` | JSON 输出（区别于 `--output` 写盘路径，注意不要混淆） |
+| `-o, --output json` | JSON 输出；不传 `--output-path` 时包含 `content` 字符串 |
 
 ### 3. `markdown overwrite` — 覆盖已有 .md（保 file_token）
 
 ```bash
 # 字符串覆盖
-feishu-cli markdown overwrite --file-token boxcnxxx --content "新内容"
+feishu-cli markdown overwrite --file-token boxcnxxx --name existing.md --content "新内容"
 
 # 本地文件覆盖
 feishu-cli markdown overwrite --file-token boxcnxxx --content-file ./new.md
@@ -112,7 +112,7 @@ feishu-cli markdown overwrite --file-token boxcnxxx --content-file ./new.md --na
 |------|------|
 | `--file-token` | 目标文件 token（必填） |
 | `--content` / `--content-file` | 新内容（二选一） |
-| `--name` | 覆盖后改名（`.md` 结尾；缺省保留原名 / 用本地 basename / 兜底 `<fileToken>.md`） |
+| `--name` | 覆盖后文件名（`.md` 结尾；`--content` 时必填；`--content-file` 缺省使用本地 basename） |
 | `-o json` | JSON 输出 |
 
 **核心价值**：`file_token` 保持不变 → 分享链接持久、其他人收藏的链接不失效；多次迭代场景（AI agent 每天更新同一份 `.md`）优于"删了重建"。
@@ -142,17 +142,17 @@ feishu-cli markdown overwrite --file-token boxcnxxx --content-file ./new.md --na
 
 `--content ""` / 空 `--content-file` 都被拒绝（"Markdown 内容为空，不支持创建/覆盖为空文件"）。需要"清空"语义的话走 `markdown overwrite --content " "` 写一个占位空格。
 
-### 5. `--output` 在 fetch 里有两个语义
+### 5. `fetch` 的路径输出与 JSON 输出分离
 
-`markdown fetch` 同时有 `--output`（本地保存路径）和 `--output-format json`（输出格式），命名容易混淆：
+`markdown fetch` 使用 `--output-path` 保存到本地，使用 `-o json` 输出 JSON：
 
-- `--output ./x.md` → 落盘到 `./x.md`
-- `--output-format json` → 把 `{file_token, content, size_bytes}` 打到 stdout
+- `--output-path ./x.md` → 落盘到 `./x.md`
+- `-o json` → 把 `{file_token, content, size_bytes}` 打到 stdout
 - 两者可叠加：落盘 + 同时 stdout JSON 摘要
 
-### 6. `--output` 是目录时的兜底文件名
+### 6. `--output-path` 是目录时的兜底文件名
 
-`markdown fetch --output ./downloads/` 会拼成 `./downloads/<fileToken>.md`（不从响应头解析原文件名，与 `drive download` 行为一致）。要保留原文件名请自己加查询步骤再拼路径。
+`markdown fetch --output-path ./downloads/` 会拼成 `./downloads/<fileToken>.md`（不从响应头解析原文件名，与 `drive download` 行为一致）。要保留原文件名请自己加查询步骤再拼路径。
 
 ## 何时转走 `doc import/export`
 
@@ -192,7 +192,7 @@ feishu-cli markdown overwrite --file-token "$(cat ~/.cache/daily-summary.token)"
 
 ```bash
 # 读回原汁原味 Markdown 源码
-feishu-cli markdown fetch --file-token boxcnxxx --output ./local.md --overwrite
+feishu-cli markdown fetch --file-token boxcnxxx --output-path ./local.md --overwrite
 
 # 编辑后写回
 feishu-cli markdown overwrite --file-token boxcnxxx --content-file ./local.md
@@ -215,7 +215,7 @@ feishu-cli doc import ./design.md --title "设计稿" --upload-images
 - **强制 `.md` 后缀**：`create --name` 和 `overwrite --name` 都校验 `.md` 结尾
 - **`upload_all` 单次 ≤ 20MB**：大文件覆盖暂不支持
 - **空内容拒绝**：要清空走 `overwrite --content " "`
-- **`fetch --output` 双语义**：路径 vs 格式分别走 `--output` 和 `--output-format`，不要混淆
+- **`fetch` 输出参数**：路径走 `--output-path`，格式走 `-o/--output`
 
 ## 与老命令的对照
 

@@ -5,7 +5,7 @@ description: >-
   当用户请求"发邮件"、"看邮件"、"查邮件"、"回复邮件"、"转发邮件"、"邮件草稿"、"收件箱"、
   "feishu mail"、"lark mail"、"未读邮件"时使用。
   所有命令需要 User Access Token（先 feishu-cli auth login）。
-  首期限制：发送/草稿/回复支持纯文本或 HTML body；forward 当前仅支持纯文本 body。暂不支持附件和 CID 内联图片。
+  首期限制：发送/草稿/回复支持纯文本或 HTML body；forward 当前仅支持纯文本 body。暂不支持普通附件；send 支持 CID 内联图片自动扫描。
 user-invocable: true
 allowed-tools: Bash(feishu-cli mail:*), Bash(feishu-cli auth:*), Read
 ---
@@ -14,7 +14,7 @@ allowed-tools: Bash(feishu-cli mail:*), Bash(feishu-cli auth:*), Read
 
 查看、发送、回复、转发邮件，管理草稿，过滤收件箱。
 
-> **首期限制**：`send / draft-create / draft-edit / reply / reply-all` 支持纯文本/HTML body；`forward` 当前仅支持纯文本 body。暂不支持附件和 CID 内联图片。
+> **首期限制**：`send / draft-create / draft-edit / reply / reply-all` 支持纯文本/HTML body；`forward` 当前仅支持纯文本 body。暂不支持普通附件；`mail send --inline-images-auto-scan` 支持 CID 内联图片自动扫描。
 
 ## 前置条件
 
@@ -73,7 +73,7 @@ feishu-cli mail send --to user@example.com --subject "测试" --body "hi"
 feishu-cli mail send --to user@example.com --subject "测试" --body "hi" --confirm-send
 
 # 多人、抄送、HTML
-feishu-cli mail send --to a@x.com,b@x.com --cc c@x.com \
+feishu-cli mail send --to user1@example.com,user2@example.com --cc user3@example.com \
   --subject "会议纪要" --body "<h2>议程</h2><p>1. ...</p>" --html --confirm-send
 
 # 创建草稿
@@ -173,23 +173,20 @@ feishu-cli mail send --to user@example.com --subject "周报" \
 ### 邮件模板 CRUD
 
 ```bash
-# 创建模板（body 支持 @file 读盘）
+# 创建模板（body 直接传字符串；读文件请用 shell 展开）
 feishu-cli mail template create --name "周报模板" \
-  --subject "本周进度" --body @template.html
+  --subject "本周进度" --body "$(cat template.html)"
 
 # 列出全部模板（接口不分页，一次性返回 id+name）
 feishu-cli mail template list
 feishu-cli mail template list -o json
 ```
 
-⚠️ **mail scope 字节租户未开放**：`mail:user.email.template` 在字节租户暂未开放，
-UAT 调用可能返回 401 / scope 校验失败。建议先预检：
+模板接口使用邮箱读写相关 User Token 权限。建议先预检：
 
 ```bash
-feishu-cli auth check --scope "mail:user_mailbox:readonly mail:user_mailbox.message:modify mail:user.email.template"
+feishu-cli auth check --scope "mail:user_mailbox:readonly mail:user_mailbox.message:modify"
 ```
-
-功能代码已完整，等飞书侧开放 scope 后即可使用；其他租户（如个人 lark）通常可用。
 
 ### 未做（暂未 MVP）
 

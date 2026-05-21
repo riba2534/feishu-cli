@@ -1,6 +1,10 @@
 package cmd
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/spf13/cobra"
+)
 
 // TestApprovalInstanceCancelCmdRegistered 验证 cancel 子命令注册
 func TestApprovalInstanceCancelCmdRegistered(t *testing.T) {
@@ -22,7 +26,7 @@ func TestApprovalInstanceCancelCmdRegistered(t *testing.T) {
 	}
 }
 
-// TestApprovalInstanceCancelFlagsDefaults 验证 flag 注册 + user-id-type 默认 open_id
+// TestApprovalInstanceCancelFlagsDefaults 验证 flag 注册，旧参数保持兼容但隐藏
 func TestApprovalInstanceCancelFlagsDefaults(t *testing.T) {
 	want := []string{"approval-code", "instance-code", "user-id", "user-id-type", "user-access-token"}
 	for _, n := range want {
@@ -30,15 +34,45 @@ func TestApprovalInstanceCancelFlagsDefaults(t *testing.T) {
 			t.Errorf("--%s missing", n)
 		}
 	}
-	if u := approvalInstanceCancelCmd.Flags().Lookup("user-id-type"); u != nil && u.DefValue != "open_id" {
-		t.Errorf("--user-id-type default=%q, want open_id", u.DefValue)
-	}
+	assertHiddenFlags(t, approvalInstanceCancelCmd, "approval-code", "user-id", "user-id-type")
 }
 
 // TestApprovalInstanceCancelRequiredFlags 验证必填
 func TestApprovalInstanceCancelRequiredFlags(t *testing.T) {
-	for _, n := range []string{"approval-code", "instance-code", "user-id"} {
-		f := approvalInstanceCancelCmd.Flags().Lookup(n)
+	assertRequiredFlags(t, approvalInstanceCancelCmd, "instance-code")
+}
+
+// TestApprovalInstanceCcFlags 验证 cc 子命令只要求当前接口实际需要的参数
+func TestApprovalInstanceCcFlags(t *testing.T) {
+	assertHiddenFlags(t, approvalInstanceCcCmd, "approval-code", "user-id")
+	assertRequiredFlags(t, approvalInstanceCcCmd, "instance-code", "cc-user-ids")
+}
+
+// TestApprovalTaskActionFlags 验证 approve/reject 子命令不再暴露旧参数
+func TestApprovalTaskActionFlags(t *testing.T) {
+	for _, cmd := range []*cobra.Command{approvalTaskApproveCmd, approvalTaskRejectCmd} {
+		assertHiddenFlags(t, cmd, "approval-code", "user-id", "user-id-type")
+		assertRequiredFlags(t, cmd, "instance-code", "task-id")
+	}
+}
+
+func assertHiddenFlags(t *testing.T, cmd *cobra.Command, names ...string) {
+	t.Helper()
+	for _, n := range names {
+		f := cmd.Flags().Lookup(n)
+		if f == nil {
+			t.Fatalf("--%s missing", n)
+		}
+		if !f.Hidden {
+			t.Errorf("--%s should be hidden compatibility flag", n)
+		}
+	}
+}
+
+func assertRequiredFlags(t *testing.T, cmd *cobra.Command, names ...string) {
+	t.Helper()
+	for _, n := range names {
+		f := cmd.Flags().Lookup(n)
 		if f == nil {
 			t.Fatalf("--%s missing", n)
 		}

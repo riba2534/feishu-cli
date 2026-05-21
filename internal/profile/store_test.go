@@ -471,6 +471,58 @@ func TestMigrateLegacy(t *testing.T) {
 	}
 }
 
+func TestMigrateLegacyRejectsEmptyLegacyLayout(t *testing.T) {
+	home := withTempHome(t)
+	legacyDir := filepath.Join(home, ".feishu-cli")
+	if err := os.MkdirAll(legacyDir, 0700); err != nil {
+		t.Fatalf("mkdir legacy: %v", err)
+	}
+
+	_, err := MigrateLegacy(MigrateLegacyOpts{})
+	if err == nil {
+		t.Fatal("MigrateLegacy should reject an empty legacy layout")
+	}
+	if !strings.Contains(err.Error(), "未找到可迁移的旧布局文件") {
+		t.Fatalf("error should explain missing legacy files, got: %v", err)
+	}
+	if fileExists(filepath.Join(legacyDir, "profiles", "default", "config.yaml")) {
+		t.Fatal("empty migrate should not create a target profile config")
+	}
+	active, _ := ReadActive()
+	if active != "" {
+		t.Fatalf("empty migrate should not update active profile, got %q", active)
+	}
+}
+
+func TestMigrateLegacyForceWithoutLegacyDoesNotClearExistingProfile(t *testing.T) {
+	home := withTempHome(t)
+	if err := Create("work", CreateOpts{
+		AppID:     "cli_existing",
+		AppSecret: "existing_secret",
+		SwitchTo:  true,
+	}); err != nil {
+		t.Fatalf("Create work: %v", err)
+	}
+
+	_, err := MigrateLegacy(MigrateLegacyOpts{TargetName: "work", Force: true})
+	if err == nil {
+		t.Fatal("MigrateLegacy --force should reject when no legacy files exist")
+	}
+
+	cfgPath := filepath.Join(home, ".feishu-cli", "profiles", "work", "config.yaml")
+	data, readErr := os.ReadFile(cfgPath)
+	if readErr != nil {
+		t.Fatalf("existing profile config should remain readable: %v", readErr)
+	}
+	if !strings.Contains(string(data), "cli_existing") {
+		t.Fatalf("existing profile config was unexpectedly changed:\n%s", data)
+	}
+	active, _ := ReadActive()
+	if active != "work" {
+		t.Fatalf("active profile should remain work, got %q", active)
+	}
+}
+
 func TestConfigFilePath(t *testing.T) {
 	home := withTempHome(t)
 

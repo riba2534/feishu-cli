@@ -17,10 +17,6 @@ var mailTemplateCmd = &cobra.Command{
 权限要求（User Access Token）:
   - mail:user_mailbox:readonly
   - mail:user_mailbox.message:modify
-  - mail:user.email.template（部分租户需单独申请；字节租户该 scope 暂未开放）
-
-⚠️ 字节租户该 scope 目前尚未对外开放，命令调用可能返回 401/scope 校验失败；
-   功能已实现完整，等飞书侧开放 scope 后即可使用。
 
 示例:
   feishu-cli mail template create --name "周报" --subject "本周进度" --body "..."

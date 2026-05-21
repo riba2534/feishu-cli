@@ -29,11 +29,10 @@ var mailTemplateCreateCmd = &cobra.Command{
 权限:
   - User Access Token
   - mail:user_mailbox.message:modify / mail:user_mailbox:readonly
-  - mail:user.email.template（字节租户暂未开放）
 
 示例:
   feishu-cli mail template create --name "周报" --subject "本周进度" \
-      --body "<p>这是模板</p>" --to lead@example.com`,
+      --body "<p>这是模板</p>" --to user@example.com`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err

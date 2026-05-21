@@ -45,16 +45,16 @@ var calendarCmd = &cobra.Command{
   feishu-cli calendar delete-event CAL_ID EVENT_ID
 
   # 智能时段建议（推荐 60 分钟可用时段）
-  feishu-cli calendar suggestion --search-start 2024-01-21T09:00:00+08:00 \
-    --search-end 2024-01-21T18:00:00+08:00 --duration 60 \
+  feishu-cli calendar suggestion --start 2024-01-21T09:00:00+08:00 \
+    --end 2024-01-21T18:00:00+08:00 --duration 60 \
     --attendee-ids ou_xxx,ou_yyy,oc_zzz
 
   # 查找可用会议室
   feishu-cli calendar room-find --city 北京 --min-capacity 6 \
-    --slot 2024-01-21T14:00:00+08:00/2024-01-21T15:00:00+08:00
+    --slot 2024-01-21T14:00:00+08:00~2024-01-21T15:00:00+08:00
 
   # 答复日程邀请
-  feishu-cli calendar rsvp --event-id EVENT_ID --rsvp-status accept`,
+  feishu-cli calendar rsvp --event-id EVENT_ID --action accept`,
 }
 
 func init() {

@@ -17,13 +17,13 @@ func TestBuildEMLRejectsCRLFInHeaders(t *testing.T) {
 		name   string
 		mutate func(*mailMessageInput)
 	}{
-		{"subject CRLF", func(m *mailMessageInput) { m.Subject = "hi\r\nBcc: evil@x" }},
-		{"from CRLF", func(m *mailMessageInput) { m.From = "a@x\r\nBcc: e@x" }},
+		{"subject CRLF", func(m *mailMessageInput) { m.Subject = "hi\r\nBcc: evil@example.com" }},
+		{"from CRLF", func(m *mailMessageInput) { m.From = "sender@example.com\r\nBcc: hidden@example.com" }},
 		{"from-name CRLF", func(m *mailMessageInput) { m.FromName = "Alice\nMalicious" }},
 		{"in-reply-to CRLF", func(m *mailMessageInput) { m.InReplyTo = "<id>\r\nX-Evil: yes" }},
 		{"references CRLF", func(m *mailMessageInput) { m.References = "<x>\nX-Evil: yes" }},
-		{"to addr CRLF", func(m *mailMessageInput) { m.To = []string{"a@x\r\nBcc: e@x"} }},
-		{"cc addr CRLF", func(m *mailMessageInput) { m.CC = []string{"c@x\nX-Evil:1"} }},
+		{"to addr CRLF", func(m *mailMessageInput) { m.To = []string{"user@example.com\r\nBcc: hidden@example.com"} }},
+		{"cc addr CRLF", func(m *mailMessageInput) { m.CC = []string{"copy@example.com\nX-Evil:1"} }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

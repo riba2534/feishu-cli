@@ -44,7 +44,7 @@ type inlineImagePart struct {
 }
 
 // buildEMLBase64URL 构造一个符合 RFC 5322 的 EML，base64 URL-safe 编码
-// 简化版：不支持附件和 CID 内联图片，纯文本或 HTML 二选一
+// 简化版 EML builder：纯文本或 HTML 二选一；CID 内联图片由 mail_inline.go 预处理后注入。
 func buildEMLBase64URL(input mailMessageInput) (string, error) {
 	if len(input.To) == 0 {
 		return "", fmt.Errorf("邮件至少需要一个 --to")

@@ -99,5 +99,4 @@ func init() {
 	okrProgressListCmd.Flags().String("key-result-id", "", "关键结果 ID（与 --objective-id 二选一）")
 	okrProgressListCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型：open_id / union_id / user_id")
 	okrProgressListCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	okrProgressListCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌，留空则自动读取登录态）")
 }

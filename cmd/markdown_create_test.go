@@ -57,9 +57,12 @@ func TestMarkdownFetchCmdRegistered(t *testing.T) {
 	if len(ann) == 0 || ann[0] != "true" {
 		t.Errorf("--file-token should be required, ann=%v", ann)
 	}
-	for _, n := range []string{"output-path", "overwrite", "output-format"} {
+	for _, n := range []string{"output-path", "overwrite", "output"} {
 		if markdownFetchCmd.Flags().Lookup(n) == nil {
 			t.Errorf("--%s missing on fetch", n)
 		}
+	}
+	if out := markdownFetchCmd.Flags().Lookup("output"); out != nil && out.Shorthand != "o" {
+		t.Errorf("--output shorthand=%q, want o", out.Shorthand)
 	}
 }

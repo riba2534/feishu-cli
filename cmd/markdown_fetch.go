@@ -23,6 +23,7 @@ var markdownFetchCmd = &cobra.Command{
 
 可选:
   --output-path  本地保存路径（缺省时打印到 stdout）
+  --output, -o   输出格式（json；不传 --output-path 时返回 content）
   --overwrite    本地路径已存在时是否覆盖
   --user-access-token  覆盖登录态
 
@@ -47,7 +48,7 @@ var markdownFetchCmd = &cobra.Command{
 		fileToken, _ := cmd.Flags().GetString("file-token")
 		outputPath, _ := cmd.Flags().GetString("output-path")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
-		outputFormat, _ := cmd.Flags().GetString("output-format")
+		outputFormat, _ := cmd.Flags().GetString("output")
 
 		if fileToken == "" {
 			return fmt.Errorf("--file-token 必填")
@@ -124,7 +125,7 @@ func init() {
 	markdownFetchCmd.Flags().String("file-token", "", "Markdown 文件 token（必填）")
 	markdownFetchCmd.Flags().String("output-path", "", "本地保存路径（缺省时打印到 stdout）")
 	markdownFetchCmd.Flags().Bool("overwrite", false, "本地路径已存在时是否覆盖")
-	markdownFetchCmd.Flags().String("output-format", "", "输出格式（json）")
+	markdownFetchCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	markdownFetchCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(markdownFetchCmd, "file-token")
 }

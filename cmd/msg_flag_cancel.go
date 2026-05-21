@@ -19,6 +19,7 @@ var msgFlagCancelCmd = &cobra.Command{
 可选 flag:
   --item-type          item 类型：default | thread | msg_thread (默认 default)
   --flag-type          flag 类型：message | feed                (默认 message)
+  --output, -o         输出格式：json
   --user-access-token  显式指定 User Access Token
 
 注意:
@@ -45,6 +46,7 @@ var msgFlagCancelCmd = &cobra.Command{
 		messageID := args[0]
 		itemTypeStr, _ := cmd.Flags().GetString("item-type")
 		flagTypeStr, _ := cmd.Flags().GetString("flag-type")
+		output, _ := cmd.Flags().GetString("output")
 
 		itemType, err := client.ParseFlagItemType(itemTypeStr)
 		if err != nil {
@@ -60,12 +62,18 @@ var msgFlagCancelCmd = &cobra.Command{
 			return err
 		}
 
+		if output == "json" {
+			return printJSON(map[string]any{
+				"message_id": messageID,
+				"item_type":  itemTypeStr,
+				"flag_type":  flagTypeStr,
+				"response":   data,
+			})
+		}
+
 		fmt.Printf("书签取消成功！\n")
 		fmt.Printf("  消息 ID: %s\n", messageID)
 		fmt.Printf("  item_type: %s, flag_type: %s\n", itemTypeStr, flagTypeStr)
-		if data != nil && len(data) > 0 {
-			return printJSON(data)
-		}
 		return nil
 	},
 }
@@ -74,5 +82,6 @@ func init() {
 	msgFlagCmd.AddCommand(msgFlagCancelCmd)
 	msgFlagCancelCmd.Flags().String("item-type", "default", "item 类型：default | thread | msg_thread")
 	msgFlagCancelCmd.Flags().String("flag-type", "message", "flag 类型：message | feed")
+	msgFlagCancelCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	msgFlagCancelCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

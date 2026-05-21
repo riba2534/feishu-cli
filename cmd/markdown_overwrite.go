@@ -25,7 +25,7 @@ var markdownOverwriteCmd = &cobra.Command{
   --content-file   本地 .md 文件路径（与 --content 二选一）
 
 可选:
-  --name           覆盖后修改文件名（必须 .md 结尾；缺省保留原名/用本地 basename）
+  --name           覆盖后文件名（必须 .md 结尾；使用 --content 时必填；--content-file 缺省使用本地 basename）
   --user-access-token  覆盖登录态
 
 权限:
@@ -33,7 +33,7 @@ var markdownOverwriteCmd = &cobra.Command{
   - drive:file:upload + drive:drive.metadata:readonly
 
 示例:
-  feishu-cli markdown overwrite --file-token boxcnxxx --content "新内容"
+  feishu-cli markdown overwrite --file-token boxcnxxx --name existing.md --content "新内容"
   feishu-cli markdown overwrite --file-token boxcnxxx --content-file ./new.md
   feishu-cli markdown overwrite --file-token boxcnxxx --content-file ./new.md --name renamed.md`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -132,7 +132,7 @@ var markdownOverwriteCmd = &cobra.Command{
 func init() {
 	markdownCmd.AddCommand(markdownOverwriteCmd)
 	markdownOverwriteCmd.Flags().String("file-token", "", "目标 .md 文件 token（必填）")
-	markdownOverwriteCmd.Flags().String("name", "", "覆盖后修改文件名（必须 .md 结尾；缺省保留原名）")
+	markdownOverwriteCmd.Flags().String("name", "", "覆盖后文件名（必须 .md 结尾；使用 --content 时必填）")
 	markdownOverwriteCmd.Flags().String("content", "", "新 Markdown 内容（与 --content-file 二选一）")
 	markdownOverwriteCmd.Flags().String("content-file", "", "本地 .md 文件路径（与 --content 二选一）")
 	markdownOverwriteCmd.Flags().StringP("output", "o", "", "输出格式（json）")

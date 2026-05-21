@@ -207,5 +207,4 @@ func init() {
 	okrProgressCreateCmd.Flags().String("source-url", "", "来源 URL（用于卡片点击跳转）")
 	okrProgressCreateCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型：open_id / union_id / user_id")
 	okrProgressCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	okrProgressCreateCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌，留空则自动读取登录态）")
 }

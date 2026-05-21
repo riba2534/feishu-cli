@@ -22,7 +22,6 @@ var mailTemplateListCmd = &cobra.Command{
 权限:
   - User Access Token
   - mail:user_mailbox:readonly
-  - mail:user.email.template（字节租户暂未开放）
 
 示例:
   feishu-cli mail template list

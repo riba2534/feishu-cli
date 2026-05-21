@@ -49,12 +49,13 @@ allowed-tools: Bash, Read
 |------|-------|-----------|
 | `approval get` | `approval:approval:readonly` | Tenant 即可 |
 | `approval task query` | `approval:task` | **User Token 必需** |
-| `approval instance {create,cancel,cc}` | `approval:approval`（含 `approval:instance:write`） | **User Token 必需** |
-| `approval task {approve,reject}` | `approval:approval`（含 `approval:task:write`） | **User Token 必需** |
+| `approval instance create` | `approval:approval` | **User Token 必需** |
+| `approval instance {cancel,cc}` | `approval:instance:write` | **User Token 必需** |
+| `approval task {approve,reject}` | `approval:task:write` | **User Token 必需** |
 
 ```bash
-feishu-cli auth check --scope "approval:approval approval:task"
-feishu-cli auth login --scope "approval:approval approval:task offline_access"
+feishu-cli auth check --scope "approval:approval approval:task approval:instance:write approval:task:write"
+feishu-cli auth login --scope "approval:approval approval:task approval:instance:write approval:task:write offline_access"
 ```
 
 ## 命令速查
@@ -86,42 +87,35 @@ feishu-cli approval instance create \
 
 # 撤回（取消）已发起的审批实例（只有发起人能撤）
 feishu-cli approval instance cancel \
-  --approval-code <code> \
-  --instance-code <ic> \
-  --user-id ou_xxx
+  --instance-code <ic>
 
 # 抄送实例给其他用户（逗号分隔，自动去重保留首次顺序）
 feishu-cli approval instance cc \
-  --approval-code <code> \
   --instance-code <ic> \
-  --user-id ou_xxx \
   --cc-user-ids ou_a,ou_b \
   --comment "请知悉"
 
 # 通过 / 拒绝审批任务
 feishu-cli approval task approve \
-  --approval-code <code> --instance-code <ic> --task-id <task> --user-id ou_xxx \
+  --instance-code <ic> --task-id <task> \
   --comment "同意"
 
 feishu-cli approval task reject \
-  --approval-code <code> --instance-code <ic> --task-id <task> --user-id ou_xxx \
+  --instance-code <ic> --task-id <task> \
   --comment "金额超预算"
 ```
 
 ## 关键 flag
 
-### `--approval-code`（所有写命令必填）
+### `--approval-code`（仅 `instance create` 必填）
 
-审批定义 code，可从 `approval get` 输出或飞书后台审批管理页 URL 拿到。所有命令都先用 `isValidToken` 校验格式。
+审批定义 code，可从 `approval get` 输出或飞书后台审批管理页 URL 拿到。创建实例时 CLI 会先用 `isValidToken` 校验格式。
 
-### `--user-id` + `--user-id-type`
+### `--user-id` + `--user-id-type`（仅 `instance create` 必填）
 
-操作人用户 ID。默认 `--user-id-type open_id`（`ou_xxx`），也支持 `user_id` / `union_id`。
+发起人用户 ID。默认 `--user-id-type open_id`（`ou_xxx`），create endpoint 仅支持 `open_id` / `user_id`，不支持 `union_id`。
 
-- `instance create`：发起人 ID
-- `instance cancel`：必须是发起人（飞书侧校验）
-- `instance cc`：发起抄送的用户（通常仍是发起人）
-- `task approve/reject`：节点上的审批人 ID（不是发起人！）
+`instance cancel`、`instance cc`、`task approve/reject` 不需要这些字段，服务端根据 User Token 身份判定权限。
 
 ### `--form` 与 `--form-file`（`instance create` 二选一）
 
@@ -159,7 +153,7 @@ widget 的 `id` / `type` 从 `approval get --output raw-json` 的 form 字段读
 
 ```bash
 # 1. 登录并预检 scope
-feishu-cli auth login --scope "approval:approval approval:task offline_access"
+feishu-cli auth login --scope "approval:approval approval:task approval:instance:write approval:task:write offline_access"
 
 # 2. 查审批定义拿 widget 结构
 feishu-cli approval get 7AB12C... --output raw-json | jq '.form'
@@ -182,10 +176,8 @@ feishu-cli approval instance create \
 # 5. 节点审批人通过任务（先在节点审批人电脑/账号上 auth login）
 feishu-cli approval task query --topic todo   # 拿到 task_id
 feishu-cli approval task approve \
-  --approval-code 7AB12C... \
   --instance-code 8XY99Z... \
   --task-id 99TASK... \
-  --user-id ou_approver \
   --comment "同意"
 ```
 
@@ -194,12 +186,11 @@ feishu-cli approval task approve \
 ```bash
 # 发起人撤回
 feishu-cli approval instance cancel \
-  --approval-code <code> --instance-code <ic> --user-id ou_self
+  --instance-code <ic>
 
 # 抄送给 2 个同事（重复 ID 会去重）
 feishu-cli approval instance cc \
-  --approval-code <code> --instance-code <ic> \
-  --user-id ou_self --cc-user-ids ou_a,ou_b,ou_a \
+  --instance-code <ic> --cc-user-ids ou_a,ou_b,ou_a \
   --comment "供参考"
 ```
 

@@ -652,7 +652,6 @@ type MigrateLegacyOpts struct {
 
 // MigrateLegacy 把旧布局 ~/.feishu-cli/{config.yaml,token.json,user_profile.json}
 // 迁移到 profiles/<TargetName>/，并把指针指向该 profile。原文件不删除（让用户手动确认）。
-// 旧文件不存在的话，仍然会创建一个空 profile 目录。
 func MigrateLegacy(opts MigrateLegacyOpts) (string, error) {
 	writeMu.Lock()
 	defer writeMu.Unlock()
@@ -664,6 +663,21 @@ func MigrateLegacy(opts MigrateLegacyOpts) (string, error) {
 	if err := ValidateName(target); err != nil {
 		return "", err
 	}
+
+	root, err := RootDir()
+	if err != nil {
+		return "", err
+	}
+	var legacyFiles []string
+	for _, f := range []string{configFileName, tokenFileName, userCacheName} {
+		if fileExists(filepath.Join(root, f)) {
+			legacyFiles = append(legacyFiles, f)
+		}
+	}
+	if len(legacyFiles) == 0 {
+		return "", fmt.Errorf("未找到可迁移的旧布局文件（期望 %s 下存在 config.yaml、token.json 或 user_profile.json）", root)
+	}
+
 	exists, err := Exists(target)
 	if err != nil {
 		return "", err
@@ -680,10 +694,6 @@ func MigrateLegacy(opts MigrateLegacyOpts) (string, error) {
 		return "", fmt.Errorf("创建 profile 目录失败: %w", err)
 	}
 
-	root, err := RootDir()
-	if err != nil {
-		return "", err
-	}
 	// --force 语义：dst 旧文件必须被清空，避免「src 缺一份 + dst 留旧版本」
 	// 导致 stale token 与新 config.yaml 混搭（codex review 报告的真 bug）。
 	if opts.Force {
@@ -695,11 +705,8 @@ func MigrateLegacy(opts MigrateLegacyOpts) (string, error) {
 		}
 	}
 
-	for _, f := range []string{configFileName, tokenFileName, userCacheName} {
+	for _, f := range legacyFiles {
 		src := filepath.Join(root, f)
-		if !fileExists(src) {
-			continue
-		}
 		dst := filepath.Join(dstDir, f)
 		if err := copyFile(src, dst); err != nil {
 			return "", fmt.Errorf("迁移 %s 失败: %w", f, err)

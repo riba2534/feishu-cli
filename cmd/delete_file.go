@@ -27,6 +27,7 @@ var deleteFileCmd = &cobra.Command{
   mindnote  思维笔记
   file      普通文件
   folder    文件夹
+  slides    幻灯片
 
 示例:
   # 删除文档
