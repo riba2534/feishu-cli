@@ -45,10 +45,7 @@ var listMessagesCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := resolveRequiredUserToken(cmd)
-		if err != nil {
-			return err
-		}
+		token := resolveOptionalUserToken(cmd)
 
 		containerID, _ := cmd.Flags().GetString("container-id")
 		containerIDType, _ := cmd.Flags().GetString("container-id-type")

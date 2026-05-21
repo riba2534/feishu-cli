@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/converter"
@@ -31,6 +32,7 @@ var exportWikiCmd = &cobra.Command{
   url               知识库文档 URL
   --output, -o      输出文件路径
   --download-images 下载文档中的图片
+  --expand-mentions 展开 @用户为友好格式；关闭时保留可导入还原的标签
 
 示例:
   # 导出到默认路径
@@ -144,21 +146,42 @@ func exportDocxToMarkdownWithAssets(docToken, userAccessToken string, cmd *cobra
 	if assetsDirOverride != "" {
 		assetsDir = assetsDirOverride
 	}
+	expandMentions := readExpandMentionsFlag(cmd)
 	cfg := config.Get()
 
-	conv := converter.NewBlockToMarkdown(blocks, converter.ConvertOptions{
+	options := converter.ConvertOptions{
 		DocumentID:      docToken,
 		DownloadImages:  downloadImages,
 		AssetsDir:       assetsDir,
 		UserAccessToken: userAccessToken,
 		Debug:           cfg.Debug,
+		ExpandMentions:  expandMentions,
 		ExpandSheets:    expandSheets,
-	})
+	}
+	conv := newExportBlockToMarkdownConverter(blocks, options, &FeishuUserResolver{})
 	md, err := conv.Convert()
 	if err != nil {
 		return "", fmt.Errorf("转换为 Markdown 失败: %w", err)
 	}
 	return md, nil
+}
+
+func readExpandMentionsFlag(cmd *cobra.Command) bool {
+	if cmd == nil || cmd.Flags().Lookup("expand-mentions") == nil {
+		return true
+	}
+	expandMentions, err := cmd.Flags().GetBool("expand-mentions")
+	if err != nil {
+		return true
+	}
+	return expandMentions
+}
+
+func newExportBlockToMarkdownConverter(blocks []*larkdocx.Block, options converter.ConvertOptions, resolver converter.UserResolver) *converter.BlockToMarkdown {
+	if options.ExpandMentions {
+		return converter.NewBlockToMarkdownWithResolver(blocks, options, resolver)
+	}
+	return converter.NewBlockToMarkdown(blocks, options)
 }
 
 // exportSheetToMarkdown 导出 sheet 类型文档为 Markdown
@@ -198,5 +221,6 @@ func init() {
 	exportWikiCmd.Flags().Bool("download-images", false, "下载图片到本地目录")
 	exportWikiCmd.Flags().String("assets-dir", "./assets", "下载资源的保存目录")
 	exportWikiCmd.Flags().Bool("expand-sheets", true, "展开内嵌电子表格为 Markdown 表格（false 时保留 <sheet/> 引用）")
+	exportWikiCmd.Flags().Bool("expand-mentions", true, "展开 @用户为友好格式（false 时保留 <mention-user/> 标签以支持导入还原）")
 	exportWikiCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问个人知识库）")
 }

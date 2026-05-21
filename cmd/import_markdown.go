@@ -37,11 +37,11 @@ func syncPrintf(format string, a ...any) {
 
 // segment 表示 Markdown 中的一个片段
 type segment struct {
-	kind    string // "markdown"、"mermaid"、"plantuml"、"svg" 或 "equation"
+	kind    string // "markdown"、"mermaid"、"plantuml" 或 "svg"
 	content string
 }
 
-// parseMarkdownSegments 将 Markdown 解析为片段，分离出 mermaid 和 plantuml 代码块
+// parseMarkdownSegments 将 Markdown 解析为片段，分离出 mermaid、plantuml 和 svg 代码块
 // countLeadingBackticks 返回行首反引号数量（去除前导空格后）
 func countLeadingBackticks(line string) int {
 	trimmed := strings.TrimSpace(line)
@@ -80,32 +80,6 @@ func parseMarkdownSegments(markdown string) []segment {
 			}
 			buf = append(buf, line)
 			i++
-			continue
-		}
-
-		// 检查块级公式 $$ 开始
-		if trimmed == "$$" {
-			// 先保存之前的普通内容
-			if len(buf) > 0 {
-				segments = append(segments, segment{kind: "markdown", content: strings.Join(buf, "\n")})
-				buf = nil
-			}
-
-			// 收集公式内容
-			i++
-			var equationLines []string
-			for i < len(lines) && strings.TrimSpace(lines[i]) != "$$" {
-				equationLines = append(equationLines, lines[i])
-				i++
-			}
-			// 跳过结束的 $$
-			if i < len(lines) {
-				i++
-			}
-
-			if len(equationLines) > 0 {
-				segments = append(segments, segment{kind: "equation", content: strings.Join(equationLines, "\n")})
-			}
 			continue
 		}
 
@@ -749,38 +723,6 @@ func phase1CreateBlocks(
 
 			iTasks = appendImageTasks(iTasks, result.BlockNodes, createdBlockIDs, nestedCreatedByTop, result.ImageSources, basePath)
 			vTasks = appendVideoTasks(vTasks, result.BlockNodes, createdBlockIDs, nestedCreatedByTop, result.VideoSources, basePath)
-
-		} else if seg.kind == "equation" {
-			// 块级公式：飞书 API 不支持创建 Equation 块（type=16），
-			// 降级为包含行内 Equation 元素的 Text 块，保留公式语义
-			textBlockType := 2 // BlockTypeText
-			equationContent := seg.content
-			equationBlocks := []*larkdocx.Block{
-				{
-					BlockType: &textBlockType,
-					Text: &larkdocx.Text{
-						Elements: []*larkdocx.TextElement{
-							{
-								Equation: &larkdocx.Equation{
-									Content: &equationContent,
-								},
-							},
-						},
-					},
-				},
-			}
-
-			createdBlocks, _, err := client.CreateBlock(documentID, documentID, equationBlocks, -1, userAccessToken)
-			if err != nil {
-				if verbose {
-					stats.progressf("  ⚠ 公式块创建失败: %v\n", err)
-				}
-			} else {
-				stats.totalBlocks += len(createdBlocks)
-				if verbose {
-					stats.progressf("  [公式] 创建 %d 个块（行内公式）\n", len(createdBlocks))
-				}
-			}
 
 		} else if seg.kind == "mermaid" || seg.kind == "plantuml" || seg.kind == "svg" {
 			diagramIdx++

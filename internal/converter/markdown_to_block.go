@@ -239,10 +239,158 @@ func normalizeBlockquoteEnding(source []byte) []byte {
 	return []byte(strings.Join(result, "\n"))
 }
 
+type blockEquationSegment struct {
+	kind    string
+	content string
+}
+
+func createTextEquationBlock(formula string) *larkdocx.Block {
+	blockType := int(BlockTypeText)
+	return &larkdocx.Block{
+		BlockType: &blockType,
+		Text: &larkdocx.Text{
+			Elements: []*larkdocx.TextElement{
+				{Equation: &larkdocx.Equation{Content: &formula}},
+			},
+		},
+	}
+}
+
+func parseFenceMarker(line string) (byte, int, string) {
+	trimmed := strings.TrimSpace(line)
+	if len(trimmed) == 0 {
+		return 0, 0, ""
+	}
+	marker := trimmed[0]
+	if marker != '`' && marker != '~' {
+		return 0, 0, ""
+	}
+	count := 0
+	for count < len(trimmed) && trimmed[count] == marker {
+		count++
+	}
+	if count < 3 {
+		return 0, 0, ""
+	}
+	return marker, count, trimmed[count:]
+}
+
+func splitBlockEquationSegments(source []byte) ([]blockEquationSegment, bool) {
+	lines := strings.Split(string(source), "\n")
+	segments := make([]blockEquationSegment, 0, 1)
+	var buf []string
+	foundEquation := false
+	inFence := false
+	var fenceMarker byte
+	fenceLen := 0
+
+	flushMarkdown := func() {
+		if len(buf) == 0 {
+			return
+		}
+		segments = append(segments, blockEquationSegment{
+			kind:    "markdown",
+			content: strings.Join(buf, "\n"),
+		})
+		buf = nil
+	}
+
+	for i := 0; i < len(lines); {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+
+		if inFence {
+			buf = append(buf, line)
+			if marker, count, rest := parseFenceMarker(line); marker == fenceMarker && count >= fenceLen && strings.TrimSpace(rest) == "" {
+				inFence = false
+				fenceMarker = 0
+				fenceLen = 0
+			}
+			i++
+			continue
+		}
+
+		if trimmed == "$$" {
+			flushMarkdown()
+			i++
+			var equationLines []string
+			for i < len(lines) && strings.TrimSpace(lines[i]) != "$$" {
+				equationLines = append(equationLines, lines[i])
+				i++
+			}
+			if i < len(lines) {
+				i++
+			}
+			if len(equationLines) > 0 {
+				foundEquation = true
+				segments = append(segments, blockEquationSegment{
+					kind:    "equation",
+					content: strings.Join(equationLines, "\n"),
+				})
+			}
+			continue
+		}
+
+		if marker, count, _ := parseFenceMarker(line); count >= 3 {
+			inFence = true
+			fenceMarker = marker
+			fenceLen = count
+		}
+		buf = append(buf, line)
+		i++
+	}
+
+	flushMarkdown()
+	return segments, foundEquation
+}
+
+func mergeConvertResult(dst *ConvertResult, src *ConvertResult) {
+	if dst == nil || src == nil {
+		return
+	}
+	dst.BlockNodes = append(dst.BlockNodes, src.BlockNodes...)
+	dst.TableDatas = append(dst.TableDatas, src.TableDatas...)
+	dst.ImageSources = append(dst.ImageSources, src.ImageSources...)
+	dst.VideoSources = append(dst.VideoSources, src.VideoSources...)
+	dst.ImageStats.Total += src.ImageStats.Total
+	dst.ImageStats.Success += src.ImageStats.Success
+	dst.ImageStats.Failed += src.ImageStats.Failed
+	dst.ImageStats.Skipped += src.ImageStats.Skipped
+	dst.VideoStats.Total += src.VideoStats.Total
+	dst.VideoStats.Success += src.VideoStats.Success
+	dst.VideoStats.Failed += src.VideoStats.Failed
+	dst.VideoStats.Skipped += src.VideoStats.Skipped
+}
+
 // ConvertWithTableData converts Markdown to Feishu blocks and returns table data for content filling
 func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 	// 预处理：确保引用块后有空行分隔，避免 goldmark 的 lazy continuation
 	c.source = normalizeBlockquoteEnding(c.source)
+
+	if segments, hasEquation := splitBlockEquationSegments(c.source); hasEquation {
+		result := &ConvertResult{}
+		for _, seg := range segments {
+			switch seg.kind {
+			case "markdown":
+				if strings.TrimSpace(seg.content) == "" {
+					continue
+				}
+				inner := NewMarkdownToBlock([]byte(seg.content), c.options, c.basePath)
+				innerResult, err := inner.ConvertWithTableData()
+				if err != nil {
+					return nil, err
+				}
+				mergeConvertResult(result, innerResult)
+			case "equation":
+				result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: createTextEquationBlock(seg.content)})
+			}
+		}
+		c.imageStats = result.ImageStats
+		c.imageSources = result.ImageSources
+		c.videoStats = result.VideoStats
+		c.videoSources = result.VideoSources
+		return result, nil
+	}
 
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
