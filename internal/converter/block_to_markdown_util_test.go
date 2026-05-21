@@ -690,6 +690,17 @@ func TestConvertTextElements(t *testing.T) {
 			want:    "[项目主页](https://example.com/page%281%29)",
 		},
 		{
+			name: "InlineLinkPreview保留URL加号",
+			elements: []*larkdocx.TextElement{
+				{LinkPreview: &larkdocx.InlineLinkPreview{
+					Title: strPtr("项目主页"),
+					Url:   strPtr("https://example.com/a+b?sig=x+y"),
+				}},
+			},
+			options: ConvertOptions{},
+			want:    "[项目主页](https://example.com/a+b?sig=x+y)",
+		},
+		{
 			name: "InlineLinkPreview无标题时使用URL作为文本",
 			elements: []*larkdocx.TextElement{
 				{LinkPreview: &larkdocx.InlineLinkPreview{

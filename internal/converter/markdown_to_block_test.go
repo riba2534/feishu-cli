@@ -3,6 +3,8 @@ package converter
 import (
 	"strings"
 	"testing"
+
+	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 )
 
 func TestNewMarkdownToBlock(t *testing.T) {
@@ -129,6 +131,80 @@ func TestConvert_BlockEquationIgnoredInsideFence(t *testing.T) {
 	if got != want {
 		t.Fatalf("代码块内容 = %q，期望 %q", got, want)
 	}
+}
+
+func TestConvert_BlockEquationAfterIndentedFenceLikeText(t *testing.T) {
+	markdown := "    ```\n\n$$\nE = mc^2\n$$"
+
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	blocks, err := converter.Convert()
+	if err != nil {
+		t.Fatalf("Convert() 返回错误: %v", err)
+	}
+	if countEquationElements(blocks) != 1 {
+		t.Fatalf("公式元素数量 = %d，期望 1", countEquationElements(blocks))
+	}
+}
+
+func TestConvert_BlockEquationPreservesReferenceLinkContext(t *testing.T) {
+	markdown := "[ref]: https://example.com/path\n\n$$\nE = mc^2\n$$\n\nSee [ref]"
+
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	blocks, err := converter.Convert()
+	if err != nil {
+		t.Fatalf("Convert() 返回错误: %v", err)
+	}
+	if countEquationElements(blocks) != 1 {
+		t.Fatalf("公式元素数量 = %d，期望 1", countEquationElements(blocks))
+	}
+
+	for _, block := range blocks {
+		if block.Text == nil {
+			continue
+		}
+		for _, elem := range block.Text.Elements {
+			if elem.TextRun == nil || elem.TextRun.Content == nil || *elem.TextRun.Content != "ref" {
+				continue
+			}
+			style := elem.TextRun.TextElementStyle
+			if style == nil || style.Link == nil || style.Link.Url == nil {
+				t.Fatal("引用式链接在公式拆分后丢失了 Link 样式")
+			}
+			if *style.Link.Url != "https://example.com/path" {
+				t.Fatalf("链接 URL = %q，期望 https://example.com/path", *style.Link.Url)
+			}
+			return
+		}
+	}
+	t.Fatal("未找到引用式链接文本")
+}
+
+func TestConvert_BlockEquationIgnoredInsideRawHTMLBlock(t *testing.T) {
+	markdown := "<pre>\n$$\nliteral\n$$\n</pre>\n\n$$\nreal\n$$"
+
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	blocks, err := converter.Convert()
+	if err != nil {
+		t.Fatalf("Convert() 返回错误: %v", err)
+	}
+	if countEquationElements(blocks) != 1 {
+		t.Fatalf("公式元素数量 = %d，期望 1", countEquationElements(blocks))
+	}
+}
+
+func countEquationElements(blocks []*larkdocx.Block) int {
+	count := 0
+	for _, block := range blocks {
+		if block == nil || block.Text == nil {
+			continue
+		}
+		for _, elem := range block.Text.Elements {
+			if elem != nil && elem.Equation != nil {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func TestConvert_ConsecutiveLinesBecomeSeparateBlocks(t *testing.T) {

@@ -1622,7 +1622,7 @@ func (c *BlockToMarkdown) formatStyledText(text string, style *larkdocx.TextElem
 
 func normalizeMarkdownLinkURL(linkURL string) string {
 	// 解码完全 URL 编码的链接（如 https%3A%2F%2F...），提升可读性
-	if decoded, err := url.QueryUnescape(linkURL); err == nil && decoded != linkURL {
+	if decoded, err := url.PathUnescape(linkURL); err == nil && decoded != linkURL {
 		linkURL = decoded
 	}
 	// URL 中的括号编码，避免破坏 Markdown 链接语法
