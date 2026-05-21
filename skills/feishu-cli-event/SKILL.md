@@ -141,7 +141,7 @@ feishu-cli event status
 
 **`--jq` 限制**：只识别 `.a.b.c` 形式的 map 取值（如 `.event.message`），不支持 `select` / 数组下标 / 管道。复杂过滤请用 `feishu-cli event consume ... | jq '<expr>'`。
 
-**`--output-dir` 限制**：必须是相对路径或已存在的绝对路径，**不做 `~` 展开**。
+**`--output-dir` 限制**：必须是安全相对路径；不做 `~` 展开，不接受绝对路径或 `..` 路径段。
 
 ### 4. `event status`：看本机活跃 consume 进程
 
@@ -210,7 +210,7 @@ feishu-cli event stop --all --force                        # SIGKILL（紧急情
 |---|---|---|
 | WS 连接失败，stderr 报 ws error | 长连接模式未开启 | 飞书开放平台开启「事件订阅 - 长连接接收事件」 |
 | 启动后看到 ready，但收不到事件 | 目标 EventType 未在「事件订阅」勾选 / 未发版本 | 重新勾选 + 发版 |
-| 收到事件但 payload 字段缺失 | App 缺对应 scope（如 `im:message.group_msg`） | `event schema <key>` 看 Scopes，去权限管理页开通后重新订阅 |
+| 收到事件但 payload 字段缺失 | App 缺对应 scope（如 `im:message.p2p_msg:readonly`） | `event schema <key>` 看 Scopes，去权限管理页开通后重新订阅 |
 | `event consume` 立即退出 reason=error | App ID/Secret 错 / 网络不通 / 域名走 lark 但 BaseURL 用了 feishu | 检查 `config.yaml`；`lark` 国际版需 `--base-url https://open.larksuite.com` 或对应配置 |
 
 ## AI Agent 后台订阅推荐用法
@@ -257,7 +257,7 @@ feishu-cli event consume im.message.receive_v1 --max-events 1 --timeout 30s
 - **status 不主动 ping 进程**：`event status` 用 `signal(0)` 探活，对 PID 复用场景理论可能误判（极小概率）。`event stop --pid N` 也是 syscall.Kill，命中错 PID 会 ESRCH 失败，不会误杀
 - **每条事件独立文件**：`--output-dir` 模式下每条事件落盘 `<event_id>.json`，**短时间高频事件可能创建大量小文件**；落盘只为留痕，业务消费仍推荐用 stdout NDJSON
 - **`--jq` 只支持点路径**：`--jq .event.message` 把每条事件投影到子树后再输出；不命中的事件**会被 skip**（不输出空行）。复杂过滤永远走 pipe 外部 jq
-- **`--output-dir` 不支持 `~`**：传 `~/events` 会报错；用相对路径 `./events` 或绝对路径 `/Users/xxx/events`
+- **`--output-dir` 只支持安全相对路径**：传 `~/events`、`/tmp/events`、`../events` 都会报错；用 `./events` 或 `events/today`
 
 ## 何时转其他 skill
 

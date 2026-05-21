@@ -13,7 +13,7 @@ import (
 var approvalInstanceCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "创建审批实例（发起审批）",
-	Long: `创建一条审批实例。需要 User Token + scope approval:approval。
+	Long: `创建一条审批实例。需要 tenant_access_token + scope approval:approval。
 
 参数:
   --approval-code   审批定义 code（必填）
@@ -29,14 +29,10 @@ var approvalInstanceCreateCmd = &cobra.Command{
   # 通过文件提交表单
   feishu-cli approval instance create --approval-code <code> --user-id ou_xxx --form-file form.json
 
-  # 直接传 JSON 字符串
+	# 直接传 JSON 字符串
   feishu-cli approval instance create --approval-code <code> --user-id ou_xxx \
     --form '[{"id":"widget_1","type":"input","value":"内容"}]'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		approvalCode, _ := cmd.Flags().GetString("approval-code")
 		if err := validateApprovalCode(approvalCode); err != nil {
 			return err
@@ -61,6 +57,9 @@ var approvalInstanceCreateCmd = &cobra.Command{
 		}
 
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
+		if err := validateApprovalCreateUserIDType(userIDType); err != nil {
+			return err
+		}
 		departmentID, _ := cmd.Flags().GetString("department-id")
 		openChatID, _ := cmd.Flags().GetString("open-chat-id")
 		output, _ := cmd.Flags().GetString("output")
@@ -74,11 +73,11 @@ var approvalInstanceCreateCmd = &cobra.Command{
 			OpenChatID:   openChatID,
 		}
 
-		token, errToken := requireUserToken(cmd, "approval instance create")
-		if errToken != nil {
-			return errToken
+		if err := config.Validate(); err != nil {
+			return err
 		}
-		result, err := client.CreateApprovalInstance(opts, token)
+
+		result, err := client.CreateApprovalInstance(opts, "")
 		if err != nil {
 			return err
 		}
@@ -103,6 +102,5 @@ func init() {
 	approvalInstanceCreateCmd.Flags().String("department-id", "", "发起人部门 ID（可选）")
 	approvalInstanceCreateCmd.Flags().String("open-chat-id", "", "结果推送的群 ID（可选）")
 	approvalInstanceCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	approvalInstanceCreateCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(approvalInstanceCreateCmd, "approval-code", "user-id")
 }

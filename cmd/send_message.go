@@ -99,6 +99,8 @@ var sendMessageCmd = &cobra.Command{
 		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
 		receiveID, _ := cmd.Flags().GetString("receive-id")
 		threadID, _ := cmd.Flags().GetString("thread-id")
+		msgType, _ := cmd.Flags().GetString("msg-type")
+
 		if threadID != "" {
 			if receiveIDType != "" || receiveID != "" {
 				return fmt.Errorf("--thread-id 与 --receive-id-type/--receive-id 互斥，只能指定一组")
@@ -108,6 +110,12 @@ var sendMessageCmd = &cobra.Command{
 		} else if receiveIDType == "" || receiveID == "" {
 			return fmt.Errorf("必须指定 --thread-id，或同时指定 --receive-id-type 和 --receive-id")
 		}
+		if err := validateSendReceiveIDType(receiveIDType); err != nil {
+			return err
+		}
+		if err := validateSendMessageType(msgType); err != nil {
+			return err
+		}
 
 		if err := config.Validate(); err != nil {
 			return err
@@ -115,7 +123,6 @@ var sendMessageCmd = &cobra.Command{
 
 		token := resolveOptionalUserToken(cmd)
 
-		msgType, _ := cmd.Flags().GetString("msg-type")
 		content, _ := cmd.Flags().GetString("content")
 		contentFile, _ := cmd.Flags().GetString("content-file")
 		text, _ := cmd.Flags().GetString("text")
@@ -240,6 +247,24 @@ var sendMessageCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func validateSendReceiveIDType(receiveIDType string) error {
+	switch receiveIDType {
+	case "email", "open_id", "user_id", "union_id", "chat_id", "thread_id":
+		return nil
+	default:
+		return fmt.Errorf("无效的 --receive-id-type: %s，有效值: email/open_id/user_id/union_id/chat_id/thread_id", receiveIDType)
+	}
+}
+
+func validateSendMessageType(msgType string) error {
+	switch msgType {
+	case "text", "post", "image", "file", "audio", "media", "sticker", "interactive", "share_chat", "share_user":
+		return nil
+	default:
+		return fmt.Errorf("无效的 --msg-type: %s，有效值: text/post/image/file/audio/media/sticker/interactive/share_chat/share_user", msgType)
+	}
 }
 
 func init() {

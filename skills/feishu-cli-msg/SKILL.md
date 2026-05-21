@@ -2,9 +2,9 @@
 name: feishu-cli-msg
 description: >-
   飞书消息发送。发送消息（text/post/interactive 卡片等 11 种类型）、回复消息、
-  转发/合并转发、消息加急、下载消息资源（图片/文件）。
+  转发/合并转发、消息加急、消息书签（flag 收藏/list/cancel）、下载消息资源（图片/文件）。
   使用 App Token（Bot 身份），无需登录。
-  当用户明确请求通过飞书即时消息/Bot 消息发送、回复、转发、合并转发、加急、
+  当用户明确请求通过飞书即时消息/Bot 消息发送、回复、转发、合并转发、加急、消息收藏/书签、
   下载消息图片或文件时使用。邮件走 feishu-cli-mail；文档评论/共享权限走对应 skill。
   注意：Reaction/Pin/获取消息详情/批量获取消息/话题回复/消息历史/搜索群聊/群聊管理（需 User Token），
   以及消息删除（默认 App Token 用于 Bot 自撤回，可选 User Token 让管理员撤回他人）
@@ -14,7 +14,7 @@ description: >-
   避免手搓易错的 JSON），再回到本技能用 --msg-type interactive 发送。
 argument-hint: <receive_id> [--msg-type <type>]
 user-invocable: true
-allowed-tools: Bash(feishu-cli msg:*), Bash(feishu-cli media:*), Bash(feishu-cli file:*), Read, Write
+allowed-tools: Bash(feishu-cli msg:*), Bash(feishu-cli media:*), Bash(feishu-cli file:*), Bash(feishu-cli auth:*), Read, Write
 ---
 
 # 飞书消息发送技能
@@ -387,9 +387,10 @@ feishu-cli msg reply om_xxx --text "这里开个话题" --reply-in-thread
 ### 命令速查
 
 - `feishu-cli msg flag create <message_id>` — 创建消息层书签（默认 `--item-type default --flag-type message`）
-- `feishu-cli msg flag create <message_id> --item-type msg_thread --flag-type feed` — feed 层书签（普通群线程）
+- `feishu-cli msg flag create <message_id> --flag-type feed` — feed 层书签，自动读取 `chat_mode` 判断 `thread` / `msg_thread`
+- `feishu-cli msg flag create <message_id> --item-type msg_thread --flag-type feed` — feed 层书签（显式指定普通群线程）
 - `feishu-cli msg flag list [--page-size 50] [--page-token xxx]` — 列当前用户的书签
-- `feishu-cli msg flag cancel <message_id> [--item-type ... --flag-type ...]` — 取消书签（item/flag 必须与 create 一致）
+- `feishu-cli msg flag cancel <message_id> [--item-type ... --flag-type ...]` — 默认尽量取消消息层 + feed 层；显式传 item/flag 时只取消指定层
 
 ### 关键枚举（服务端真值，绝勿按 0/1/2 顺序臆造）
 

@@ -30,7 +30,7 @@ var profileCmd = &cobra.Command{
   FEISHU_PROFILE=<name>   临时强制使用指定 profile（不修改指针文件）
 
 示例:
-  feishu-cli profile add work --app-id cli_xxx --app-secret xxx --use
+  feishu-cli profile add work --app-id cli_xxx --app-secret secret_xxx --use
   feishu-cli profile list
   feishu-cli profile use personal
   feishu-cli profile use -                # 切回上一个 profile

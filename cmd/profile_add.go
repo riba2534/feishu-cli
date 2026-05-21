@@ -25,7 +25,7 @@ var profileAddCmd = &cobra.Command{
 'feishu-cli profile migrate'。
 
 示例:
-  feishu-cli profile add work --app-id cli_xxx --app-secret xxx --use
+  feishu-cli profile add work --app-id cli_xxx --app-secret secret_xxx --use
   feishu-cli profile add personal --base-url https://open.larksuite.com
   feishu-cli profile add temp                                 # 留空待手动填`,
 	Args: cobra.ExactArgs(1),

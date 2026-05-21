@@ -162,6 +162,19 @@ func TestBuildEMLBase64URL_WithoutInline(t *testing.T) {
 	}
 }
 
+func TestScanAndUploadInlineImagesValidatesLocalPathBeforeOpenID(t *testing.T) {
+	_, _, err := scanAndUploadInlineImages(`<img src="./missing-inline-image.png">`, "me", "")
+	if err == nil {
+		t.Fatal("expected missing local image error")
+	}
+	if !strings.Contains(err.Error(), "内嵌图片") {
+		t.Fatalf("expected local image error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "open_id") {
+		t.Fatalf("should validate local path before resolving open_id, got %v", err)
+	}
+}
+
 // TestToMailTemplateAddrs 验证 "Name <email>" 拆分
 func TestToMailTemplateAddrs(t *testing.T) {
 	in := []string{"Alice <a@example.com>", "b@example.com", "  ", "Bob<b2@example.com>"}

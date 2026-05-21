@@ -32,7 +32,7 @@ allowed-tools: Bash, Read
 ```bash
 # create —— --name / --filter-view-id 可选，飞书侧自动生成
 feishu-cli sheet filter-view create \
-  --token shtcnxxxxxx --sheet-id 0b1212 \
+  --spreadsheet-token shtcnxxxxxx --sheet-id 0b1212 \
   --range "0b1212!A1:H14" --name "我的视图"
 
 # range 不带 sheetId 前缀时自动补全为 <sheet-id>!<range>
@@ -50,7 +50,7 @@ feishu-cli sheet filter-view delete --token shtcnxxxxxx --sheet-id 0b1212 --filt
 
 | flag | 必填 | 说明 |
 |---|---|---|
-| `--token` | 是 | 电子表格 token（URL `/sheets/<token>`） |
+| `--token` / `--spreadsheet-token` | 是 | 电子表格 token（URL `/sheets/<token>`）；`--spreadsheet-token` 对齐官方 lark-cli |
 | `--sheet-id` | 是 | 工作表 ID（URL `?sheet=<sheet-id>`） |
 | `--range` | create 必填 | `"<sheetId>!A1:H14"`，不带 `!` 前缀自动补 |
 | `--name` | 否 | 视图名称 ≤ 100 字符 |

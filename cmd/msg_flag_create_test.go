@@ -46,6 +46,31 @@ func TestMsgFlagCreateFlags(t *testing.T) {
 	}
 }
 
+func TestValidateMsgFlagCombination(t *testing.T) {
+	valid := [][2]string{
+		{"default", "message"},
+		{"", ""},
+		{"thread", "feed"},
+		{"msg_thread", "feed"},
+	}
+	for _, tc := range valid {
+		if err := validateMsgFlagCombination(tc[0], tc[1]); err != nil {
+			t.Fatalf("validateMsgFlagCombination(%q, %q) unexpected error: %v", tc[0], tc[1], err)
+		}
+	}
+
+	invalid := [][2]string{
+		{"default", "feed"},
+		{"thread", "message"},
+		{"msg_thread", "message"},
+	}
+	for _, tc := range invalid {
+		if err := validateMsgFlagCombination(tc[0], tc[1]); err == nil {
+			t.Fatalf("validateMsgFlagCombination(%q, %q) expected error", tc[0], tc[1])
+		}
+	}
+}
+
 // TestMsgFlagCreateArgsValidation 校验 Args 必须 ExactArgs(1)
 func TestMsgFlagCreateArgsValidation(t *testing.T) {
 	// 0 个 args → 报错

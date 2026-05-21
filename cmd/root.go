@@ -139,4 +139,5 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "启用调试模式")
 	// R1 review fix: RunE 返回 error 时不再打印整页 usage 淹没真错误（11/13 PR 未单独设此 flag → root 统一处理）
 	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
 }

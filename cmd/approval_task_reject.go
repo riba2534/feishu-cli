@@ -11,7 +11,13 @@ import (
 var approvalTaskRejectCmd = &cobra.Command{
 	Use:   "reject",
 	Short: "拒绝审批任务",
-	Long: `拒绝指定的审批任务。需要 User Token + scope approval:task:write。
+	Long: `拒绝指定的审批任务，对齐官方 approval.tasks.reject。
+
+底层接口:
+  POST /open-apis/approval/v4/tasks/uat_reject
+
+权限:
+  User Token，scope: approval:task:write
 
 参数:
   --instance-code    审批实例 code（必填）
@@ -22,19 +28,19 @@ var approvalTaskRejectCmd = &cobra.Command{
   feishu-cli approval task reject \
     --instance-code <ic> --task-id <task> --comment "金额超预算"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		opts, err := readApprovalTaskActionFlags(cmd)
 		if err != nil {
 			return err
 		}
 
-		token, errToken := requireUserToken(cmd, "approval task reject")
-		if errToken != nil {
-			return errToken
+		if err := config.Validate(); err != nil {
+			return err
 		}
+		token, err := requireUserToken(cmd, "approval task reject")
+		if err != nil {
+			return err
+		}
+
 		if err := client.RejectApprovalTask(opts, token); err != nil {
 			return err
 		}
@@ -46,5 +52,5 @@ var approvalTaskRejectCmd = &cobra.Command{
 
 func init() {
 	approvalTaskCmd.AddCommand(approvalTaskRejectCmd)
-	registerApprovalTaskActionFlags(approvalTaskRejectCmd)
+	registerApprovalTaskActionFlags(approvalTaskRejectCmd, false)
 }

@@ -44,3 +44,16 @@ func TestMsgFlagListFlags(t *testing.T) {
 		t.Fatal("--user-access-token flag missing")
 	}
 }
+
+func TestValidateMsgFlagPageSize(t *testing.T) {
+	for _, n := range []int{1, 20, 50} {
+		if err := validateMsgFlagPageSize(n); err != nil {
+			t.Fatalf("validateMsgFlagPageSize(%d) unexpected error: %v", n, err)
+		}
+	}
+	for _, n := range []int{0, -1, 51} {
+		if err := validateMsgFlagPageSize(n); err == nil {
+			t.Fatalf("validateMsgFlagPageSize(%d) expected error", n)
+		}
+	}
+}

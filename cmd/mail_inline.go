@@ -23,15 +23,8 @@ func scanAndUploadInlineImages(htmlBody, mailboxID, userToken string) (string, [
 		return htmlBody, nil, nil
 	}
 
-	// 解析 open_id：drive upload parent_node 必填
-	openID, err := resolveCurrentUserOpenID(userToken)
-	if err != nil {
-		return "", nil, fmt.Errorf("--inline-images-auto-scan 需要 open_id：%w", err)
-	}
-
 	refs := make([]client.MailInlineImageRef, 0, len(rawSrcs))
 	parts := make([]inlineImagePart, 0, len(rawSrcs))
-
 	for _, src := range rawSrcs {
 		cid, err := client.GenerateMailCID()
 		if err != nil {
@@ -47,13 +40,6 @@ func scanAndUploadInlineImages(htmlBody, mailboxID, userToken string) (string, [
 		if loadErr := client.LoadInlineImageBytes(&ref); loadErr != nil {
 			return "", nil, fmt.Errorf("内嵌图片 %s: %w", src, loadErr)
 		}
-		// 上传到飞书云盘（parent_type=email）
-		fileToken, upErr := client.UploadMailInlineImage(ref.LocalPath, ref.FileName, openID, userToken)
-		if upErr != nil {
-			return "", nil, fmt.Errorf("上传内嵌图片 %s 失败: %w", src, upErr)
-		}
-		ref.FileToken = fileToken
-
 		refs = append(refs, ref)
 		parts = append(parts, inlineImagePart{
 			CID:      ref.CID,
@@ -61,6 +47,21 @@ func scanAndUploadInlineImages(htmlBody, mailboxID, userToken string) (string, [
 			Bytes:    ref.Bytes,
 			MIME:     ref.MIME,
 		})
+	}
+
+	// 解析 open_id：drive upload parent_node 必填。先完成本地图片读盘校验，
+	// 避免路径错误时还去打 /authen/v1/user_info。
+	openID, err := resolveCurrentUserOpenID(userToken)
+	if err != nil {
+		return "", nil, fmt.Errorf("--inline-images-auto-scan 需要 open_id：%w", err)
+	}
+
+	for i := range refs {
+		fileToken, upErr := client.UploadMailInlineImage(refs[i].LocalPath, refs[i].FileName, openID, userToken)
+		if upErr != nil {
+			return "", nil, fmt.Errorf("上传内嵌图片 %s 失败: %w", refs[i].RawSrc, upErr)
+		}
+		refs[i].FileToken = fileToken
 	}
 
 	rewritten := client.ReplaceInlineImageSrc(htmlBody, refs)

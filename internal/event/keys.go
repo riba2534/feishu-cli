@@ -22,14 +22,18 @@ package event
 //   - Description: 简短中文描述，list 命令展示
 //   - Domain: 分组（im/contact/calendar/drive/approval/vc/meeting）
 //   - Scopes: 所需 App scope；list / consume 时展示给用户
+//   - AuthTypes: 可用身份类型（bot/user），schema 命令展示
+//   - RequiredConsoleEvents: 开放平台后台必须勾选并发布的 EventType
 //   - PayloadSchema: 事件 payload 的字段说明，schema 命令展示（手工 curated，避免引入 reflect 依赖）
 type KeyDefinition struct {
-	Key           string   `json:"key"`
-	EventType     string   `json:"event_type"`
-	Description   string   `json:"description"`
-	Domain        string   `json:"domain"`
-	Scopes        []string `json:"scopes,omitempty"`
-	PayloadSchema string   `json:"payload_schema,omitempty"`
+	Key                   string   `json:"key"`
+	EventType             string   `json:"event_type"`
+	Description           string   `json:"description"`
+	Domain                string   `json:"domain"`
+	Scopes                []string `json:"scopes,omitempty"`
+	AuthTypes             []string `json:"auth_types,omitempty"`
+	RequiredConsoleEvents []string `json:"required_console_events,omitempty"`
+	PayloadSchema         string   `json:"payload_schema,omitempty"`
 }
 
 // keyRegistry 是手工维护的常用 EventKey 列表。
@@ -43,7 +47,11 @@ var keyRegistry = []KeyDefinition{
 		EventType:   "im.message.receive_v1",
 		Description: "接收消息（用户/群聊发给 Bot 的消息）",
 		Domain:      "im",
-		Scopes:      []string{"im:message", "im:message.group_msg"},
+		Scopes:      []string{"im:message.p2p_msg:readonly"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"im.message.receive_v1",
+		},
 		PayloadSchema: `{
   "schema": "2.0",
   "header": {"event_id": "...", "event_type": "im.message.receive_v1", "create_time": "..."},
@@ -65,69 +73,109 @@ var keyRegistry = []KeyDefinition{
 		Description: "消息已读回执",
 		Domain:      "im",
 		Scopes:      []string{"im:message", "im:message:readonly"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"im.message.message_read_v1",
+		},
 	},
 	{
 		Key:         "im.message.recalled_v1",
 		EventType:   "im.message.recalled_v1",
 		Description: "消息被撤回",
 		Domain:      "im",
-		Scopes:      []string{"im:message"},
+		Scopes:      []string{"im:message:readonly"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"im.message.recalled_v1",
+		},
 	},
 	{
 		Key:         "im.message.reaction.created_v1",
 		EventType:   "im.message.reaction.created_v1",
 		Description: "消息表情回复被添加",
 		Domain:      "im",
-		Scopes:      []string{"im:message"},
+		Scopes:      []string{"im:message:readonly", "im:message.reactions:read"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"im.message.reaction.created_v1",
+		},
 	},
 	{
 		Key:         "im.message.reaction.deleted_v1",
 		EventType:   "im.message.reaction.deleted_v1",
 		Description: "消息表情回复被删除",
 		Domain:      "im",
-		Scopes:      []string{"im:message"},
+		Scopes:      []string{"im:message:readonly", "im:message.reactions:read"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"im.message.reaction.deleted_v1",
+		},
 	},
 	{
 		Key:         "im.chat.updated_v1",
 		EventType:   "im.chat.updated_v1",
 		Description: "群聊信息更新",
 		Domain:      "im",
-		Scopes:      []string{"im:chat", "im:chat:readonly"},
+		Scopes:      []string{"im:chat:read"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"im.chat.updated_v1",
+		},
 	},
 	{
 		Key:         "im.chat.member.user.added_v1",
 		EventType:   "im.chat.member.user.added_v1",
 		Description: "用户进群",
 		Domain:      "im",
-		Scopes:      []string{"im:chat", "im:chat.members"},
+		Scopes:      []string{"im:chat.members:read"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"im.chat.member.user.added_v1",
+		},
 	},
 	{
 		Key:         "im.chat.member.user.deleted_v1",
 		EventType:   "im.chat.member.user.deleted_v1",
 		Description: "用户离群",
 		Domain:      "im",
-		Scopes:      []string{"im:chat", "im:chat.members"},
+		Scopes:      []string{"im:chat.members:read"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"im.chat.member.user.deleted_v1",
+		},
 	},
 	{
 		Key:         "im.chat.member.bot.added_v1",
 		EventType:   "im.chat.member.bot.added_v1",
 		Description: "Bot 被拉入群",
 		Domain:      "im",
-		Scopes:      []string{"im:chat"},
+		Scopes:      []string{"im:chat.members:bot_access"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"im.chat.member.bot.added_v1",
+		},
 	},
 	{
 		Key:         "im.chat.member.bot.deleted_v1",
 		EventType:   "im.chat.member.bot.deleted_v1",
 		Description: "Bot 被移出群",
 		Domain:      "im",
-		Scopes:      []string{"im:chat"},
+		Scopes:      []string{"im:chat.members:bot_access"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"im.chat.member.bot.deleted_v1",
+		},
 	},
 	{
 		Key:         "im.chat.disbanded_v1",
 		EventType:   "im.chat.disbanded_v1",
 		Description: "群聊被解散",
 		Domain:      "im",
-		Scopes:      []string{"im:chat"},
+		Scopes:      []string{"im:chat:read"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"im.chat.disbanded_v1",
+		},
 	},
 
 	// ---------- 联系人 ----------

@@ -140,9 +140,11 @@ var extraDomainScopes = map[string][]string{
 		"docs:document:export", "drive:file:download",
 	},
 
-	// approval: approval:task is needed for user-token approval task queries
+	// approval shortcuts: definition read + official uat instance/task user-token flows.
 	"approval": {
-		"approval:task",
+		"approval:approval:readonly",
+		"approval:instance:read", "approval:instance:write",
+		"approval:task:read", "approval:task:write",
 	},
 
 	// 注意：attendance 顶层命令（user-task query / user-stats query）走 tenant_access_token
@@ -173,8 +175,9 @@ var extraDomainScopes = map[string][]string{
 	// 完整对照见 `feishu-cli event schema <key>`。
 	"event": {
 		// IM 事件最常用
-		"im:message", "im:message.group_msg", "im:message:readonly",
-		"im:chat", "im:chat.members", "im:chat:readonly",
+		"im:message.p2p_msg:readonly",
+		"im:message", "im:message:readonly", "im:message.reactions:read",
+		"im:chat:read", "im:chat.members:read", "im:chat.members:bot_access",
 		// 联系人
 		"contact:user.base:readonly",
 		// 日历

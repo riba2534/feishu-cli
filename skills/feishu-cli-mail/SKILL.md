@@ -147,7 +147,7 @@ feishu-cli mail draft-edit --draft-id $DRAFT_ID --to user@example.com --subject 
 - **Mailbox 定位**：`--mailbox` 默认 `me`（当前登录用户），也可以传具体邮箱地址（前提是当前 Token 有权限）。
 - **subject 去重**：`reply` 自动避免 `Re: Re:` 重复；`forward` 自动避免 `Fwd: Fwd:` 重复。
 - **In-Reply-To / References**：`reply/reply-all` 自动从原邮件的 `smtp_message_id` / `references` 继承，确保邮件客户端正确展示对话线程。
-- **附件 / CID 图片暂不支持**：首期 EML builder 是简化版。如需附件，请在 feishu Web 手动处理或等后续迭代。
+- **普通附件暂不支持**：首期 EML builder 仍不处理普通附件；CID 内联图片已由 `mail send --inline-images-auto-scan` 支持，仅在 HTML body 下生效。
 - **批量 messages 上限**：取决于飞书 API 端；本命令不做数量校验，但通常建议 ≤50 条。
 
 ## 高级能力（v1.23+ mail-advanced）
@@ -170,7 +170,7 @@ feishu-cli mail send --to user@example.com --subject "周报" \
   --body "$(cat report.html)" --html --inline-images-auto-scan --confirm-send
 ```
 
-### 邮件模板 CRUD
+### 邮件模板 create/list（MVP）
 
 ```bash
 # 创建模板（body 直接传字符串；读文件请用 shell 展开）

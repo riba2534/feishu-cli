@@ -26,15 +26,14 @@ func TestApprovalInstanceCancelCmdRegistered(t *testing.T) {
 	}
 }
 
-// TestApprovalInstanceCancelFlagsDefaults 验证 flag 注册，旧参数保持兼容但隐藏
+// TestApprovalInstanceCancelFlagsDefaults 验证正式接口所需 flag 已注册。
 func TestApprovalInstanceCancelFlagsDefaults(t *testing.T) {
-	want := []string{"approval-code", "instance-code", "user-id", "user-id-type", "user-access-token"}
+	want := []string{"instance-code", "user-access-token"}
 	for _, n := range want {
 		if approvalInstanceCancelCmd.Flags().Lookup(n) == nil {
 			t.Errorf("--%s missing", n)
 		}
 	}
-	assertHiddenFlags(t, approvalInstanceCancelCmd, "approval-code", "user-id", "user-id-type")
 }
 
 // TestApprovalInstanceCancelRequiredFlags 验证必填
@@ -42,17 +41,32 @@ func TestApprovalInstanceCancelRequiredFlags(t *testing.T) {
 	assertRequiredFlags(t, approvalInstanceCancelCmd, "instance-code")
 }
 
-// TestApprovalInstanceCcFlags 验证 cc 子命令只要求当前接口实际需要的参数
+// TestApprovalInstanceCcFlags 验证 cc 子命令要求正式接口实际需要的参数
 func TestApprovalInstanceCcFlags(t *testing.T) {
-	assertHiddenFlags(t, approvalInstanceCcCmd, "approval-code", "user-id")
 	assertRequiredFlags(t, approvalInstanceCcCmd, "instance-code", "cc-user-ids")
 }
 
-// TestApprovalTaskActionFlags 验证 approve/reject 子命令不再暴露旧参数
+func TestApprovalInstanceGetFlags(t *testing.T) {
+	assertRequiredFlags(t, approvalInstanceGetCmd, "instance-code")
+}
+
+// TestApprovalTaskActionFlags 验证 approve/reject 子命令要求正式接口实际需要的参数
 func TestApprovalTaskActionFlags(t *testing.T) {
 	for _, cmd := range []*cobra.Command{approvalTaskApproveCmd, approvalTaskRejectCmd} {
-		assertHiddenFlags(t, cmd, "approval-code", "user-id", "user-id-type")
 		assertRequiredFlags(t, cmd, "instance-code", "task-id")
+	}
+}
+
+func TestApprovalTaskTransferFlags(t *testing.T) {
+	assertRequiredFlags(t, approvalTaskTransferCmd, "instance-code", "task-id", "transfer-user-id")
+}
+
+func TestApprovalResourceAliases(t *testing.T) {
+	if len(approvalInstanceCmd.Aliases) == 0 || approvalInstanceCmd.Aliases[0] != "instances" {
+		t.Fatalf("approval instance aliases = %#v, want instances", approvalInstanceCmd.Aliases)
+	}
+	if len(approvalTaskCmd.Aliases) == 0 || approvalTaskCmd.Aliases[0] != "tasks" {
+		t.Fatalf("approval task aliases = %#v, want tasks", approvalTaskCmd.Aliases)
 	}
 }
 

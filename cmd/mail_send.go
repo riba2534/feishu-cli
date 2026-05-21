@@ -47,10 +47,6 @@ var mailSendCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token, err := requireUserToken(cmd, "mail send")
-		if err != nil {
-			return err
-		}
 
 		mailbox, _ := cmd.Flags().GetString("mailbox")
 		toRaw, _ := cmd.Flags().GetString("to")
@@ -66,6 +62,10 @@ var mailSendCmd = &cobra.Command{
 		autoScanInline, _ := cmd.Flags().GetBool("inline-images-auto-scan")
 		output, _ := cmd.Flags().GetString("output")
 
+		if forceHTML && plainText {
+			return fmt.Errorf("--html 与 --plain-text 互斥，只能指定其中一个")
+		}
+
 		to, err := parseEmailList(toRaw)
 		if err != nil {
 			return err
@@ -78,6 +78,11 @@ var mailSendCmd = &cobra.Command{
 			return err
 		}
 		bcc, err := parseEmailList(bccRaw)
+		if err != nil {
+			return err
+		}
+
+		token, err := requireUserToken(cmd, "mail send")
 		if err != nil {
 			return err
 		}

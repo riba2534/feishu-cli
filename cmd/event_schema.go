@@ -42,6 +42,12 @@ var eventSchemaCmd = &cobra.Command{
 		} else {
 			fmt.Println("Scopes:       -")
 		}
+		if len(def.AuthTypes) > 0 {
+			fmt.Printf("Auth Types:   %s\n", strings.Join(def.AuthTypes, ", "))
+		}
+		if len(def.RequiredConsoleEvents) > 0 {
+			fmt.Printf("Console:      %s\n", strings.Join(def.RequiredConsoleEvents, ", "))
+		}
 		if def.PayloadSchema != "" {
 			fmt.Println("\nPayload Schema (示例):")
 			for _, line := range strings.Split(def.PayloadSchema, "\n") {

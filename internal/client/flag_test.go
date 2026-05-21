@@ -1,6 +1,9 @@
 package client
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 // TestFlagConstantsMatchServerSchema 锁住服务端实际枚举值，
 // 防止后续修改时误写成 0/1/2 顺序（参考 lark-cli shortcuts/im/helpers.go）。
@@ -59,5 +62,17 @@ func TestParseFlagFlagType(t *testing.T) {
 		if err == nil && got != c.want {
 			t.Errorf("ParseFlagFlagType(%q) = %d, want %d", c.in, got, c.want)
 		}
+	}
+}
+
+func TestNewFlagItemSerializesEnumsAsStrings(t *testing.T) {
+	item := newFlagItem("om_xxx", flagItemTypeMsgThread, flagFlagTypeFeed)
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	want := `{"item_id":"om_xxx","item_type":"11","flag_type":"1"}`
+	if string(data) != want {
+		t.Fatalf("FlagItem JSON = %s, want %s", data, want)
 	}
 }
