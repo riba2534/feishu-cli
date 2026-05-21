@@ -426,3 +426,245 @@ func approvalTaskAPIToInfo(task *approvalTaskAPIInfo) *ApprovalTaskInfo {
 
 	return info
 }
+
+// CreateApprovalInstanceOptions represents options for creating an approval instance.
+// 创建审批实例参数（POST /open-apis/approval/v4/instances）
+type CreateApprovalInstanceOptions struct {
+	ApprovalCode           string          // 必填：审批定义 code
+	UserID                 string          // 必填：发起人 ID（open_id 或 user_id，对应 UserIDType；endpoint 不支持 union_id）
+	Form                   string          // 必填：表单数据 JSON 字符串
+	UserIDType             string          // 可选：open_id / user_id，默认 open_id（v4/instances body 只接受这两种；union_id 会被拒绝）
+	DepartmentID           string          // 可选：发起人部门
+	OpenChatID             string          // 可选：发送结果到的群聊
+	NodeApproverUserIDList json.RawMessage // 可选：节点指定审批人，JSON 原文
+	NodeCCUserIDList       json.RawMessage // 可选：节点指定抄送人，JSON 原文
+}
+
+// CreateApprovalInstanceResult 创建实例返回结果，仅暴露常用字段。
+type CreateApprovalInstanceResult struct {
+	InstanceCode string `json:"instance_code"`
+}
+
+// CancelApprovalInstanceOptions represents options for cancelling an approval instance.
+// 取消审批实例参数（POST /open-apis/approval/v4/instances/uat_cancel）
+type CancelApprovalInstanceOptions struct {
+	ApprovalCode string // 兼容旧 flag；当前 cancel 端点不使用
+	InstanceCode string // 必填：审批实例 code
+	UserID       string // 兼容旧 flag；当前 cancel 端点不使用
+	UserIDType   string // 兼容旧 flag；当前 cancel 端点不使用
+}
+
+// CCApprovalInstanceOptions represents options for cc'ing an approval instance.
+// 抄送审批实例参数（POST /open-apis/approval/v4/instances/uat_cc）
+type CCApprovalInstanceOptions struct {
+	ApprovalCode string   // 兼容旧 flag；当前 cc 端点不使用
+	InstanceCode string   // 必填：审批实例 code
+	UserID       string   // 兼容旧 flag；当前 cc 端点不使用
+	CCUserIDs    []string // 必填：被抄送用户 ID 列表
+	Comment      string   // 可选：抄送备注
+	UserIDType   string   // 可选：open_id / user_id / union_id
+}
+
+// ApprovalTaskActionOptions represents shared options for task approve/reject.
+// 通过/拒绝审批任务参数（POST /open-apis/approval/v4/tasks/uat_approval 或 uat_reject）
+type ApprovalTaskActionOptions struct {
+	ApprovalCode string // 兼容旧 flag；当前 task 端点不使用
+	InstanceCode string // 必填：审批实例 code
+	TaskID       string // 必填：审批任务 ID
+	UserID       string // 兼容旧 flag；当前 task 端点不使用
+	Comment      string // 可选：审批意见
+	Form         string // 可选：表单数据（更新表单时使用），JSON 字符串
+	UserIDType   string // 兼容旧 flag；当前 task 端点不使用
+}
+
+// genericApprovalAPIResp 解析审批写接口的通用响应（多数返回 data 为空或仅含 instance_code）。
+type genericApprovalAPIResp struct {
+	Code int             `json:"code"`
+	Msg  string          `json:"msg"`
+	Data json.RawMessage `json:"data"`
+}
+
+// doApprovalPost 统一发起审批 POST 调用，支持透传 user_id_type 查询参数 + user/tenant token。
+func doApprovalPost(apiPath string, body map[string]any, userIDType, userAccessToken, action string) (json.RawMessage, error) {
+	c, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	if userIDType != "" {
+		sep := "?"
+		if strings.Contains(apiPath, "?") {
+			sep = "&"
+		}
+		apiPath = apiPath + sep + "user_id_type=" + userIDType
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := c.Post(Context(), apiPath, body, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("%s失败: %w", action, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s失败: HTTP %d, body: %s", action, resp.StatusCode, string(resp.RawBody))
+	}
+
+	var apiResp genericApprovalAPIResp
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析%s响应失败: %w", action, err)
+	}
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("%s失败: code=%d, msg=%s", action, apiResp.Code, apiResp.Msg)
+	}
+	return apiResp.Data, nil
+}
+
+// buildCreateApprovalInstanceBody 装配 POST /approval/v4/instances 的 body map +
+// 返回 normalized user_id_type（仅用于错误信息 / 单测断言 / 未来 endpoint 扩展，**不用于拼 query**）。
+//
+// 关键语义（飞书审批 v4 文档 + oapi-sdk-go InstanceCreate struct + CreateInstanceReqBuilder 三方校对）：
+//   - 该端点 body 只有 user_id 和 open_id 两个身份字段，**不接受 union_id**
+//   - SDK CreateInstanceReqBuilder (oapi-sdk-go/v3 model.go L13990-14015) **不暴露
+//     UserIdType() builder method**，对比 cancel/cc/task builder 显式有 UserIdType
+//     设置 QueryParams——证明该端点不依赖 user_id_type query；CreateApprovalInstance
+//     调 doApprovalPost 传 "" 不附加 query 是正确做法
+//   - user_id 优先级高于 open_id（同时存在时 open_id 被忽略），所以 ou_xxx 必须落 open_id 字段
+//   - 空 UserIDType normalize 成 open_id，与 cmd 层默认一致
+func buildCreateApprovalInstanceBody(opts CreateApprovalInstanceOptions) (map[string]any, string, error) {
+	if strings.TrimSpace(opts.ApprovalCode) == "" {
+		return nil, "", fmt.Errorf("approval_code 不能为空")
+	}
+	if strings.TrimSpace(opts.UserID) == "" {
+		return nil, "", fmt.Errorf("user_id 不能为空")
+	}
+	if strings.TrimSpace(opts.Form) == "" {
+		return nil, "", fmt.Errorf("form 不能为空")
+	}
+
+	body := map[string]any{
+		"approval_code": opts.ApprovalCode,
+		"form":          opts.Form,
+	}
+	uidType := strings.TrimSpace(opts.UserIDType)
+	if uidType == "" {
+		uidType = "open_id"
+	}
+	switch uidType {
+	case "open_id":
+		body["open_id"] = opts.UserID
+	case "user_id":
+		body["user_id"] = opts.UserID
+	default:
+		return nil, "", fmt.Errorf("approval/v4/instances 不支持 user_id_type=%q（仅支持 open_id / user_id；"+
+			"该端点 body 只有 open_id 和 user_id 两个字段，参 SDK InstanceCreate struct）", opts.UserIDType)
+	}
+	if opts.DepartmentID != "" {
+		body["department_id"] = opts.DepartmentID
+	}
+	if opts.OpenChatID != "" {
+		body["open_chat_id"] = opts.OpenChatID
+	}
+	if len(opts.NodeApproverUserIDList) > 0 {
+		var v any
+		if err := json.Unmarshal(opts.NodeApproverUserIDList, &v); err != nil {
+			return nil, "", fmt.Errorf("解析 node_approver_user_id_list 失败: %w", err)
+		}
+		body["node_approver_user_id_list"] = v
+	}
+	if len(opts.NodeCCUserIDList) > 0 {
+		var v any
+		if err := json.Unmarshal(opts.NodeCCUserIDList, &v); err != nil {
+			return nil, "", fmt.Errorf("解析 node_cc_user_id_list 失败: %w", err)
+		}
+		body["node_cc_user_id_list"] = v
+	}
+	return body, uidType, nil
+}
+
+// CreateApprovalInstance 创建一条审批实例，返回 instance_code。
+func CreateApprovalInstance(opts CreateApprovalInstanceOptions, userAccessToken string) (*CreateApprovalInstanceResult, error) {
+	body, _, err := buildCreateApprovalInstanceBody(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// 不传 user_id_type query —— 该端点用 body 字段（open_id / user_id）区分身份，
+	// SDK CreateInstanceReqBuilder 也不暴露 UserIdType()。传 normalized 进 query 服务端
+	// 会忽略，是无意义的额外 byte。（cancel/cc/task 端点才依赖 query，那几条路径仍传 opts.UserIDType）
+	data, err := doApprovalPost("/open-apis/approval/v4/instances", body, "", userAccessToken, "创建审批实例")
+	if err != nil {
+		return nil, err
+	}
+
+	result := &CreateApprovalInstanceResult{}
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, result); err != nil {
+			return nil, fmt.Errorf("解析创建审批实例响应失败: %w", err)
+		}
+	}
+	return result, nil
+}
+
+// CancelApprovalInstance 取消（撤回）已发起的审批实例。
+func CancelApprovalInstance(opts CancelApprovalInstanceOptions, userAccessToken string) error {
+	if strings.TrimSpace(opts.InstanceCode) == "" {
+		return fmt.Errorf("instance_code 不能为空")
+	}
+
+	body := map[string]any{
+		"instance_code": opts.InstanceCode,
+	}
+	_, err := doApprovalPost("/open-apis/approval/v4/instances/uat_cancel", body, "", userAccessToken, "取消审批实例")
+	return err
+}
+
+// CCApprovalInstance 抄送审批实例给指定用户。
+func CCApprovalInstance(opts CCApprovalInstanceOptions, userAccessToken string) error {
+	if strings.TrimSpace(opts.InstanceCode) == "" {
+		return fmt.Errorf("instance_code 不能为空")
+	}
+	if len(opts.CCUserIDs) == 0 {
+		return fmt.Errorf("cc_user_ids 不能为空")
+	}
+
+	body := map[string]any{
+		"instance_code": opts.InstanceCode,
+		"cc_user_ids":   opts.CCUserIDs,
+	}
+	if opts.Comment != "" {
+		body["comment"] = opts.Comment
+	}
+	_, err := doApprovalPost("/open-apis/approval/v4/instances/uat_cc", body, opts.UserIDType, userAccessToken, "抄送审批实例")
+	return err
+}
+
+// ApproveApprovalTask 通过指定审批任务。
+func ApproveApprovalTask(opts ApprovalTaskActionOptions, userAccessToken string) error {
+	return runApprovalTaskAction("/open-apis/approval/v4/tasks/uat_approval", opts, userAccessToken, "通过审批任务")
+}
+
+// RejectApprovalTask 拒绝指定审批任务。
+func RejectApprovalTask(opts ApprovalTaskActionOptions, userAccessToken string) error {
+	return runApprovalTaskAction("/open-apis/approval/v4/tasks/uat_reject", opts, userAccessToken, "拒绝审批任务")
+}
+
+func runApprovalTaskAction(apiPath string, opts ApprovalTaskActionOptions, userAccessToken, action string) error {
+	if strings.TrimSpace(opts.InstanceCode) == "" {
+		return fmt.Errorf("instance_code 不能为空")
+	}
+	if strings.TrimSpace(opts.TaskID) == "" {
+		return fmt.Errorf("task_id 不能为空")
+	}
+
+	body := map[string]any{
+		"instance_code": opts.InstanceCode,
+		"task_id":       opts.TaskID,
+	}
+	if opts.Comment != "" {
+		body["comment"] = opts.Comment
+	}
+	if opts.Form != "" {
+		body["form"] = opts.Form
+	}
+	_, err := doApprovalPost(apiPath, body, "", userAccessToken, action)
+	return err
+}

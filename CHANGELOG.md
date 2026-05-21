@@ -6,6 +6,492 @@
 
 ## 未发布
 
+### 新增 — `event` 模块（WebSocket 实时事件订阅 + daemon 进程管理）
+
+新增 `feishu-cli event` 命令族，对齐 lark-cli `event` shortcut（list / schema / consume / status / stop），
+通过飞书 WebSocket 长连接接收应用事件并以 NDJSON 输出到 stdout。
+
+**背景**：lark-cli 提供了完整的 `event consume <EventKey>` 实时事件订阅链路（含 daemon + bus.json 状态文件），
+feishu-cli 之前完全没有事件订阅能力，AI Agent 想做 bot 实时响应只能切换到 lark-cli 或自写 WebSocket
+客户端。本 PR 在 feishu-cli 代码风格下重新实现，让单工具栈即可完成消息接收、群成员变更监听、审批
+事件订阅等长连接场景。
+
+**新增子命令**：
+
+- `event list [--json]` — 列出所有支持的 EventKey（按 domain 分组：im / contact / calendar / drive / approval / vc 共 22+ 个）
+- `event schema <key> [--json]` — 查看某个 EventKey 的 EventType / scope / payload schema 示例
+- `event consume <key>` — 启动 WebSocket 长连接订阅（阻塞，事件流→stdout NDJSON）
+- `event status [--json]` — 查看本机所有 consume 进程（PID/EventKey/启动时间/uptime）
+- `event stop {--pid N | --event-key K | --all} [--force] [--json]` — 停止 consume 进程
+
+**Consume 关键 flag**：
+
+- `--max-events N` — 接收 N 条事件后退出（0=不限制）
+- `--timeout 30s` — 运行时长上限（0=不限制）
+- `--jq .event.message` — 极简点路径过滤（不支持完整 jq 语法，用 pipe 接外部 jq）
+- `--output-dir ./events` — 每条事件 dump 为 `<event_id>.json` 落盘
+- `--quiet` — 抑制 stderr 诊断（AI Agent 慎用，会一起抑制 ready marker）
+
+**Daemon / 进程模型**：
+
+- 每个 `event consume` 进程 = 一个独立 OS 进程 + 一个 WebSocket 长连接（一个 EventKey）
+- 状态文件 `~/.feishu-cli/events/<app_id>/bus.json`（每个 AppID 一个目录）：consume 启动写入 PID/EventKey/启动时间，退出时移除
+- 跨进程互斥 `~/.feishu-cli/events/<app_id>/bus.lock`（flock 文件锁，fd 关闭自动释放）
+- 原子写：tmp + os.Rename 防止半写
+- 进程探活：signal(0) 检测 PID 存活，status 命令自动清理僵尸条目
+- 重连策略：复用 oapi-sdk-go v3 `ws.Client.WithAutoReconnect(true)`，断线无限重试（间隔 2 分钟 + 首次随机抖动）
+- 与 lark-cli 差异：lark-cli 用独立 daemon + Unix socket 做事件 fan-out；feishu-cli 简化为每个 consume 直连 WebSocket，
+  不做事件分发——足够覆盖 AI Agent 单 EventKey 订阅的主线场景，省去 IPC 复杂度
+
+**Subprocess 协议**（兼容 AI Agent 子进程调度）：
+
+- 启动后 stderr 立即输出 `[event] ready event_key=<key>`，父进程应阻塞 stderr 等该行出现后再读 stdout
+- 非 TTY 模式下 stdin EOF = shutdown 信号（适配 `< /dev/null` / `nohup` 等场景）
+- 退出码 0：正常退出（达到 --max-events / --timeout / SIGTERM / Ctrl-C），非 0：startup 失败或 ws 不可恢复错误
+
+**Scope 要求**：默认 App Token；具体 scope 因 EventKey 而异（`event schema <key>` 查看）。已加入
+`--domain event --recommend` 推荐列表，覆盖 IM/联系人/日历/云盘/审批/VC 常用 scope 并集。
+
+**代码影响范围**：
+
+- 新增 `cmd/event.go`（顶层命令）+ `cmd/event_{list,schema,consume,status,stop}.go`（5 个子命令）
+- 新增 `internal/event/{keys,bus,runtime}.go`（EventKey 注册表 + bus.json 状态管理 + WebSocket runtime）
+- 新增 `cmd/event_test.go` + `internal/event/{keys,bus,runtime}_test.go`（mock 单测）
+- 新增 `cmd/event_smoke_test.go`（`//go:build smoke` 本地真实 WebSocket 端到端测试）
+- 修改 `internal/registry/domain_alias.go`：新增 `event` domain scope 推荐列表
+- 修改 `go.sum`：补全 `larksuite/oapi-sdk-go/v3/ws` 子包的传递依赖（gorilla/websocket、gogo/protobuf；均为 indirect，无新顶层依赖）
+### 新增 — `attendance` 考勤查询模块
+
+新增 `attendance` 顶层命令组（别名 `att`），覆盖飞书考勤 OpenAPI 两类查询：
+
+- `feishu-cli attendance user-task query` —— 按日期范围查询用户上下班打卡记录
+  （`POST /open-apis/attendance/v1/user_tasks/query`，单次最多 50 用户）
+- `feishu-cli attendance user-stats query` —— 查询日度 / 月度考勤统计
+  （`POST /open-apis/attendance/v1/user_stats_datas/query`，单次最多 200 用户，
+  起止跨度 ≤ 31 天）
+
+**特性**：
+
+- 日期参数同时接受 `YYYY-MM-DD` 与 `YYYYMMDD`，自动转换为 API 所需的 `yyyyMMdd` 整数
+- 输出双模：默认 `text` 人类可读（打卡时间 / 结果 / 加班标记 / 统计字段标题），
+  `-o json` 直出归一化结构体，便于 AI Agent 与脚本消费
+- 同时打印 `invalid_user_ids` / `unauthorized_user_ids`，提示无效或无权限用户
+- user-task ≤ 50、user-stats ≤ 200 用户数本地预校验，避免无谓远程请求
+- user-stats 起止跨度 > 31 天本地预校验，避免触发 OpenAPI 报错
+- 全部命令走 tenant_access_token（即应用身份）：larksuite/oapi-sdk-go v3.5.3 中
+  `Attendance.UserTask.Query` / `Attendance.UserStatsData.Query` 的
+  `SupportedAccessTokenTypes` 仅含 `Tenant`，传入 user token 会被 SDK 拒绝
+
+**权限要求**：应用需在飞书开放平台「应用权限管理」页面获得
+`attendance:task:readonly` 权限（tenant 级），无需 `auth login`。
+### 新增 — `msg flag`：消息书签（收藏 / 列表 / 取消）
+
+新增 `feishu-cli msg flag {create,list,cancel}` 三个子命令，对应飞书 OpenAPI `/im/v1/flags`，
+覆盖消息书签的完整生命周期。
+
+**支持的两层书签模型**：
+
+| item_type  | flag_type | 场景                                |
+| ---------- | --------- | ----------------------------------- |
+| default    | message   | 消息层书签（最常见，默认值）        |
+| thread     | feed      | topic-style 话题群 feed 层（侧边栏）|
+| msg_thread | feed      | 普通群消息线程 feed 层              |
+
+其余组合服务端会拒绝，CLI 默认值为 `default + message` 即可覆盖 90% 用例。
+
+**实现说明**：飞书 Open SDK v3 当前未封装 flag 接口，使用通用 HTTP client（`client.Post` /
+`client.Get`）直接调用，与 `comment reply add` 同套路。
+
+**权限要求**：User Token；`list` 需要 `im:feed.flag:read`，`create/cancel` 需要 `im:feed.flag:write`
+### 新增 — `okr` 模块：OKR 周期和进展记录
+
+新增 `feishu-cli okr` 命令组，覆盖 OKR 最高频的 3 个操作：
+
+- `okr cycle list` — 获取当前租户的所有 OKR 周期（`/open-apis/okr/v1/periods`，租户级全局列表，自动分页）
+- `okr progress list --objective-id 7xxx | --key-result-id 7xxx` — 列出某个目标 / 关键结果下的所有进展记录
+- `okr progress create --objective-id 7xxx | --key-result-id 7xxx --content "..."` — 创建一条进展记录，
+  支持纯文本（`--content`，自动包装为 ContentBlock）或原始富文本（`--content-json`）；
+  可附带 `--progress-percent` + `--progress-status` 标记进度；
+  `--source-url` 飞书侧必填，CLI 默认填 `https://www.feishu.cn/okr/progress` placeholder，可显式覆盖
+
+**实现要点**：
+
+- `progress create` 走飞书 Open SDK v3.5.3 的 `Okr.ProgressRecord.Create`；
+  `cycle list` 走通用 HTTP client 直调 `/open-apis/okr/v1/periods`（v1/periods 是租户级，不按用户过滤）；
+  `progress list` 走通用 HTTP client 直调 `/open-apis/okr/v2/...`
+- 所有命令默认使用 User Token，会自动读取 `~/.feishu-cli/token.json`；
+  也可以通过 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 显式覆盖
+- 时间戳统一格式化为本地时区 `YYYY-MM-DD HH:MM:SS`，方便人眼阅读
+
+**权限要求（User Token scope）**：
+
+| 命令              | scope                                              |
+|-------------------|----------------------------------------------------|
+| `cycle list`      | `okr:okr:readonly` 或 `okr:okr.period:readonly`    |
+| `progress list`   | `okr:okr:readonly` 或 `okr:okr.progress:readonly`  |
+| `progress create` | `okr:okr` 或 `okr:okr.progress:writeonly`          |
+
+**使用示例**：
+
+```bash
+feishu-cli auth login --domain event --recommend
+
+# 列出所有 EventKey
+feishu-cli event list
+
+# 查看 IM 接收消息事件的字段
+feishu-cli event schema im.message.receive_v1
+
+# 订阅（Ctrl-C 退出）
+feishu-cli event consume im.message.receive_v1
+
+# 调试：抓 5 条事件后自动退出
+feishu-cli event consume im.message.receive_v1 --max-events 5 --timeout 60s
+
+# 并发订阅多个 EventKey（每个进程一个 EventKey）
+feishu-cli event consume im.message.receive_v1 > receive.ndjson 2> receive.log &
+feishu-cli event consume im.chat.member.user.added_v1 > member.ndjson 2> member.log &
+feishu-cli event status                       # 查看活跃进程
+feishu-cli event stop --all                   # 一键停止
+```
+
+### 新增 — `doctor` 命令（健康检查 / 配置 / 认证 / 网络 / 依赖一把验）
+
+新增 `feishu-cli doctor` 命令，对齐 lark-cli `doctor` 体验，跑一组本地诊断快速验证 CLI 状态。
+
+**6 项检查**：
+- `config_file` — app_id / app_secret 是否就位
+- `user_token` — token.json 状态（valid / needs_refresh / expired）
+- `endpoint_open` — `open.feishu.cn` HTTPS 可达性 + RTT
+- `endpoint_larksuite` — `open.larksuite.com` HTTPS 可达性 + RTT
+- `proxy` — HTTPS_PROXY 与 NO_PROXY 配置（缺飞书域 warn）
+- `dependencies` — Go 版本 + larksuite/oapi-sdk-go 版本
+
+**flag**：`--json` 机器可读输出 / `--offline` 跳过网络检查 / `--only user_token,proxy` 仅运行指定项。
+
+**退出码**：0 = 全 pass / 1 = 任一 fail。
+
+**使用示例**：
+
+```bash
+feishu-cli doctor                              # pretty 输出全检查
+feishu-cli doctor --json                       # JSON 输出（AI agent 自检友好）
+feishu-cli doctor --offline                    # 跳过网络
+feishu-cli doctor --only user_token,proxy      # 仅跑指定项
+```
+
+**代码影响范围**：新增 `cmd/doctor.go`（6 项检查 + pretty/JSON 输出）和 `cmd/doctor_test.go`（parseOnly / shouldRun / proxy / dependencies 单测）；不引入新依赖。
+
+### 新增 — `slides` 模块：Slides 演示文稿创建与媒体上传
+
+新增 `feishu-cli slides` 顶层命令，提供两个子命令支撑 Slides 演示文稿的最小可用工作流：
+
+- `slides create [--title <name>] [--width <px>] [--height <px>] [--output json]`
+  调用 `POST /open-apis/slides_ai/v1/xml_presentations` 创建空白演示文稿，返回 `xml_presentation_id` /
+  `revision_id` / `title`。默认尺寸 960x540。
+- `slides media-upload --file <path> --presentation-token <xml_presentation_id> [--output json]`
+  本地图片走 `/open-apis/drive/v1/medias/upload_all` 上传到指定演示文稿，返回 `file_token`
+  可直接作为 slide XML 中 `<img src="...">` 引用。
+
+**关键实现细节**：
+
+- 上传 `parent_type` 固定为 `slide_file`（lark-cli 实测：`slide_image` / `slides_image` /
+  `slides_file` 都会被拒）；`parent_node` 必须为目标 `xml_presentation_id`
+- 单文件上限 20 MB（多分片 `upload_prepare` 不接受 `parent_type=slide_file`）
+- 共用 `internal/client/drive.go::UploadMediaWithExtra` 上传链路
+
+**权限要求**：
+
+- 创建：`slides:presentation:create` 或 `slides:presentation:write_only`
+- 上传：`docs:document.media:upload`
+### 新增 — `mail` 高级能力：CID 内联图片 + 邮件模板（MVP）
+
+为 `mail` 模块补齐两块进阶能力，对齐 lark-cli `mail +send` / `mail +template-create` 的核心子集。
+
+**1. `mail send --inline-images-auto-scan`（CID 内联图片）**
+
+HTML body 中所有 `<img src="本地相对/绝对路径">` 会被自动扫描：
+
+1. 跳过已经是 `cid:` / `http(s):` / `data:` / `//` scheme 的引用
+2. 同一本地路径只上传一次（去重）
+3. 每张图独立生成 20-hex CID
+4. 走 `drive/v1/medias/upload_all`（`parent_type=email`，`parent_node = 当前登录用户 open_id`）
+5. EML 走 `multipart/related`：HTML 段 + 每张图一个 `Content-ID: <cid>`、`Content-Disposition: inline` 的 part
+6. 改写 `src` 为 `cid:<cid>` 后回写到 body
+
+依赖 `~/.feishu-cli/user_profile.json` 中缓存的 open_id（`auth login` 后自动写入）。
+
+**2. `mail template create` / `mail template list`（邮件模板 MVP）**
+
+- `mail template create --name xxx --subject xxx --body xxx [--to ... --cc ... --bcc ... --plain-text]`
+  调用 `POST /open-apis/mail/v1/user_mailboxes/{id}/templates`
+- `mail template list [--mailbox me]`
+  调用 `GET /open-apis/mail/v1/user_mailboxes/{id}/templates`（接口不分页，一次返回所有 id+name）
+
+底层 client 也实现了 `GetMailTemplate` / `UpdateMailTemplate` / `DeleteMailTemplate`，但 CLI 层目前只暴露 create/list（MVP）。
+
+**权限要求**：
+
+- User Access Token
+- `mail:user_mailbox:readonly` / `mail:user_mailbox.message:modify` / `mail:user_mailbox.message:send`
+- 模板相关 scope：`mail:user_mailbox:readonly`、`mail:user_mailbox.message:modify`
+
+⚠️ **模板接口依赖邮箱读写相关权限** —— 命令本身实现完整、参数校验完整、EML/JSON payload
+正确；如果调用模板 API 时返回 scope 校验失败（401/permission denied），请补开邮箱读写权限后重试。
+CID 内联图片功能不依赖此 scope，已可正常使用。
+### 新增 — `profile`：多配置（profile）管理
+
+新增 `feishu-cli profile` 顶层命令，让一台机器在多个飞书账号 / 应用之间快速切换。
+解决长期痛点：原 `~/.feishu-cli/{config.yaml,token.json}` 单实例布局，切账号必须手动备份/恢复
+或者来回 `mv`，对同时需要 work / personal、或者 feishu.cn / larksuite.com 双端的用户极不友好。
+
+**子命令**：
+
+- `profile add <name> [--app-id ... --app-secret ... --base-url ... --use]` 新建 profile
+- `profile list` (alias `ls`) 列出所有 profile，标注 active 列；`--json` 适合脚本/AI Agent
+- `profile use <name>` (alias `switch`/`checkout`) 切换 active；`use -` 切回上一个
+- `profile current` 显示当前 active profile 名 + 目录
+- `profile rename <old> <new>` (alias `mv`) 重命名，自动同步指针
+- `profile remove <name>` (alias `rm`/`delete`) 删除 profile；`--force` 跳过二次确认
+- `profile migrate [--name default] [--force]` 把旧布局 `~/.feishu-cli/{config,token}.json` 拷到 `profiles/<name>/`（原文件保留，让用户确认无误后手动清理）
+
+**目录布局**：
+
+```
+~/.feishu-cli/
+  config.yaml                # 旧布局，profile 系统未启用时仍读这里（无感升级）
+  token.json
+  active-profile             # 一行文本：当前 profile 名
+  previous-profile           # 一行文本：上一个 profile 名（支持 use -）
+  profiles/
+    work/
+      config.yaml
+      token.json
+      user_profile.json
+    personal/
+      ...
+```
+
+**向后兼容设计**：
+
+- 没有任何 profile 时，`internal/config` 和 `internal/auth` 仍走旧路径，老用户零感知升级
+- `profile add` **不会** 自动迁移旧文件——避免静默丢数据；要迁就显式 `profile migrate`
+- `FEISHU_PROFILE=<name>` 环境变量临时覆盖（不写指针文件），适合 CI / 一次性切换
+
+**安全**：
+
+- profile 名仅允许 `[A-Za-z0-9_-]{1,64}`，禁止 `.`/`..`/路径分隔符等注入字符
+- 保留名 `profiles` / `cache` 不可作为 profile 名
+- 写入操作通过进程内 mutex 串行化；指针文件原子写（`.tmp` + rename）
+- 所有 profile 目录默认 `0700` 权限，含 token.json 等敏感文件
+
+**测试**：`internal/profile/store_test.go` 21 个测试，全部用 `t.TempDir()` 隔离，覆盖
+ValidateName / List 字典序 / Create / Remove / Rename / Use 含 `-` 切换 / `MigrateLegacy`
+含 `--force` 覆盖 / `FEISHU_PROFILE` 环境变量优先级 / `ActiveDir` 新旧布局切换。
+
+**示例**：
+
+```bash
+# 创建一个标题为 "Q2 OKR" 的演示文稿
+feishu-cli slides create --title "Q2 OKR" --output json
+
+# 把封面图上传到该演示文稿
+feishu-cli slides media-upload --file ./cover.png \
+    --presentation-token <xml_presentation_id>
+```
+### 新增 — `schema` 命令：本地浏览飞书 OpenAPI 方法（path / 参数 / scope）
+
+新增 `feishu-cli schema [service.resource.method]` 子命令，无需 token、纯本地查询飞书
+开放平台 OpenAPI 方法的 HTTP path / 动词 / 参数 / 请求体 / 响应体 / scope / 文档链接。
+对齐 `larksuite/cli` 的 `schema` 子命令，便于 AI Agent 和脚本作者快速查找参数。
+
+**用法**：
+
+```bash
+feishu-cli schema                                # 列出所有可用 service（12 个）
+feishu-cli schema im                             # 列出 im 域下所有 resource.method
+feishu-cli schema im.messages                    # 列出 messages 资源下所有 method
+feishu-cli schema im.messages.delete             # 查看具体 method 详情
+feishu-cli schema im.messages.delete --format json   # JSON 输出（AI Agent 推荐）
+feishu-cli schema list --service drive           # 等价于 schema drive，支持 --format json
+```
+
+**数据源**：`internal/registry/meta_data.json`（编译期 embed），与认证模块复用同一份元数据。
+当前覆盖 12 个 service：approval / attendance / calendar / drive / im / mail / minutes /
+sheets / slides / task / vc / wiki。
+
+**输出含**：HTTP verb + 完整 path、parameters（含 path / query / required 标记）、
+requestBody（嵌套字段）、responseBody、accessTokens（user / tenant）、scopes、docUrl。
+
+# 查询本人最近一周打卡
+feishu-cli attendance user-task query \
+    --employee-type open_id \
+    --user-ids ou_xxxxxxxxx \
+    --start 2026-05-01 --end 2026-05-18
+
+# 查询本月日度统计（JSON 输出）
+feishu-cli attendance user-stats query \
+    --employee-type open_id \
+    --user-ids ou_xxxxxxxxx --current-user-id ou_xxxxxxxxx \
+    --stats-type daily --start 2026-05-01 --end 2026-05-31 -o json
+# 收藏消息（消息层）
+feishu-cli msg flag create om_xxx
+
+# 列出当前用户所有书签
+feishu-cli msg flag list --page-size 50
+
+# 取消书签（参数需与 create 一致）
+feishu-cli msg flag cancel om_xxx
+
+# feed 层书签（普通群线程）
+feishu-cli msg flag create om_xxx --item-type msg_thread --flag-type feed
+```
+feishu-cli auth login --scope "okr:okr"
+feishu-cli okr cycle list
+feishu-cli okr progress list --objective-id 7xxx
+feishu-cli okr progress create --key-result-id 7xxx --content "本周完成核心模块联调"
+```
+
+**MVP 范围说明**：本次只覆盖最常用的 3 个动词，progress update / delete / get 和图片上传暂不暴露
+为命令行（client 层已有实现，后续按需补 CLI）。
+### 新增 — `approval` 写流程：发起 / 撤回 / 抄送 / 通过 / 拒绝
+
+补齐审批模块的写能力，原本只有 `approval get`（定义查询）和 `approval task query`（任务列表查询）两条只读命令，现在可以完整完成审批生命周期：
+
+- `feishu-cli approval instance create` — 发起一条审批实例，`--form` 或 `--form-file` 传表单 JSON
+- `feishu-cli approval instance cancel` — 撤回（取消）已发起的审批实例
+- `feishu-cli approval instance cc` — 把审批实例抄送给一个或多个用户（`--cc-user-ids ou_a,ou_b`）
+- `feishu-cli approval task approve` — 通过指定审批任务，可附 `--comment`
+- `feishu-cli approval task reject` — 拒绝指定审批任务，建议在 `--comment` 中填写原因
+
+**权限要求**：User Token；发起实例需要 `approval:approval`，撤回/抄送实例需要 `approval:instance:write`，审批任务同意/拒绝需要 `approval:task:write`。
+
+**底层 API**：
+
+- `POST /open-apis/approval/v4/instances`
+- `POST /open-apis/approval/v4/instances/uat_cancel`
+- `POST /open-apis/approval/v4/instances/uat_cc`
+- `POST /open-apis/approval/v4/tasks/uat_approval`
+- `POST /open-apis/approval/v4/tasks/uat_reject`
+
+不在本 MVP 范围（后续按需补）：`tasks/transfer`（转交）、`tasks/rollback`（退回）、`tasks/add_sign`（加签）、`tasks/remind`（催办）。
+
+**代码影响范围**：
+
+- `internal/client/approval.go`：新增 5 个 client 函数（`CreateApprovalInstance` / `CancelApprovalInstance` / `CCApprovalInstance` / `ApproveApprovalTask` / `RejectApprovalTask`）+ 4 个对应 Options 结构 + 共享 POST helper `doApprovalPost`
+- `cmd/approval_instance.go`：新增 `approval instance` 父命令
+- `cmd/approval_instance_{create,cancel,cc}.go`：3 条实例侧子命令
+- `cmd/approval_task_{approve,reject}.go`：2 条任务侧子命令，复用 `readApprovalTaskActionFlags` 校验
+### 新增 — `sheet filter-view` + `sheet dropdown`：筛选视图与下拉菜单
+
+补齐 lark-cli 独占的两块电子表格高级能力：
+
+- **筛选视图 CRUD（V3 API）**：用 SDK `SpreadsheetSheetFilterView` 实现
+  - `feishu-cli sheet filter-view create --token <t> --sheet-id <s> --range "<sheetId>!A1:H14" [--name 视图名 --filter-view-id 自定义ID]`
+  - `feishu-cli sheet filter-view list --token <t> --sheet-id <s>`
+  - `feishu-cli sheet filter-view delete --token <t> --sheet-id <s> --filter-view-id <fv>`
+  - `--range` 不带 sheetId 前缀时自动补全为 `<sheet-id>!<range>`
+- **下拉菜单（V2 dataValidation API）**：list 类型数据验证
+  - `feishu-cli sheet dropdown set --token <t> --range "<sheetId>!A1:A100" --options "待办,处理中,已完成" [--multiple --colors "#FF4D4F,#FAAD14,#52C41A"]`
+  - `--options-json '["a, b","c"]'`：选项内含逗号时绕过 CSV 解析
+  - 传 `--colors` 自动开启 `highlightValidData`，颜色数量需与选项一致
+
+**权限**：`sheets:spreadsheet`（User Token 或 App Token 均可），命令默认 `resolveOptionalUserTokenWithFallback` 自动读取登录态。
+
+**代码影响范围**：
+
+- `internal/client/sheets.go`：新增 `CreateFilterView` / `ListFilterViews` / `DeleteFilterView` / `SetDropdown`
+- `cmd/sheet_filter_view.go`、`cmd/sheet_dropdown.go`：CLI 入口
+### 新增 — `markdown {create,fetch,overwrite}`：Drive 原生 .md 文件 CRUD
+
+新增 `feishu-cli markdown` 顶层命令，把 Drive 上的 `.md` 当作普通文件整体读写，
+保留原始 Markdown 格式（**不做** Markdown ↔ 飞书 docx 块的转换）。
+
+**与 `doc import` / `doc export` 的区别**：
+
+| 命令 | 行为 | 创建出的文档类型 |
+|------|------|------------------|
+| `doc import/export` | Markdown ↔ 飞书 docx 块（标题/列表/表格/Callout…） | docx |
+| `markdown create/...` | 把 `.md` 整体上传/下载，不做转换 | file（普通 Drive 文件） |
+
+适合 AI agent 把生成的 Markdown 直接落盘到飞书 Drive、下次读回时仍是原汁原味
+Markdown 源码的场景。
+
+**子命令**：
+
+- `markdown create --name xxx.md --content "..." | --content-file path.md [--folder-token fldxxx]`
+  从字符串或本地文件创建 `.md`；强制 `.md` 后缀；空内容报错；底层走
+  `client.UploadFileWithToken`（≤ 20MB 单次上传，> 20MB 复用现成分片管线）。
+
+- `markdown fetch --file-token boxcnxxx [--output-path path] [-o json]`
+  缺省 `--output-path` 时直接打印到 stdout（行为与 lark-cli `markdown +fetch` 一致）；
+  指定路径则落盘，目录会拼 `fileToken.md`，`--overwrite` 防误覆。
+
+- `markdown overwrite --file-token boxcnxxx --name existing.md --content "..." | --content-file path.md [--name renamed.md]`
+  覆盖现有 `.md` 的内容，`file_token` 保持不变；`--content` 时 `--name` 必填，`--content-file` 缺省使用本地 basename。
+  **实现细节**：飞书 Go SDK v3.5.3 的 `UploadAllFileReqBody` 没有暴露 `file_token`
+  字段，因此本命令用 `client.Post` + `*larkcore.Formdata` 自己拼 multipart，
+  endpoint 仍是官方的 `POST /open-apis/drive/v1/files/upload_all`，参考 lark-cli
+  `shortcuts/markdown/helpers.go` 的写法。
+
+**权限**：User Access Token + `drive:file:upload` / `drive:file:download`
+（或 `drive:drive`）。
+
+# 内联图片
+feishu-cli mail send --to user@example.com --subject "周报" \
+    --body '<p>看附图</p><img src="./screenshot.png">' \
+    --inline-images-auto-scan --confirm-send
+
+# 模板创建+列表
+feishu-cli mail template create --name "周报" --subject "本周进度" --body "<p>模板</p>"
+feishu-cli mail template list
+### 新增 — `calendar` 智能化三件套（suggestion / room-find / rsvp）
+
+针对 AI Agent 自动排会场景，补齐三条飞书日历开放能力，使整条「选时段 → 选会议室 → 答复邀请」
+流水线全部可在 CLI 完成。
+
+- **`calendar suggestion`**：智能时段建议。直调 `POST /open-apis/calendar/v4/freebusy/suggestion`，
+  按 `--attendee-ids ou_xxx,oc_yyy` + `--duration 30m/1h30m/90` 推荐可用时段；支持
+  `--start`/`--end` 搜索窗口（默认当天）、`--exclude start~end,...` 排除午休/已占用时段、
+  `--event-rrule` 周期性规则、`--timezone`。返回带「推荐理由」+「AI 行动指引」。
+- **`calendar room-find`**：会议室查找。直调 `POST /open-apis/calendar/v4/freebusy/room_find`，
+  支持多个 `--slot start~end` 并发查询（worker=10），可按 `--city`/`--building`/`--floor`/
+  `--room-name`（逗号分隔多个）/`--min-capacity`/`--max-capacity` 多维度过滤；可选
+  `--attendee-ids` 让服务端结合参与者位置筛选。
+- **`calendar rsvp`**：答复日程邀请。走 SDK Reply 接口，`--calendar-id`（可省略，默认主日历）+
+  `--event-id` + `--action accept|decline|tentative`。与既有的 `calendar event-reply`
+  位置参数风格互为补充——rsvp 全 flag 风格、calendar-id 可省，更适合 AI Agent 调度。
+
+**SDK 现状**：v3.5.3 暴露 `Reply` 但未暴露 `freebusy/suggestion` 和 `freebusy/room_find`，
+故 suggestion / room-find 走 `client.Post` 通用 HTTP 直调 OpenAPI；新增 client 函数集中在
+`internal/client/calendar_smart.go`，包括 `SuggestFreebusy`、`FindMeetingRoom`、
+`FindMeetingRoomBatch`（并发+排序）、`SplitAttendeeIDs`（按 `ou_`/`oc_` 前缀分流）。
+
+**权限要求**：
+- suggestion / room-find：`calendar:calendar.free_busy:read`（User Token 或 App Token 均可）
+- rsvp：`calendar:calendar.event:reply`（推荐 User Token，以本人身份答复）
+
+**典型用法**：
+
+```bash
+# 1. 先让飞书推荐可用时段
+feishu-cli calendar suggestion --attendee-ids ou_aaa,ou_bbb --duration 30m
+
+# 2. 锁定时段后查会议室
+feishu-cli calendar room-find \
+  --slot 2024-01-22T09:00:00+08:00~2024-01-22T09:30:00+08:00 \
+  --building "飞书大厦" --min-capacity 6
+
+# 3. 收到邀请后答复
+feishu-cli calendar rsvp --event-id EVENT_xxx --action accept
+# 从旧布局开始（已有 config.yaml 和 token.json）
+feishu-cli profile migrate                              # → profiles/default/，指针指 default
+feishu-cli profile add personal --use --app-id cli_yyy  # 新建 personal 并切过去
+feishu-cli profile list                                 # 看哪个 active
+feishu-cli profile use -                                # 切回 default
+FEISHU_PROFILE=personal feishu-cli msg send ...         # 一次性临时切换
+```
+
 ### 新增 — `comment reply add`：为已有评论添加回复
 
 新增命令 `feishu-cli comment reply add <file_token> <comment_id> --text "..."`，补齐评论回复

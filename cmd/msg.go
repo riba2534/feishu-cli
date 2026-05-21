@@ -26,6 +26,7 @@ var msgCmd = &cobra.Command{
   pins               获取群内置顶消息列表
   resource-download  下载消息中的资源文件
   thread-messages    获取话题/线程中的消息列表
+  flag               消息书签（create/list/cancel）
 
 接收者类型:
   email     邮箱

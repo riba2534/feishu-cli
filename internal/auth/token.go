@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/profile"
 )
 
 // TokenStore 存储 OAuth token 信息
@@ -21,15 +23,17 @@ type TokenStore struct {
 // tokenPathFunc 可在测试中替换的路径函数
 var tokenPathFunc = originalTokenPath
 
+// originalTokenPath 返回当前激活 profile 的 token.json 路径。
+// 未启用 profile 系统时回退到旧布局 ~/.feishu-cli/token.json，保持向后兼容。
 func originalTokenPath() (string, error) {
-	home, err := os.UserHomeDir()
+	dir, err := profile.ActiveDir()
 	if err != nil {
-		return "", fmt.Errorf("获取用户目录失败: %w", err)
+		return "", fmt.Errorf("解析当前 profile 失败: %w", err)
 	}
-	return filepath.Join(home, ".feishu-cli", "token.json"), nil
+	return filepath.Join(dir, "token.json"), nil
 }
 
-// TokenPath 返回 token 文件路径 (~/.feishu-cli/token.json)
+// TokenPath 返回 token 文件路径（当前激活 profile 下的 token.json）。
 func TokenPath() (string, error) {
 	return tokenPathFunc()
 }

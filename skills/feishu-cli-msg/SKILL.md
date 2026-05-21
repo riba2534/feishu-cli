@@ -378,3 +378,34 @@ feishu-cli msg reply om_xxx --text "这里开个话题" --reply-in-thread
 
 - `references/message_content.md`：各消息类型的 content JSON 结构详解
 - `references/card_schema.md`：卡片消息完整构造指南（组件、布局、模板）
+
+## 消息书签（msg flag，v1.23+ 新增）
+
+服务端称 message flag，用于把消息加 Feed 标记，把消息推上用户 Feed/书签。
+对应 HTTP API `POST/GET/PATCH /open-apis/im/v1/flags`。需 User Access Token：`list` 需要 `im:feed.flag:read`，`create/cancel` 需要 `im:feed.flag:write`。
+
+### 命令速查
+
+- `feishu-cli msg flag create <message_id>` — 创建消息层书签（默认 `--item-type default --flag-type message`）
+- `feishu-cli msg flag create <message_id> --item-type msg_thread --flag-type feed` — feed 层书签（普通群线程）
+- `feishu-cli msg flag list [--page-size 50] [--page-token xxx]` — 列当前用户的书签
+- `feishu-cli msg flag cancel <message_id> [--item-type ... --flag-type ...]` — 取消书签（item/flag 必须与 create 一致）
+
+### 关键枚举（服务端真值，绝勿按 0/1/2 顺序臆造）
+
+CLI flag 用字符串，底层映射到 OpenAPI 整数枚举：
+
+| 字段 | CLI 字符串 | OpenAPI 整数 | 含义 |
+| --- | --- | --- | --- |
+| --item-type | default | 0 | 普通消息 |
+| --item-type | thread | 4 | topic-style 话题群 |
+| --item-type | msg_thread | 11 | 普通群消息线程 |
+| --flag-type | message | 2 | 消息层书签（默认） |
+| --flag-type | feed | 1 | feed 层（侧边栏书签） |
+
+支持的组合（其余服务端拒绝）：
+- `default + message`：消息层书签，最常见
+- `thread + feed`：topic-style 话题群 feed 层
+- `msg_thread + feed`：普通群消息线程 feed 层
+
+源码引用：`internal/client/flag.go:23-28`（本仓库权威，对齐 lark-cli `shortcuts/im` 的 ItemType/FlagType 定义）。

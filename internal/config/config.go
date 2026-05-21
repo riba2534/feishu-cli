@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/spf13/viper"
 )
 
@@ -37,18 +38,22 @@ var cfg *Config
 
 // Init initializes the configuration from file and environment
 // 配置优先级: 环境变量 > 配置文件 > 默认值
+//
+// 配置文件路径解析顺序：
+//  1. --config <path> 显式指定
+//  2. ${FEISHU_PROFILE}/${active-profile} 指向的 profile 目录下的 config.yaml
+//  3. 旧布局 ~/.feishu-cli/config.yaml（向后兼容，profile 系统未启用时）
 func Init(cfgFile string) error {
 	// 1. 设置配置文件路径
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
-		home, err := os.UserHomeDir()
+		// 优先走 profile 系统，profile 未启用时回退到旧布局
+		dir, err := profile.ActiveDir()
 		if err != nil {
-			return fmt.Errorf("获取用户目录失败: %w", err)
+			return fmt.Errorf("解析当前 profile 失败: %w", err)
 		}
-
-		configDir := filepath.Join(home, ".feishu-cli")
-		viper.AddConfigPath(configDir)
+		viper.AddConfigPath(dir)
 		viper.AddConfigPath(".")
 		viper.SetConfigName("config")
 		viper.SetConfigType("yaml")
@@ -117,23 +122,35 @@ func Validate() error {
 	if cfg == nil {
 		return fmt.Errorf("配置未初始化")
 	}
+	cfgPath := activeConfigPathForError()
 	if cfg.AppID == "" {
-		return fmt.Errorf("缺少 app_id，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_ID=xxx\n  2. 配置文件: ~/.feishu-cli/config.yaml")
+		return fmt.Errorf("缺少 app_id，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_ID=xxx\n  2. 配置文件: %s", cfgPath)
 	}
 	if cfg.AppSecret == "" {
-		return fmt.Errorf("缺少 app_secret，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_SECRET=xxx\n  2. 配置文件: ~/.feishu-cli/config.yaml")
+		return fmt.Errorf("缺少 app_secret，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_SECRET=xxx\n  2. 配置文件: %s", cfgPath)
 	}
 	return nil
 }
 
-// CreateDefaultConfig creates a default configuration file
-func CreateDefaultConfig() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("获取用户目录失败: %w", err)
+// activeConfigPathForError 返回当前 profile 的 config.yaml 路径（用于错误提示）。
+// 解析失败时回退到旧布局占位符，避免 Validate 报错叠加二次错误。
+func activeConfigPathForError() string {
+	if path, err := profile.ConfigFilePath(); err == nil && path != "" {
+		return path
 	}
+	if root, err := profile.RootDir(); err == nil && root != "" {
+		return filepath.Join(root, "config.yaml")
+	}
+	return "~/.feishu-cli/config.yaml"
+}
 
-	configDir := filepath.Join(home, ".feishu-cli")
+// CreateDefaultConfig creates a default configuration file in the active profile
+// directory (legacy ~/.feishu-cli/ when profile system not initialized).
+func CreateDefaultConfig() error {
+	configDir, err := profile.ActiveDir()
+	if err != nil {
+		return fmt.Errorf("获取配置目录失败: %w", err)
+	}
 	// 使用 0700 权限，仅所有者可访问，保护敏感配置
 	if err := os.MkdirAll(configDir, 0700); err != nil {
 		return fmt.Errorf("创建配置目录失败: %w", err)

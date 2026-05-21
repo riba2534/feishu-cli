@@ -145,6 +145,11 @@ var extraDomainScopes = map[string][]string{
 		"approval:task",
 	},
 
+	// 注意：attendance 顶层命令（user-task query / user-stats query）走 tenant_access_token
+	// （larksuite/oapi-sdk-go v3.5.3 中 Attendance.UserTask.Query / UserStatsData.Query 的
+	// SupportedAccessTokenTypes 仅含 Tenant），故不进入 auth login --domain 列表——
+	// `attendance:task:readonly` 权限需在飞书开放平台「应用权限管理」页面授予应用。
+
 	// doc shortcuts: +search, +create, +fetch, +update, +media-insert, +media-preview, +media-download
 	"docs": {
 		"search:docs:read",
@@ -152,14 +157,34 @@ var extraDomainScopes = map[string][]string{
 		"docs:document.media:upload", "docs:document.media:download",
 	},
 
-	// slides shortcuts: +create
+	// slides shortcuts: +create, +media-upload
 	"slides": {
 		"slides:presentation:create", "slides:presentation:write_only",
+		"docs:document.media:upload",
 	},
 
 	// whiteboard shortcuts: +query, +update
 	"whiteboard": {
 		"board:whiteboard:node:read", "board:whiteboard:node:create", "board:whiteboard:node:delete",
+	},
+
+	// event shortcuts: list / schema / consume / status / stop
+	// WebSocket 实时事件订阅；具体 scope 因 EventKey 而异，这里列出常用 EventKey 的并集。
+	// 完整对照见 `feishu-cli event schema <key>`。
+	"event": {
+		// IM 事件最常用
+		"im:message", "im:message.group_msg", "im:message:readonly",
+		"im:chat", "im:chat.members", "im:chat:readonly",
+		// 联系人
+		"contact:user.base:readonly",
+		// 日历
+		"calendar:calendar.event:read", "calendar:calendar.acl:read",
+		// 云盘
+		"drive:drive",
+		// 审批
+		"approval:approval",
+		// VC
+		"vc:meeting",
 	},
 }
 
@@ -170,6 +195,7 @@ var domainDescriptions = map[string]struct{ Zh, En string }{
 	"drive":      {"云空间上传/下载/导出/导入/评论", "Drive upload, download, export, import & comments"},
 	"doc_access": {"用户 Token 访问文档/知识库", "User Token document & wiki access"},
 	"search":     {"文档和消息搜索", "Document and message search"},
+	"event":      {"WebSocket 实时事件订阅（IM/联系人/日历/云盘/审批/VC）", "WebSocket real-time event subscription"},
 }
 
 // ResolveProjects expands a domain name to meta project names.

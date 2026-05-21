@@ -10,7 +10,7 @@ var mailCmd = &cobra.Command{
 	Short: "飞书邮箱（Mail）操作命令",
 	Long: `飞书邮箱（Mail）操作，通过 OAuth User Access Token 访问。
 
-⚠️ 首期限制：send/draft/reply/forward 仅支持纯文本 body 和 HTML body，暂不支持附件和 CID 内联图片。
+⚠️ 首期限制：send/draft/reply/forward 暂不支持普通附件；CID 内联图片走 send --inline-images-auto-scan 自动扫描上传。
 
 子命令:
   message       获取单封邮件内容（含 HTML/纯文本 body）
@@ -23,6 +23,7 @@ var mailCmd = &cobra.Command{
   reply         回复邮件（自动带 Re: 前缀和引用块）
   reply-all     全部回复（包含 To 和 CC）
   forward       转发邮件
+  template      邮件模板 CRUD（create/list；字节租户 scope 暂未开放）
 
 权限要求（User Access Token）:
   - mail:user_mailbox:readonly
