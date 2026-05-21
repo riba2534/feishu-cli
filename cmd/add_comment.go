@@ -43,7 +43,7 @@ var addCommentCmd = &cobra.Command{
 		fileType, _ := cmd.Flags().GetString("type")
 		text, _ := cmd.Flags().GetString("text")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		commentID, err := client.CreateComment(fileToken, fileType, text, userAccessToken)
 		if err != nil {

@@ -42,7 +42,7 @@ var listCommentsCmd = &cobra.Command{
 		fileType, _ := cmd.Flags().GetString("type")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		comments, _, _, err := client.ListComments(fileToken, fileType, pageSize, "", userAccessToken)
 		if err != nil {
