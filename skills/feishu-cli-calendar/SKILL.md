@@ -46,6 +46,8 @@ allowed-tools: Bash, Read
 
 权限：`calendar:calendar.free_busy:read`（suggestion / room-find）、`calendar:calendar.event:reply`（rsvp，推荐 User Token）。
 
+`calendar rsvp` 支持 `--action`，也支持官方 lark-cli 兼容别名 `--rsvp-status`，二者等价且不能同时指定不同值。
+
 ## 子命令速查
 
 ### 1. calendar suggestion（找共同空闲）

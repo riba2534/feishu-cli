@@ -12,7 +12,13 @@ import (
 var approvalInstanceCcCmd = &cobra.Command{
 	Use:   "cc",
 	Short: "抄送审批实例",
-	Long: `把某条审批实例抄送给一个或多个用户。需要 User Token + scope approval:instance:write。
+	Long: `把某条审批实例抄送给一个或多个用户，对齐官方 approval.instances.cc。
+
+底层接口:
+  POST /open-apis/approval/v4/instances/uat_cc
+
+权限:
+  User Token，scope: approval:instance:write
 
 参数:
   --instance-code    审批实例 code（必填）
@@ -24,16 +30,10 @@ var approvalInstanceCcCmd = &cobra.Command{
   feishu-cli approval instance cc \
     --instance-code <ic> --cc-user-ids ou_a,ou_b --comment "请知悉"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		approvalCode, _ := cmd.Flags().GetString("approval-code")
 		instanceCode, _ := cmd.Flags().GetString("instance-code")
 		if strings.TrimSpace(instanceCode) == "" {
 			return fmt.Errorf("--instance-code 不能为空")
 		}
-		userID, _ := cmd.Flags().GetString("user-id")
 		ccRaw, _ := cmd.Flags().GetString("cc-user-ids")
 		ccUserIDs := parseCommaSeparatedIDs(ccRaw)
 		if len(ccUserIDs) == 0 {
@@ -42,15 +42,20 @@ var approvalInstanceCcCmd = &cobra.Command{
 
 		comment, _ := cmd.Flags().GetString("comment")
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
-		token, errToken := requireUserToken(cmd, "approval instance cc")
-		if errToken != nil {
-			return errToken
+		if err := validateApprovalWriteUserIDType(userIDType); err != nil {
+			return err
 		}
 
-		err := client.CCApprovalInstance(client.CCApprovalInstanceOptions{
-			ApprovalCode: approvalCode,
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, err := requireUserToken(cmd, "approval instance cc")
+		if err != nil {
+			return err
+		}
+
+		err = client.CCApprovalInstance(client.CCApprovalInstanceOptions{
 			InstanceCode: instanceCode,
-			UserID:       userID,
 			CCUserIDs:    ccUserIDs,
 			Comment:      comment,
 			UserIDType:   userIDType,
@@ -87,14 +92,10 @@ func parseCommaSeparatedIDs(raw string) []string {
 func init() {
 	approvalInstanceCmd.AddCommand(approvalInstanceCcCmd)
 
-	approvalInstanceCcCmd.Flags().String("approval-code", "", "兼容旧参数：当前接口不使用")
 	approvalInstanceCcCmd.Flags().String("instance-code", "", "审批实例 code（必填）")
-	approvalInstanceCcCmd.Flags().String("user-id", "", "兼容旧参数：当前接口不使用")
 	approvalInstanceCcCmd.Flags().String("cc-user-ids", "", "被抄送用户 ID 列表，逗号分隔（必填）")
 	approvalInstanceCcCmd.Flags().String("comment", "", "抄送备注（可选）")
 	approvalInstanceCcCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型：open_id/user_id/union_id")
-	approvalInstanceCcCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
-	_ = approvalInstanceCcCmd.Flags().MarkHidden("approval-code")
-	_ = approvalInstanceCcCmd.Flags().MarkHidden("user-id")
+	approvalInstanceCcCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	mustMarkFlagRequired(approvalInstanceCcCmd, "instance-code", "cc-user-ids")
 }

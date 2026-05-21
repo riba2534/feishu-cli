@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"syscall"
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -23,6 +22,7 @@ var eventStopCmd = &cobra.Command{
 实现:
   默认 SIGTERM（优雅退出，consume 进程会自动 unregister bus.json）。
   --force 升级为 SIGKILL（不推荐，会留下 bus.json 僵尸条目，status 命令会自动清理）。
+  Windows 下使用系统 Kill 停止目标进程。
 
 示例:
   feishu-cli event stop --pid 12345
@@ -79,10 +79,7 @@ var eventStopCmd = &cobra.Command{
 			return nil
 		}
 
-		sig := syscall.SIGTERM
-		if force {
-			sig = syscall.SIGKILL
-		}
+		signalName := eventStopSignalName(force)
 
 		results := make([]map[string]any, 0, len(targets))
 		for _, t := range targets {
@@ -90,13 +87,13 @@ var eventStopCmd = &cobra.Command{
 				"pid":       t.PID,
 				"event_key": t.EventKey,
 			}
-			err := syscall.Kill(t.PID, sig)
+			err := eventStopProcess(t.PID, force)
 			if err != nil {
 				r["status"] = "error"
 				r["reason"] = err.Error()
 			} else {
 				r["status"] = "signaled"
-				r["signal"] = sig.String()
+				r["signal"] = signalName
 			}
 			results = append(results, r)
 		}
@@ -125,7 +122,7 @@ var eventStopCmd = &cobra.Command{
 			return printJSON(map[string]any{"stopped": results})
 		}
 
-		fmt.Printf("已发送 %s 给 %d 个 consume 进程:\n", sig.String(), len(targets))
+		fmt.Printf("已发送 %s 给 %d 个 consume 进程:\n", signalName, len(targets))
 		for _, r := range results {
 			status := r["status"].(string)
 			line := fmt.Sprintf("  pid=%v event_key=%v status=%s", r["pid"], r["event_key"], status)

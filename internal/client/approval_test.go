@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"net/http"
 	"reflect"
 	"testing"
 )
@@ -225,5 +226,87 @@ func TestParseApprovalTaskQueryResponseHandlesNumericProcessStatus(t *testing.T)
 	}
 	if result.Tasks[0].PCURL != "https://pc" {
 		t.Fatalf("PCURL = %q, want %q", result.Tasks[0].PCURL, "https://pc")
+	}
+}
+
+func TestQueryApprovalTasksUsesOfficialUATQueryAndUserToken(t *testing.T) {
+	const userToken = "u-test"
+	var gotPath, gotAuth, gotUserID string
+	_, cleanup := stubFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotUserID = r.URL.Query().Get("user_id")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"msg":"ok","data":{"tasks":[],"has_more":false}}`))
+	})
+	defer cleanup()
+
+	_, err := QueryApprovalTasksRaw(ApprovalTaskQueryOptions{
+		UserID:     "ou_test",
+		Topic:      "1",
+		UserIDType: "open_id",
+	}, userToken)
+	if err != nil {
+		t.Fatalf("QueryApprovalTasksRaw() error = %v", err)
+	}
+	if gotPath != "/open-apis/approval/v4/tasks/uat_query" {
+		t.Fatalf("path = %q, want uat_query", gotPath)
+	}
+	if gotAuth != "Bearer "+userToken {
+		t.Fatalf("Authorization = %q, want user token", gotAuth)
+	}
+	if gotUserID != "ou_test" {
+		t.Fatalf("user_id = %q, want ou_test", gotUserID)
+	}
+}
+
+func TestQueryApprovalTasksRejectsMissingUserToken(t *testing.T) {
+	_, err := QueryApprovalTasksRaw(ApprovalTaskQueryOptions{UserID: "ou_test", Topic: "1"}, "")
+	if err == nil {
+		t.Fatal("expected missing user token error")
+	}
+}
+
+func TestGetApprovalInstanceUsesOfficialUATGetAndUserToken(t *testing.T) {
+	const userToken = "u-test"
+	var gotPath, gotAuth, gotInstanceCode, gotUserIDType string
+	_, cleanup := stubFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotInstanceCode = r.URL.Query().Get("instance_code")
+		gotUserIDType = r.URL.Query().Get("user_id_type")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"msg":"ok","data":{"instance_code":"instance_1","status":"PENDING"}}`))
+	})
+	defer cleanup()
+
+	data, err := GetApprovalInstance(GetApprovalInstanceOptions{
+		InstanceCode: "instance_1",
+		UserIDType:   "open_id",
+	}, userToken)
+	if err != nil {
+		t.Fatalf("GetApprovalInstance() error = %v", err)
+	}
+	if gotPath != "/open-apis/approval/v4/instances/uat_get" {
+		t.Fatalf("path = %q, want uat_get", gotPath)
+	}
+	if gotAuth != "Bearer "+userToken {
+		t.Fatalf("Authorization = %q, want user token", gotAuth)
+	}
+	if gotInstanceCode != "instance_1" {
+		t.Fatalf("instance_code = %q, want instance_1", gotInstanceCode)
+	}
+	if gotUserIDType != "open_id" {
+		t.Fatalf("user_id_type = %q, want open_id", gotUserIDType)
+	}
+	if data["status"] != "PENDING" {
+		t.Fatalf("status = %#v, want PENDING", data["status"])
+	}
+}
+
+func TestGetApprovalInstanceRejectsMissingUserToken(t *testing.T) {
+	_, err := GetApprovalInstanceRaw(GetApprovalInstanceOptions{InstanceCode: "instance_1"}, "")
+	if err == nil {
+		t.Fatal("expected missing user token error")
 	}
 }

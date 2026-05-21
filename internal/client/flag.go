@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // 消息书签 item_type / flag_type 常量
@@ -34,7 +35,7 @@ const (
 // ParseFlagItemType 将用户输入的 item-type 字符串映射到 OpenAPI 整数枚举。
 // 空字符串默认为 "default"。
 func ParseFlagItemType(s string) (int, error) {
-	switch s {
+	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "default":
 		return flagItemTypeDefault, nil
 	case "thread":
@@ -48,7 +49,7 @@ func ParseFlagItemType(s string) (int, error) {
 // ParseFlagFlagType 将用户输入的 flag-type 字符串映射到 OpenAPI 整数枚举。
 // 空字符串默认为 "message"。
 func ParseFlagFlagType(s string) (int, error) {
-	switch s {
+	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "message":
 		return flagFlagTypeMessage, nil
 	case "feed":
@@ -60,8 +61,8 @@ func ParseFlagFlagType(s string) (int, error) {
 // FlagItem 单条消息书签项，用于创建 / 取消请求体。
 type FlagItem struct {
 	ItemID   string `json:"item_id"`
-	ItemType int    `json:"item_type"`
-	FlagType int    `json:"flag_type"`
+	ItemType string `json:"item_type"`
+	FlagType string `json:"flag_type"`
 }
 
 // FlagListResult 书签列表返回结构
@@ -77,6 +78,66 @@ type FlagListResult struct {
 // 飞书 OpenAPI 当前版本为 v1，与 lark-cli 实现保持一致。
 const flagsAPIPath = "/open-apis/im/v1/flags"
 
+func newFlagItem(messageID string, itemType, flagType int) FlagItem {
+	return FlagItem{
+		ItemID:   messageID,
+		ItemType: strconv.Itoa(itemType),
+		FlagType: strconv.Itoa(flagType),
+	}
+}
+
+func FlagItemTypeName(itemType int) string {
+	switch itemType {
+	case flagItemTypeDefault:
+		return "default"
+	case flagItemTypeThread:
+		return "thread"
+	case flagItemTypeMsgThread:
+		return "msg_thread"
+	default:
+		return "unknown"
+	}
+}
+
+func FlagFlagTypeName(flagType int) string {
+	switch flagType {
+	case flagFlagTypeMessage:
+		return "message"
+	case flagFlagTypeFeed:
+		return "feed"
+	default:
+		return "unknown"
+	}
+}
+
+// ResolveFlagFeedItemType 对齐官方 lark-cli 的 feed-layer 书签行为：
+// 先读取消息的 chat_id，再读取群聊 chat_mode，topic 群使用 thread，普通群使用 msg_thread。
+func ResolveFlagFeedItemType(messageID, userAccessToken string) (int, string, error) {
+	if strings.TrimSpace(messageID) == "" {
+		return 0, "", fmt.Errorf("message_id 不能为空")
+	}
+	result, err := GetMessage(messageID, userAccessToken, "")
+	if err != nil {
+		return 0, "", fmt.Errorf("查询消息以自动判断 feed item_type 失败: %w（如果已知群类型，可显式传 --item-type thread 或 msg_thread）", err)
+	}
+	if result == nil || result.Message == nil {
+		return 0, "", fmt.Errorf("查询消息返回为空，无法自动判断 feed item_type")
+	}
+	chatID := StringVal(result.Message.ChatId)
+	if chatID == "" {
+		return 0, "", fmt.Errorf("消息响应缺少 chat_id，feed 层书签仅适用于群消息")
+	}
+
+	chat, err := GetChat(chatID, userAccessToken)
+	if err != nil {
+		return 0, "", fmt.Errorf("查询群聊 chat_mode 失败: %w（如果已知群类型，可显式传 --item-type thread 或 msg_thread）", err)
+	}
+	if chat != nil && StringVal(chat.ChatMode) == "topic" {
+		return flagItemTypeThread, "thread", nil
+	}
+	return flagItemTypeMsgThread, "msg_thread", nil
+}
+
 // CreateFlag 为指定消息创建书签。
 // itemType / flagType 必须是合法组合，否则服务端会返回错误。
 // 权限：user token，scope `im:feed.flag:write`。
@@ -88,7 +149,7 @@ func CreateFlag(messageID string, itemType, flagType int, userAccessToken string
 
 	body := map[string]any{
 		"flag_items": []FlagItem{
-			{ItemID: messageID, ItemType: itemType, FlagType: flagType},
+			newFlagItem(messageID, itemType, flagType),
 		},
 	}
 
@@ -173,7 +234,7 @@ func CancelFlag(messageID string, itemType, flagType int, userAccessToken string
 
 	body := map[string]any{
 		"flag_items": []FlagItem{
-			{ItemID: messageID, ItemType: itemType, FlagType: flagType},
+			newFlagItem(messageID, itemType, flagType),
 		},
 	}
 

@@ -12,36 +12,35 @@ import (
 var approvalInstanceCancelCmd = &cobra.Command{
 	Use:   "cancel",
 	Short: "取消（撤回）审批实例",
-	Long: `撤回一条已发起的审批实例。需要 User Token + scope approval:instance:write。
+	Long: `撤回一条已发起的审批实例，对齐官方 approval.instances.cancel。
+
+底层接口:
+  POST /open-apis/approval/v4/instances/uat_cancel
+
+权限:
+  User Token，scope: approval:instance:write
 
 参数:
   --instance-code    审批实例 code（必填）
 
 示例:
-  feishu-cli approval instance cancel \
-    --instance-code <ic>`,
+  feishu-cli approval instance cancel --instance-code <ic>`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		approvalCode, _ := cmd.Flags().GetString("approval-code")
 		instanceCode, _ := cmd.Flags().GetString("instance-code")
 		if strings.TrimSpace(instanceCode) == "" {
 			return fmt.Errorf("--instance-code 不能为空")
 		}
-		userID, _ := cmd.Flags().GetString("user-id")
-		userIDType, _ := cmd.Flags().GetString("user-id-type")
-		token, errToken := requireUserToken(cmd, "approval instance cancel")
-		if errToken != nil {
-			return errToken
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, err := requireUserToken(cmd, "approval instance cancel")
+		if err != nil {
+			return err
 		}
 
-		err := client.CancelApprovalInstance(client.CancelApprovalInstanceOptions{
-			ApprovalCode: approvalCode,
+		err = client.CancelApprovalInstance(client.CancelApprovalInstanceOptions{
 			InstanceCode: instanceCode,
-			UserID:       userID,
-			UserIDType:   userIDType,
 		}, token)
 		if err != nil {
 			return err
@@ -55,13 +54,7 @@ var approvalInstanceCancelCmd = &cobra.Command{
 func init() {
 	approvalInstanceCmd.AddCommand(approvalInstanceCancelCmd)
 
-	approvalInstanceCancelCmd.Flags().String("approval-code", "", "兼容旧参数：当前接口不使用")
 	approvalInstanceCancelCmd.Flags().String("instance-code", "", "审批实例 code（必填）")
-	approvalInstanceCancelCmd.Flags().String("user-id", "", "兼容旧参数：当前接口不使用")
-	approvalInstanceCancelCmd.Flags().String("user-id-type", "open_id", "兼容旧参数：当前接口不使用")
-	approvalInstanceCancelCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
-	_ = approvalInstanceCancelCmd.Flags().MarkHidden("approval-code")
-	_ = approvalInstanceCancelCmd.Flags().MarkHidden("user-id")
-	_ = approvalInstanceCancelCmd.Flags().MarkHidden("user-id-type")
+	approvalInstanceCancelCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	mustMarkFlagRequired(approvalInstanceCancelCmd, "instance-code")
 }

@@ -20,10 +20,13 @@ var sheetFilterViewCreateCmd = &cobra.Command{
 	Long: `在工作表中创建筛选视图。
 
 示例:
-  feishu-cli sheet filter-view create --token shtcnxxxxxx --sheet-id 0b1212 --range "0b1212!A1:H14" --name "我的视图"
+  feishu-cli sheet filter-view create --spreadsheet-token shtcnxxxxxx --sheet-id 0b1212 --range "0b1212!A1:H14" --name "我的视图"
   feishu-cli sheet filter-view create --token shtcnxxxxxx --sheet-id 0b1212 --range "A1:H14"   # range 不带 sheetId 前缀时自动补全`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken, _ := cmd.Flags().GetString("token")
+		spreadsheetToken, err := readSheetSpreadsheetToken(cmd)
+		if err != nil {
+			return err
+		}
 		sheetID, _ := cmd.Flags().GetString("sheet-id")
 		rangeStr, _ := cmd.Flags().GetString("range")
 		name, _ := cmd.Flags().GetString("name")
@@ -32,6 +35,9 @@ var sheetFilterViewCreateCmd = &cobra.Command{
 
 		if spreadsheetToken == "" || sheetID == "" || rangeStr == "" {
 			return fmt.Errorf("--token、--sheet-id、--range 均为必填项")
+		}
+		if err := validateFilterViewID(filterViewID); err != nil {
+			return err
 		}
 
 		rangeStr = unescapeSheetRange(rangeStr)
@@ -54,12 +60,43 @@ var sheetFilterViewCreateCmd = &cobra.Command{
 	},
 }
 
+func readSheetSpreadsheetToken(cmd *cobra.Command) (string, error) {
+	token, _ := cmd.Flags().GetString("token")
+	officialToken, _ := cmd.Flags().GetString("spreadsheet-token")
+	if token != "" && officialToken != "" && token != officialToken {
+		return "", fmt.Errorf("--token 与 --spreadsheet-token 不能同时指定不同值")
+	}
+	if token != "" {
+		return token, nil
+	}
+	return officialToken, nil
+}
+
+func validateFilterViewID(filterViewID string) error {
+	if filterViewID == "" {
+		return nil
+	}
+	if len(filterViewID) != 10 {
+		return fmt.Errorf("--filter-view-id 必须是 10 位字母数字，当前长度 %d", len(filterViewID))
+	}
+	for _, ch := range filterViewID {
+		if (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') {
+			continue
+		}
+		return fmt.Errorf("--filter-view-id 必须是 10 位字母数字，包含非法字符 %q", ch)
+	}
+	return nil
+}
+
 var sheetFilterViewListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "列出筛选视图",
 	Long:  "列出指定工作表的所有筛选视图",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken, _ := cmd.Flags().GetString("token")
+		spreadsheetToken, err := readSheetSpreadsheetToken(cmd)
+		if err != nil {
+			return err
+		}
 		sheetID, _ := cmd.Flags().GetString("sheet-id")
 		output, _ := cmd.Flags().GetString("output")
 
@@ -95,9 +132,12 @@ var sheetFilterViewDeleteCmd = &cobra.Command{
 	Long: `删除指定的筛选视图。
 
 示例:
-  feishu-cli sheet filter-view delete --token shtcnxxxxxx --sheet-id 0b1212 --filter-view-id pH9hbVcCXA`,
+  feishu-cli sheet filter-view delete --spreadsheet-token shtcnxxxxxx --sheet-id 0b1212 --filter-view-id pH9hbVcCXA`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken, _ := cmd.Flags().GetString("token")
+		spreadsheetToken, err := readSheetSpreadsheetToken(cmd)
+		if err != nil {
+			return err
+		}
 		sheetID, _ := cmd.Flags().GetString("sheet-id")
 		filterViewID, _ := cmd.Flags().GetString("filter-view-id")
 
@@ -123,7 +163,8 @@ func init() {
 	sheetFilterViewCmd.AddCommand(sheetFilterViewDeleteCmd)
 
 	// create
-	sheetFilterViewCreateCmd.Flags().String("token", "", "电子表格 token（必填）")
+	sheetFilterViewCreateCmd.Flags().String("token", "", "电子表格 token（必填；兼容旧名）")
+	sheetFilterViewCreateCmd.Flags().String("spreadsheet-token", "", "电子表格 token（官方 lark-cli 兼容别名）")
 	sheetFilterViewCreateCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	sheetFilterViewCreateCmd.Flags().String("range", "", "筛选范围，例如 \"<sheetId>!A1:H14\"（必填）")
 	sheetFilterViewCreateCmd.Flags().String("name", "", "筛选视图名称（≤100 字符，可选）")
@@ -132,13 +173,15 @@ func init() {
 	sheetFilterViewCreateCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 
 	// list
-	sheetFilterViewListCmd.Flags().String("token", "", "电子表格 token（必填）")
+	sheetFilterViewListCmd.Flags().String("token", "", "电子表格 token（必填；兼容旧名）")
+	sheetFilterViewListCmd.Flags().String("spreadsheet-token", "", "电子表格 token（官方 lark-cli 兼容别名）")
 	sheetFilterViewListCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	sheetFilterViewListCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
 	sheetFilterViewListCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 
 	// delete
-	sheetFilterViewDeleteCmd.Flags().String("token", "", "电子表格 token（必填）")
+	sheetFilterViewDeleteCmd.Flags().String("token", "", "电子表格 token（必填；兼容旧名）")
+	sheetFilterViewDeleteCmd.Flags().String("spreadsheet-token", "", "电子表格 token（官方 lark-cli 兼容别名）")
 	sheetFilterViewDeleteCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	sheetFilterViewDeleteCmd.Flags().String("filter-view-id", "", "筛选视图 ID（必填）")
 	sheetFilterViewDeleteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")

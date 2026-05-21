@@ -81,6 +81,12 @@ func (r *Runtime) Run(ctx context.Context) (reason string, err error) {
 	if !ok {
 		return "error", fmt.Errorf("未知 EventKey: %q（运行 `feishu-cli event list` 查看支持的 key）", r.opts.EventKey)
 	}
+	if err := ValidateDotPathExpr(r.opts.JQExpr); err != nil {
+		return "error", err
+	}
+	if err := ValidateOutputDir(r.opts.OutputDir); err != nil {
+		return "error", err
+	}
 
 	// Register 到 bus.json
 	if r.opts.Bus != nil {
@@ -270,6 +276,58 @@ func (r *Runtime) emit(ev *larkevent.EventReq) error {
 	return nil
 }
 
+// ValidateDotPathExpr 校验 consume --jq 的极简表达式。
+// 当前只支持空值、"." 或 ".a.b.c" 这种 map 点路径，复杂过滤必须交给外部 jq。
+func ValidateDotPathExpr(expr string) error {
+	expr = strings.TrimSpace(expr)
+	if expr == "" || expr == "." {
+		return nil
+	}
+	if !strings.HasPrefix(expr, ".") {
+		return fmt.Errorf("--jq 仅支持 .a.b.c 点路径表达式，复杂过滤请用管道接外部 jq")
+	}
+	segments := strings.Split(strings.TrimPrefix(expr, "."), ".")
+	for _, seg := range segments {
+		if seg == "" {
+			return fmt.Errorf("--jq 仅支持 .a.b.c 点路径表达式，路径段不能为空")
+		}
+		for _, r := range seg {
+			switch {
+			case r >= 'A' && r <= 'Z':
+			case r >= 'a' && r <= 'z':
+			case r >= '0' && r <= '9':
+			case r == '_' || r == '-':
+			default:
+				return fmt.Errorf("--jq 仅支持 .a.b.c 点路径表达式，不支持过滤器、管道或数组下标")
+			}
+		}
+	}
+	return nil
+}
+
+// ValidateOutputDir 校验 consume --output-dir 的路径边界。
+// 为避免把事件写出项目/工作目录，只允许安全相对路径，不展开 ~，不接受绝对路径或 ..。
+func ValidateOutputDir(dir string) error {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return nil
+	}
+	if strings.HasPrefix(dir, "~") {
+		return fmt.Errorf("--output-dir 不支持 ~ 展开，请用安全相对路径如 ./events")
+	}
+	if filepath.IsAbs(dir) || filepath.VolumeName(dir) != "" {
+		return fmt.Errorf("--output-dir 只支持安全相对路径，不支持绝对路径")
+	}
+	for _, seg := range strings.FieldsFunc(dir, func(r rune) bool {
+		return r == '/' || r == '\\'
+	}) {
+		if seg == ".." {
+			return fmt.Errorf("--output-dir 不能包含 .. 路径段")
+		}
+	}
+	return nil
+}
+
 // applyDotPath 实现极简 jq：仅支持 `.a.b.c` 形式（不支持过滤器/管道/数组下标）。
 // 返回 (子树 JSON, 是否命中)。
 func applyDotPath(data []byte, expr string) ([]byte, bool) {
@@ -277,7 +335,7 @@ func applyDotPath(data []byte, expr string) ([]byte, bool) {
 	if expr == "." || expr == "" {
 		return data, true
 	}
-	if !strings.HasPrefix(expr, ".") {
+	if err := ValidateDotPathExpr(expr); err != nil {
 		return nil, false
 	}
 	var v interface{}

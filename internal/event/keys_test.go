@@ -88,13 +88,66 @@ func TestKeyDefinition_ScopesContainsExpected(t *testing.T) {
 	if len(def.Scopes) == 0 {
 		t.Fatal("im.message.receive_v1 应至少有一个 scope")
 	}
-	hasIm := false
-	for _, s := range def.Scopes {
-		if strings.HasPrefix(s, "im:") {
-			hasIm = true
+	if !containsString(def.Scopes, "im:message.p2p_msg:readonly") {
+		t.Fatalf("im.message.receive_v1 scopes = %v, want im:message.p2p_msg:readonly", def.Scopes)
+	}
+	if !containsString(def.AuthTypes, "bot") {
+		t.Fatalf("im.message.receive_v1 auth_types = %v, want bot", def.AuthTypes)
+	}
+	if !containsString(def.RequiredConsoleEvents, "im.message.receive_v1") {
+		t.Fatalf("im.message.receive_v1 console events = %v, want im.message.receive_v1", def.RequiredConsoleEvents)
+	}
+}
+
+func TestIMKeyDefinitionsIncludeOfficialMetadata(t *testing.T) {
+	for _, def := range ListAll() {
+		if !strings.HasPrefix(def.Key, "im.") {
+			continue
+		}
+		if !containsString(def.AuthTypes, "bot") {
+			t.Errorf("%s AuthTypes = %v, want bot", def.Key, def.AuthTypes)
+		}
+		if !containsString(def.RequiredConsoleEvents, def.EventType) {
+			t.Errorf("%s RequiredConsoleEvents = %v, want %s", def.Key, def.RequiredConsoleEvents, def.EventType)
 		}
 	}
-	if !hasIm {
-		t.Errorf("im.message.receive_v1 至少应有一个 im: 开头的 scope，实际 %v", def.Scopes)
+}
+
+func TestValidateDotPathExpr(t *testing.T) {
+	valid := []string{"", ".", ".event", ".event.message", ".event.message_id", ".event.message-type"}
+	for _, expr := range valid {
+		if err := ValidateDotPathExpr(expr); err != nil {
+			t.Errorf("ValidateDotPathExpr(%q) unexpected error: %v", expr, err)
+		}
 	}
+	invalid := []string{"event", ".event[0]", ".event | .header", ".event..message", ".event.message."}
+	for _, expr := range invalid {
+		if err := ValidateDotPathExpr(expr); err == nil {
+			t.Errorf("ValidateDotPathExpr(%q) expected error", expr)
+		}
+	}
+}
+
+func TestValidateOutputDir(t *testing.T) {
+	valid := []string{"", ".", "./events", "events/today"}
+	for _, dir := range valid {
+		if err := ValidateOutputDir(dir); err != nil {
+			t.Errorf("ValidateOutputDir(%q) unexpected error: %v", dir, err)
+		}
+	}
+	invalid := []string{"~/events", "/tmp/events", "../events", "events/../outside"}
+	for _, dir := range invalid {
+		if err := ValidateOutputDir(dir); err == nil {
+			t.Errorf("ValidateOutputDir(%q) expected error", dir)
+		}
+	}
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }

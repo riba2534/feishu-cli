@@ -99,7 +99,7 @@ type BusState struct {
 }
 
 // Bus 封装 bus.json 的读写 + 文件锁。
-// 单进程内多 goroutine 通过 mu 串行化；跨进程通过 flock(2) on bus.lock。
+// 单进程内多 goroutine 通过 mu 串行化；跨进程通过平台文件锁保护 bus.lock。
 type Bus struct {
 	appID    string
 	stateDir string
@@ -165,29 +165,17 @@ func (b *Bus) save(state *BusState) error {
 }
 
 // withLock 在跨进程互斥锁保护下执行 fn。
-// flock(LOCK_EX) 在锁文件 fd 上加排他锁，进程退出/fd 关闭自动释放——比 PID 文件更稳健。
 func (b *Bus) withLock(fn func(state *BusState) error) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	lockFD, err := os.OpenFile(b.LockFile(), os.O_RDWR|os.O_CREATE, 0600)
-	if err != nil {
-		return fmt.Errorf("打开 bus.lock 失败: %w", err)
-	}
-	defer lockFD.Close()
-
-	if err := syscall.Flock(int(lockFD.Fd()), syscall.LOCK_EX); err != nil {
-		return fmt.Errorf("获取 bus.lock 失败: %w", err)
-	}
-	defer func() {
-		_ = syscall.Flock(int(lockFD.Fd()), syscall.LOCK_UN)
-	}()
-
-	state, err := b.load()
-	if err != nil {
-		return err
-	}
-	return fn(state)
+	return withBusFileLock(b.LockFile(), func() error {
+		state, err := b.load()
+		if err != nil {
+			return err
+		}
+		return fn(state)
+	})
 }
 
 // Register 将当前进程注册为 EventKey consumer。

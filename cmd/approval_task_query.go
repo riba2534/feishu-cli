@@ -27,7 +27,7 @@ var approvalTaskQueryCmd = &cobra.Command{
   --output, -o   输出格式，可选：json、raw-json
 
 示例:
-  # 查询当前登录用户的待我审批（默认使用 Tenant Token）
+  # 查询当前登录用户的待我审批（User Token 必需）
   feishu-cli approval task query --topic todo
 
   # 查询我已审批的任务
@@ -61,7 +61,10 @@ var approvalTaskQueryCmd = &cobra.Command{
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
 
-		token := resolveFlagUserToken(cmd)
+		token, err := requireUserToken(cmd, "approval task query")
+		if err != nil {
+			return err
+		}
 		queryOpts := client.ApprovalTaskQueryOptions{
 			PageSize:   pageSize,
 			PageToken:  pageToken,

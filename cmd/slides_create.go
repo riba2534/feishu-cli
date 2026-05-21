@@ -28,14 +28,25 @@ var slidesCreateCmd = &cobra.Command{
   # JSON 输出
   feishu-cli slides create --title "Demo" --output json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		title, _ := cmd.Flags().GetString("title")
 		width, _ := cmd.Flags().GetInt("width")
 		height, _ := cmd.Flags().GetInt("height")
 		output, _ := cmd.Flags().GetString("output")
+
+		if output != "" && output != "json" {
+			return fmt.Errorf("无效的 --output: %s，有效值: json", output)
+		}
+		if cmd.Flags().Changed("width") && width <= 0 {
+			return fmt.Errorf("--width 必须大于 0")
+		}
+		if cmd.Flags().Changed("height") && height <= 0 {
+			return fmt.Errorf("--height 必须大于 0")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		result, err := client.CreateSlides(client.CreateSlidesOptions{

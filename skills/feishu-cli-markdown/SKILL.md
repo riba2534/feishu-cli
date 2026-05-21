@@ -47,6 +47,7 @@ feishu-cli markdown create --name plan.md --content "# Plan\n\n- todo 1"
 
 # 从本地文件创建（--name 缺省时取本地 basename）
 feishu-cli markdown create --content-file ./local.md
+feishu-cli markdown create --file ./local.md
 
 # 指定目标文件夹
 feishu-cli markdown create --name draft.md --content-file ./tmp.md --folder-token fldxxx
@@ -62,6 +63,7 @@ feishu-cli markdown create --name plan.md --content-file ./plan.md -o json
 | `--name` | 远端文件名，**必须 `.md` 结尾**。`create`：`--content` 时必填、`--content-file` 时可省取本地 basename。`overwrite`：`--content` 时必填、`--content-file` 时可省取本地 basename；显式传入 = 同时改名 |
 | `--content` | 字符串内容（与 `--content-file` 二选一） |
 | `--content-file` | 本地 `.md` 文件路径 |
+| `--file` | 官方 lark-cli 兼容别名，等价于 `--content-file` |
 | `--folder-token` | 目标文件夹（缺省 Drive 根目录） |
 | `-o json` | JSON 输出（含 `file_token` / `file_name` / `size_bytes`） |
 | `--user-access-token` | 覆盖登录态 |
@@ -101,6 +103,7 @@ feishu-cli markdown overwrite --file-token boxcnxxx --name existing.md --content
 
 # 本地文件覆盖
 feishu-cli markdown overwrite --file-token boxcnxxx --content-file ./new.md
+feishu-cli markdown overwrite --file-token boxcnxxx --file ./new.md
 
 # 覆盖 + 改名（必须 .md 结尾）
 feishu-cli markdown overwrite --file-token boxcnxxx --content-file ./new.md --name renamed.md

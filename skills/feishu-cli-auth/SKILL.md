@@ -67,7 +67,7 @@ AI Agent 判断是否满足某个任务，优先用 `auth check`，不要只看 
 | `msg pin/unpin/pins` | `im:message.pins` |
 | `msg reaction add/remove/list` | `im:message.reactions` |
 | `msg search-chats`、`chat *` | `im:chat:*`、`im:chat.members:*` |
-| `approval task query` | `approval:task` |
+| `approval task query` | `approval:task:read` |
 | `vc search/notes/recording`、`minutes *` | `vc:*`、`minutes:*` 相关 scope |
 | `mail *` | `mail:user_mailbox:*` 相关 scope |
 | `drive search` | `search:docs:read` |

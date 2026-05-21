@@ -31,13 +31,16 @@ var msgFlagListCmd = &cobra.Command{
 			return err
 		}
 
+		pageSize, _ := cmd.Flags().GetInt("page-size")
+		if err := validateMsgFlagPageSize(pageSize); err != nil {
+			return err
+		}
+		pageToken, _ := cmd.Flags().GetString("page-token")
+
 		token, err := resolveRequiredUserToken(cmd)
 		if err != nil {
 			return err
 		}
-
-		pageSize, _ := cmd.Flags().GetInt("page-size")
-		pageToken, _ := cmd.Flags().GetString("page-token")
 
 		result, err := client.ListFlags(pageSize, pageToken, token)
 		if err != nil {

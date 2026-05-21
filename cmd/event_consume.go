@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -36,7 +35,7 @@ var eventConsumeCmd = &cobra.Command{
 
 文件输出:
   --output-dir 非空时，每条事件额外 dump 为 <event_id>.json 落盘。
-  路径必须是相对路径或已存在的绝对路径；不做 ~ 展开。
+  路径必须是安全相对路径；不做 ~ 展开，不接受绝对路径或 ..。
 
 重连:
   oapi-sdk-go ws.Client 默认 WithAutoReconnect(true)，断线后无限重试（间隔 2 分钟 + 首次抖动）。
@@ -62,11 +61,6 @@ var eventConsumeCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-		cfg := config.Get()
-
 		key := args[0]
 		def, ok := event.Lookup(key)
 		if !ok {
@@ -79,9 +73,17 @@ var eventConsumeCmd = &cobra.Command{
 		outputDir, _ := cmd.Flags().GetString("output-dir")
 		quiet, _ := cmd.Flags().GetBool("quiet")
 
-		if outputDir != "" && strings.HasPrefix(outputDir, "~") {
-			return fmt.Errorf("--output-dir 不支持 ~ 展开，请用相对路径如 ./events")
+		if err := event.ValidateDotPathExpr(jqExpr); err != nil {
+			return err
 		}
+		if err := event.ValidateOutputDir(outputDir); err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		cfg := config.Get()
 
 		bus, err := event.NewBus(cfg.AppID)
 		if err != nil {

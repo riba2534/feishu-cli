@@ -23,6 +23,7 @@ var calendarRsvpCmd = &cobra.Command{
   --calendar-id        日历 ID（可选，默认主日历）
   --event-id           日程 ID（必填）
   --action             答复动作（必填）: accept / decline / tentative
+  --rsvp-status        官方 lark-cli 兼容别名，等价于 --action
 
 权限:
   calendar:calendar.event:reply（推荐 User Token，以本人身份答复）
@@ -37,6 +38,32 @@ var calendarRsvpCmd = &cobra.Command{
   # 待定
   feishu-cli calendar rsvp --event-id EVENT_xxx --action tentative`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		calendarID, _ := cmd.Flags().GetString("calendar-id")
+		eventID, _ := cmd.Flags().GetString("event-id")
+		action, _ := cmd.Flags().GetString("action")
+		rsvpStatus, _ := cmd.Flags().GetString("rsvp-status")
+
+		calendarID = strings.TrimSpace(calendarID)
+		eventID = strings.TrimSpace(eventID)
+		action = strings.TrimSpace(action)
+		rsvpStatus = strings.TrimSpace(rsvpStatus)
+
+		if eventID == "" {
+			return fmt.Errorf("--event-id 不能为空")
+		}
+		if action != "" && rsvpStatus != "" && action != rsvpStatus {
+			return fmt.Errorf("--action 与 --rsvp-status 不能同时指定不同值")
+		}
+		if action == "" {
+			action = rsvpStatus
+		}
+		if action == "" {
+			return fmt.Errorf("必须指定 --action 或 --rsvp-status")
+		}
+		if action != "accept" && action != "decline" && action != "tentative" {
+			return fmt.Errorf("无效的 --action: %s，有效值: accept/decline/tentative", action)
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -44,21 +71,6 @@ var calendarRsvpCmd = &cobra.Command{
 		token, errToken := requireUserToken(cmd, "calendar rsvp")
 		if errToken != nil {
 			return errToken
-		}
-
-		calendarID, _ := cmd.Flags().GetString("calendar-id")
-		eventID, _ := cmd.Flags().GetString("event-id")
-		action, _ := cmd.Flags().GetString("action")
-
-		calendarID = strings.TrimSpace(calendarID)
-		eventID = strings.TrimSpace(eventID)
-		action = strings.TrimSpace(action)
-
-		if eventID == "" {
-			return fmt.Errorf("--event-id 不能为空")
-		}
-		if action != "accept" && action != "decline" && action != "tentative" {
-			return fmt.Errorf("无效的 --action: %s，有效值: accept/decline/tentative", action)
 		}
 
 		// 未传 calendar-id 默认拿主日历
@@ -92,7 +104,8 @@ func init() {
 	calendarRsvpCmd.Flags().String("calendar-id", "", "日历 ID（可选，默认主日历）")
 	calendarRsvpCmd.Flags().String("event-id", "", "日程 ID（必填）")
 	calendarRsvpCmd.Flags().String("action", "", "答复动作: accept/decline/tentative（必填）")
+	calendarRsvpCmd.Flags().String("rsvp-status", "", "答复动作，官方 lark-cli 兼容别名：accept/decline/tentative")
 	calendarRsvpCmd.Flags().String("user-access-token", "", "User Access Token（推荐，以本人身份答复）")
 
-	mustMarkFlagRequired(calendarRsvpCmd, "event-id", "action")
+	mustMarkFlagRequired(calendarRsvpCmd, "event-id")
 }

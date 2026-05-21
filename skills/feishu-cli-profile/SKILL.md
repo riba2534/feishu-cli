@@ -94,7 +94,7 @@ feishu-cli profile migrate [--name <target>] [--force] [--json]
 | `--json` | `false` | JSON 输出，适合脚本 / AI Agent |
 
 ```bash
-feishu-cli profile add work --app-id cli_xxx --app-secret xxx --use
+feishu-cli profile add work --app-id cli_xxx --app-secret secret_xxx --use
 feishu-cli profile add personal --base-url https://open.larksuite.com
 feishu-cli profile add temp                                     # 留空待手动填
 ```
@@ -198,7 +198,7 @@ feishu-cli profile use -                                # 切回 default
 ### 场景 B：从零开始多账号
 
 ```bash
-feishu-cli profile add work --app-id cli_work --app-secret xxx --use
+feishu-cli profile add work --app-id cli_work --app-secret secret_xxx --use
 feishu-cli auth login                                   # work 登录
 feishu-cli profile add personal --base-url https://open.larksuite.com
 feishu-cli profile use personal
