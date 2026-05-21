@@ -58,6 +58,7 @@
   - `<foreignObject>`（飞书不支持 HTML 嵌入）
   - 外链 `<image href="https://...">`（改用 `board upload-image`）
   - 复杂动画 `<animate>` `<animateTransform>`（飞书静态画板不支持）
+  - **用曲线 `<path>`（贝塞尔 `Q`/`C`、弧 `A`）画连接线 / 自环 / 弧线箭头**——whiteboard-cli 转节点时曲率会丢失，退化成直线甚至悬空在节点旁（实测：状态机 `healthy` 自环用 `M..Q..` 画，渲染成一条飘在节点上方、不连回节点的孤立直线）。**画自环 / 弧线 / 曲线连接一律用多段 `<line>` 或 `<polyline>` 折线拼**（直线 → connector，渲染稳定，箭头三角用小 `<polygon>`）。纯装饰性的曲线填充图形（如插画里的山脊、花瓣，非连接语义）可保留，会转 svg 节点。
 
 #### 极坐标 / 三角函数布局（飞轮 / 雷达图）
 
@@ -238,6 +239,7 @@ whiteboard-cli 的翻译规则（实测整理）：
 - `opacity`：转为 `style.fill_opacity` / `style.border_opacity`
 - `font-family`：飞书强制用自家字体（Noto / 苹方），不保留自定义字体
 - `<use>`：不支持（whiteboard-cli 可能展开，可能丢失）
+- 曲线 `<path>`（`Q`/`C` 贝塞尔、`A` 弧）：作**连接线 / 自环**用时曲率易丢、退化为直线或悬空 → 改用多段 `<line>` / `<polyline>` 折线；作**填充形状**用时转 svg 节点尚可保留
 
 ---
 
