@@ -1511,59 +1511,7 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 				text = *elem.TextRun.Content
 			}
 
-			// Apply styles in correct order (innermost to outermost)
-			if elem.TextRun.TextElementStyle != nil {
-				style := elem.TextRun.TextElementStyle
-
-				// Handle inline code first (innermost) — 不转义内部文本
-				if style.InlineCode != nil && *style.InlineCode {
-					text = "`" + text + "`"
-				} else {
-					hasLink := style.Link != nil && style.Link.Url != nil
-
-					// 对非链接、非行内代码的纯文本转义特殊字符
-					if !hasLink {
-						text = escapeMarkdown(text)
-					}
-
-					// Apply text formatting styles (not applicable to inline code)
-					if style.Bold != nil && *style.Bold {
-						text = "**" + text + "**"
-					}
-					if style.Italic != nil && *style.Italic {
-						text = "*" + text + "*"
-					}
-					if style.Strikethrough != nil && *style.Strikethrough {
-						text = "~~" + text + "~~"
-					}
-					if style.Underline != nil && *style.Underline {
-						text = "<u>" + text + "</u>"
-					}
-				}
-
-				// Handle link last (outermost)
-				if style.Link != nil && style.Link.Url != nil {
-					linkURL := *style.Link.Url
-					// 解码完全 URL 编码的链接（如 https%3A%2F%2F...），提升可读性
-					if decoded, err := url.QueryUnescape(linkURL); err == nil && decoded != linkURL {
-						linkURL = decoded
-					}
-					// URL 中的括号编码，避免破坏 Markdown 链接语法
-					linkURL = strings.ReplaceAll(linkURL, "(", "%28")
-					linkURL = strings.ReplaceAll(linkURL, ")", "%29")
-					text = fmt.Sprintf("[%s](%s)", text, linkURL)
-				}
-
-				// 高亮颜色导出（最外层包装）
-				if c.options.Highlight {
-					text = c.wrapHighlightSpan(style, text)
-				}
-			} else {
-				// 无样式的纯文本也需要转义
-				text = escapeMarkdown(text)
-			}
-
-			result.WriteString(text)
+			result.WriteString(c.formatStyledText(text, elem.TextRun.TextElementStyle, nil))
 		}
 
 		if elem.MentionUser != nil {
@@ -1610,9 +1558,91 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 			}
 			result.WriteString("$" + content + "$")
 		}
+
+		if elem.LinkPreview != nil {
+			text, linkURL := inlineLinkPreviewTextAndURL(elem.LinkPreview)
+			if text == "" {
+				continue
+			}
+			result.WriteString(c.formatStyledText(text, elem.LinkPreview.TextElementStyle, linkURL))
+		}
 	}
 
 	return result.String()
+}
+
+func (c *BlockToMarkdown) formatStyledText(text string, style *larkdocx.TextElementStyle, fallbackLinkURL *string) string {
+	linkURL := fallbackLinkURL
+	if linkURL == nil && style != nil && style.Link != nil && style.Link.Url != nil {
+		linkURL = style.Link.Url
+	}
+	hasLink := linkURL != nil && *linkURL != ""
+
+	// Apply styles in correct order (innermost to outermost)
+	if style != nil {
+		// Handle inline code first (innermost) — 不转义内部文本
+		if style.InlineCode != nil && *style.InlineCode {
+			text = "`" + text + "`"
+		} else {
+			// 对非链接、非行内代码的纯文本转义特殊字符
+			if !hasLink {
+				text = escapeMarkdown(text)
+			}
+
+			// Apply text formatting styles (not applicable to inline code)
+			if style.Bold != nil && *style.Bold {
+				text = "**" + text + "**"
+			}
+			if style.Italic != nil && *style.Italic {
+				text = "*" + text + "*"
+			}
+			if style.Strikethrough != nil && *style.Strikethrough {
+				text = "~~" + text + "~~"
+			}
+			if style.Underline != nil && *style.Underline {
+				text = "<u>" + text + "</u>"
+			}
+		}
+	} else {
+		text = escapeMarkdown(text)
+	}
+
+	// Handle link last (outermost)
+	if hasLink {
+		text = fmt.Sprintf("[%s](%s)", text, normalizeMarkdownLinkURL(*linkURL))
+	}
+
+	// 高亮颜色导出（最外层包装）
+	if style != nil && c.options.Highlight {
+		text = c.wrapHighlightSpan(style, text)
+	}
+
+	return text
+}
+
+func normalizeMarkdownLinkURL(linkURL string) string {
+	// 解码完全 URL 编码的链接（如 https%3A%2F%2F...），提升可读性
+	if decoded, err := url.PathUnescape(linkURL); err == nil && decoded != linkURL {
+		linkURL = decoded
+	}
+	// URL 中的括号编码，避免破坏 Markdown 链接语法
+	linkURL = strings.ReplaceAll(linkURL, "(", "%28")
+	linkURL = strings.ReplaceAll(linkURL, ")", "%29")
+	return linkURL
+}
+
+func inlineLinkPreviewTextAndURL(linkPreview *larkdocx.InlineLinkPreview) (string, *string) {
+	if linkPreview == nil {
+		return "", nil
+	}
+	text := ""
+	if linkPreview.Title != nil {
+		text = *linkPreview.Title
+	}
+	if text == "" && linkPreview.Url != nil {
+		text = *linkPreview.Url
+	}
+	return text, linkPreview.Url
 }
 
 // wrapHighlightSpan 将带颜色的文本包装为 HTML span 标签
@@ -1692,6 +1722,10 @@ func (c *BlockToMarkdown) convertTextElementsRaw(elements []*larkdocx.TextElemen
 		}
 		if elem.Equation != nil && elem.Equation.Content != nil {
 			result.WriteString(*elem.Equation.Content)
+		}
+		if elem.LinkPreview != nil {
+			text, _ := inlineLinkPreviewTextAndURL(elem.LinkPreview)
+			result.WriteString(text)
 		}
 	}
 

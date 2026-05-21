@@ -49,11 +49,6 @@ var getMessageHistoryCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := resolveRequiredUserToken(cmd)
-		if err != nil {
-			return err
-		}
-
 		containerIDType, _ := cmd.Flags().GetString("container-id-type")
 		containerID, _ := cmd.Flags().GetString("container-id")
 		userID, _ := cmd.Flags().GetString("user-id")
@@ -85,6 +80,17 @@ var getMessageHistoryCmd = &cobra.Command{
 		}
 		if entryCount > 1 {
 			return fmt.Errorf("--container-id / --user-id / --user-email 互斥，只能指定一个")
+		}
+
+		var token string
+		if userID != "" || userEmail != "" {
+			var tokenErr error
+			token, tokenErr = resolveRequiredUserToken(cmd)
+			if tokenErr != nil {
+				return tokenErr
+			}
+		} else {
+			token = resolveOptionalUserToken(cmd)
 		}
 
 		// --user-email：搜索用户 → open_id

@@ -52,7 +52,10 @@ var exportWikiTreeCmd = &cobra.Command{
   feishu-cli wiki export-tree <token> -o ./backup --download-images --assets-dir ./backup/assets
 
   # 内嵌 Sheet 读取失败时保留 <sheet/> 引用
-  feishu-cli wiki export-tree <token> -o ./backup --expand-sheets=false`,
+  feishu-cli wiki export-tree <token> -o ./backup --expand-sheets=false
+
+  # 保留 @用户为可导入还原的标签
+  feishu-cli wiki export-tree <token> -o ./backup --expand-mentions=false`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -421,6 +424,7 @@ func init() {
 	exportWikiTreeCmd.Flags().Bool("download-images", false, "下载图片到本地目录（透传给底层 export）")
 	exportWikiTreeCmd.Flags().String("assets-dir", "./assets", "图片下载目录（透传给底层 export）")
 	exportWikiTreeCmd.Flags().Bool("expand-sheets", true, "展开内嵌电子表格为 Markdown 表格（false 时保留 <sheet/> 引用）")
+	exportWikiTreeCmd.Flags().Bool("expand-mentions", true, "展开 @用户为友好格式（false 时保留 <mention-user/> 标签以支持导入还原）")
 	exportWikiTreeCmd.Flags().Bool("skip-existing", false, "已存在且非空的 md 跳过（适合增量同步）")
 	exportWikiTreeCmd.Flags().Bool("continue-on-error", true, "单个节点导出失败时是否继续后续节点")
 	exportWikiTreeCmd.Flags().String("user-access-token", "", "User Access Token（可选；默认优先使用 auth login 登录态，失败时回退 App Token）")

@@ -119,11 +119,18 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 
 // resolveMarkdownContent 从 --markdown 或 --markdown-file 获取内容
 func resolveMarkdownContent(markdownStr, markdownFile string) (string, error) {
-	content, err := loadJSONInput(markdownStr, markdownFile, "markdown", "markdown-file", "Markdown 内容")
+	if markdownStr != "" && markdownFile != "" {
+		return "", fmt.Errorf("--markdown 和 --markdown-file 不能同时使用")
+	}
+	if markdownFile != "" {
+		return loadJSONInput("", markdownFile, "markdown", "markdown-file", "Markdown 内容")
+	}
+
+	content, err := loadJSONInput(markdownStr, "", "markdown", "markdown-file", "Markdown 内容")
 	if err != nil {
 		return "", err
 	}
-	// 处理命令行中的 \n 转义（仅内联输入时有意义，文件读取不受影响）
+	// 处理命令行中的 \n 转义；文件读取必须保持 LaTeX 反斜杠原样。
 	return strings.ReplaceAll(content, "\\n", "\n"), nil
 }
 

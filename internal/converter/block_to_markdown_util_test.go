@@ -570,6 +570,27 @@ func TestConvertTextElementsRaw(t *testing.T) {
 			want:    "x^2 + y^2 = z^2",
 		},
 		{
+			name: "InlineLinkPreview优先输出标题",
+			elements: []*larkdocx.TextElement{
+				{LinkPreview: &larkdocx.InlineLinkPreview{
+					Title: strPtr("项目主页"),
+					Url:   strPtr("https://example.com/project"),
+				}},
+			},
+			options: ConvertOptions{},
+			want:    "项目主页",
+		},
+		{
+			name: "InlineLinkPreview无标题时输出URL",
+			elements: []*larkdocx.TextElement{
+				{LinkPreview: &larkdocx.InlineLinkPreview{
+					Url: strPtr("https://example.com/project"),
+				}},
+			},
+			options: ConvertOptions{},
+			want:    "https://example.com/project",
+		},
+		{
 			name: "混合元素",
 			elements: []*larkdocx.TextElement{
 				{TextRun: &larkdocx.TextRun{Content: strPtr("hello ")}},
@@ -656,6 +677,52 @@ func TestConvertTextElements(t *testing.T) {
 			},
 			options: ConvertOptions{},
 			want:    "[链接](https://example.com/page%281%29)",
+		},
+		{
+			name: "InlineLinkPreview输出Markdown链接",
+			elements: []*larkdocx.TextElement{
+				{LinkPreview: &larkdocx.InlineLinkPreview{
+					Title: strPtr("项目主页"),
+					Url:   strPtr("https%3A%2F%2Fexample.com%2Fpage(1)"),
+				}},
+			},
+			options: ConvertOptions{},
+			want:    "[项目主页](https://example.com/page%281%29)",
+		},
+		{
+			name: "InlineLinkPreview保留URL加号",
+			elements: []*larkdocx.TextElement{
+				{LinkPreview: &larkdocx.InlineLinkPreview{
+					Title: strPtr("项目主页"),
+					Url:   strPtr("https://example.com/a+b?sig=x+y"),
+				}},
+			},
+			options: ConvertOptions{},
+			want:    "[项目主页](https://example.com/a+b?sig=x+y)",
+		},
+		{
+			name: "InlineLinkPreview无标题时使用URL作为文本",
+			elements: []*larkdocx.TextElement{
+				{LinkPreview: &larkdocx.InlineLinkPreview{
+					Url: strPtr("https://example.com/page(1)"),
+				}},
+			},
+			options: ConvertOptions{},
+			want:    "[https://example.com/page(1)](https://example.com/page%281%29)",
+		},
+		{
+			name: "InlineLinkPreview复用TextElementStyle",
+			elements: []*larkdocx.TextElement{
+				{LinkPreview: &larkdocx.InlineLinkPreview{
+					Title: strPtr("项目主页"),
+					Url:   strPtr("https://example.com/project"),
+					TextElementStyle: &larkdocx.TextElementStyle{
+						Bold: boolPtr(true),
+					},
+				}},
+			},
+			options: ConvertOptions{},
+			want:    "[**项目主页**](https://example.com/project)",
 		},
 		{
 			name: "无样式纯文本转义",

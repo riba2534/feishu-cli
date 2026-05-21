@@ -2,6 +2,7 @@ package converter
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -239,10 +240,273 @@ func normalizeBlockquoteEnding(source []byte) []byte {
 	return []byte(strings.Join(result, "\n"))
 }
 
+func createTextEquationBlock(formula string) *larkdocx.Block {
+	blockType := int(BlockTypeText)
+	return &larkdocx.Block{
+		BlockType: &blockType,
+		Text: &larkdocx.Text{
+			Elements: []*larkdocx.TextElement{
+				{Equation: &larkdocx.Equation{Content: &formula}},
+			},
+		},
+	}
+}
+
+const blockEquationHTMLTag = "block-equation"
+
+type rawHTMLBlockMode int
+
+const (
+	rawHTMLBlockNone rawHTMLBlockMode = iota
+	rawHTMLBlockUntilBlank
+	rawHTMLBlockUntilClosingTag
+	rawHTMLBlockUntilCommentEnd
+	rawHTMLBlockUntilProcessingEnd
+	rawHTMLBlockUntilCDATAEnd
+	rawHTMLBlockUntilDeclarationEnd
+)
+
+type rawHTMLBlockState struct {
+	mode rawHTMLBlockMode
+	tag  string
+}
+
+var commonMarkHTMLBlockTags = map[string]struct{}{
+	"address": {}, "article": {}, "aside": {}, "base": {}, "basefont": {},
+	"blockquote": {}, "body": {}, "caption": {}, "center": {}, "col": {},
+	"colgroup": {}, "dd": {}, "details": {}, "dialog": {}, "dir": {},
+	"div": {}, "dl": {}, "dt": {}, "fieldset": {}, "figcaption": {},
+	"figure": {}, "footer": {}, "form": {}, "frame": {}, "frameset": {},
+	"h1": {}, "h2": {}, "h3": {}, "h4": {}, "h5": {}, "h6": {},
+	"head": {}, "header": {}, "hr": {}, "html": {}, "iframe": {},
+	"legend": {}, "li": {}, "link": {}, "main": {}, "menu": {},
+	"menuitem": {}, "nav": {}, "noframes": {}, "ol": {}, "optgroup": {},
+	"option": {}, "p": {}, "param": {}, "section": {}, "source": {},
+	"summary": {}, "table": {}, "tbody": {}, "td": {}, "tfoot": {},
+	"th": {}, "thead": {}, "title": {}, "tr": {}, "track": {}, "ul": {},
+}
+
+func parseFenceMarker(line string) (byte, int, string) {
+	indent := 0
+	for indent < len(line) && line[indent] == ' ' {
+		indent++
+	}
+	if indent > 3 {
+		return 0, 0, ""
+	}
+
+	restLine := line[indent:]
+	if len(restLine) == 0 {
+		return 0, 0, ""
+	}
+	marker := restLine[0]
+	if marker != '`' && marker != '~' {
+		return 0, 0, ""
+	}
+	count := 0
+	for count < len(restLine) && restLine[count] == marker {
+		count++
+	}
+	if count < 3 {
+		return 0, 0, ""
+	}
+	return marker, count, restLine[count:]
+}
+
+func commonMarkBlockStartText(line string) (string, bool) {
+	indent := 0
+	for indent < len(line) && line[indent] == ' ' {
+		indent++
+	}
+	if indent > 3 {
+		return "", false
+	}
+	return strings.TrimSpace(line[indent:]), true
+}
+
+func rawHTMLBlockStart(line string) (rawHTMLBlockState, bool) {
+	trimmed, ok := commonMarkBlockStartText(line)
+	if !ok || trimmed == "" || trimmed[0] != '<' {
+		return rawHTMLBlockState{}, false
+	}
+
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.HasPrefix(lower, "<!--"):
+		return rawHTMLBlockState{mode: rawHTMLBlockUntilCommentEnd}, true
+	case strings.HasPrefix(lower, "<?"):
+		return rawHTMLBlockState{mode: rawHTMLBlockUntilProcessingEnd}, true
+	case strings.HasPrefix(lower, "<![cdata["):
+		return rawHTMLBlockState{mode: rawHTMLBlockUntilCDATAEnd}, true
+	case len(lower) >= 3 && strings.HasPrefix(lower, "<!") && lower[2] >= 'a' && lower[2] <= 'z':
+		return rawHTMLBlockState{mode: rawHTMLBlockUntilDeclarationEnd}, true
+	}
+
+	nameStart := 1
+	if len(lower) > 1 && lower[1] == '/' {
+		nameStart = 2
+	}
+	nameEnd := nameStart
+	for nameEnd < len(lower) {
+		ch := lower[nameEnd]
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') {
+			nameEnd++
+			continue
+		}
+		break
+	}
+	if nameEnd == nameStart {
+		return rawHTMLBlockState{}, false
+	}
+
+	tag := lower[nameStart:nameEnd]
+	if _, ok := commonMarkHTMLBlockTags[tag]; ok {
+		return rawHTMLBlockState{mode: rawHTMLBlockUntilBlank}, true
+	}
+	switch tag {
+	case "pre", "script", "style", "textarea":
+		return rawHTMLBlockState{mode: rawHTMLBlockUntilClosingTag, tag: tag}, true
+	}
+	return rawHTMLBlockState{}, false
+}
+
+func rawHTMLBlockClosed(line string, state rawHTMLBlockState) bool {
+	lower := strings.ToLower(line)
+	switch state.mode {
+	case rawHTMLBlockUntilBlank:
+		return strings.TrimSpace(line) == ""
+	case rawHTMLBlockUntilClosingTag:
+		return strings.Contains(lower, "</"+state.tag+">")
+	case rawHTMLBlockUntilCommentEnd:
+		return strings.Contains(lower, "-->")
+	case rawHTMLBlockUntilProcessingEnd:
+		return strings.Contains(lower, "?>")
+	case rawHTMLBlockUntilCDATAEnd:
+		return strings.Contains(lower, "]]>")
+	case rawHTMLBlockUntilDeclarationEnd:
+		return strings.Contains(lower, ">")
+	default:
+		return true
+	}
+}
+
+func encodeBlockEquationHTML(formula string) string {
+	encoded := base64.StdEncoding.EncodeToString([]byte(formula))
+	return fmt.Sprintf("<%s data-base64=\"%s\"/>", blockEquationHTMLTag, encoded)
+}
+
+func decodeBlockEquationHTML(tag *HTMLTag) (string, bool) {
+	if tag == nil || tag.Name != blockEquationHTMLTag {
+		return "", false
+	}
+	if encoded := tag.Attrs["data-base64"]; encoded != "" {
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err == nil {
+			return string(decoded), true
+		}
+	}
+	if tag.Content != "" {
+		return strings.TrimSpace(tag.Content), true
+	}
+	return "", false
+}
+
+func rewriteBlockEquationsToHTML(source []byte) ([]byte, bool) {
+	lines := strings.Split(string(source), "\n")
+	out := make([]string, 0, len(lines))
+	foundEquation := false
+	inFence := false
+	var fenceMarker byte
+	fenceLen := 0
+	rawHTMLState := rawHTMLBlockState{}
+
+	appendBlankIfNeeded := func() {
+		if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+			out = append(out, "")
+		}
+	}
+
+	for i := 0; i < len(lines); {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+
+		if inFence {
+			out = append(out, line)
+			if marker, count, rest := parseFenceMarker(line); marker == fenceMarker && count >= fenceLen && strings.TrimSpace(rest) == "" {
+				inFence = false
+				fenceMarker = 0
+				fenceLen = 0
+			}
+			i++
+			continue
+		}
+
+		if rawHTMLState.mode != rawHTMLBlockNone {
+			out = append(out, line)
+			if rawHTMLBlockClosed(line, rawHTMLState) {
+				rawHTMLState = rawHTMLBlockState{}
+			}
+			i++
+			continue
+		}
+
+		if trimmed == "$$" {
+			i++
+			var equationLines []string
+			closed := false
+			for i < len(lines) {
+				if strings.TrimSpace(lines[i]) == "$$" {
+					closed = true
+					i++
+					break
+				}
+				equationLines = append(equationLines, lines[i])
+				i++
+			}
+			formula := strings.Join(equationLines, "\n")
+			if closed && strings.TrimSpace(formula) != "" {
+				foundEquation = true
+				appendBlankIfNeeded()
+				out = append(out, encodeBlockEquationHTML(formula))
+				if i < len(lines) && strings.TrimSpace(lines[i]) != "" {
+					out = append(out, "")
+				}
+			} else {
+				out = append(out, "$$")
+				out = append(out, equationLines...)
+				if closed {
+					out = append(out, "$$")
+				}
+			}
+			continue
+		}
+
+		if marker, count, _ := parseFenceMarker(line); count >= 3 {
+			inFence = true
+			fenceMarker = marker
+			fenceLen = count
+		} else if state, ok := rawHTMLBlockStart(line); ok {
+			rawHTMLState = state
+			if rawHTMLBlockClosed(line, rawHTMLState) {
+				rawHTMLState = rawHTMLBlockState{}
+			}
+		}
+		out = append(out, line)
+		i++
+	}
+
+	if !foundEquation {
+		return source, false
+	}
+	return []byte(strings.Join(out, "\n")), true
+}
+
 // ConvertWithTableData converts Markdown to Feishu blocks and returns table data for content filling
 func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 	// 预处理：确保引用块后有空行分隔，避免 goldmark 的 lazy continuation
 	c.source = normalizeBlockquoteEnding(c.source)
+
+	c.source, _ = rewriteBlockEquationsToHTML(c.source)
 
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
@@ -2178,6 +2442,11 @@ func (c *MarkdownToBlock) handleInlineHTMLTag(tag *HTMLTag, inUnderline *bool) [
 // 支持 <image/>, <callout>, <grid>, <whiteboard/>, <sheet/>, <bitable/>, <file/>
 func (c *MarkdownToBlock) handleBlockHTMLTag(tag *HTMLTag) []*BlockNode {
 	switch tag.Name {
+	case blockEquationHTMLTag:
+		if formula, ok := decodeBlockEquationHTML(tag); ok {
+			return []*BlockNode{{Block: createTextEquationBlock(formula)}}
+		}
+		return nil
 	case "image":
 		return c.handleHTMLImageBlock(tag)
 	case "callout":
