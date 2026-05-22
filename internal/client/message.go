@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -1214,6 +1215,10 @@ func ListPins(chatID string, startTime, endTime, pageToken string, pageSize int,
 
 // DownloadMessageResource 下载消息中的资源文件（图片/文件）
 func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userAccessToken string, timeout ...time.Duration) error {
+	if userAccessToken != "" {
+		return downloadMessageResourceWithUserToken(messageID, fileKey, resourceType, outputPath, userAccessToken, timeout...)
+	}
+
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -1239,6 +1244,59 @@ func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userA
 		return fmt.Errorf("保存文件失败: %w", err)
 	}
 
+	return nil
+}
+
+// downloadMessageResourceWithUserToken calls the message resource API directly.
+// The generated SDK currently marks this endpoint as tenant-token only, but the
+// OpenAPI accepts user_access_token for resources visible to the user.
+func downloadMessageResourceWithUserToken(messageID, fileKey, resourceType, outputPath, userAccessToken string, timeout ...time.Duration) error {
+	cfg := config.Get()
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://open.feishu.cn"
+	}
+
+	params := url.Values{}
+	params.Set("type", resourceType)
+	reqURL := fmt.Sprintf("%s/open-apis/im/v1/messages/%s/resources/%s?%s",
+		baseURL,
+		url.PathEscape(messageID),
+		url.PathEscape(fileKey),
+		params.Encode(),
+	)
+
+	req, err := http.NewRequestWithContext(ContextWithTimeout(resolveTimeout(downloadTimeout, timeout)), http.MethodGet, reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("下载消息资源失败: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+userAccessToken)
+
+	httpResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("下载消息资源失败: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return fmt.Errorf("下载消息资源失败: 读取响应失败: %w", err)
+	}
+
+	if httpResp.StatusCode != http.StatusOK {
+		var resp struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+		}
+		if err := json.Unmarshal(body, &resp); err == nil && resp.Code != 0 {
+			return fmt.Errorf("下载消息资源失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		}
+		return fmt.Errorf("下载消息资源失败: HTTP %d, body: %s", httpResp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	if err := os.WriteFile(outputPath, body, 0666); err != nil {
+		return fmt.Errorf("保存文件失败: %w", err)
+	}
 	return nil
 }
 

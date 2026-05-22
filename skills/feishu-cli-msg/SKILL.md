@@ -327,6 +327,9 @@ feishu-cli msg resource-download <message_id> <file_key> --type image -o /tmp/ph
 # 下载消息中的文件
 feishu-cli msg resource-download <message_id> <file_key> --type file -o /tmp/attachment.pdf
 
+# Bot 不可见但当前用户可见的历史消息资源，可显式用 User Token
+feishu-cli msg resource-download <message_id> <file_key> --type file --user-access-token u-xxx -o /tmp/attachment.pdf
+
 # 下载大文件时指定超时时间
 feishu-cli msg resource-download <message_id> <file_key> --type image -o /tmp/photo.png --timeout 10m
 ```
@@ -337,6 +340,7 @@ feishu-cli msg resource-download <message_id> <file_key> --type image -o /tmp/ph
 | `<file_key>` | 资源的 file_key | 必填 |
 | `--type` | 资源类型 `image`/`file` | 必填 |
 | `-o, --output` | 输出文件路径 | — |
+| `--user-access-token` | 使用用户身份下载用户可见、但 Bot 不可见的历史消息资源 | — |
 | `--timeout` | 下载超时时间（Go duration 格式，如 `10m`、`30m`、`1h`） | `5m` |
 
 > **file_key 来源**：通过 `msg get <message_id>` 获取消息详情，从 content 中提取 `image_key` 或 `file_key`。
