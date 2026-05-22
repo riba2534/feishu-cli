@@ -135,6 +135,72 @@ func TestGetMessageWithUserToken_ApiErrorPropagated(t *testing.T) {
 	}
 }
 
+func TestDownloadMessageResourceWithUserToken_RawHTTP(t *testing.T) {
+	const (
+		messageID = "om_xxx"
+		fileKey   = "file_v3_xxx"
+		userToken = "u-test-token"
+	)
+	wantBody := []byte("fake-video")
+
+	var capturedAuth string
+	var capturedPath string
+	var capturedType string
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/open-apis/auth/v3/tenant_access_token/internal") {
+			t.Fatal("显式 User Token 下载资源时不应请求 tenant token")
+		}
+		capturedAuth = r.Header.Get("Authorization")
+		capturedPath = r.URL.Path
+		capturedType = r.URL.Query().Get("type")
+		w.Header().Set("Content-Type", "video/quicktime")
+		_, _ = w.Write(wantBody)
+	}
+
+	_, cleanup := stubFeishuServer(t, handler)
+	defer cleanup()
+
+	outputPath := t.TempDir() + "/video.mov"
+	if err := DownloadMessageResource(messageID, fileKey, "file", outputPath, userToken); err != nil {
+		t.Fatalf("DownloadMessageResource 返回错误: %v", err)
+	}
+	gotBody, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("读取下载文件失败: %v", err)
+	}
+	if string(gotBody) != string(wantBody) {
+		t.Fatalf("下载内容 = %q, want %q", gotBody, wantBody)
+	}
+	if capturedPath != "/open-apis/im/v1/messages/"+messageID+"/resources/"+fileKey {
+		t.Errorf("path = %q, want resource path", capturedPath)
+	}
+	if capturedType != "file" {
+		t.Errorf("type query = %q, want file", capturedType)
+	}
+	if capturedAuth != "Bearer "+userToken {
+		t.Errorf("Authorization header: got %q, want %q", capturedAuth, "Bearer "+userToken)
+	}
+}
+
+func TestDownloadMessageResourceWithUserToken_ApiError(t *testing.T) {
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"code":234040,"msg":"The message is invisible to the operator."}`)
+	}
+
+	_, cleanup := stubFeishuServer(t, handler)
+	defer cleanup()
+
+	err := DownloadMessageResource("om_xxx", "file_v3_xxx", "file", t.TempDir()+"/video.mov", "u-test-token")
+	if err == nil {
+		t.Fatal("API 返回错误时应返回 error")
+	}
+	if !strings.Contains(err.Error(), "234040") {
+		t.Fatalf("error = %q, want code 234040", err)
+	}
+}
+
 // tenantRouteHandler 封装 tenant 模式 stub：识别 SDK 自动发起的 tenant_access_token
 // 取 token 请求并回 fake token；其他路径转交给业务 handler。
 func tenantRouteHandler(t *testing.T, business http.HandlerFunc) http.HandlerFunc {

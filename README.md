@@ -785,6 +785,7 @@ feishu-cli tasklist member add <tasklist_guid> --members ou_xxx
 # 消息增强
 feishu-cli msg mget --message-ids om_xxx,om_yyy
 feishu-cli msg resource-download <message_id> <file_key> --type image -o photo.png
+feishu-cli msg resource-download <message_id> <file_key> --type file --user-access-token u-xxx -o attachment.bin  # 用户可见但 Bot 不可见的资源
 feishu-cli msg thread-messages <thread_id> --page-size 20
 feishu-cli msg flag create om_xxx                                  # 收藏消息
 feishu-cli msg flag create om_xxx --flag-type feed                 # feed 层自动识别 thread/msg_thread

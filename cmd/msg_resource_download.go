@@ -22,6 +22,7 @@ var msgResourceDownloadCmd = &cobra.Command{
   --type       资源类型（image 或 file，必填）
   -o, --output 输出文件路径（默认使用 file_key）
   --timeout    下载超时时间（默认 5m，大文件可设置更长如 30m、1h）
+  --user-access-token  使用用户身份下载用户可见、但 Bot 不可见的历史消息资源
 
 示例:
   # 下载图片
@@ -29,6 +30,9 @@ var msgResourceDownloadCmd = &cobra.Command{
 
   # 下载文件
   feishu-cli msg resource-download om_xxx file_xxx --type file -o document.pdf
+
+  # 使用用户身份下载
+  feishu-cli msg resource-download om_xxx file_xxx --type file --user-access-token u-xxx -o document.pdf
 
   # 大文件下载，设置 30 分钟超时
   feishu-cli msg resource-download om_xxx file_xxx --type file -o large.zip --timeout 30m`,
