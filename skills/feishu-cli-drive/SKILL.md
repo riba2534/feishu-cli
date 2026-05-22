@@ -38,15 +38,16 @@ allowed-tools: Bash(feishu-cli drive:*), Bash(feishu-cli auth:*), Read
 feishu-cli drive upload --file /tmp/report.pdf
 feishu-cli drive upload --file /tmp/big.zip --folder-token fldxxx --name "年度报告.zip"
 
-# 下载（流式 + 路径校验 + --overwrite + --timeout）
+# 下载（流式 + 路径校验 + --overwrite + --timeout，大文件自动 Range 分片兜底）
 feishu-cli drive download --file-token boxcnxxxx --output ./report.pdf
 feishu-cli drive download --file-token boxcnxxxx --output ./downloads/ --overwrite
-feishu-cli drive download --file-token boxcnxxxx --output ./big.zip --timeout 10m
+feishu-cli drive download --file-token boxcnxxxx --output ./big.zip --timeout 30m
 ```
 
 **关键点**：
 - `drive upload` 分块上传每片独立重试 3 次，使用 `io.SectionReader` 外层只打开文件一次
 - `drive download` 的 `--output` 可以是文件路径（直接用）或目录（**文件名用 `file_token` 本身**，暂不从响应头解析）
+- `drive download` 使用用户身份下载时，如果服务端返回大文件限制，会自动使用 HTTP Range 分片下载并合并
 - 如果需要自定义文件名，请显式传完整路径：`--output ./downloads/report.pdf`
 
 ### 2. 文档导出（含 markdown 快捷路径）

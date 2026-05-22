@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +30,8 @@ const (
 	CardMsgContentTypeUser = "user_card_content"
 	CardMsgContentTypeRaw  = "raw_card_content"
 )
+
+const messageResourceFileSizeExceedsLimitCode = 234037
 
 // SendMessage sends a message to a user or chat
 func SendMessage(receiveIDType string, receiveID string, msgType string, content string, userAccessToken string) (string, error) {
@@ -1251,6 +1252,39 @@ func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userA
 // The generated SDK currently marks this endpoint as tenant-token only, but the
 // OpenAPI accepts user_access_token for resources visible to the user.
 func downloadMessageResourceWithUserToken(messageID, fileKey, resourceType, outputPath, userAccessToken string, timeout ...time.Duration) error {
+	reqURL := buildMessageResourceURL(messageID, fileKey, resourceType)
+	t := resolveTimeout(downloadTimeout, timeout)
+
+	httpClient := &http.Client{Timeout: t}
+	req, err := newBearerDownloadRequest(reqURL, userAccessToken, "")
+	if err != nil {
+		return fmt.Errorf("下载消息资源失败: %w", err)
+	}
+
+	httpResp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("下载消息资源失败: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode != http.StatusOK {
+		apiErr, parseErr := parseDownloadAPIError("下载消息资源", httpResp)
+		if parseErr != nil {
+			return parseErr
+		}
+		if apiErr.Code == messageResourceFileSizeExceedsLimitCode {
+			return downloadBearerURLByRange("下载消息资源", reqURL, outputPath, userAccessToken, t)
+		}
+		return fmt.Errorf("下载消息资源失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
+	}
+
+	if err := writeStreamToFile(httpResp.Body, outputPath); err != nil {
+		return fmt.Errorf("保存文件失败: %w", err)
+	}
+	return nil
+}
+
+func buildMessageResourceURL(messageID, fileKey, resourceType string) string {
 	cfg := config.Get()
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
@@ -1259,45 +1293,12 @@ func downloadMessageResourceWithUserToken(messageID, fileKey, resourceType, outp
 
 	params := url.Values{}
 	params.Set("type", resourceType)
-	reqURL := fmt.Sprintf("%s/open-apis/im/v1/messages/%s/resources/%s?%s",
+	return fmt.Sprintf("%s/open-apis/im/v1/messages/%s/resources/%s?%s",
 		baseURL,
 		url.PathEscape(messageID),
 		url.PathEscape(fileKey),
 		params.Encode(),
 	)
-
-	req, err := http.NewRequestWithContext(ContextWithTimeout(resolveTimeout(downloadTimeout, timeout)), http.MethodGet, reqURL, nil)
-	if err != nil {
-		return fmt.Errorf("下载消息资源失败: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+userAccessToken)
-
-	httpResp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("下载消息资源失败: %w", err)
-	}
-	defer httpResp.Body.Close()
-
-	body, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return fmt.Errorf("下载消息资源失败: 读取响应失败: %w", err)
-	}
-
-	if httpResp.StatusCode != http.StatusOK {
-		var resp struct {
-			Code int    `json:"code"`
-			Msg  string `json:"msg"`
-		}
-		if err := json.Unmarshal(body, &resp); err == nil && resp.Code != 0 {
-			return fmt.Errorf("下载消息资源失败: code=%d, msg=%s", resp.Code, resp.Msg)
-		}
-		return fmt.Errorf("下载消息资源失败: HTTP %d, body: %s", httpResp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	if err := os.WriteFile(outputPath, body, 0666); err != nil {
-		return fmt.Errorf("保存文件失败: %w", err)
-	}
-	return nil
 }
 
 // BatchGetMessagesResult 是 BatchGetMessages 的返回值。

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkdrive "github.com/larksuite/oapi-sdk-go/v3/service/drive/v1"
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // 最大下载文件大小限制 (100MB)
@@ -656,6 +658,11 @@ func DownloadFileWithToken(fileToken, outputPath, userAccessToken string, timeou
 		return err
 	}
 
+	t := resolveTimeout(downloadTimeout, timeout)
+	if userAccessToken != "" {
+		return downloadDriveFileWithUserTokenRaw(fileToken, outputPath, userAccessToken, t)
+	}
+
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -665,7 +672,7 @@ func DownloadFileWithToken(fileToken, outputPath, userAccessToken string, timeou
 		FileToken(fileToken).
 		Build()
 
-	resp, err := client.Drive.File.Download(ContextWithTimeout(resolveTimeout(downloadTimeout, timeout)), req, UserTokenOption(userAccessToken)...)
+	resp, err := client.Drive.File.Download(ContextWithTimeout(t), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("下载文件失败: %w", err)
 	}
@@ -674,7 +681,59 @@ func DownloadFileWithToken(fileToken, outputPath, userAccessToken string, timeou
 		return fmt.Errorf("下载文件失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	return saveToFile(resp.File, outputPath)
+	return writeStreamToFile(resp.File, outputPath)
+}
+
+func downloadDriveFileWithUserTokenRaw(fileToken, outputPath, userAccessToken string, timeout time.Duration) error {
+	reqURL := buildDriveFileDownloadURL(fileToken)
+	httpClient := &http.Client{Timeout: timeout}
+	req, err := newBearerDownloadRequest(reqURL, userAccessToken, "")
+	if err != nil {
+		return fmt.Errorf("下载文件失败: %w", err)
+	}
+
+	httpResp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("下载文件失败: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode != http.StatusOK {
+		apiErr, parseErr := parseDownloadAPIError("下载文件", httpResp)
+		if parseErr != nil {
+			return parseErr
+		}
+		if isDownloadFileSizeLimitError(apiErr.Code, apiErr.Msg, nil) {
+			return downloadBearerURLByRange("下载文件", reqURL, outputPath, userAccessToken, timeout)
+		}
+		return fmt.Errorf("下载文件失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
+	}
+
+	if err := writeStreamToFile(httpResp.Body, outputPath); err != nil {
+		return fmt.Errorf("保存文件失败: %w", err)
+	}
+	return nil
+}
+
+func buildDriveFileDownloadURL(fileToken string) string {
+	cfg := config.Get()
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://open.feishu.cn"
+	}
+	return fmt.Sprintf("%s/open-apis/drive/v1/files/%s/download", baseURL, url.PathEscape(fileToken))
+}
+
+func isDownloadFileSizeLimitError(code int, msg string, err error) bool {
+	if code == messageResourceFileSizeExceedsLimitCode {
+		return true
+	}
+	text := strings.ToLower(msg)
+	if err != nil {
+		text += " " + strings.ToLower(err.Error())
+	}
+	return strings.Contains(text, "downloaded file size exceeds limit") ||
+		(strings.Contains(text, "file size") && strings.Contains(text, "exceed"))
 }
 
 // maxSingleUploadSize 单次上传的文件大小上限（20MB），超过此大小需使用分片上传

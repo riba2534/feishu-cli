@@ -13,6 +13,7 @@ var downloadFileCmd = &cobra.Command{
 	Use:   "download <file_token>",
 	Short: "下载云空间文件",
 	Long: `从云空间下载文件到本地。
+使用用户身份下载时，如遇到飞书大文件限制，会自动使用 HTTP Range 分片下载并合并。
 
 参数:
   file_token    文件的 Token

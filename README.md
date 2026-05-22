@@ -481,6 +481,7 @@ feishu-cli file mkdir "新文件夹" --parent <folder_token>
 # 上传 / 下载
 feishu-cli file upload local_file.pdf --parent FOLDER_TOKEN
 feishu-cli file download <file_token> -o output.pdf
+feishu-cli file download <file_token> -o large.zip --user-access-token u-xxx --timeout 30m  # 大文件自动 Range 分片兜底
 
 # 版本管理
 feishu-cli file version list <doc_token> --doc-type docx
@@ -718,6 +719,7 @@ feishu-cli bitable role list --base-token bscnxxxx
 # 云盘增强（drive）
 feishu-cli drive upload --file big.zip --folder-token fldxxx
 feishu-cli drive download --file-token boxxxx --output ./downloads/ --overwrite
+feishu-cli drive download --file-token boxxxx --output ./big.zip --timeout 30m  # 大文件自动 Range 分片兜底
 feishu-cli drive export --token docxxxx --doc-type docx --file-extension markdown --output-dir ./exports
 feishu-cli drive export --token sheetxxxx --doc-type sheet --file-extension csv --sub-id sheet_1 --output-dir ./out
 feishu-cli drive import --file report.docx --type docx --folder-token fldxxx
@@ -777,6 +779,7 @@ feishu-cli tasklist member add <tasklist_guid> --members ou_xxx
 feishu-cli msg mget --message-ids om_xxx,om_yyy
 feishu-cli msg resource-download <message_id> <file_key> --type image -o photo.png
 feishu-cli msg resource-download <message_id> <file_key> --type file --user-access-token u-xxx -o attachment.bin  # 用户可见但 Bot 不可见的资源
+feishu-cli msg resource-download <message_id> <file_key> --type file --user-access-token u-xxx -o large.bin --timeout 30m  # 大文件自动 Range 分片兜底
 feishu-cli msg thread-messages <thread_id> --page-size 20
 feishu-cli msg flag create om_xxx                                  # 收藏消息
 feishu-cli msg flag create om_xxx --flag-type feed                 # feed 层自动识别 thread/msg_thread

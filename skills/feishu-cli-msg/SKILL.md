@@ -331,7 +331,7 @@ feishu-cli msg resource-download <message_id> <file_key> --type file -o /tmp/att
 feishu-cli msg resource-download <message_id> <file_key> --type file --user-access-token u-xxx -o /tmp/attachment.pdf
 
 # 下载大文件时指定超时时间
-feishu-cli msg resource-download <message_id> <file_key> --type image -o /tmp/photo.png --timeout 10m
+feishu-cli msg resource-download <message_id> <file_key> --type file --user-access-token u-xxx -o /tmp/large.bin --timeout 30m
 ```
 
 | 参数 | 说明 | 默认值 |
@@ -344,6 +344,7 @@ feishu-cli msg resource-download <message_id> <file_key> --type image -o /tmp/ph
 | `--timeout` | 下载超时时间（Go duration 格式，如 `10m`、`30m`、`1h`） | `5m` |
 
 > **file_key 来源**：通过 `msg get <message_id>` 获取消息详情，从 content 中提取 `image_key` 或 `file_key`。
+> 使用用户身份直连下载时，如遇到飞书大文件限制，会自动使用 HTTP Range 分片下载并合并。
 
 ## 话题（Thread）消息
 

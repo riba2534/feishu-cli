@@ -15,6 +15,7 @@ var driveDownloadCmd = &cobra.Command{
 	Use:   "download",
 	Short: "下载云盘文件到本地",
 	Long: `下载云盘文件到本地。
+如遇到飞书大文件限制，会自动使用 HTTP Range 分片下载并合并。
 
 必填:
   --file-token    云盘文件 token

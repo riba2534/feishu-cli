@@ -13,6 +13,7 @@ var msgResourceDownloadCmd = &cobra.Command{
 	Use:   "resource-download <message_id> <file_key>",
 	Short: "下载消息中的资源文件（图片/文件）",
 	Long: `下载消息中的图片或文件资源。
+使用用户身份直连下载时，如遇到飞书大文件限制，会自动使用 HTTP Range 分片下载并合并。
 
 参数:
   message_id  消息 ID（om_xxx 格式）
