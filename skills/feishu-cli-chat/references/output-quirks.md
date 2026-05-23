@@ -93,13 +93,13 @@ system 消息 `body.content` 形如：
 群里 Bot 发消息时：
 
 ```json
-{"sender": {"id": "cli_a94550d641e49cba", "id_type": "app_id", "sender_type": "app"}}
+{"sender": {"id": "cli_xxx", "id_type": "app_id", "sender_type": "app"}}
 ```
 
 而 `sender_names` 用 **open_id** 索引，例如：
 
 ```json
-{"ou_4eda5030f3cb3c8801d32de051431b94": "TikTok Shop Virtual AM"}
+{"ou_xxx": "Bot 显示名"}
 ```
 
 `cli_xxx` 是 app_id，与同一 Bot 的 `ou_xxx` open_id 是两套 ID。`user info cli_xxx`
