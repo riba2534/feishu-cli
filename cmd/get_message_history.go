@@ -59,6 +59,9 @@ var getMessageHistoryCmd = &cobra.Command{
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
+		expandThreads, _ := cmd.Flags().GetBool("expand-threads")
+		threadsPerPage, _ := cmd.Flags().GetInt("threads-per-page")
+		threadsTotalLimit, _ := cmd.Flags().GetInt("threads-total-limit")
 		cardContentType, err := resolveCardContentType(cmd)
 		if err != nil {
 			return err
@@ -159,11 +162,21 @@ var getMessageHistoryCmd = &cobra.Command{
 			result = fallbackResult
 		}
 
+		// 自动展开线程回复（与官方 lark-cli 行为对齐）：对每条带 thread_id 的根消息
+		// 拉取其线程内回复（ASC 顺序），结果挂在 result.ThreadReplies。
+		// 共享 nameCache，从线程回复的 mentions 里抽到的名字会回填到根消息 sender。
+		if expandThreads {
+			client.ExpandThreadReplies(result, token, threadsPerPage, threadsTotalLimit)
+		}
+
 		// 解析发送者名字：从 mentions + contact basic_batch 两路补齐
-		// 合并主消息 + merge_forward 子消息，让 sub 中的发送者也能被解析
+		// 合并主消息 + merge_forward 子消息 + thread_replies，让所有来源里的名字都能被解析
 		allMsgs := append([]*larkim.Message{}, result.Items...)
 		for _, subs := range result.MergeForwardSubMessages {
 			allMsgs = append(allMsgs, subs...)
+		}
+		for _, replies := range result.ThreadReplies {
+			allMsgs = append(allMsgs, replies...)
 		}
 		senderNames := client.ResolveSenderNames(allMsgs, token)
 
@@ -187,11 +200,32 @@ var getMessageHistoryCmd = &cobra.Command{
 					enriched["merge_forward_card_texts"] = cardTextMap
 				}
 			}
+			if len(result.ThreadReplies) > 0 {
+				enriched["thread_replies"] = result.ThreadReplies
+				if len(result.ThreadHasMore) > 0 {
+					enriched["thread_has_more"] = result.ThreadHasMore
+				}
+				var allReplies []*larkim.Message
+				for _, replies := range result.ThreadReplies {
+					allReplies = append(allReplies, replies...)
+				}
+				if cardTextMap := client.ExtractCardTextMap(allReplies); len(cardTextMap) > 0 {
+					enriched["thread_replies_card_texts"] = cardTextMap
+				}
+			}
 			if err := printJSON(enriched); err != nil {
 				return err
 			}
 		} else {
 			fmt.Printf("找到 %d 条消息:\n\n", len(result.Items))
+			totalReplies := 0
+			for _, replies := range result.ThreadReplies {
+				totalReplies += len(replies)
+			}
+			if totalReplies > 0 {
+				fmt.Printf("（已自动展开 %d 个话题，共 %d 条回复；--expand-threads=false 关闭）\n\n",
+					len(result.ThreadReplies), totalReplies)
+			}
 			for i, msg := range result.Items {
 				msgID := ""
 				if msg.MessageId != nil {
@@ -218,6 +252,18 @@ var getMessageHistoryCmd = &cobra.Command{
 				fmt.Printf("    类型: %s\n", msgType)
 				fmt.Printf("    发送者: %s\n", senderDisplay)
 				fmt.Printf("    时间: %s\n", createTime)
+				if msg.ThreadId != nil && *msg.ThreadId != "" {
+					tid := *msg.ThreadId
+					if replies, ok := result.ThreadReplies[tid]; ok {
+						suffix := ""
+						if result.ThreadHasMore[tid] {
+							suffix = "+"
+						}
+						fmt.Printf("    话题: %s（含 %d%s 条回复）\n", tid, len(replies), suffix)
+					} else {
+						fmt.Printf("    话题: %s\n", tid)
+					}
+				}
 				fmt.Println()
 			}
 			if result.HasMore {
@@ -242,5 +288,10 @@ func init() {
 	getMessageHistoryCmd.Flags().String("page-token", "", "分页标记")
 	getMessageHistoryCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	getMessageHistoryCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	// 与官方 lark-cli `+chat-messages-list` 行为对齐：默认对每条带 thread_id 的根消息
+	// 自动展开线程内回复。--expand-threads=false 可关闭，回退到只拉根消息。
+	getMessageHistoryCmd.Flags().Bool("expand-threads", true, "自动展开每个话题的线程回复（默认开启，与 lark-cli 对齐）")
+	getMessageHistoryCmd.Flags().Int("threads-per-page", 50, "每个话题最多拉多少条回复（OpenAPI 上限 50）")
+	getMessageHistoryCmd.Flags().Int("threads-total-limit", 500, "所有话题累计拉到的回复总数上限（防止极端话题群打爆 QPS）")
 	addCardContentTypeFlag(getMessageHistoryCmd)
 }

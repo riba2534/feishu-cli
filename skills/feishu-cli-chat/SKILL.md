@@ -23,7 +23,7 @@ allowed-tools: Bash(feishu-cli auth:*), Bash(feishu-cli msg:*), Bash(feishu-cli 
 | 场景 | 走哪 |
 |---|---|
 | 看一段时间窗内的群消息（含话题回复、名字反解、卡片解析） | **`scripts/fetch_chat_history.py`**（一条命令搞定） |
-| 看一页群聊最新消息 | `msg history` 单次调用 |
+| 看一页群聊最新消息（v1.27.1+ 默认自动展开所有话题） | `msg history` 单次调用 |
 | 看私聊记录 | `msg history --user-email` 或 `--user-id` |
 | 找群 | `msg search-chats --query` |
 | 看单条消息 / 合并转发 | `msg get` / `msg mget` |
@@ -87,8 +87,16 @@ python3 skills/feishu-cli-chat/scripts/fetch_chat_history.py oc_xxx --since 24h 
 ## 单次调用：常用读命令
 
 ```bash
-# 群聊一页历史（不展开线程）
+# 群聊一页历史（v1.27.1+ 默认自动展开线程：一次拉根 + 所有话题回复）
 feishu-cli msg history --container-id oc_xxx --container-id-type chat --page-size 50 -o json
+
+# 关闭自动展开（仅拉根消息，更快）
+feishu-cli msg history --container-id oc_xxx --container-id-type chat \
+    --page-size 50 --expand-threads=false -o json
+
+# 调整展开规模（默认 per=50, total=500，与 lark-cli 对齐）
+feishu-cli msg history --container-id oc_xxx --container-id-type chat \
+    --threads-per-page 30 --threads-total-limit 300 -o json
 
 # 私聊：邮箱或 open_id 自动反查 P2P chat_id
 feishu-cli msg history --user-email user@example.com --page-size 50 -o json
@@ -106,6 +114,20 @@ feishu-cli msg mget --message-ids <id1,id2>
 # 话题回复（注意：thread-messages 不接受 -o json，默认就是 JSON 输出）
 feishu-cli msg thread-messages <thread_id> --page-size 50 --sort ByCreateTimeAsc
 ```
+
+### 自动展开线程的 JSON 输出（v1.27.1+）
+
+`msg history -o json` 顶层新增三个字段，与官方 lark-cli `+chat-messages-list` 对齐：
+
+| 字段 | 说明 |
+|------|------|
+| `thread_replies` | `{thread_id: [reply, ...]}`，ASC 顺序，不含根消息 |
+| `thread_has_more` | `{thread_id: true}` 标记该话题在 `threads-per-page` 限额内未拉完 |
+| `thread_replies_card_texts` | 线程内 interactive 卡片的 card_texts 提取 |
+
+`sender_names` 字段同时合并主消息 + merge_forward + thread_replies 三处来源的 mentions 名字，外部用户名字解析率显著提升（实测话题群从 8% → 42%）。
+
+仍未解析的发送者通常是**真正的跨租户外部用户且本话题内无人 @过他**——这是飞书 OpenAPI 限制，contact basic_batch 不返回，官方 lark-cli 同样拿不到。
 
 ## 搜索与定位
 

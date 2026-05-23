@@ -106,6 +106,15 @@ export FEISHU_APP_SECRET=xxx
 
 **CLI flags**：`--diagram-workers`（默认 5）、`--table-workers`（默认 3）、`--diagram-retries`（默认 10）、`--upload-images`（默认开启）、`--image-workers`（默认 2，API 限制 5 QPS）
 
+### msg history 自动展开线程（v1.27.1+）
+
+`msg history` 对话题群（chat_mode=thread）默认自动展开每条根消息的线程回复，与官方 lark-cli `+chat-messages-list` 行为对齐：
+
+- 默认 `--expand-threads=true`，单话题最多 50 回复，所有话题累计上限 500
+- JSON 输出顶层新增 `thread_replies` / `thread_has_more` / `thread_replies_card_texts`
+- 共享 sender_names 缓存：合并主消息 + merge_forward + thread_replies 三处来源一起调 contact basic_batch，外部用户名字解析率从 ~8% 提升到 ~42%
+- 关闭：`--expand-threads=false`；调规模：`--threads-per-page` / `--threads-total-limit`
+
 ## 命令速查
 
 完整命令清单见 [README.md](README.md) 和对应 skill 文档。关键入口：
