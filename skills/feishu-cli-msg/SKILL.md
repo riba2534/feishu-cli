@@ -3,18 +3,18 @@ name: feishu-cli-msg
 description: >-
   飞书消息发送。发送消息（text/post/interactive 卡片等 11 种类型）、回复消息、
   转发/合并转发、消息加急、消息书签（flag 收藏/list/cancel）、下载消息资源（图片/文件）。
-  使用 App Token（Bot 身份），无需登录。
+  发送/回复/转发/加急默认 App Token（Bot 身份）；msg flag 收藏/书签必需 User Token（`im:feed.flag:read/write`）；
+  msg resource-download 已登录时优先 User Token，未登录回落 App Token。
   当用户明确请求通过飞书即时消息/Bot 消息发送、回复、转发、合并转发、加急、消息收藏/书签、
   下载消息图片或文件时使用。邮件走 feishu-cli-mail；文档评论/共享权限走对应 skill。
-  注意：Reaction/Pin/获取消息详情/批量获取消息/话题回复/消息历史/搜索群聊/群聊管理（需 User Token），
+  注意：Reaction/Pin/获取消息详情/批量获取消息/话题回复/消息历史/搜索群聊/群聊管理，
   以及消息删除（默认 App Token 用于 Bot 自撤回，可选 User Token 让管理员撤回他人）
   请使用 feishu-cli-chat 技能。
-  发送结构化或美观的 interactive 卡片（带折叠面板、图表、按钮组、人员卡等）
-  请先用 feishu-cli-card 构造 JSON（内置 7 个场景模板和 20+ 组件、配色布局规范，
-  避免手搓易错的 JSON），再回到本技能用 --msg-type interactive 发送。
+  发送 interactive 卡片时，先用 feishu-cli-card 构造 v2 JSON，
+  再回到本技能用 --msg-type interactive --content-file 发送。
 argument-hint: <receive_id> [--msg-type <type>]
 user-invocable: true
-allowed-tools: Bash(feishu-cli msg:*), Bash(feishu-cli media:*), Bash(feishu-cli file:*), Bash(feishu-cli auth:*), Read, Write
+allowed-tools: Bash(feishu-cli msg:*), Bash(feishu-cli media:*), Bash(feishu-cli file:*), Read, Write
 ---
 
 # 飞书消息发送技能
@@ -24,6 +24,10 @@ allowed-tools: Bash(feishu-cli msg:*), Bash(feishu-cli media:*), Bash(feishu-cli
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
 > **查看聊天记录？** 请使用 **feishu-cli-chat** 技能（msg history/list/get/search-chats/群管理）。本技能专注于消息的发送与互动操作。
+> 端到端拉一段时间窗的群消息（含话题展开、名字反解、卡片解析）直接跑：
+> ```bash
+> python3 skills/feishu-cli-chat/scripts/fetch_chat_history.py oc_xxx --since 24h
+> ```
 
 ## 核心概念
 
@@ -88,9 +92,11 @@ allowed-tools: Bash(feishu-cli msg:*), Bash(feishu-cli media:*), Bash(feishu-cli
 
 ## 身份说明
 
-本技能所有命令使用 **App Token（Bot 身份）**，无需登录。
+本技能以**发送类命令**为主，默认使用 **App Token（Bot 身份）**，无需登录。
+- **必需 User Token**：`msg flag` 收藏/书签子命令（`im:feed.flag:read/write`），见末尾"消息书签"章节。
+- **优先 User Token + Tenant 兜底**：`msg resource-download` 已登录时自动用 User Token 下载（要求你能看到该消息），未登录则尝试 App Token（要求 Bot 能看到该消息）。
 
-> **Reaction/Pin/获取消息/搜索群聊？** 这些操作需要 User Token，已移至 **feishu-cli-chat** 技能（需先 `auth login`）。
+> **Reaction/Pin/获取消息/搜索群聊？** 这些操作维护在 **feishu-cli-chat** 技能（读类登录后默认 User Token，未登录回落 Bot；互动类必需 User Token）。
 > **删除消息？** 也在 feishu-cli-chat 技能中：Bot 撤回自己 24h 内消息默认走 App Token（无需登录），群管理员撤回他人消息时才传 `--user-access-token`。
 
 ## 发送命令
@@ -377,7 +383,7 @@ feishu-cli msg reply om_xxx --text "这里开个话题" --reply-in-thread
 ## 参考文档
 
 - `references/message_content.md`：各消息类型的 content JSON 结构详解
-- `references/card_schema.md`：卡片消息完整构造指南（组件、布局、模板）
+- `references/card_schema.md`：interactive 发送格式与历史卡片排障；新增卡片构造优先用 `feishu-cli-card`
 
 ## 消息书签（msg flag，v1.23+ 新增）
 

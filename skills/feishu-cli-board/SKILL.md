@@ -4,15 +4,16 @@ description: >-
   飞书画板全能操作 · 5 种画图路径任选其一：
   (A) Mermaid/PlantUML 服务端渲染（思维导图/时序图/类图/饼图/流程图/甘特图，整图作为一个节点，飞书自动排版）
   (B) Mermaid 本地引擎 whiteboard-cli（绕开 par/参与方数等服务端限制，每个节点可点击编辑）
-  (C) ⭐ SVG 自由作图（飞轮/鱼骨/价值金字塔/转化漏斗/桑基/路线图/Dashboard/海报/插画/户型图/地铁图/周期表/赛博朋克城市等任意视觉）
-      → 使用 scripts/svg_to_board.py 把 SVG 翻译为飞书原生节点，每个 rect/circle/text 都可单独点击编辑
-  (D) 简单 SVG 单节点装饰（图标/印章/小元素，<2KB SVG）
+  (C) SVG 自由作图（任意视觉：飞轮/鱼骨/Dashboard/海报/插画/架构图等，每个 SVG 元素 → 1 个原生节点可单独编辑）
+      → 使用 scripts/svg_to_board.py 把 SVG 翻译为飞书原生节点
+  (D) 简单 SVG 单节点装饰（图标/印章/小元素，2KB 以内 SVG）
   (E) 精排架构图（手写节点 JSON，绝对坐标 + 配色 + 连线 ID 引用）
   当用户请求"画图/画板/whiteboard/画架构图/画流程图/画飞轮/画鱼骨/画路线图/画 Dashboard/画插画/画海报/
   AI 自由作图/SVG 落画板/克隆画板/上传图片到画板/可视化/节点图/精排"时使用。
   特别地，当用户反馈"右下角半截楼""z_index 错乱""节点翻倍""复杂图渲染不全""mermaid 服务端失败"
   务必读 references/pitfalls.md 排障。
-  使用 App Token（应用身份），无需 auth login。
+  写类（add-board/create-notes/update/delete/clone/svg-import/upload-image/import）默认 App Token（Bot 身份），无需登录；
+  读类（image/nodes/export-code/lint）登录后自动 User Token，未登录回落 App Token。
 argument-hint: "[whiteboard_id]"
 user-invocable: true
 allowed-tools: Bash(feishu-cli board:*), Bash(feishu-cli doc:*), Bash(feishu-cli media:*), Bash(python3:*), Bash(whiteboard-cli:*), Read, Write
@@ -26,7 +27,6 @@ allowed-tools: Bash(feishu-cli board:*), Bash(feishu-cli doc:*), Bash(feishu-cli
 - **认证**：环境变量 `FEISHU_APP_ID` + `FEISHU_APP_SECRET` 或 `~/.feishu-cli/config.yaml`
 - **权限**：`board:whiteboard`（画板读写）+ `docx:document`（文档加画板）
 - **whiteboard-cli**（路径 B/C 用）：`npm i -g @larksuite/whiteboard-cli`
-- **验证**：`feishu-cli auth status` 看登录态
 
 ---
 

@@ -3,12 +3,12 @@ name: feishu-cli-attendance
 description: >-
   飞书考勤数据查询（user-task / user-stats）。user-task 查打卡任务/班次；
   user-stats 查考勤统计（出勤/迟到/早退/请假）。
-  ⚠️ 仅支持 Tenant Token，SDK v3.5.3 限制不接受 User Token；
+  注意：仅支持 Tenant Token，SDK v3.5.3 限制不接受 User Token；
   单次查询跨度上限 31 天，超出会拒绝。
   当用户请求"查考勤"、"查打卡记录"、"出勤统计"、"考勤明细"时使用。
 argument-hint: user-task query | user-stats query
 user-invocable: true
-allowed-tools: Bash, Read
+allowed-tools: Bash(feishu-cli attendance:*), Bash(feishu-cli att:*), Read
 ---
 
 # 飞书考勤数据查询

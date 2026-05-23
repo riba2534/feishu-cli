@@ -5,6 +5,7 @@ description: >-
   "search docs"、"查找飞书文档"、"有没有关于 xxx 的飞书文档"时使用。
   也适用于：用户想查找某个主题的飞书文档或 Wiki、按关键词检索消息记录、查找内部应用。
   搜索 API 必须使用 User Access Token，本技能包含完整的认证前置检查流程。
+argument-hint: docs | messages | apps <query>
 user-invocable: true
 allowed-tools: Bash(feishu-cli search:*), Bash(feishu-cli auth:*), Read
 ---

@@ -2,14 +2,17 @@
 name: feishu-cli-import
 description: >-
   从 Markdown 文件导入创建飞书文档。支持嵌套列表、Mermaid/PlantUML 图表自动转画板、
-  大表格智能处理（行 > 9 用 insert_table_row API 追加保持单 block，列 > 9 拆分保留首列）、公式、Callout 高亮块。当用户请求"导入 Markdown"、"从 md 创建文档"、
-  "从 md 文件创建文档"、"把 Markdown 转换到飞书"、"上传 Markdown"、"Markdown 转飞书"、
-  "md 导入"、"批量导入"时使用。
+  大表格智能处理（超过 9 行用 insert_table_row API 追加保持单 block，超过 9 列拆分保留首列）、公式、Callout 高亮块。
+  内置飞书侧渲染规范（`references/doc-guide.md` + `references/mermaid-spec.md`），
+  覆盖图表花括号/par 等语法限制、表格 9 行/列阈值、Callout 6 种颜色映射等飞书兼容性规则。
+  当用户请求"导入 Markdown"、"从 md 创建文档"、"从 md 文件创建文档"、"把 Markdown 转换到飞书"、
+  "上传 Markdown"、"Markdown 转飞书"、"md 导入"、"批量导入"，或排查"飞书 Mermaid 渲染失败"、
+  "Callout 颜色不对"、"飞书表格被拆"、"飞书文档导入兼容性"等问题时使用。
   注意：仅支持 Markdown 源文件导入为飞书文档。Markdown 表格创建电子表格请用 feishu-cli-toolkit 的 `sheet import-md`；
   DOCX/XLSX 导入为云文档请使用 feishu-cli-drive 的 drive import。
 argument-hint: <markdown_file> [--title "标题"] [--verbose]
 user-invocable: true
-allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli sheet:*), Bash(python3:*), Read
+allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli sheet:*), Read
 ---
 
 # Markdown 导入技能
@@ -42,19 +45,19 @@ feishu-cli sheet import-md report.md --title "报表"
 
 - **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
 - 已配置 App Token（`FEISHU_APP_ID` + `FEISHU_APP_SECRET`），无需 `auth login`
-- Markdown 文件使用 UTF-8 编码（导入前 CLI 会自动检测 U+FFFD 替换字符和非法 UTF-8 字节，不合格则拒绝导入）
+- Markdown 文件使用 UTF-8 编码（CLI 会用 `utf8.Valid` 拒收非法 UTF-8 字节序列；合法 UTF-8 中包含的 `U+FFFD` 替换字符不会被拦截，建议先在编辑器里搜一遍）
 
 ## 使用方法
 
 ```bash
 # 创建新文档
-/feishu-import ./document.md --title "文档标题"
+feishu-cli doc import ./document.md --title "文档标题"
 
 # 追加导入到已有文档（不会原地替换）
-/feishu-import ./document.md --document-id <existing_doc_id>
+feishu-cli doc import ./document.md --document-id <existing_doc_id>
 
 # 上传本地图片
-/feishu-import ./document.md --title "带图文档" --upload-images
+feishu-cli doc import ./document.md --title "带图文档" --upload-images
 ```
 
 ## 执行流程
@@ -64,7 +67,7 @@ feishu-cli sheet import-md report.md --title "报表"
 1. **验证文件**
    - 检查 Markdown 文件是否存在
    - 预览文件内容
-   - **编码验证（防御性检查）**：运行 `python3 -c "d=open('<file.md>','rb').read(); assert b'\\xef\\xbf\\xbd' not in d, 'U+FFFD found'; d.decode('utf-8')"` 同时检查 U+FFFD 替换字符和非法 UTF-8 字节。如果报错，**必须先修复再导入**，否则乱码会原样写入飞书文档
+   - **编码验证**：CLI 内置 `utf8.Valid` 校验，遇到非法 UTF-8 字节直接拒绝导入；合法 UTF-8 里残留的 `U+FFFD` 替换字符不会被拦截，建议导入前先用编辑器全局搜一遍 `�`
 
 2. **执行导入**
    ```bash
@@ -225,22 +228,21 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 
 ```bash
 # 创建新文档
-/feishu-import ./meeting-notes.md --title "会议纪要"
+feishu-cli doc import ./meeting-notes.md --title "会议纪要"
 
 # 追加导入到现有文档
-/feishu-import ./updated-spec.md --document-id <document_id>
+feishu-cli doc import ./updated-spec.md --document-id <document_id>
 
 # 带图片导入（自动上传本地和网络图片）
-/feishu-import ./blog-post.md --title "博客文章" --upload-images
+feishu-cli doc import ./blog-post.md --title "博客文章" --upload-images
+
+# 批量导入（一次循环多个 Markdown）
+for f in *.md; do feishu-cli doc import "$f" --title "${f%.md}" --upload-images; done
 ```
 
 ## 已验证功能
 
-上述"支持的 Markdown 语法"中列出的所有语法均已通过测试验证，全部正常工作。特殊处理项：
-
-- **图片**：默认通过 `--upload-images` 自动上传本地和网络图片；关闭时创建占位块
-- **内联图片**：网络 URL 转可点击链接，本地路径转文本占位符
-- **表格**：行 > 9 通过 `insert_table_row` API 追加到同一 block（视觉连贯）；列 > 9 按列组拆分保留首列
+上述"支持的 Markdown 语法"中列出的所有语法均已通过测试验证，全部正常工作。表格/图片/视频的具体处理细节见上方"核心特性"和"支持的 Markdown 语法"小节，下面只列大规模测试结果。
 
 ### 大规模测试结果
 
@@ -308,7 +310,7 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 | 现象 | 原因 | 解决方式 |
 |------|------|----------|
 | 认证失败 / Token 过期 | 未登录或 Token 已失效 | 执行 `feishu-cli auth login` 重新认证（Device Flow，自动注入 offline_access） |
-| 图表降级为代码块 | Mermaid/PlantUML 语法不兼容飞书渲染引擎 | 参考 feishu-cli-doc-guide 规范调整语法（禁花括号、禁 par 等） |
+| 图表降级为代码块 | Mermaid/PlantUML 语法不兼容飞书渲染引擎 | 参考 `references/doc-guide.md` 调整语法（禁花括号、禁 par 等） |
 | 超长表格导入耗时显著 | 行 > 9 时 CLI 通过 `insert_table_row` API **逐行串行追加**到同一 block（每行约 1 次 API 往返） | 属于正常行为；verbose 模式每 5 行打印进度。行数极多（200+）时建议改用电子表格（Sheet）承载 |
 | 表格被拆分为多个 block | 列 > 9 时 CLI 按列组拆分（每组 ≤ 9 列），首列作为标识在所有组中保留 | 属于正常行为，避免拆分后行无法识别 |
 | 图片上传失败 | 网络不通或图片 URL 不可访问 | 检查网络连通性；失败的图片会自动创建占位块，不影响整体导入 |

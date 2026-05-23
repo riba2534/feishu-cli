@@ -7,7 +7,7 @@ description: >-
   不适用：复杂 slide 编辑（block insert/replace 复杂语义）暂未实现，走 lark-slides。
 argument-hint: create | media-upload
 user-invocable: true
-allowed-tools: Bash, Read
+allowed-tools: Bash(feishu-cli slides:*), Bash(feishu-cli auth:*), Read
 ---
 
 # 飞书 Slides 演示文稿技能

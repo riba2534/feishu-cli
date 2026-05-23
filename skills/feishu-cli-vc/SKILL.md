@@ -6,6 +6,7 @@ description: >-
   三路径入口。当用户请求"搜索会议"、"会议记录"、"会议纪要"、"逐字稿"、"妙记"、"meeting"、
   "vc search"、"vc recording"、"minutes"、"下载妙记"、"妙记视频"、"会议录制"、
   "从日程找会议"时使用。
+argument-hint: vc search | vc notes | vc recording | minutes get | minutes download
 user-invocable: true
 allowed-tools: Bash(feishu-cli vc:*), Bash(feishu-cli minutes:*), Bash(feishu-cli auth:*), Read
 ---

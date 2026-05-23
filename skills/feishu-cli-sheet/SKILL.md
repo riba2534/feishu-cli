@@ -9,7 +9,7 @@ description: >-
   当用户请求"筛选视图"、"加下拉框"、"数据验证"、"列下拉"时使用。
 argument-hint: filter-view create/list/delete | dropdown set
 user-invocable: true
-allowed-tools: Bash, Read
+allowed-tools: Bash(feishu-cli sheet:*), Bash(feishu-cli bitable:*), Read
 ---
 
 # 飞书电子表格高级能力（v1.23+）

@@ -6,6 +6,7 @@ description: >-
   "feishu mail"、"lark mail"、"未读邮件"时使用。
   所有命令需要 User Access Token（先 feishu-cli auth login）。
   首期限制：发送/草稿/回复支持纯文本或 HTML body；forward 当前仅支持纯文本 body。暂不支持普通附件；send 支持 CID 内联图片自动扫描。
+argument-hint: triage | send | reply | forward | draft-create | message | thread | template <subcmd>
 user-invocable: true
 allowed-tools: Bash(feishu-cli mail:*), Bash(feishu-cli auth:*), Read
 ---
