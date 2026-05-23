@@ -24,9 +24,18 @@ var commentCmd = &cobra.Command{
   sheet     电子表格
   bitable   多维表格
 
+身份说明:
+  默认以 App Token（租户身份）请求；若文档归个人所有且 App 未被加为协作者，
+  会得到 1069303 forbidden。此时通过 --user-access-token 或先 feishu-cli auth login，
+  让请求以用户身份发出。
+
 示例:
   # 列出文档评论
   feishu-cli comment list <file_token> --type docx
+
+  # 列出个人文档的评论（用户身份；--user-access-token 也可省略，让 FEISHU_USER_ACCESS_TOKEN 接管）
+  feishu-cli auth login
+  feishu-cli comment list <file_token> --type docx --user-access-token "u-xxxxx"
 
   # 添加评论
   feishu-cli comment add <file_token> --type docx --text "这是一条评论"
@@ -49,4 +58,5 @@ var commentCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(commentCmd)
+	commentCmd.PersistentFlags().String("user-access-token", "", "User Access Token（可选，传入后所有 comment 子命令以用户身份发起请求；个人文档场景必填）")
 }

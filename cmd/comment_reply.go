@@ -189,7 +189,7 @@ var deleteReplyCmd = &cobra.Command{
 func init() {
 	commentCmd.AddCommand(replyCmd)
 	replyCmd.PersistentFlags().String("type", "docx", "文件类型（doc/docx/sheet/bitable）")
-	replyCmd.PersistentFlags().String("user-access-token", "", "User Access Token（删除/添加用户回复时必需）")
+	// --user-access-token 在父命令 commentCmd 上已声明为 PersistentFlag，子命令直接继承。
 
 	replyCmd.AddCommand(listReplyCmd)
 	listReplyCmd.Flags().Int("page-size", 50, "每页数量")

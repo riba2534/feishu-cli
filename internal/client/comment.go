@@ -38,7 +38,10 @@ type CommentElement struct {
 }
 
 // ListComments 获取文档评论列表
-func ListComments(fileToken string, fileType string, pageSize int, pageToken string) ([]*Comment, string, bool, error) {
+// userAccessToken 非空时使用 User Token（用户身份），否则使用 App Token（租户身份）。
+// 文档归个人所有但 App 未被加为协作者时，App Token 会得到 1069303 forbidden；
+// 此时调用方应传入 User Token，让请求以文档所有者身份发出。
+func ListComments(fileToken string, fileType string, pageSize int, pageToken, userAccessToken string) ([]*Comment, string, bool, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, "", false, err
@@ -55,7 +58,8 @@ func ListComments(fileToken string, fileType string, pageSize int, pageToken str
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Drive.FileComment.List(Context(), reqBuilder.Build())
+	opts := UserTokenOption(userAccessToken)
+	resp, err := client.Drive.FileComment.List(Context(), reqBuilder.Build(), opts...)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取评论列表失败: %w", err)
 	}
@@ -92,7 +96,9 @@ func ListComments(fileToken string, fileType string, pageSize int, pageToken str
 }
 
 // CreateComment 创建评论
-func CreateComment(fileToken string, fileType string, content string) (string, error) {
+// userAccessToken 非空时以用户身份创建评论，否则以 App/Bot 身份创建。
+// 推荐传入 User Token：Bot 身份发的评论只能被同一 App 自己删除，且很多文档对 Bot 写权限受限。
+func CreateComment(fileToken string, fileType string, content string, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -122,7 +128,8 @@ func CreateComment(fileToken string, fileType string, content string) (string, e
 			Build()).
 		Build()
 
-	resp, err := client.Drive.FileComment.Create(Context(), req)
+	opts := UserTokenOption(userAccessToken)
+	resp, err := client.Drive.FileComment.Create(Context(), req, opts...)
 	if err != nil {
 		return "", fmt.Errorf("创建评论失败: %w", err)
 	}
@@ -139,7 +146,8 @@ func CreateComment(fileToken string, fileType string, content string) (string, e
 }
 
 // GetComment 获取评论详情
-func GetComment(fileToken string, commentID string, fileType string) (*Comment, error) {
+// userAccessToken 非空时使用 User Token，否则使用 App Token；个人文档/未给 App 授权时必须传 User Token。
+func GetComment(fileToken string, commentID string, fileType string, userAccessToken string) (*Comment, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -151,7 +159,8 @@ func GetComment(fileToken string, commentID string, fileType string) (*Comment, 
 		FileType(fileType).
 		Build()
 
-	resp, err := client.Drive.FileComment.Get(Context(), req)
+	opts := UserTokenOption(userAccessToken)
+	resp, err := client.Drive.FileComment.Get(Context(), req, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("获取评论详情失败: %w", err)
 	}
@@ -181,7 +190,9 @@ func DeleteComment(fileToken string, commentID string, fileType string) error {
 }
 
 // PatchComment 更新评论解决状态
-func PatchComment(fileToken, commentID, fileType string, isSolved bool) error {
+// userAccessToken 非空时使用 User Token，否则使用 App Token。
+// 个人文档/未给 App 授权时必须传 User Token，否则会得到 1069303 forbidden。
+func PatchComment(fileToken, commentID, fileType string, isSolved bool, userAccessToken string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -196,7 +207,8 @@ func PatchComment(fileToken, commentID, fileType string, isSolved bool) error {
 			Build()).
 		Build()
 
-	resp, err := client.Drive.FileComment.Patch(Context(), req)
+	opts := UserTokenOption(userAccessToken)
+	resp, err := client.Drive.FileComment.Patch(Context(), req, opts...)
 	if err != nil {
 		return fmt.Errorf("更新评论状态失败: %w", err)
 	}

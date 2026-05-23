@@ -18,9 +18,17 @@ var listCommentsCmd = &cobra.Command{
   file_token    文档 Token
   --type        文件类型（必填）
 
+身份说明:
+  默认以 App Token 请求；若文档归个人所有且 App 未被加为协作者会得到 1069303 forbidden。
+  此时先 feishu-cli auth login 或显式传 --user-access-token 切到用户身份。
+
 示例:
-  # 列出文档评论
+  # 列出文档评论（租户身份）
   feishu-cli comment list doccnXXX --type docx
+
+  # 列出个人文档评论（用户身份）
+  feishu-cli auth login
+  feishu-cli comment list doccnXXX --type docx --user-access-token "u-xxxxx"
 
   # JSON 格式输出
   feishu-cli comment list doccnXXX --type docx --output json`,
@@ -34,8 +42,9 @@ var listCommentsCmd = &cobra.Command{
 		fileType, _ := cmd.Flags().GetString("type")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		output, _ := cmd.Flags().GetString("output")
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
-		comments, _, _, err := client.ListComments(fileToken, fileType, pageSize, "")
+		comments, _, _, err := client.ListComments(fileToken, fileType, pageSize, "", userAccessToken)
 		if err != nil {
 			return err
 		}

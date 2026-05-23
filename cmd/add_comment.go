@@ -18,9 +18,18 @@ var addCommentCmd = &cobra.Command{
   --type        文件类型（必填）
   --text        评论内容（必填）
 
+身份说明:
+  默认以 App Token（Bot 身份）创建；推荐 feishu-cli auth login 后传 --user-access-token，
+  以用户身份创建评论。Bot 身份创建的评论只能被同一 App 自身删除。
+
 示例:
-  # 添加评论
+  # 添加评论（Bot 身份）
   feishu-cli comment add doccnXXX --type docx --text "这是一条评论"
+
+  # 添加评论（用户身份，推荐）
+  feishu-cli auth login
+  feishu-cli comment add doccnXXX --type docx --text "这是一条评论" \
+    --user-access-token "u-xxxxx"
 
   # JSON 格式输出
   feishu-cli comment add doccnXXX --type docx --text "评论内容" --output json`,
@@ -34,8 +43,9 @@ var addCommentCmd = &cobra.Command{
 		fileType, _ := cmd.Flags().GetString("type")
 		text, _ := cmd.Flags().GetString("text")
 		output, _ := cmd.Flags().GetString("output")
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
-		commentID, err := client.CreateComment(fileToken, fileType, text)
+		commentID, err := client.CreateComment(fileToken, fileType, text, userAccessToken)
 		if err != nil {
 			return err
 		}
