@@ -58,8 +58,7 @@ var eventConsumeCmd = &cobra.Command{
 
   # 配合 jq 实时过滤群消息
   feishu-cli event consume im.message.receive_v1 | jq 'select(.event.message.chat_type=="group")'`,
-	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
 		def, ok := event.Lookup(key)

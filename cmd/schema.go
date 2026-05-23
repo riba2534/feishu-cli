@@ -73,9 +73,7 @@ var schemaCmd = &cobra.Command{
   - 不需要 token，纯本地查询
   - 内置 schema 覆盖 12 个 service（approval/attendance/calendar/drive/im/mail/minutes/sheets/slides/task/vc/wiki）
   - 完整 OpenAPI 文档见 docUrl 字段或 https://open.feishu.cn/`,
-	Args:          cobra.MaximumNArgs(1),
-	SilenceUsage:  true,
-	SilenceErrors: false,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path := ""
 		if len(args) > 0 {

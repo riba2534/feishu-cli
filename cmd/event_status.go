@@ -30,7 +30,6 @@ var eventStatusCmd = &cobra.Command{
 示例:
   feishu-cli event status
   feishu-cli event status --json | jq '.consumers[] | .pid'`,
-	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err

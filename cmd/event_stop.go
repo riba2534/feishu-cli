@@ -29,7 +29,6 @@ var eventStopCmd = &cobra.Command{
   feishu-cli event stop --event-key im.message.receive_v1
   feishu-cli event stop --all
   feishu-cli event stop --all --force        # 紧急情况下硬杀`,
-	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
