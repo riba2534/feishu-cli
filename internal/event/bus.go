@@ -10,16 +10,23 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/profile"
 )
 
-// EventsDir 返回 feishu-cli 事件订阅状态目录：~/.feishu-cli/events/。
+// EventsDir 返回 feishu-cli 事件订阅状态目录。
+//
+// 路径解析走 profile 系统，避免多 profile 用户共用同一 events 目录：
+//   - 启用 profile 时：~/.feishu-cli/profiles/<active>/events/
+//   - 未启用 profile 时：~/.feishu-cli/events/（旧布局）
+//
 // 每个 App ID 一个子目录（bus.json + bus.lock），避免不同应用互相干扰。
 func EventsDir() (string, error) {
-	home, err := os.UserHomeDir()
+	base, err := profile.ActiveDir()
 	if err != nil {
-		return "", fmt.Errorf("获取用户目录失败: %w", err)
+		return "", fmt.Errorf("获取 profile 目录失败: %w", err)
 	}
-	dir := filepath.Join(home, ".feishu-cli", "events")
+	dir := filepath.Join(base, "events")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", fmt.Errorf("创建事件目录失败: %w", err)
 	}
