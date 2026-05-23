@@ -90,7 +90,9 @@ var getMessageHistoryCmd = &cobra.Command{
 				return tokenErr
 			}
 		} else {
-			token = resolveOptionalUserToken(cmd)
+			// 群消息历史：调用主体（User 或 Bot）必须在群里。
+			// 优先用 token.json 里的 User Token（用户登录后自然在群里），找不到才回落 App Token（要求 Bot 在群里）。
+			token = resolveOptionalUserTokenWithFallback(cmd)
 		}
 
 		// --user-email：搜索用户 → open_id

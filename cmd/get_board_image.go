@@ -39,7 +39,7 @@ var getBoardImageCmd = &cobra.Command{
 		whiteboardID := args[0]
 		outputPath := args[1]
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		err := client.GetBoardImage(whiteboardID, outputPath, userAccessToken)
 		if err != nil {

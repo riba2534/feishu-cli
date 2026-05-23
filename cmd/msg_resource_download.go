@@ -43,7 +43,7 @@ var msgResourceDownloadCmd = &cobra.Command{
 		resourceType, _ := cmd.Flags().GetString("type")
 		outputPath, _ := cmd.Flags().GetString("output")
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
-		userToken := resolveOptionalUserToken(cmd)
+		userToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		if outputPath == "" {
 			outputPath = fileKey

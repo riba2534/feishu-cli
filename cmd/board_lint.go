@@ -31,7 +31,7 @@ var boardLintCmd = &cobra.Command{
 		}
 		whiteboardID := args[0]
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		raw, err := client.GetBoardNodes(whiteboardID, userAccessToken)
 		if err != nil {

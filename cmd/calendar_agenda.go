@@ -42,7 +42,7 @@ var calendarAgendaCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		// 解析 calendar_id，默认 "primary"
 		calendarID := "primary"

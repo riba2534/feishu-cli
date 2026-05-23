@@ -41,7 +41,7 @@ var fileMetaCmd = &cobra.Command{
 
 		docType, _ := cmd.Flags().GetString("doc-type")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		metas, err := client.BatchGetMeta(args, docType, userAccessToken)
 		if err != nil {

@@ -41,7 +41,7 @@ var getMessageCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		messageID := args[0]
 

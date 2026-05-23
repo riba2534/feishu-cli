@@ -37,7 +37,7 @@ var fileStatsCmd = &cobra.Command{
 		fileToken := args[0]
 		docType, _ := cmd.Flags().GetString("doc-type")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		stats, err := client.GetFileStatistics(fileToken, docType, userAccessToken)
 		if err != nil {

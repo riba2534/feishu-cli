@@ -43,7 +43,7 @@ var readUsersCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		messageID := args[0]
 		userIDType, _ := cmd.Flags().GetString("user-id-type")

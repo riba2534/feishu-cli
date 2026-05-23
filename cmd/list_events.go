@@ -48,7 +48,7 @@ var listEventsCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		calendarID := args[0]
 		startTime, _ := cmd.Flags().GetString("start-time")
