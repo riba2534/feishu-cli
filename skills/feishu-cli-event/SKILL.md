@@ -6,7 +6,7 @@ description: >-
   event status 看本机活跃 consume 进程；event stop 按 PID / EventKey / --all 停止 consume。
   支持 22+ EventKey（im 消息接收/已读/撤回/reaction、群成员变动、contact 员工变更、
   日历变更、云盘标题/协作者、审批实例与任务、VC 会议起止）。
-  状态文件 ~/.feishu-cli/events/<app_id>/bus.json + flock 文件锁 + WebSocket auto-reconnect。
+  支持断线重连和多 EventKey 并行订阅。
   当用户请求"监听飞书事件"、"实时接收消息事件"、"订阅审批回调"、"event 流"、
   "WebSocket 长连接监听"、"event consume"、"event list / schema / status / stop"、
   "AI Agent bot 实时响应"时使用。
@@ -14,7 +14,7 @@ description: >-
   请配合 feishu-cli-msg / feishu-cli-bitable。
 argument-hint: list | schema <key> | consume <key> | status | stop
 user-invocable: true
-allowed-tools: Bash, Read, Write
+allowed-tools: Bash(feishu-cli event:*), Bash(jq:*), Bash(tail:*), Bash(sleep:*), Read, Write
 ---
 
 # 飞书实时事件订阅技能（WebSocket）

@@ -8,7 +8,7 @@ description: >-
   当用户请求"提交审批"、"审批通过/拒绝"、"撤回审批"、"转交审批"、"抄送"、"审批查询"时使用。
 argument-hint: instance get/create/cancel/cc | task query/approve/reject/transfer | definition detail
 user-invocable: true
-allowed-tools: Bash, Read
+allowed-tools: Bash(feishu-cli approval:*), Bash(feishu-cli auth:*), Read, Write
 ---
 
 # 飞书审批技能（查询 + 写入）

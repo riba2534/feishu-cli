@@ -59,14 +59,10 @@ export FEISHU_APP_SECRET=xxx
 
 通过 **OAuth 2.0 Device Flow（RFC 8628）** 获取 User Access Token，用于搜索、审批任务查询等需要用户授权的功能。**无需配置重定向 URL 白名单**（v1.18+ 已删除 Authorization Code Flow）。
 
-**Token 使用策略**：
-- **默认使用 App Token**（租户身份）：wiki、msg、calendar、task 等 55+ 个命令默认通过 `resolveOptionalUserToken` 使用 App Token，不会自动加载 User Token
-- **显式使用 User Token**：通过 `--user-access-token` 参数或 `FEISHU_USER_ACCESS_TOKEN` 环境变量覆盖为用户身份
-- **必须 User Token**：搜索命令（`search docs/messages/apps`）通过 `resolveRequiredUserToken` 走优先级链：
-  1. `--user-access-token` 参数
-  2. `FEISHU_USER_ACCESS_TOKEN` 环境变量
-  3. `~/.feishu-cli/token.json`（过期自动用 refresh_token 刷新）
-  4. `config.yaml` 中的 `user_access_token`
+**Token 使用策略**（按命令分三类，对应 `cmd/utils.go` 三个 helper）：
+- **读类 · User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`，约 85 个命令）：`msg history/list/get/mget/thread-messages/resource-download`、`task get/list/subtask list/comment list/tasklist get/list/tasks`、`calendar get/list/primary/agenda/freebusy/suggestion/room-find/event get/list/search/attendee list`、`file meta/stats/list/version list/get/download`、`board image/nodes/export-code/lint`、`user read`、`wiki get/nodes/spaces/export/member list`、`drive pull/push/status`、**sheet 全家桶**（所有 sheet 子命令含写）等。优先级链：`--user-access-token` → `FEISHU_USER_ACCESS_TOKEN` → `~/.feishu-cli/token.json`（过期自动刷新）→ `config.yaml` 的 `user_access_token` → App Token 兜底。
+- **写类 · 默认 Bot 身份**（`resolveOptionalUserToken`）：所有 `add/create/update/delete/move/copy/import/upload/send/reply/forward/merge-forward` 类命令、`comment reply`、`doc content-update / table 写`、`msg delete`（Bot 自撤回）等。**不会自动加载 token.json**，仅当显式传 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到 User Token。
+- **必须 User Token**（`resolveRequiredUserToken` / `requireUserToken`）：`search docs/messages/apps`、`approval task query/approve/reject/transfer`、`approval instance get/cancel/cc`、`task my`（`my_tasks`）、`msg pin/reaction/search-chats/flag`、`chat get/update/delete/member`、`vc/minutes/mail` 全部、`drive upload/download/export/import/move/add-comment/task-result/search`、`calendar rsvp`、`markdown create/fetch/overwrite` 等。失败直接报错。
 - **审批任务查询**：`approval task query` 会调用 `/authen/v1/user_info` 推断 `open_id`，缓存到 `~/.feishu-cli/user_profile.json`，`auth logout` 时自动清理
 
 **登录命令四种模式**：
@@ -222,25 +218,18 @@ python3 skills/feishu-cli-board/scripts/svg_to_board.py drawing.svg <whiteboard_
 
 ## Claude Code 技能
 
-位于 `skills/` 目录，15 个：
+位于 `skills/` 目录，当前 25 个。README 的“AI 技能集成”章节是对外安装清单；这里按职责分组，方便 Agent 路由：
 
 | 技能 | 说明 |
 |------|------|
-| `/feishu-cli-read` | 读取文档/知识库 → Markdown |
-| `/feishu-cli-write` | 创建/写入文档（含素材插入、快速空白文档） |
-| `/feishu-cli-import` | 从 Markdown 导入创建文档 |
-| `/feishu-cli-export` | 导出 Markdown/PDF/Word，下载素材 |
-| `/feishu-cli-perm` | 权限管理 |
-| `/feishu-cli-msg` | 消息全功能（发送/回复/转发/批量/资源/话题） |
-| `/feishu-cli-card` | 构造美观 V2.0 interactive 卡片（7 场景模板 + 30+ 组件） |
-| `/feishu-cli-chat` | 会话浏览与群聊管理 |
-| `/feishu-cli-toolkit` | 综合工具箱（表格/日历/任务/清单/文件/素材/评论/知识库/通讯录） |
-| `/feishu-cli-board` | 画板全能（v1.25+ 重构）：5 路径决策树（Mermaid 服务端/本地引擎/SVG → 原生节点 ⭐/SVG 单节点装饰/精排架构）+ `scripts/svg_to_board.py` 一键管道 + 4 篇 references（svg-workflow/mermaid-engines/pitfalls/examples-real） |
-| `/feishu-cli-bitable` | 多维表格全功能 |
-| `/feishu-cli-vc` | 视频会议与妙记 |
-| `/feishu-cli-auth` | OAuth 认证、Token、scope 配置 |
-| `/feishu-cli-search` | 搜索文档/消息/应用 |
-| `feishu-cli-doc-guide` | 飞书文档创建规范（内部参考） |
+| 文档核心 | `feishu-cli-read` / `feishu-cli-write` / `feishu-cli-import` / `feishu-cli-export` |
+| 权限与认证 | `feishu-cli-auth`（OAuth / Token / 健康检查 doctor / 多 App profile）/ `feishu-cli-perm` |
+| 消息协作 | `feishu-cli-msg` / `feishu-cli-card` / `feishu-cli-chat` / `feishu-cli-event` |
+| 数据与表格 | `feishu-cli-bitable` / `feishu-cli-sheet` / `feishu-cli-search` / `feishu-cli-schema` |
+| 云盘与素材 | `feishu-cli-drive` / `feishu-cli-markdown` |
+| 画板与展示 | `feishu-cli-board` / `feishu-cli-slides` |
+| 业务域 | `feishu-cli-mail` / `feishu-cli-vc` / `feishu-cli-approval` / `feishu-cli-attendance` / `feishu-cli-calendar` / `feishu-cli-okr` |
+| 兜底入口 | `feishu-cli-toolkit`：仅在没有更专用 skill 时使用，覆盖基础 sheet/calendar/task/file/media/comment/wiki/user/dept |
 
 ### 支持的 URL 格式
 
@@ -323,7 +312,7 @@ Major：不兼容变更；Minor：新功能；Patch：Bug 修复。
 
 ### 飞书 Markdown 兼容检查
 
-生成将导入飞书的 Markdown 前，必须参考 `skills/feishu-cli-doc-guide/SKILL.md`。核心检查项：
+生成将导入飞书的 Markdown 前，必须参考 `skills/feishu-cli-import/references/doc-guide.md`。核心检查项：
 
 - **Mermaid**：禁止花括号 `{}`（flowchart 标签）、禁止 `par...and...end`、方括号冒号加双引号、sequenceDiagram 参与者 ≤ 8
 - **PlantUML**：无行首缩进、无 `skinparam`、类图无可见性标记（`+ - # ~`）

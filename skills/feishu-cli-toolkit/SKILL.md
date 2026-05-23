@@ -14,6 +14,16 @@ allowed-tools: Bash(feishu-cli auth:*), Bash(feishu-cli sheet:*), Bash(feishu-cl
 
 本技能是 fallback，不和专用技能抢职责。先分诊，再执行对应命令。
 
+## Token 策略（仅本 skill 涵盖范围）
+
+| 类型 | 行为 |
+|---|---|
+| 读类 + sheet 全家桶（sheet 所有读写命令、calendar list/get/event-search/freebusy/attendee list、task get/list/comment list/subtask list/tasklist get/list/tasks、file meta/stats/list/version list/get、download、wiki nodes/spaces 等） | 已 `auth login` 自动用 User Token，未登录回落 App Token（`resolveOptionalUserTokenWithFallback`） |
+| 写类（calendar create-event/update/delete/event-reply/attendee add、task create/update/delete/comment add/reminder add/...、tasklist create/delete/add-task/remove-task、wiki member add/remove） | 默认 App Token（Bot 身份），仅显式 `--user-access-token` 时切到 User（`resolveOptionalUserToken`） |
+| 必需 User Token（approval task query/approve/reject/transfer + instance get/cancel/cc、my_tasks、calendar rsvp） | 未登录直接报错（`resolveRequiredUserToken` / `requireUserToken`） |
+
+> 完整跨 skill 规则（含 search / chat / msg flag 等本 skill 范围外的命令）见 `feishu-cli-auth` 技能的"Token 解析策略"章节。
+
 ## 分诊
 
 | 用户意图 | 使用技能 |

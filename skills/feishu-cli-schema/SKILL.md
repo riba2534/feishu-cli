@@ -1,14 +1,14 @@
 ---
 name: feishu-cli-schema
 description: >-
-  飞书 OpenAPI 方法本地浏览。schema <service.resource.method> 查路径/参数/scope（无需联网）；
+  飞书 OpenAPI 方法本地浏览。schema `service.resource.method` 三段式查路径/参数/scope（无需联网）；
   schema list 列出所有可用 service。复用 feishu-cli 内置 OpenAPI 元数据（embed 746KB）。
   当用户请求"飞书有没有 XX API"、"X API 的参数是什么"、"X 方法需要什么 scope"、
   "OpenAPI 方法浏览"、"看 SDK 怎么调用"时使用。
   不适用：调用 API（请用 lark-cli api）、查在线最新 schema（请用 OpenAPI Explorer）。
 argument-hint: <service.resource.method>
 user-invocable: true
-allowed-tools: Bash, Read
+allowed-tools: Bash(feishu-cli schema:*), Read
 ---
 
 # 飞书 OpenAPI 方法浏览技能
@@ -139,7 +139,7 @@ feishu-cli schema vc.notes.get
 2. **路径不存在分级提示**：未知 service / resource / method 都会列出该层的所有可用候选名，便于纠正。
 3. **resource 含点号用最长前缀匹配**：`im.chat.members.create` 会匹配 resource = `chat.members`、method = `create`，不必担心拆错。
 4. **只读不调 API**：本命令永远不发起 HTTP 请求，不消耗任何配额，没有 token 过期顾虑。要真正调用见下方"何时转其他技能"。
-5. **覆盖范围 = 12 service**：当前未含 docx / contact / approval 等的较新 endpoint；如果 `schema list` 里没列出，说明本地元数据未收录，请去飞书 OpenAPI Explorer 查在线最新版。
+5. **覆盖范围 = 12 service**：当前未含 docx / contact 等较新 endpoint；如果 `schema list` 里没列出，说明本地元数据未收录，请去飞书 OpenAPI Explorer 查在线最新版。
 6. **JSON 输出不转义 HTML**：`<` / `>` / `&` 保留原样，便于直接吞进 jq / yq 管道。
 
 ---

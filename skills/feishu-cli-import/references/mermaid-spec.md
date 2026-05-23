@@ -552,7 +552,6 @@ classDef ext fill:#eceff1,stroke:#455a64,color:#263238
 - **sequenceDiagram 不支持 classDef**，仅 flowchart/graph 类型图表可用
 - 每个图表都应通过颜色自解释实体类型
 - 新旧系统并存时，旧系统使用 `legacy`（红色虚线边框）明确标识
-- 完整规范和使用示例见 `~/.claude/rules/markdown-style-guide.md`
 
 ---
 

@@ -9,7 +9,7 @@ description: >-
   当用户请求"上传 markdown"、"下载 md"、"覆盖云盘 md"时使用。
 argument-hint: create | fetch | overwrite
 user-invocable: true
-allowed-tools: Bash, Read
+allowed-tools: Bash(feishu-cli markdown:*), Bash(feishu-cli drive:*), Bash(feishu-cli auth:*), Read
 ---
 
 # 飞书云盘原生 Markdown（markdown create/fetch/overwrite）
@@ -161,7 +161,7 @@ feishu-cli markdown overwrite --file-token boxcnxxx --content-file ./new.md --na
 
 - **要飞书 docx 渲染体验**（人读、表格分行、Mermaid 转画板、Callout 高亮）→ `doc import`（参 `feishu-cli-import` skill）
 - **要从飞书 docx 落盘到 Git 仓库**（块解析回 markdown）→ `doc export`（参 `feishu-cli-export` skill）
-- **要把 Markdown 转换前 sanity check**（Mermaid 花括号、表格 9×9 限制、Callout 6 种类型）→ `feishu-cli-doc-guide` skill
+- **要把 Markdown 转换前 sanity check**（Mermaid 花括号、表格 9×9 限制、Callout 6 种类型）→ `../feishu-cli-import/references/doc-guide.md`
 
 ## 何时转走 `drive upload`
 

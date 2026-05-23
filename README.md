@@ -25,7 +25,7 @@
 
 feishu-cli 是一个功能完整的飞书开放平台命令行工具。它将飞书文档、知识库、电子表格、消息、日历、任务等操作封装为简洁的命令行接口，**核心能力是 Markdown ↔ 飞书文档双向无损转换**。
 
-除了传统的 CLI 用法，feishu-cli 还为 [Claude Code](https://claude.ai/claude-code) 等 AI 编程助手提供了 **28 个开箱即用的技能文件**，让 AI Agent 能够直接创建文档、发送消息、管理权限 — 无需任何额外配置。
+除了传统的 CLI 用法，feishu-cli 还为 [Claude Code](https://claude.ai/claude-code) 等 AI 编程助手提供了 **25 个开箱即用的技能文件**，让 AI Agent 能够直接创建文档、发送消息、管理权限 — 无需任何额外配置。
 
 > **注意**：feishu-cli 主要面向 AI Agent（如 Claude Code）使用，通过技能文件让 AI 直接操控飞书。虽然人类也可以直接使用命令行，但大多数场景下建议通过 AI Agent 调用，体验更佳。
 
@@ -35,7 +35,7 @@ feishu-cli 是一个功能完整的飞书开放平台命令行工具。它将飞
 - **图表原生渲染** — Mermaid（8 种图表类型）和 PlantUML 自动转换为飞书画板，不是截图，是可编辑的矢量图
 - **大规模文档处理** — 三阶段并发管道架构，实测 10,000+ 行 / 127 个图表 / 170+ 个表格一次导入
 - **P2P 私聊原生可读** — `msg history --user-email` 一条命令打通「搜用户 → 反查 p2p chat_id → 读消息」，输出自动带 `sender_names` 映射，AI Agent 直接拿结构化带名消息流，无需额外查群成员
-- **AI Agent 原生** — 28 个技能文件覆盖飞书全功能，AI 助手即装即用
+- **AI Agent 原生** — 25 个技能文件覆盖飞书全功能，AI 助手即装即用
 - **一个工具覆盖全平台** — 文档、知识库、表格、多维表格、消息、邮箱、日历、任务、考勤、OKR、视频会议、妙记、云盘、权限、画板、Slides、事件、Schema、Profile、健康检查
 
 ## 核心能力
@@ -378,7 +378,7 @@ feishu-cli msg search-chats --query "关键词"
 # 搜索群聊（User 身份，可搜到用户所在的群）
 feishu-cli msg search-chats --query "关键词" --user-access-token <token>
 
-# 获取群聊历史消息（Bot 不在群内时使用 --user-access-token）
+# 获取群聊历史消息（已 auth login 时自动用 User Token；未登录回落 Bot Token，要求 Bot 在群里）
 feishu-cli msg history --container-id <chat_id> --container-id-type chat
 
 # 获取和某人的私聊记录（邮箱入口，自动搜用户 + 反查 p2p chat_id）
@@ -858,7 +858,7 @@ feishu-cli profile use -
 
 ## AI 技能集成
 
-`skills/` 目录包含 **28 个** 为 [Claude Code](https://claude.ai/claude-code) 设计的技能文件，让 AI Agent 能够直接操作飞书 — 创建文档、发送消息、管理权限，全部通过自然语言驱动。
+`skills/` 目录包含 **25 个** 为 [Claude Code](https://claude.ai/claude-code) 设计的技能文件，让 AI Agent 能够直接操作飞书 — 创建文档、发送消息、管理权限，全部通过自然语言驱动。
 
 | 技能 | 功能 | 触发示例 |
 |------|------|---------|
@@ -867,7 +867,7 @@ feishu-cli profile use -
 | `feishu-cli-import` | 从 Markdown 导入创建文档 | "把这个 md 文件上传到飞书" |
 | `feishu-cli-export` | 导出为 Markdown / PDF / Word | "把飞书文档导出来" |
 | `feishu-cli-perm` | 权限管理 | "给文档添加权限" |
-| `feishu-cli-msg` | 消息全功能管理 | "发消息给 xxx" |
+| `feishu-cli-msg` | 消息发送、回复、转发、加急、消息书签（flag）、资源下载 | "发消息给 xxx" |
 | `feishu-cli-card` | interactive 卡片 V2 构造 | "做一张飞书卡片" |
 | `feishu-cli-chat` | 会话浏览、消息互动与群聊管理 | "查看群聊历史消息" |
 | `feishu-cli-toolkit` | 综合工具箱（表格导出/日历agenda/任务/清单/文件/评论/知识库/通讯录） | "读取飞书表格数据" |
@@ -876,20 +876,17 @@ feishu-cli profile use -
 | `feishu-cli-vc` | 视频会议与妙记（搜索/纪要/录制/AI 产物/逐字稿/媒体下载） | "搜索最近的会议"、"下载会议纪要" |
 | `feishu-cli-drive` | 云盘增强（分块上传/流式下载/异步导出导入/评论） | "上传文件到飞书" |
 | `feishu-cli-mail` | 飞书邮箱（收件箱/发送/回复/转发/草稿/CID 内联图片/模板） | "查看邮件"、"发邮件" |
-| `feishu-cli-auth` | OAuth 认证、Token 管理、按域精细授权 | "登录飞书"、"获取 Token" |
+| `feishu-cli-auth` | OAuth 认证、Token、Profile 与配置诊断 | "登录飞书"、"检查配置"、"切换 profile" |
 | `feishu-cli-search` | 搜索飞书文档 / 消息 / 应用 | "搜索飞书文档" |
 | `feishu-cli-approval` | 审批查询与写流程 | "发起审批"、"通过审批" |
 | `feishu-cli-attendance` | 考勤打卡与统计查询 | "查考勤记录" |
 | `feishu-cli-calendar` | 智能日历（找时段/找会议室/RSVP） | "帮我找会议时间" |
-| `feishu-cli-doctor` | CLI 环境健康检查 | "检查 feishu-cli 配置" |
 | `feishu-cli-event` | WebSocket 实时事件订阅 | "监听飞书消息事件" |
 | `feishu-cli-markdown` | Drive 原生 Markdown 文件 CRUD | "把 md 源文件存到飞书云盘" |
 | `feishu-cli-okr` | OKR 周期与进展记录 | "更新 OKR 进展" |
-| `feishu-cli-profile` | 多 App / 多账号配置切换 | "切换飞书 profile" |
 | `feishu-cli-schema` | 本地浏览 OpenAPI schema | "查这个飞书 API 参数" |
 | `feishu-cli-sheet` | 电子表格筛选视图与下拉菜单 | "给表格加下拉框" |
 | `feishu-cli-slides` | Slides 演示文稿创建与媒体上传 | "创建飞书 PPT" |
-| `feishu-cli-doc-guide` | 飞书文档创建规范 | 其他技能内部引用 |
 
 **安装方法**：
 
