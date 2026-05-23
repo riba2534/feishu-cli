@@ -151,6 +151,10 @@ def fetch_history(cli: str, chat_id: str, container_type: str,
             "--start-time", str(start_sec),
             "--end-time", str(end_sec),
             "--sort-type", "ByCreateTimeAsc",
+            # v1.27.1+: msg history 默认会自动展开线程，本脚本自己有独立的
+            # fetch_thread 阶段（可输出 threads.json + index.md 等多文件结构），
+            # 显式关闭避免双拉浪费 API quota。
+            "--expand-threads=false",
             "-o", "json",
         ]
         if page_token:
