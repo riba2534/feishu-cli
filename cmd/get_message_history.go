@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
@@ -9,6 +10,39 @@ import (
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
+
+// messageWithSenderName 嵌入 SDK 的 *larkim.Message，并多加一个 sender_name 字段
+// （JSON 序列化时合并到顶层，方便 Agent 直接读 item.sender_name 而不用查 sender_names 字典）。
+type messageWithSenderName struct {
+	*larkim.Message
+	SenderName string `json:"sender_name,omitempty"`
+}
+
+// wrapMessagesWithSenderName 给每条消息注入 sender_name 字段（基于 senderNames 字典）。
+// 用于 JSON 输出场景；文本输出场景直接读 senderNames 字典即可。
+func wrapMessagesWithSenderName(msgs []*larkim.Message, names map[string]string) []messageWithSenderName {
+	out := make([]messageWithSenderName, len(msgs))
+	for i, m := range msgs {
+		out[i].Message = m
+		if m == nil || m.Sender == nil || m.Sender.Id == nil {
+			continue
+		}
+		out[i].SenderName = names[*m.Sender.Id]
+	}
+	return out
+}
+
+// wrapMessageGroupsWithSenderName 给一个 chatID/threadID → []messages 的 map 中所有消息注入 sender_name。
+func wrapMessageGroupsWithSenderName(groups map[string][]*larkim.Message, names map[string]string) map[string][]messageWithSenderName {
+	if len(groups) == 0 {
+		return nil
+	}
+	out := make(map[string][]messageWithSenderName, len(groups))
+	for k, msgs := range groups {
+		out[k] = wrapMessagesWithSenderName(msgs, names)
+	}
+	return out
+}
 
 var getMessageHistoryCmd = &cobra.Command{
 	Use:   "history",
@@ -94,8 +128,15 @@ var getMessageHistoryCmd = &cobra.Command{
 			}
 		} else {
 			// 群消息历史：调用主体（User 或 Bot）必须在群里。
-			// 优先用 token.json 里的 User Token（用户登录后自然在群里），找不到才回落 App Token（要求 Bot 在群里）。
-			token = resolveOptionalUserTokenWithFallback(cmd)
+			// 默认 auto：优先 User Token（用户在群里），找不到回落 Bot Token（要求 Bot 在群里）。
+			// 显式 --as bot：强制 Bot Token，**外部群拉群昵称推荐**（详见下方）。
+			// 显式 --as user：强制 User Token。
+			asFlag, _ := cmd.Flags().GetString("as")
+			var tokenErr error
+			token, tokenErr = resolveChatToken(cmd, asFlag)
+			if tokenErr != nil {
+				return tokenErr
+			}
 		}
 
 		// --user-email：搜索用户 → open_id
@@ -169,7 +210,7 @@ var getMessageHistoryCmd = &cobra.Command{
 			client.ExpandThreadReplies(result, token, threadsPerPage, threadsTotalLimit)
 		}
 
-		// 解析发送者名字：从 mentions + contact basic_batch 两路补齐
+		// 解析发送者名字：mentions（免费）+ contact basic_batch 兜底（受外部租户限制，约 40% 覆盖率）
 		// 合并主消息 + merge_forward 子消息 + thread_replies，让所有来源里的名字都能被解析
 		allMsgs := append([]*larkim.Message{}, result.Items...)
 		for _, subs := range result.MergeForwardSubMessages {
@@ -180,18 +221,30 @@ var getMessageHistoryCmd = &cobra.Command{
 		}
 		senderNames := client.ResolveSenderNames(allMsgs, token)
 
+		// 群聊场景额外拉 chat member list 作为"群通讯录视图"补充信息。
+		// **重要**：外部群下 member_id 跟 message sender_id 是不同 namespace，**不能**用 member 反查 sender 名字。
+		// 所以单独输出到 chat_members 字段，供用户/Agent 知道"群里都有哪些人"，而不是混入 sender_names 误导。
+		var chatMembers []*client.ChatMemberInfo
+		if containerIDType == "chat" && strings.HasPrefix(containerID, "oc_") {
+			chatMembers, _ = client.LoadAllChatMembers(containerID, token) // 静默降级
+		}
+
 		if output == "json" {
 			enriched := map[string]any{
-				"items":        result.Items,
+				"items":        wrapMessagesWithSenderName(result.Items, senderNames),
 				"has_more":     result.HasMore,
 				"page_token":   result.PageToken,
 				"sender_names": senderNames,
+			}
+			if len(chatMembers) > 0 {
+				enriched["chat_members"] = chatMembers
+				enriched["chat_members_note"] = "chat_members 是该群完整成员名单（含群昵称），但因为飞书外部群的 ID 隔离机制，无法直接通过 member_id lookup 到 sender_id。两者请独立使用。"
 			}
 			if cardTextMap := client.ExtractCardTextMap(result.Items); len(cardTextMap) > 0 {
 				enriched["card_texts"] = cardTextMap
 			}
 			if len(result.MergeForwardSubMessages) > 0 {
-				enriched["merge_forward_sub_messages"] = result.MergeForwardSubMessages
+				enriched["merge_forward_sub_messages"] = wrapMessageGroupsWithSenderName(result.MergeForwardSubMessages, senderNames)
 				var subMsgs []*larkim.Message
 				for _, subs := range result.MergeForwardSubMessages {
 					subMsgs = append(subMsgs, subs...)
@@ -201,7 +254,7 @@ var getMessageHistoryCmd = &cobra.Command{
 				}
 			}
 			if len(result.ThreadReplies) > 0 {
-				enriched["thread_replies"] = result.ThreadReplies
+				enriched["thread_replies"] = wrapMessageGroupsWithSenderName(result.ThreadReplies, senderNames)
 				if len(result.ThreadHasMore) > 0 {
 					enriched["thread_has_more"] = result.ThreadHasMore
 				}
@@ -288,6 +341,7 @@ func init() {
 	getMessageHistoryCmd.Flags().String("page-token", "", "分页标记")
 	getMessageHistoryCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	getMessageHistoryCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	getMessageHistoryCmd.Flags().String("as", "auto", "身份选择: bot | user | auto（默认 auto = User 优先回退 Bot）。外部群拉群昵称推荐 --as bot + 对外共享 App")
 	// 与官方 lark-cli `+chat-messages-list` 行为对齐：默认对每条带 thread_id 的根消息
 	// 自动展开线程内回复。--expand-threads=false 可关闭，回退到只拉根消息。
 	getMessageHistoryCmd.Flags().Bool("expand-threads", true, "自动展开每个话题的线程回复（默认开启，与 lark-cli 对齐）")
