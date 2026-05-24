@@ -30,7 +30,7 @@ var chatGetCmd = &cobra.Command{
 
 		data, err := client.GetChat(chatID, token)
 		if err != nil {
-			return err
+			return translateChatError(err)
 		}
 
 		return printJSON(data)

@@ -48,7 +48,7 @@ var chatUpdateCmd = &cobra.Command{
 		}
 
 		if err := client.UpdateChat(chatID, name, description, ownerID, token); err != nil {
-			return err
+			return translateChatError(err)
 		}
 
 		fmt.Printf("群聊信息更新成功！\n")

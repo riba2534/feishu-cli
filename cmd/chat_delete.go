@@ -36,7 +36,7 @@ var chatDeleteCmd = &cobra.Command{
 		}
 
 		if err := client.DeleteChat(chatID, token); err != nil {
-			return err
+			return translateChatError(err)
 		}
 
 		fmt.Printf("群聊已解散！\n")

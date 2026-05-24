@@ -358,3 +358,57 @@ func splitAndTrim(s string) []string {
 	}
 	return result
 }
+
+// translateChatError 翻译群操作相关的飞书业务错误码，给出可操作建议。
+// 调用方拿到 SDK 或 API 返回的 error 后，过一遍此 helper 再 return 给 cobra，
+// 让用户/Agent 直接看到中文解决方案，不用自己去 grep 错误码文档。
+//
+// 已知翻译的错误码:
+//   - 232033: 外部群权限不足（最常见，提示开「对外共享能力」+ 切换 App）
+//   - 232011: 操作者不在群里
+//   - 232006: chat_id 不存在或无效
+//
+// 未识别的错误原样返回。
+func translateChatError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+
+	switch {
+	case strings.Contains(msg, "232033"):
+		return fmt.Errorf(`%w
+
+📌 这是飞书外部群权限错误（232033）。
+
+外部群（external=true）的「群信息/群成员/群配置」类 API 默认禁用，
+需要同时满足两个条件:
+  1. 当前 App 必须开启「对外共享能力」
+     → 飞书开放平台 → 应用 → 凭证与基础信息 → 检查"应用市场分发能力"
+  2. 该 App 的 Bot 必须实际加入此群（让群管理员邀请）
+
+如果你已经有另一个开了对外共享能力的 App，临时切换调用即可:
+  FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=xxx feishu-cli <命令>
+
+或者用 profile 永久保存:
+  feishu-cli profile add ext-bot --app-id cli_xxx --app-secret xxx
+  feishu-cli profile use ext-bot
+
+详见 skills/feishu-cli-chat/references/external-chat.md`, err)
+
+	case strings.Contains(msg, "232011"):
+		return fmt.Errorf(`%w
+
+📌 操作者不在群里（232011）。当前 Bot/用户没加入这个群:
+  - 让群管理员邀请进群: feishu-cli chat member add <chat_id> --id-list <id>
+  - 或者主动入群（需邀请链接）: feishu-cli chat link <chat_id>`, err)
+
+	case strings.Contains(msg, "232006"):
+		return fmt.Errorf(`%w
+
+📌 chat_id 无效（232006）。请检查 ID 是否正确，可通过以下方式重新获取:
+  feishu-cli msg search-chats --query "群名关键词"`, err)
+	}
+
+	return err
+}
