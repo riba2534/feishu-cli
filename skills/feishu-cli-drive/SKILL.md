@@ -34,6 +34,23 @@ allowed-tools: Bash(feishu-cli drive:*), Bash(feishu-cli auth:*), Read
 
 ## 命令速查
 
+### 0. 元数据 / 权限申请（v1.29+ 新增 ⭐）
+
+```bash
+# 解析任意文档 URL → 输出 type/title/canonical token（自动展开 wiki）
+feishu-cli drive inspect --url "https://xxx.feishu.cn/docx/doxcnxxx"
+feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx"   # 自动 wiki get_node
+feishu-cli drive inspect --url doxcnxxx --type docx -o json            # 裸 token + JSON
+
+# 向文档所有者申请权限（埋藏 API，飞书文档站未收录，但 lark-cli 已实现）
+# 必需 User Token + docs:permission.member:apply scope（或 drive:drive 等任一大权限）
+feishu-cli drive apply-permission --token "<url 或裸 token>" --perm view --remark "申请理由"
+feishu-cli drive apply-permission --token doxcnxxx --type docx --perm edit --remark "..."
+feishu-cli drive apply-permission --token <url> --perm view --dry-run    # 预览请求
+```
+
+详见 [`feishu-cli-toolkit/references/embedded-api-discovery.md`](../feishu-cli-toolkit/references/embedded-api-discovery.md)（埋藏 API 调研方法论）。
+
 ### 1. 上传 / 下载
 
 ```bash
