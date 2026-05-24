@@ -79,7 +79,7 @@ var taskSubtaskListCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		taskGuid := args[0]
 		pageSize, _ := cmd.Flags().GetInt("page-size")

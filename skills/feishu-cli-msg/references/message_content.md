@@ -255,7 +255,7 @@ feishu-cli msg send \
 
 ## interactive（卡片消息）
 
-卡片消息是最复杂的消息类型，支持三种发送方式。详细的构造指南见 `card_schema.md`。
+卡片消息是最复杂的消息类型，支持三种发送方式。发送格式与历史排障见 `card_schema.md`；新增卡片 JSON 的设计与模板请用 `feishu-cli-card`。
 
 ### 方式一：card_id（引用已创建的卡片）
 
@@ -344,7 +344,10 @@ feishu-cli msg send \
 
 ### CLI 示例
 
+> ⚠️ **CLI 当前不直接支持 `--msg-type system`**：`feishu-cli msg send` 的校验白名单（`cmd/send_message.go:261-266`）仅接受 `text/post/image/file/audio/media/sticker/interactive/share_chat/share_user`。如需发送系统消息（如 divider），请直接通过 OpenAPI 或飞书 SDK 调用 `/im/v1/messages` 端点。
+
 ```bash
+# 协议层示例（需自行通过 OpenAPI 调用）：
 cat > /tmp/system.json << 'EOF'
 {
   "type": "divider",
@@ -357,8 +360,5 @@ cat > /tmp/system.json << 'EOF'
   "options": {"need_rollup": true}
 }
 EOF
-
-feishu-cli msg send \
-  --receive-id-type email --receive-id user@example.com \
-  --msg-type system --content-file /tmp/system.json
+# 用 curl 调 /open-apis/im/v1/messages，msg_type=system，content=$(cat /tmp/system.json)
 ```

@@ -34,7 +34,7 @@ var chatLinkCmd = &cobra.Command{
 
 		link, err := client.GetChatLink(chatID, validityPeriod)
 		if err != nil {
-			return err
+			return translateChatError(err)
 		}
 
 		fmt.Printf("群分享链接: %s\n", link)

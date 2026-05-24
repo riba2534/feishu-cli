@@ -3,12 +3,12 @@ name: feishu-cli-okr
 description: >-
   飞书 OKR 查询与进度上报。okr cycle list 列租户级 OKR 周期；
   okr progress list/create 查/创建进度记录。
-  ⚠️ source_url 字段必填（API 强制），默认占位 https://www.feishu.cn/okr/progress 可改。
+  注意：source_url 字段 API 强制必填，默认占位 https://www.feishu.cn/okr/progress 可改。
   使用 SDK Okr.ProgressRecord + v1/periods HTTP 直调（v2/cycles 不存在）。
   当用户请求"查 OKR 周期"、"上报 OKR 进度"、"OKR 更新"时使用。
 argument-hint: cycle list | progress list | progress create
 user-invocable: true
-allowed-tools: Bash, Read
+allowed-tools: Bash(feishu-cli okr:*), Read
 ---
 
 # 飞书 OKR 查询与进度上报技能
@@ -212,16 +212,13 @@ GET /open-apis/okr/v2/cycles    ❌ 不存在，404
 ### 周报同步进展
 
 ```bash
-# 1. 确保已登录
-feishu-cli auth status
-
-# 2. 查当前有哪些周期（可选，确认正在哪个 Q）
+# 1. 查当前有哪些周期（可选，确认正在哪个 Q）
 feishu-cli okr cycle list
 
-# 3. 看某个目标历史进展（可选，回顾上次说了啥）
+# 2. 看某个目标历史进展（可选，回顾上次说了啥）
 feishu-cli okr progress list --objective-id 7xxx
 
-# 4. 同步本周进展
+# 3. 同步本周进展
 feishu-cli okr progress create \
   --objective-id 7xxx \
   --content "W18: 完成 X 和 Y，下周冲刺 Z" \

@@ -21,7 +21,7 @@ var calendarPrimaryCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		output, _ := cmd.Flags().GetString("output")
 

@@ -37,7 +37,7 @@ var boardExportCodeCmd = &cobra.Command{
 			outputPath = legacyOutputPath
 		}
 		merge, _ := cmd.Flags().GetBool("merge")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		raw, err := client.GetBoardNodes(whiteboardID, userAccessToken)
 		if err != nil {

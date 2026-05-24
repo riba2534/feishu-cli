@@ -9,7 +9,7 @@ description: >-
   "freebusy"、"日程冲突检测"时使用。
 argument-hint: suggestion | room-find | rsvp
 user-invocable: true
-allowed-tools: Bash, Read
+allowed-tools: Bash(feishu-cli calendar:*), Bash(feishu-cli auth:*), Bash(feishu-cli user:*), Bash(jq:*), Read
 ---
 
 # 飞书智能日历技能
@@ -39,12 +39,12 @@ allowed-tools: Bash, Read
 
 ### 身份选择
 
-| Token | 适用场景 |
-|-------|---------|
-| App Token（默认） | 用 Bot 身份查公开忙闲、查公司可订会议室 |
-| `--user-access-token` | 以本人身份查私人日历可见忙闲、答复自己的邀请 |
+| 命令 | Token 行为 |
+|------|-----------|
+| `suggestion` / `room-find` | 已 `auth login` 时自动用 User Token（查私人忙闲）；未登录回落 App Token（查公开忙闲、公司可订会议室）。`--user-access-token` 可显式指定。 |
+| `rsvp` | **必需 User Token**（以本人身份答复邀请），未登录直接报错。 |
 
-权限：`calendar:calendar.free_busy:read`（suggestion / room-find）、`calendar:calendar.event:reply`（rsvp，推荐 User Token）。
+权限：`calendar:calendar.free_busy:read`（suggestion / room-find）、`calendar:calendar.event:reply`（rsvp）。
 
 `calendar rsvp` 支持 `--action`，也支持官方 lark-cli 兼容别名 `--rsvp-status`，二者等价且不能同时指定不同值。
 
@@ -147,7 +147,7 @@ feishu-cli calendar rsvp \
 | `--event-id`（必填） | 日程 ID | — |
 | `--action`（必填） | `accept` / `decline` / `tentative` | — |
 | `--calendar-id` | 日历 ID | 主日历（自动调 `calendar primary`） |
-| `--user-access-token` | User Token，以本人身份答复（推荐） | App Token |
+| `--user-access-token` | User Token，以本人身份答复 | 必需（`requireUserToken`），未登录直接报错 |
 
 **与 `calendar event-reply` 的区别**：
 
@@ -268,9 +268,9 @@ feishu-cli calendar agenda --start-date 2024-01-22 --end-date 2024-01-23 -o json
 
 | 命令 | scope | Token 推荐 |
 |------|------|-----------|
-| `suggestion` | `calendar:calendar.free_busy:read` | App Token 即可 |
-| `room-find` | `calendar:calendar.free_busy:read` | App Token 即可 |
-| `rsvp` | `calendar:calendar.event:reply` | **User Token**（以本人身份答复） |
+| `suggestion` | `calendar:calendar.free_busy:read` | 登录后 User Token，未登录回落 App Token |
+| `room-find` | `calendar:calendar.free_busy:read` | 登录后 User Token，未登录回落 App Token |
+| `rsvp` | `calendar:calendar.event:reply` | **必需 User Token**（以本人身份答复） |
 
 预检：
 

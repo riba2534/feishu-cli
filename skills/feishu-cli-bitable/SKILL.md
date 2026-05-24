@@ -62,7 +62,7 @@ feishu-cli bitable field delete         --base-token xxx --table-id tblxxx --fie
 feishu-cli bitable field search-options --base-token xxx --table-id tblxxx --field-id fldxxx --query "关键词"
 ```
 
-### 记录 record（8 命令）
+### 记录 record（10 命令）
 
 ```bash
 feishu-cli bitable record list        --base-token xxx --table-id tblxxx --view-id viewxxx --limit 100
@@ -80,6 +80,9 @@ feishu-cli bitable record delete      --base-token xxx --table-id tblxxx --recor
 # batch-delete：POST /records/batch_delete，单次最多 500 条；--record-ids CSV 或 --from-file 任选其一
 feishu-cli bitable record batch-delete --base-token xxx --table-id tblxxx --record-ids rec_1,rec_2,rec_3
 feishu-cli bitable record batch-delete --base-token xxx --table-id tblxxx --from-file ids.txt   # 每行一个 record_id
+
+# share-link：批量生成记录共享链接（v1.29+ 新增），单次最多 100 条
+feishu-cli bitable record share-link  --base-token xxx --table-id tblxxx --record-ids rec_1,rec_2,rec_3
 
 # history-list：GET + query params（不是 POST body），--record-id 必填
 feishu-cli bitable record history-list --base-token xxx --table-id tblxxx --record-id recxxx

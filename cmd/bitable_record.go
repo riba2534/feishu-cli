@@ -268,6 +268,45 @@ var bitableRecordHistoryListCmd = &cobra.Command{
 	},
 }
 
+var bitableRecordShareLinkCmd = &cobra.Command{
+	Use:   "share-link",
+	Short: "为一个或多个记录批量生成共享链接（最多 100 条/次）",
+	Long: `批量生成记录的共享链接，对应 POST /records/share_links/batch。
+
+参数（任选其一）:
+  --record-ids   逗号分隔的 record_id 列表（最多 100 条）
+  --from-file    每行一个 record_id 的文本文件
+
+必填:
+  --base-token   多维表格 token
+  --table-id     目标数据表
+
+示例:
+  # 单条记录
+  feishu-cli bitable record share-link --base-token <bt> --table-id <tid> --record-ids recxxx
+
+  # 多条记录
+  feishu-cli bitable record share-link --base-token <bt> --table-id <tid> --record-ids rec001,rec002,rec003`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		tableID, _ := cmd.Flags().GetString("table-id")
+		recordIDsCSV, _ := cmd.Flags().GetString("record-ids")
+		fromFile, _ := cmd.Flags().GetString("from-file")
+
+		ids, err := loadBatchDeleteRecordIDs(recordIDsCSV, fromFile)
+		if err != nil {
+			return err
+		}
+		if len(ids) > 100 {
+			return fmt.Errorf("单次最多 100 条，当前传入 %d 条", len(ids))
+		}
+
+		body := map[string]any{"record_ids": ids}
+		return runBaseV3WithBody(cmd, "POST", func(baseToken string) string {
+			return bitableRecordPath(baseToken, tableID, "share_links", "batch")
+		}, body)
+	},
+}
+
 func init() {
 	bitableCmd.AddCommand(bitableRecordCmd)
 
@@ -275,6 +314,7 @@ func init() {
 		bitableRecordListCmd, bitableRecordGetCmd, bitableRecordSearchCmd,
 		bitableRecordUpsertCmd, bitableRecordBatchCreateCmd, bitableRecordBatchUpdateCmd,
 		bitableRecordDeleteCmd, bitableRecordBatchDeleteCmd, bitableRecordHistoryListCmd,
+		bitableRecordShareLinkCmd,
 	}
 	for _, c := range recordSubs {
 		bitableRecordCmd.AddCommand(c)
@@ -298,6 +338,10 @@ func init() {
 	// batch-delete 通过 --record-ids 或 --from-file 传入
 	bitableRecordBatchDeleteCmd.Flags().String("record-ids", "", "逗号分隔的 record_id 列表")
 	bitableRecordBatchDeleteCmd.Flags().String("from-file", "", "每行一个 record_id 的文件")
+
+	// share-link 同样用 --record-ids 或 --from-file
+	bitableRecordShareLinkCmd.Flags().String("record-ids", "", "逗号分隔的 record_id 列表（最多 100 条）")
+	bitableRecordShareLinkCmd.Flags().String("from-file", "", "每行一个 record_id 的文件")
 
 	// upsert 可选 record-id（有则 PATCH 更新，无则 POST 创建）
 	bitableRecordUpsertCmd.Flags().String("record-id", "", "record_id（不传则创建新记录）")

@@ -25,7 +25,7 @@ var calendarGetCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		calendarID := args[0]
 		output, _ := cmd.Flags().GetString("output")

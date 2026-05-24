@@ -23,7 +23,7 @@ var getBoardNodesCmd = &cobra.Command{
 		}
 
 		whiteboardID := args[0]
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		rawJSON, err := client.GetBoardNodes(whiteboardID, userAccessToken)
 		if err != nil {

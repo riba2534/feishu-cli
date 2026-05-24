@@ -19,8 +19,7 @@ var eventSchemaCmd = &cobra.Command{
 示例:
   feishu-cli event schema im.message.receive_v1
   feishu-cli event schema im.message.receive_v1 --json`,
-	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
 		def, ok := event.Lookup(key)

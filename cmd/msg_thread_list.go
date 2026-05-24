@@ -42,7 +42,7 @@ var msgThreadMessagesCmd = &cobra.Command{
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		startTime, _ := cmd.Flags().GetString("start-time")
 		endTime, _ := cmd.Flags().GetString("end-time")
-		userToken := resolveOptionalUserToken(cmd)
+		userToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		opts := client.ListMessagesOptions{
 			SortType:  sortType,

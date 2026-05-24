@@ -2349,8 +2349,10 @@ func normalizeURL(rawURL string) string {
 		return "https://feishu.cn/" + strings.TrimPrefix(rawURL, "feishu://")
 	}
 
-	// URL 解码
-	if decoded, err := url.QueryUnescape(rawURL); err == nil && decoded != rawURL {
+	// URL 解码：用 PathUnescape 而非 QueryUnescape，避免 query 中字面 `+` 被错误解码为空格
+	// （RFC 3986：`+` 在 URL query 中是字面字符；form-urlencoded 才把 `+` 当空格）。
+	// 与 block_to_markdown.go 的导出方向对称，保证 round-trip 不退化。
+	if decoded, err := url.PathUnescape(rawURL); err == nil && decoded != rawURL {
 		return decoded
 	}
 	return rawURL

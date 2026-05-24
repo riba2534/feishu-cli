@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/spf13/cobra"
 )
@@ -85,7 +87,7 @@ func mustSetFlag(t *testing.T, cmd *cobra.Command, name, value string) {
 	}
 }
 
-func TestMsgListContainerIDDefaultsToTenantToken(t *testing.T) {
+func TestMsgListContainerIDFallsBackToTenantTokenWhenNotLoggedIn(t *testing.T) {
 	isolateMsgTokenTestEnv(t)
 	var capturedAuth string
 	var searchCalled bool
@@ -120,7 +122,7 @@ func TestMsgListContainerIDDefaultsToTenantToken(t *testing.T) {
 	}
 }
 
-func TestMsgGetDefaultsToTenantToken(t *testing.T) {
+func TestMsgGetFallsBackToTenantTokenWhenNotLoggedIn(t *testing.T) {
 	isolateMsgTokenTestEnv(t)
 	var capturedAuth string
 
@@ -144,7 +146,7 @@ func TestMsgGetDefaultsToTenantToken(t *testing.T) {
 	}
 }
 
-func TestMsgHistoryContainerIDDefaultsToTenantToken(t *testing.T) {
+func TestMsgHistoryContainerIDFallsBackToTenantTokenWhenNotLoggedIn(t *testing.T) {
 	isolateMsgTokenTestEnv(t)
 	var capturedAuth string
 	var searchCalled bool
@@ -272,5 +274,126 @@ func TestMsgHistoryUserEntrypointsStillRequireUserToken(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "缺少 User Access Token") {
 		t.Fatalf("错误 = %q, want 包含 缺少 User Access Token", err.Error())
+	}
+}
+
+// 用户登录后（token.json 存在），读类命令优先用 User Token，未登录才回落 Tenant Token。
+// 这与"User 权限 ⊇ Bot 权限"的常识一致，且避免外部群读取时返回 230002 "Bot/User can NOT be out of the chat"。
+
+func writeFakeUserToken(t *testing.T, accessToken string) {
+	t.Helper()
+	if err := auth.SaveToken(&auth.TokenStore{
+		AccessToken:      accessToken,
+		RefreshToken:     "r-fake",
+		TokenType:        "Bearer",
+		ExpiresAt:        time.Now().Add(time.Hour),
+		RefreshExpiresAt: time.Now().Add(24 * time.Hour),
+		Scope:            "im:message:readonly",
+	}); err != nil {
+		t.Fatalf("写假 token.json 失败: %v", err)
+	}
+}
+
+func TestMsgHistoryContainerIDPrefersUserTokenWhenLoggedIn(t *testing.T) {
+	isolateMsgTokenTestEnv(t)
+	writeFakeUserToken(t, "u-from-token-json")
+	var capturedAuth string
+	var tenantTokenRequested bool
+
+	cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/open-apis/auth/v3/tenant_access_token/internal") {
+			tenantTokenRequested = true
+			http.Error(w, "should not request tenant token when User Token available", http.StatusInternalServerError)
+			return
+		}
+		if r.URL.Path != "/open-apis/im/v1/messages" {
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		capturedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"items":[],"has_more":false,"page_token":""}}`)
+	})
+	defer cleanup()
+
+	cmd := newGetMessageHistoryTestCmd()
+	mustSetFlag(t, cmd, "container-id", testChatID)
+	if err := getMessageHistoryCmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("msg history 返回错误: %v", err)
+	}
+	if tenantTokenRequested {
+		t.Fatal("已登录时不应请求 tenant token")
+	}
+	if capturedAuth != "Bearer u-from-token-json" {
+		t.Fatalf("Authorization = %q, want %q", capturedAuth, "Bearer u-from-token-json")
+	}
+}
+
+func TestMsgListContainerIDPrefersUserTokenWhenLoggedIn(t *testing.T) {
+	isolateMsgTokenTestEnv(t)
+	writeFakeUserToken(t, "u-from-token-json")
+	var capturedAuth string
+	var tenantTokenRequested bool
+
+	cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/open-apis/auth/v3/tenant_access_token/internal") {
+			tenantTokenRequested = true
+			http.Error(w, "should not request tenant token when User Token available", http.StatusInternalServerError)
+			return
+		}
+		if r.URL.Path != "/open-apis/im/v1/messages" {
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		capturedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"items":[],"has_more":false,"page_token":""}}`)
+	})
+	defer cleanup()
+
+	cmd := newListMessagesTestCmd()
+	mustSetFlag(t, cmd, "container-id", testChatID)
+	if err := listMessagesCmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("msg list 返回错误: %v", err)
+	}
+	if tenantTokenRequested {
+		t.Fatal("已登录时不应请求 tenant token")
+	}
+	if capturedAuth != "Bearer u-from-token-json" {
+		t.Fatalf("Authorization = %q, want %q", capturedAuth, "Bearer u-from-token-json")
+	}
+}
+
+func TestMsgGetPrefersUserTokenWhenLoggedIn(t *testing.T) {
+	isolateMsgTokenTestEnv(t)
+	writeFakeUserToken(t, "u-from-token-json")
+	var capturedAuth string
+	var tenantTokenRequested bool
+
+	cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/open-apis/auth/v3/tenant_access_token/internal") {
+			tenantTokenRequested = true
+			http.Error(w, "should not request tenant token when User Token available", http.StatusInternalServerError)
+			return
+		}
+		if r.URL.Path != "/open-apis/im/v1/messages/"+testMessageID {
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		capturedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"code":0,"msg":"success","data":{"items":[{"message_id":"%s","msg_type":"text","sender":{"id":"ou_sender","sender_type":"user"},"body":{"content":"{\"text\":\"hi\"}"}}]}}`, testMessageID)
+	})
+	defer cleanup()
+
+	cmd := newGetMessageTestCmd()
+	if err := getMessageCmd.RunE(cmd, []string{testMessageID}); err != nil {
+		t.Fatalf("msg get 返回错误: %v", err)
+	}
+	if tenantTokenRequested {
+		t.Fatal("已登录时不应请求 tenant token")
+	}
+	if capturedAuth != "Bearer u-from-token-json" {
+		t.Fatalf("Authorization = %q, want %q", capturedAuth, "Bearer u-from-token-json")
 	}
 }

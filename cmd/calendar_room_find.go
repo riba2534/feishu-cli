@@ -53,7 +53,7 @@ var calendarRoomFindCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		// 解析 --slot 多值（StringSliceArray 支持重复传入 + 逗号分隔）
 		slotInputs, _ := cmd.Flags().GetStringSlice("slot")

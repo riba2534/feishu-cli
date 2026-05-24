@@ -1,14 +1,3 @@
----
-name: feishu-cli-doc-guide
-description: >-
-  飞书文档 Markdown 编写规范，尤其是 Mermaid/PlantUML、Callout、表格、图片、公式等
-  导入兼容性检查。当用户要生成将导入飞书的 Markdown、排查 doc import 渲染失败、
-  或需要飞书兼容图表语法时使用。
-argument-hint: <markdown_file>
-user-invocable: false
-allowed-tools: Read, Grep
----
-
 # 飞书 Markdown 兼容指南
 
 生成将导入飞书的 Markdown 前，按本指南检查。执行导入用 `feishu-cli-import`，编辑已有文档用 `feishu-cli-write`。
@@ -21,7 +10,7 @@ allowed-tools: Read, Grep
 | PlantUML | 无行首缩进、无 `skinparam`/`!define`、类图不写 `+ - # ~` 可见性 |
 | 表格 | 行 > 9 可导入同一 block；列 > 9 会拆列组；超大表建议 Sheet |
 | 图片 | `doc import` 默认上传；`doc add/content-update` 需传 `--upload-images` |
-| 公式 | 行内 `$...$`；块级公式会以 Text+Equation 元素导入 |
+| 公式 | 行内 `$...$`；块级 `$$...$$` 会降级为 Text+Equation 行内元素（飞书无独立块级公式块） |
 | Callout | 仅 NOTE/WARNING/TIP/CAUTION/IMPORTANT/SUCCESS |
 
 ## Mermaid
@@ -47,7 +36,7 @@ allowed-tools: Read, Grep
 4. 长标签换短句，避免 30+ 长消息叠加复杂结构。
 5. 状态图必须用 `stateDiagram-v2`。
 
-更多细节见 `references/mermaid-spec.md`。
+更多细节见 `mermaid-spec.md`。
 
 ## PlantUML
 

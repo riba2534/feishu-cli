@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/spf13/cobra"
 )
 
@@ -110,13 +111,15 @@ var configCreateAppCmd = &cobra.Command{
 }
 
 // saveAppConfig 将应用凭证保存到配置文件
+//
+// 路径解析走 profile 系统：
+//   - 启用多 profile 时写入当前激活 profile 的 ~/.feishu-cli/profiles/<active>/config.yaml
+//   - 未启用 profile 时回落到旧布局 ~/.feishu-cli/config.yaml
 func saveAppConfig(appID, appSecret, baseURL string) error {
-	home, err := os.UserHomeDir()
+	configDir, err := profile.ActiveDir()
 	if err != nil {
-		return err
+		return fmt.Errorf("获取配置目录失败: %w", err)
 	}
-
-	configDir := filepath.Join(home, ".feishu-cli")
 	if err := os.MkdirAll(configDir, 0700); err != nil {
 		return err
 	}

@@ -85,5 +85,13 @@ func resolveCurrentUserOpenID(userToken string) (string, error) {
 	if info == nil || info.OpenID == "" {
 		return "", fmt.Errorf("/authen/v1/user_info 未返回 open_id")
 	}
+	// 写回缓存避免每次 mail 命令重复打 /authen/v1/user_info
+	_ = auth.SaveCurrentUserCache(&auth.CurrentUserCache{
+		OpenID:           info.OpenID,
+		UserID:           info.UserID,
+		UnionID:          info.UnionID,
+		Name:             info.Name,
+		TokenFingerprint: auth.UserTokenFingerprint(userToken),
+	})
 	return info.OpenID, nil
 }

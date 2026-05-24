@@ -29,7 +29,7 @@ var getTaskCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		taskGuid := args[0]
 

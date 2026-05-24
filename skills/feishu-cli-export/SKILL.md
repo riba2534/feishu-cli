@@ -68,7 +68,7 @@ feishu-cli doc export <document_id> \
 | `--expand-mentions` | 展开 @用户为友好名称 |
 | `--expand-sheets` | 默认 true；把文档内嵌电子表格块展开成 Markdown 表格，false 时保留 `<sheet .../>` |
 
-`--front-matter`、`--highlight`、`--expand-mentions`、`--expand-sheets` 只属于 `doc export`，不要传给 `wiki export`。
+`--front-matter`、`--highlight` 仅 `doc export` 支持；`--expand-sheets`、`--expand-mentions` 同时支持 `doc export` 和 `wiki export`。所有读类导出命令 token 默认走"User 优先 + Tenant 兜底"——已 `auth login` 自动用 User Token，未登录尝试 App Token。
 
 ## Sheet Markdown
 

@@ -199,6 +199,13 @@ type ListMessagesResult struct {
 	// 此 map 以容器 message_id 为 key，value 是该容器递归展开后的平铺子消息列表
 	// （每条子消息带 upper_message_id 可重建嵌套树）。无展开时为 nil。
 	MergeForwardSubMessages map[string][]*larkim.Message
+	// ThreadReplies 当 ExpandThreadReplies 被调用后，以 thread_id 为 key，value
+	// 是该话题在 ascending 顺序下的回复列表（不含根消息本身）。无展开时为 nil。
+	// 配合 ThreadHasMore 表示是否有更多回复未拉完。
+	ThreadReplies map[string][]*larkim.Message
+	// ThreadHasMore key 为 thread_id，value 为 true 表示该话题在 perThread 限额
+	// 内未拉完，还有更多回复存在。可结合 msg thread-messages 命令翻页继续拉。
+	ThreadHasMore map[string]bool
 }
 
 // ListMessages lists messages in a container (chat).
@@ -414,6 +421,40 @@ func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, use
 	}, nil
 }
 
+// LoadAllChatMembers 拉取群完整成员列表（自动翻页，最多 50 页 = 5000 人）。
+// 失败（外部群 232033 / Bot 不在群 / 网络异常等）时返回 (nil, err)，调用方一般静默降级。
+//
+// **重要**：此函数对内部群非常有用（成员 ID 可用于 mention、@、统计等），但**外部群下
+// 拿到的 member_id 跟 message API 拿到的 sender_id 是不同的 ID namespace**，不能用
+// member.member_id 去 lookup msg.sender.id。这是飞书的设计：外部群内 Bot 看到的
+// 成员列表是"群通讯录视图"，而消息接口看到的 sender 是"消息系统视图"，两套 ID 独立。
+// 因此本 helper 只负责取数据，由调用方决定怎么使用（建议作为独立字段返回，不要混入
+// sender_names 字典）。
+func LoadAllChatMembers(chatID, userAccessToken string) ([]*ChatMemberInfo, error) {
+	if chatID == "" || !strings.HasPrefix(chatID, "oc_") {
+		return nil, nil
+	}
+
+	all := make([]*ChatMemberInfo, 0)
+	pageToken := ""
+	// 防御性：最多翻 50 页（5000 人），避免异常响应造成死循环
+	for i := 0; i < 50; i++ {
+		res, err := ListChatMembers(chatID, "open_id", 100, pageToken, userAccessToken)
+		if err != nil {
+			if i == 0 {
+				return nil, err
+			}
+			break // 后续页失败时返回已拿到的部分
+		}
+		all = append(all, res.Items...)
+		if !res.HasMore || res.PageToken == "" {
+			break
+		}
+		pageToken = res.PageToken
+	}
+	return all, nil
+}
+
 // ResolveSenderNames 为消息列表补齐每个 user 发送者的显示名字，返回 open_id → name 的映射。
 // 两步解析（对齐官方 lark-cli 的 ResolveSenderNames）：
 //  1. 从每条消息的 mentions 里抽已有的 {id, name}（免费，无需 API 调用）
@@ -421,6 +462,9 @@ func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, use
 //
 // 该函数对网络错误是容错的：任一步失败只返回当前累积的映射，调用方仍可得到部分结果。
 // App sender（id_type=app_id / sender_type=app）跳过，不会发起查询。
+//
+// 群聊场景额外想拿"群完整成员名单（含群昵称）"用 LoadAllChatMembers 单独取，结果应独立于
+// sender_names 字段使用——外部群下 member_id 和 sender_id 是不同 namespace，不能互查。
 func ResolveSenderNames(messages []*larkim.Message, userAccessToken string) map[string]string {
 	nameMap := make(map[string]string)
 
@@ -1367,6 +1411,99 @@ func ListThreadMessages(threadID string, opts ListMessagesOptions, userAccessTok
 
 	// 复用 ListMessages 逻辑（支持 user token 绕过 SDK 限制）
 	return ListMessages(threadID, opts, userAccessToken)
+}
+
+// 自动展开线程回复的默认上限。与官方 lark-cli 保持一致：
+//   - perThread 默认 50：单 thread 最多拉 50 条回复（也是 OpenAPI 单页上限）
+//   - totalLimit 默认 500：所有 thread 累计拉到的回复总数上限，防止极端话题群打爆 QPS
+const (
+	ExpandThreadRepliesDefaultPerThread  = 50
+	ExpandThreadRepliesDefaultTotalLimit = 500
+)
+
+// ExpandThreadReplies 对 result.Items 中带 thread_id 的消息逐个自动展开线程回复，
+// 结果存入 result.ThreadReplies / result.ThreadHasMore。重复 thread_id 只拉一次。
+// 任一 thread 拉失败时静默跳过（不中断整体流程），由调用方决定是否提示。
+//
+// 与 lark-cli `shortcuts/im/convert_lib/thread.go` 行为对齐：按 ByCreateTimeAsc 拉取，
+// 累计达到 totalLimit 时提前停止。回复列表**不含**根消息本身（根消息已在 Items 里）。
+//
+// 设计要点：
+//   - perThread <= 0 时用默认 50；> 50 会被截断为 50（OpenAPI 限制）
+//   - totalLimit <= 0 时用默认 500
+//   - userAccessToken 为空时仍可工作（走 App Token，前提是 Bot 在群里）
+func ExpandThreadReplies(result *ListMessagesResult, userAccessToken string, perThread, totalLimit int) {
+	if result == nil || len(result.Items) == 0 {
+		return
+	}
+	if perThread <= 0 {
+		perThread = ExpandThreadRepliesDefaultPerThread
+	}
+	if perThread > 50 {
+		perThread = 50
+	}
+	if totalLimit <= 0 {
+		totalLimit = ExpandThreadRepliesDefaultTotalLimit
+	}
+
+	if result.ThreadReplies == nil {
+		result.ThreadReplies = make(map[string][]*larkim.Message)
+	}
+	if result.ThreadHasMore == nil {
+		result.ThreadHasMore = make(map[string]bool)
+	}
+
+	totalFetched := 0
+	seen := make(map[string]bool)
+	for _, msg := range result.Items {
+		if totalFetched >= totalLimit {
+			return
+		}
+		if msg == nil || msg.ThreadId == nil {
+			continue
+		}
+		tid := StringVal(msg.ThreadId)
+		if tid == "" || seen[tid] {
+			continue
+		}
+		seen[tid] = true
+
+		limit := perThread
+		if remaining := totalLimit - totalFetched; limit > remaining {
+			limit = remaining
+		}
+
+		opts := ListMessagesOptions{
+			ContainerIDType: "thread",
+			SortType:        "ByCreateTimeAsc",
+			PageSize:        limit,
+		}
+		sub, err := ListMessages(tid, opts, userAccessToken)
+		if err != nil || sub == nil {
+			continue
+		}
+
+		// 过滤掉与根消息 ID 相同的项（thread API 把根消息也返回了，避免重复）。
+		rootID := StringVal(msg.MessageId)
+		replies := sub.Items
+		if rootID != "" {
+			filtered := replies[:0]
+			for _, r := range sub.Items {
+				if StringVal(r.MessageId) != rootID {
+					filtered = append(filtered, r)
+				}
+			}
+			replies = filtered
+		}
+
+		if len(replies) > 0 {
+			result.ThreadReplies[tid] = replies
+			totalFetched += len(replies)
+		}
+		if sub.HasMore {
+			result.ThreadHasMore[tid] = true
+		}
+	}
 }
 
 // GetReadUsers gets the list of users who have read a message

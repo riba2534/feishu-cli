@@ -30,7 +30,7 @@ var calendarEventSearchCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		calendarID, _ := cmd.Flags().GetString("calendar-id")
 		query, _ := cmd.Flags().GetString("query")

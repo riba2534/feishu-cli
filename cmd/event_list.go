@@ -25,7 +25,6 @@ var eventListCmd = &cobra.Command{
 
   # JSON 输出，用 jq 提取 IM 域所有 EventKey
   feishu-cli event list --json | jq -r '.[] | select(.domain=="im") | .key'`,
-	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		asJSON, _ := cmd.Flags().GetBool("json")
 		all := event.ListAll()

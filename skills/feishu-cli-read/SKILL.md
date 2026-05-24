@@ -4,7 +4,8 @@ description: >-
   只读操作，不修改文档内容。读取飞书云文档、知识库内容或电子表格，分析文档结构。
   支持普通 docx、普通 sheet、知识库 docx 和知识库 sheet。当用户请求"查看"、"阅读"、"分析"、"读取"、
   "打开"、"read"、"view" 飞书文档、知识库或电子表格时使用。支持通过文档 ID、知识库 Token 或 URL 读取。
-  Markdown 作为中间格式存储在 /tmp 目录。如需写入请使用 feishu-cli-write。
+  Markdown 仅作为分析中间态存放在 /tmp（不主动落地为用户文件）；如需主动导出到本地路径请用 feishu-cli-export，
+  写入请用 feishu-cli-write。
 argument-hint: <document_id|node_token|spreadsheet_token|url>
 user-invocable: true
 allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli wiki:*), Bash(feishu-cli sheet:*), Bash(feishu-cli auth:*), Read, Grep
@@ -19,7 +20,7 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli wiki:*), Bash(feishu-cli 
 - **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
 - 已完成认证（`feishu-cli auth login`）
 - App 权限：需要 `docx:document` 或 `docx:document:readonly`（普通文档）、`wiki:wiki:readonly`（知识库）
-- User Token 权限：若 App 无权访问他人文档，先去飞书开放平台的应用权限管理页面开通 `docx:document:readonly`，然后 `feishu-cli auth login` 授权，`doc export` 会自动读取保存的 User Token
+- **Token 解析（所有读命令通用）**：`doc export` / `wiki export` / `sheet export` 等读类命令统一走"User 优先 + Tenant 兜底"——优先用 token.json 里的 User Token，未找到回落 App Token。所以读他人文档时只要 `auth login` 一次，后续不用再传 `--user-access-token`。详见下方"User Token 优先级链"小节。
 
 ## 核心概念
 
@@ -28,9 +29,9 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli wiki:*), Bash(feishu-cli 
 ## 使用方法
 
 ```bash
-/feishu-read <document_id>
-/feishu-read <node_token>
-/feishu-read <url>
+feishu-cli doc export <document_id> --output /tmp/feishu_doc.md --download-images --assets-dir /tmp/feishu_assets
+feishu-cli wiki export <node_token_or_url> --output /tmp/feishu_wiki.md --download-images --assets-dir /tmp/feishu_assets
+feishu-cli sheet export <spreadsheet_token_or_url> --format markdown --output /tmp/feishu_sheet.md
 ```
 
 ## 执行流程
@@ -143,12 +144,12 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli wiki:*), Bash(feishu-cli 
 
 ```bash
 # 读取普通文档
-/feishu-read <document_id>
-/feishu-read https://xxx.feishu.cn/docx/<document_id>
+feishu-cli doc export <document_id> --output /tmp/feishu_doc.md --download-images --assets-dir /tmp/feishu_assets
+feishu-cli doc export https://xxx.feishu.cn/docx/<document_id> --output /tmp/feishu_doc.md
 
 # 读取知识库文档
-/feishu-read <node_token>
-/feishu-read https://xxx.feishu.cn/wiki/<node_token>
+feishu-cli wiki export <node_token> --output /tmp/feishu_wiki.md --download-images --assets-dir /tmp/feishu_assets
+feishu-cli wiki export https://xxx.feishu.cn/wiki/<node_token> --output /tmp/feishu_wiki.md
 
 # 读取普通电子表格为 Markdown
 feishu-cli sheet export <spreadsheet_token> --format markdown -o /tmp/feishu_sheet.md

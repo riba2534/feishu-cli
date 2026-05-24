@@ -1,7 +1,7 @@
 ---
 name: feishu-cli-drive
 description: >-
-  飞书云盘增强命令组。分块上传大文件（>20MB 自动 3 段式）、流式下载、
+  飞书云盘增强命令组。分块上传大文件（≥20MB 自动 3 段式）、流式下载、
   文档异步导出（markdown 快捷路径 / sheet+bitable csv / sub-id / 有界轮询 + resume）、
   文档异步导入、文件/文件夹移动（folder 自动轮询）、富文本评论（text/mention_user/link
   + wiki URL 解析 + 局部评论）、通用异步任务查询、本地 ↔ 云盘单向镜像
@@ -13,6 +13,7 @@ description: >-
   "本地与云盘对照"、"SHA 比对"、"按文件夹搜文档"、"feishu drive"、"lark drive"时使用。
   本 skill 与老的 file/media/comment 命令组并存，提供更强能力（User Token 支持、
   异步 resume、富文本评论），基础场景仍可用 file/media。
+argument-hint: upload | download | export | import | move | add-comment | task-result | pull | push | status | search
 user-invocable: true
 allowed-tools: Bash(feishu-cli drive:*), Bash(feishu-cli auth:*), Read
 ---
@@ -26,10 +27,29 @@ allowed-tools: Bash(feishu-cli drive:*), Bash(feishu-cli auth:*), Read
 
 ## 前置条件
 
-- **认证**：多数 `drive` 命令需要 **User Access Token**（执行 `feishu-cli auth login` 登录）。`pull/push/status` 支持 fallback，未显式传 User Token 时可回退 App Token。
+- **认证**：
+  - **必需 User Token**（`requireUserToken`，未登录直接报错）：`upload`/`download`/`export`/`import`/`move`/`add-comment`/`task-result`/`search`，先 `feishu-cli auth login`。
+  - **登录后 User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`）：`pull`/`push`/`status`。已 `auth login` 自动用 User Token；未登录回落 App Token（注意 Bot 通常看不到你云盘里的私人文件）。
 - **预检**：`feishu-cli auth check --scope "drive:file:upload"` 可验证 scope
 
 ## 命令速查
+
+### 0. 元数据 / 权限申请（v1.29+ 新增 ⭐）
+
+```bash
+# 解析任意文档 URL → 输出 type/title/canonical token（自动展开 wiki）
+feishu-cli drive inspect --url "https://xxx.feishu.cn/docx/doxcnxxx"
+feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx"   # 自动 wiki get_node
+feishu-cli drive inspect --url doxcnxxx --type docx -o json            # 裸 token + JSON
+
+# 向文档所有者申请权限（埋藏 API，飞书文档站未收录，但 lark-cli 已实现）
+# 必需 User Token + docs:permission.member:apply scope（或 drive:drive 等任一大权限）
+feishu-cli drive apply-permission --token "<url 或裸 token>" --perm view --remark "申请理由"
+feishu-cli drive apply-permission --token doxcnxxx --type docx --perm edit --remark "..."
+feishu-cli drive apply-permission --token <url> --perm view --dry-run    # 预览请求
+```
+
+详见 [`feishu-cli-toolkit/references/embedded-api-discovery.md`](../feishu-cli-toolkit/references/embedded-api-discovery.md)（埋藏 API 调研方法论）。
 
 ### 1. 上传 / 下载
 
@@ -318,7 +338,7 @@ feishu-cli drive import --file big_sheet.xlsx --type bitable --folder-token fldx
 
 ## 注意事项
 
-- **Token 策略**：大多数 `drive` 命令优先 User Token；`pull/push/status` 可回退 App Token。搜索类 `drive search` 必须 User Token。
+- **Token 策略**：`upload/download/export/import/move/add-comment/task-result/search` 必需 User Token；`pull/push/status` 登录后默认 User Token，未登录回落 App Token。
 - **SSRF 防护**：下载 URL 会被校验，拒绝 localhost / 回环 IP / 内网段 / 链路本地
 - **重定向策略**：下载 HTTP 重定向最多 5 次，禁止 HTTPS → HTTP 降级
 - **大文件分块阈值**：固定 20MB，超过自动切分片

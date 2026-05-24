@@ -59,7 +59,7 @@ var listVersionCmd = &cobra.Command{
 		objType, _ := cmd.Flags().GetString("obj-type")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		versions, _, _, err := client.ListFileVersions(fileToken, objType, pageSize, "", userAccessToken)
 		if err != nil {
@@ -154,7 +154,7 @@ var getVersionCmd = &cobra.Command{
 		versionID := args[1]
 		objType, _ := cmd.Flags().GetString("obj-type")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		version, err := client.GetFileVersion(fileToken, versionID, objType, userAccessToken)
 		if err != nil {

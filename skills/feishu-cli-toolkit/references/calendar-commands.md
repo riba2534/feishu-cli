@@ -142,3 +142,9 @@ feishu-cli cal primary
 |------|------|
 | `calendar:calendar:readonly` | 读取日历和日程 |
 | `calendar:calendar` | 创建/修改/删除日程（需单独申请） |
+
+## Token 策略
+
+- **读类**（`calendar list/primary/get/agenda/freebusy/suggestion/room-find/event-search`、`calendar event get/list`、`calendar attendee list`）：登录后默认 User Token（自动从 `~/.feishu-cli/token.json` 加载），未登录回落 App Token。
+- **写类**（`calendar create-event/update-event/delete-event/event-reply`、`calendar attendee add`）：默认 App Token；显式 `--user-access-token` 时切到 User。
+- **必需 User Token**：`calendar rsvp`（以本人身份答复邀请）。

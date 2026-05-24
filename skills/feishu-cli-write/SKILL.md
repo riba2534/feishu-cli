@@ -139,7 +139,7 @@ feishu-cli doc table merge-cells DOC_ID TABLE_BLOCK_ID --row-start 0 --row-end 2
 <grid cols="2"><column>左</column><column>右</column></grid>
 ```
 
-Mermaid / PlantUML 会在导入时转为飞书画板；语法限制参考 `feishu-cli-doc-guide`。
+Mermaid / PlantUML 会在导入时转为飞书画板；语法限制参考 `../feishu-cli-import/references/doc-guide.md`。
 
 ## 验证
 

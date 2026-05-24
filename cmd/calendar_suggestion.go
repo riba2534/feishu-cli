@@ -51,7 +51,7 @@ var calendarSuggestionCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		attendeeIDs, _ := cmd.Flags().GetString("attendee-ids")
 		durationStr, _ := cmd.Flags().GetString("duration")

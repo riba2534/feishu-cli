@@ -107,7 +107,7 @@ var calendarAttendeeListCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		calendarID := args[0]
 		eventID := args[1]

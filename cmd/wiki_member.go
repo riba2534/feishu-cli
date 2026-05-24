@@ -92,7 +92,7 @@ var wikiMemberListCmd = &cobra.Command{
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
 
-		members, nextPageToken, hasMore, err := client.ListWikiSpaceMembers(spaceID, pageSize, pageToken, resolveOptionalUserToken(cmd))
+		members, nextPageToken, hasMore, err := client.ListWikiSpaceMembers(spaceID, pageSize, pageToken, resolveOptionalUserTokenWithFallback(cmd))
 		if err != nil {
 			return err
 		}

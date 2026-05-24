@@ -40,7 +40,7 @@ var downloadFileCmd = &cobra.Command{
 		fileToken := args[0]
 		outputPath, _ := cmd.Flags().GetString("output")
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		if outputPath == "" {
 			outputPath = fileToken

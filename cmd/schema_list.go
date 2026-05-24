@@ -27,8 +27,7 @@ var schemaListCmd = &cobra.Command{
   feishu-cli schema list
   feishu-cli schema list --service im
   feishu-cli schema list --service drive --format json`,
-	Args:         cobra.NoArgs,
-	SilenceUsage: true,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSchemaList(os.Stdout, schemaListService, schemaListFormat)
 	},

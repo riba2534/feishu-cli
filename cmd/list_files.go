@@ -38,7 +38,7 @@ var listFilesCmd = &cobra.Command{
 
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		files, _, _, err := client.ListFiles(folderToken, pageSize, "", userAccessToken)
 		if err != nil {

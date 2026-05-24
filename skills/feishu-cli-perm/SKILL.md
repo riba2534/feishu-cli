@@ -6,7 +6,7 @@ description: >-
   "协作者"、"full_access"、"转移所有权"时使用。
 argument-hint: <doc_token> --perm <view|edit|full_access>
 user-invocable: true
-allowed-tools: Bash(feishu-cli perm:*), Bash(feishu-cli auth:*), Read
+allowed-tools: Bash(feishu-cli perm:*), Read
 ---
 
 # 飞书权限管理技能
