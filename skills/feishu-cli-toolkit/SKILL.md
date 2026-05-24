@@ -118,6 +118,12 @@ feishu-cli wiki spaces
 feishu-cli wiki nodes <space_id>
 feishu-cli wiki get <node_token>
 feishu-cli wiki member list <space_id>
+
+# v1.29+ 新增 ⭐
+feishu-cli wiki space-create --name "新知识库" [--description "..."]      # 创建知识库
+feishu-cli wiki space-list [--page-all] [--page-limit N] [-o json]         # 列出所有可见 space（默认仅第一页）
+feishu-cli wiki node-copy --space-id <src> --node-token <node> \
+  --target-space-id <dst> [--title "副本标题"]                              # 复制节点（也可用 --target-parent-node-token）
 ```
 
 需要富文本评论、wiki URL 自动解析、局部评论时使用 `feishu-cli-drive`。
