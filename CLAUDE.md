@@ -298,6 +298,36 @@ feishu-cli auth login                 # OAuth 用户授权
 
 Major：不兼容变更；Minor：新功能；Patch：Bug 修复。
 
+## 通用 API 透传命令（兜底）
+
+如果某个飞书 OpenAPI 端点本项目没封装专门命令，**不要**手写 curl 或绕路，**用 `feishu-cli api` 透传**：
+
+```bash
+feishu-cli api <METHOD> </open-apis/...> [--params '<JSON>'] [--data '<JSON>'] [--as bot|user|auto] [--dry-run]
+```
+
+自动复用本地 token（含自动刷新）、自动错误码翻译（含 232033/99991679/scope 不足等中文提示）、支持 URL 内嵌 query 拆解、`--dry-run` 预览请求。
+
+先用 `feishu-cli schema <service>.<resource>.<method>` 查参数和 path，再用 `feishu-cli api` 调即可。常见场景：调本地 152 个本地元数据未覆盖的 API（飞书开放平台 2500+ 端点 ≈ 94% 用 `api` 命令）。
+
+## 外部群操作（重要）
+
+飞书**外部群**（`external=true`）的「群信息/成员/配置」类 API 默认 232033 拒绝。
+碰到 232033 错误，**不要**当作"飞书完全不支持"——它只是要求换 App：
+
+1. App 开启「对外共享能力」（飞书开放平台 → 应用 → 凭证与基础信息）
+2. 该 App 的 Bot 已加入此群
+
+切换方式（不写盘）：
+```bash
+FEISHU_APP_ID=cli_对外共享App FEISHU_APP_SECRET=xxx feishu-cli <命令> --as bot
+```
+
+`feishu-cli chat member list/add/remove` 已支持 `--as bot|user|auto`，外部群推荐用 `--as bot`。
+完整路径与排错见 `skills/feishu-cli-chat/references/external-chat.md`。
+
+> 不受外部群限制的：`msg history`、`msg search-chats`、`msg send/reply`、`chat list/search` 等"消息侧"和"列表侧"API 都可以正常调。受限的是"群内信息/成员/配置"侧。
+
 ## 已知问题
 
 | 问题 | 说明 | 状态 |

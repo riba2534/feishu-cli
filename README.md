@@ -268,6 +268,7 @@ Commands:
   search    搜索操作（消息、应用、文档）
   event     实时事件订阅（WebSocket 长连接、list/schema/consume/status/stop）
   schema    本地浏览飞书 OpenAPI 方法（无需 token）
+  api       通用 OpenAPI 透传调用（任意 method/path，自动鉴权 + 错误码翻译，覆盖 2500+ 端点）
   profile   多 App / 多账号配置切换
   doctor    环境健康检查（config/user_token/endpoints/proxy/deps）
   auth      身份认证（OAuth 登录、状态、退出、scope 预检）
@@ -328,6 +329,9 @@ feishu-cli wiki export-tree <node_token> -o ./backup  # 递归导出知识库子
 feishu-cli wiki create --space-id <id> --title "新节点"
 feishu-cli wiki move-docs <obj_token> --space-id <id>  # 移动云空间文档至知识空间
 feishu-cli wiki space-get <space_id>                # 获取知识空间详情
+feishu-cli wiki space-create --name "新知识库"      # 创建知识库（v1.29+）
+feishu-cli wiki space-list --page-all -o json       # 列出所有可见知识库（v1.29+）
+feishu-cli wiki node-copy --space-id <src> --node-token <node> --target-space-id <dst>  # 复制节点（v1.29+）
 feishu-cli wiki delete-space <space_id> --yes       # 删除整个知识空间（异步任务自动轮询）
 
 # 知识空间成员管理
@@ -710,6 +714,7 @@ feishu-cli bitable record upsert --base-token bscnxxxx --table-id tblxxx --confi
 feishu-cli bitable record upsert --base-token bscnxxxx --table-id tblxxx --record-id recxxx --config '{"fields":{"状态":"完成"}}'
 feishu-cli bitable record batch-create --base-token bscnxxxx --table-id tblxxx --config '{"fields":["fld1"],"rows":[["val1"],["val2"]]}'
 feishu-cli bitable record batch-delete --base-token bscnxxxx --table-id tblxxx --record-ids rec_1,rec_2,rec_3
+feishu-cli bitable record share-link   --base-token bscnxxxx --table-id tblxxx --record-ids rec_1,rec_2  # 批量共享链接（v1.29+）
 feishu-cli bitable record list --base-token bscnxxxx --table-id tblxxx
 feishu-cli bitable view list --base-token bscnxxxx --table-id tblxxx
 feishu-cli bitable view view-filter-get --base-token bscnxxxx --table-id tblxxx --view-id vewxxx
@@ -723,6 +728,10 @@ feishu-cli drive export --token sheetxxxx --doc-type sheet --file-extension csv 
 feishu-cli drive import --file report.docx --type docx --folder-token fldxxx
 feishu-cli drive move --file-token fldxxx --type folder --folder-token fldyyy
 feishu-cli drive add-comment --doc docxxx --content '[{"type":"text","text":"评论"}]'
+
+# v1.29+ 新增 ⭐
+feishu-cli drive inspect --url "https://xxx.feishu.cn/docx/doxxxx"      # 解析 URL → type/title/token
+feishu-cli drive apply-permission --token "<url|token>" --perm view --remark "申请理由"  # 向 owner 发申请
 
 # 云盘 ↔ 本地单向镜像（pull/push/status）
 feishu-cli drive status --folder-token fldxxx --local-dir ./mirror
@@ -852,6 +861,14 @@ feishu-cli doctor --json
 feishu-cli profile migrate
 feishu-cli profile add work --app-id cli_xxx --app-secret secret_xxx --use
 feishu-cli profile use -
+
+# 通用 OpenAPI 透传（v1.29+）⭐ 覆盖 2500+ 未封装端点
+feishu-cli api GET /open-apis/authen/v1/user_info --as user
+feishu-cli api GET /open-apis/im/v1/chats --params '{"page_size":10}' --as user
+feishu-cli api POST /open-apis/im/v1/messages --params '{"receive_id_type":"email"}' \
+  --data '{"receive_id":"u@example.com","msg_type":"text","content":"{\"text\":\"hi\"}"}' --as bot
+feishu-cli api DELETE /open-apis/im/v1/messages/om_xxx --as bot --dry-run    # 预览
+feishu-cli auth token --as user                                              # 导出 token 给其他工具用（如果需要）
 ```
 
 </details>
