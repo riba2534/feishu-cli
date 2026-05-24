@@ -59,7 +59,7 @@ python3 skills/feishu-cli-chat/scripts/fetch_chat_history.py oc_xxxxxxxx --since
 python3 skills/feishu-cli-chat/scripts/fetch_chat_history.py oc_xxxxxxxx \
     --start 2026-05-20T00:00:00 --end 2026-05-22T00:00:00 \
     --output-dir /tmp/my_chat \
-    --bot-name "Bot 显示名"
+    --bot-name "你的 Bot 显示名"
 
 # 不展开线程（更快，但话题群会丢回复）
 python3 skills/feishu-cli-chat/scripts/fetch_chat_history.py oc_xxx --since 24h --no-thread
