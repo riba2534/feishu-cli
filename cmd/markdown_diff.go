@@ -29,6 +29,10 @@ var markdownDiffCmd = &cobra.Command{
   2. 远端某版本 vs 远端最新:  --file-token <token> --from-version <v>
   3. 远端版本 A vs 版本 B:    --file-token <token> --from-version <a> --to-version <b>
 
+注：模式 2/3（远端版本对比）需该文件具备版本历史快照——普通 .md（Drive 原生 Markdown）
+覆盖为原地替换、无数字版本，?version=N 会返回 404；版本对比主要适用 docx/sheet/bitable
+等有版本管理的文档。模式 1（远端最新 vs 本地文件）适用任意可下载的 .md。
+
 可选:
   --context-lines  diff 每个 hunk 上下保留的未变更上下文行数（默认 3）
   --obj-type       文件类型（解析远端版本时用，默认 file）
@@ -126,13 +130,13 @@ var markdownDiffCmd = &cobra.Command{
 			fromName = "remote@version=" + fromVersion
 			fromBytes, err = fetchMarkdownVersionContent(fileToken, fromVersion, token)
 			if err != nil {
-				return fmt.Errorf("下载 from-version 内容失败: %w", err)
+				return fmt.Errorf("下载 from-version 内容失败（版本对比需该文件有版本历史快照；普通 .md 无数字版本，?version 会 404，仅 docx/sheet/bitable 等支持）: %w", err)
 			}
 			if toVersion != "" {
 				toName = "remote@version=" + toVersion
 				toBytes, err = fetchMarkdownVersionContent(fileToken, toVersion, token)
 				if err != nil {
-					return fmt.Errorf("下载 to-version 内容失败: %w", err)
+					return fmt.Errorf("下载 to-version 内容失败（版本对比需该文件有版本历史快照；普通 .md 无数字版本，?version 会 404）: %w", err)
 				}
 			} else {
 				toName = "remote (latest)"

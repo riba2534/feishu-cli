@@ -283,7 +283,9 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 			saved = append(saved, finalPath)
 		}
 
-		return renderBitableResult(cmd, map[string]any{
+		// download 的 --output 是附件保存路径（下载目标），不能被结果渲染器当成结果输出文件占用，
+		// 否则结果 JSON 会覆盖刚下载的附件。故结果直接 printJSON 到 stdout。
+		return printJSON(map[string]any{
 			"record_id":   recordID,
 			"file_tokens": downloadedTokens,
 			"saved_paths": saved,
@@ -393,12 +395,17 @@ func init() {
 	bitableRecordUploadAttachmentCmd.Flags().String("field-id", "", "附件字段 field_id（必填）")
 	bitableRecordUploadAttachmentCmd.Flags().StringArray("file", nil, "本地文件路径（可重复，单次≤50）")
 
+	// download-attachment 的 --output 是附件保存路径（下载目标），与 output 包结果输出的 --output 语义冲突。
+	// 故不调 addBitableWriteFlags（它会注册 --format/--jq，使 ParseOptions 抢用 --output 把结果 JSON 覆盖附件），
+	// 改手动注册最小 flag 集；结果走 printJSON 到 stdout。
 	bitableRecordCmd.AddCommand(bitableRecordDownloadAttachmentCmd)
-	addBitableWriteFlags(bitableRecordDownloadAttachmentCmd)
+	addBaseTokenFlag(bitableRecordDownloadAttachmentCmd)
+	bitableRecordDownloadAttachmentCmd.Flags().String("user-access-token", "", "User Access Token")
+	output.AddDryRunFlag(bitableRecordDownloadAttachmentCmd)
 	bitableRecordDownloadAttachmentCmd.Flags().String("table-id", "", "table_id（必填）")
 	bitableRecordDownloadAttachmentCmd.Flags().String("record-id", "", "record_id（必填）")
 	bitableRecordDownloadAttachmentCmd.Flags().StringArray("file-token", nil, "附件 file_token（可重复；省略则下载全部）")
-	bitableRecordDownloadAttachmentCmd.Flags().String("output", "", "保存路径（文件或目录）")
+	bitableRecordDownloadAttachmentCmd.Flags().String("output", "", "附件保存路径（文件或目录）")
 	bitableRecordDownloadAttachmentCmd.Flags().Bool("overwrite", false, "已存在时覆盖")
 
 	bitableRecordCmd.AddCommand(bitableRecordRemoveAttachmentCmd)
