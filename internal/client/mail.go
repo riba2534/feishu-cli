@@ -310,6 +310,17 @@ func SearchMailMessages(mailboxID, query string, filter map[string]any, userAcce
 	return callMailAPI(http.MethodPost, mailboxPath(mailboxID, "search"), body, userAccessToken)
 }
 
+// ListMailSignatures 列出邮箱签名（含默认使用信息）
+// API: GET /open-apis/mail/v1/user_mailboxes/{mailbox_id}/settings/signatures
+// 权限: User Access Token + mail:user_mailbox.settings:read
+// 返回 data 字段原始 JSON（含 signatures 列表）
+func ListMailSignatures(mailboxID, userAccessToken string) (json.RawMessage, error) {
+	if mailboxID == "" {
+		mailboxID = "me"
+	}
+	return callMailAPI(http.MethodGet, mailboxPath(mailboxID, "settings", "signatures"), nil, userAccessToken)
+}
+
 // ListMailFolders 列出邮箱文件夹
 // API: GET /open-apis/mail/v1/user_mailboxes/{mailbox_id}/folders
 func ListMailFolders(mailboxID, userAccessToken string) (json.RawMessage, error) {
