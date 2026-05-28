@@ -113,9 +113,9 @@ var extraDomainScopes = map[string][]string{
 		"calendar:calendar.free_busy:read", // +freebusy, +room-find, +suggestion
 	},
 
-	// wiki shortcuts: +node-create, +move-docs-to-wiki
+	// wiki shortcuts: +node-create, +move-docs-to-wiki, +update
 	"wiki": {
-		"wiki:node:create", "wiki:node:read", "wiki:space:read",
+		"wiki:node:create", "wiki:node:read", "wiki:node:update", "wiki:space:read",
 		"wiki:node:move", // wiki move-docs 需要
 	},
 
