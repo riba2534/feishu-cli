@@ -28,28 +28,53 @@ func TestBitableAttachmentCellBody(t *testing.T) {
 	}
 }
 
-// ---- extractAttachmentFileTokens 容错遍历 ----
+// ---- extractAttachmentMetas 容错遍历 + 捕获 extra_info ----
 
-func TestExtractAttachmentFileTokens(t *testing.T) {
+func TestExtractAttachmentMetas(t *testing.T) {
 	data := map[string]any{
 		"records": []any{
 			map[string]any{
 				"fields": map[string]any{
 					"附件": []any{
-						map[string]any{"file_token": "boxA", "name": "a.pdf"},
+						map[string]any{"file_token": "boxA", "name": "a.pdf", "extra_info": "extraA"},
 						map[string]any{"file_token": "boxB"},
 					},
 				},
 			},
 		},
 	}
-	tokens := extractAttachmentFileTokens(data)
-	if len(tokens) != 2 {
-		t.Fatalf("应提取 2 个 token: %v", tokens)
+	metas := extractAttachmentMetas(data)
+	if len(metas) != 2 {
+		t.Fatalf("应提取 2 个附件: %v", metas)
 	}
-	got := strings.Join(tokens, ",")
-	if !strings.Contains(got, "boxA") || !strings.Contains(got, "boxB") {
-		t.Errorf("token 提取不对: %v", tokens)
+	byToken := map[string]string{}
+	for _, m := range metas {
+		byToken[m.FileToken] = m.ExtraInfo
+	}
+	if extra, ok := byToken["boxA"]; !ok || extra != "extraA" {
+		t.Errorf("boxA 应带 extra_info=extraA: %v", metas)
+	}
+	if extra, ok := byToken["boxB"]; !ok || extra != "" {
+		t.Errorf("boxB 应存在且 extra_info 为空: %v", metas)
+	}
+}
+
+// ---- selectAttachmentMetas 过滤 ----
+
+func TestSelectAttachmentMetas(t *testing.T) {
+	metas := []attachmentMeta{
+		{FileToken: "boxA", ExtraInfo: "ea"},
+		{FileToken: "boxB", ExtraInfo: "eb"},
+		{FileToken: "boxC"},
+	}
+	// 空 wanted → 全部
+	if got := selectAttachmentMetas(metas, nil); len(got) != 3 {
+		t.Errorf("空 wanted 应返回全部: %v", got)
+	}
+	// 过滤指定 token，按 metas 顺序，忽略不存在的
+	got := selectAttachmentMetas(metas, []string{"boxC", "boxA", "nope"})
+	if len(got) != 2 || got[0].FileToken != "boxA" || got[1].FileToken != "boxC" {
+		t.Errorf("过滤结果不对（应保留 boxA,boxC 按出现顺序）: %v", got)
 	}
 }
 
@@ -95,7 +120,7 @@ func TestRecordDownloadAttachmentDryRunAll(t *testing.T) {
 	cmd.Flags().String("output", "", "")
 	cmd.Flags().Bool("overwrite", false, "")
 
-	// 省略 file-token → 应含 get_attachments 步骤
+	// 省略 file-token → 应含 get_attachments 步骤 + download 带 extra
 	out, err := captureRunE(t, cmd, map[string]string{
 		"base-token": "bascn1", "table-id": "tbl1", "record-id": "rec1", "dry-run": "true",
 	})
@@ -107,6 +132,9 @@ func TestRecordDownloadAttachmentDryRunAll(t *testing.T) {
 	}
 	if !strings.Contains(out, "/open-apis/drive/v1/medias/<file_token>/download") {
 		t.Errorf("应含 medias download 步骤: %s", out)
+	}
+	if !strings.Contains(out, "extra") {
+		t.Errorf("download 步骤应带 extra 参数: %s", out)
 	}
 }
 
@@ -120,7 +148,7 @@ func TestRecordDownloadAttachmentDryRunSingleToken(t *testing.T) {
 	cmd.Flags().String("output", "", "")
 	cmd.Flags().Bool("overwrite", false, "")
 
-	// 指定单个 file-token → 不应有 get_attachments 步骤
+	// 指定单个 file-token → 仍应先 get_attachments（取 extra_info），与 lark-cli 行为一致
 	out, err := captureRunE(t, cmd, map[string]string{
 		"base-token": "bascn1", "table-id": "tbl1", "record-id": "rec1",
 		"file-token": "boxA", "dry-run": "true",
@@ -128,8 +156,11 @@ func TestRecordDownloadAttachmentDryRunSingleToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run err: %v", err)
 	}
-	if strings.Contains(out, "get_attachments") {
-		t.Errorf("指定 file-token 时不应有 get_attachments 步骤: %s", out)
+	if !strings.Contains(out, "/open-apis/base/v3/bases/bascn1/tables/tbl1/get_attachments") {
+		t.Errorf("指定 file-token 时也应先 get_attachments 取 extra_info: %s", out)
+	}
+	if !strings.Contains(out, "extra") {
+		t.Errorf("download 步骤应带 extra 参数: %s", out)
 	}
 }
 

@@ -19,9 +19,12 @@ import (
 //   [2] POST /open-apis/drive/v1/medias/upload_all                          parent_type=bitable_file, parent_node={bt}
 //   [3] POST /open-apis/base/v3/bases/{bt}/tables/{tid}/append_attachments  body {"attachments":{rec:{fld:[{file_token}]}}}
 //
-// download（2 步编排）:
-//   [1] POST /open-apis/base/v3/bases/{bt}/tables/{tid}/get_attachments     body {"record_id_list":[rec]}  （仅 --file-token 省略时用于枚举全部附件）
-//   [2] GET  /open-apis/drive/v1/medias/{file_token}/download               逐个下载
+// download（2 步编排，lark base +record-download-attachment --dry-run 印证）:
+//   [1] POST /open-apis/base/v3/bases/{bt}/tables/{tid}/get_attachments     body {"record_id_list":[rec]}  （总是先走，拿每个附件的 extra_info）
+//   [2] GET  /open-apis/drive/v1/medias/{file_token}/download?extra=<extra_info>  逐个下载（带上附件元数据里的 extra_info）
+//
+// 注意：Base 附件下载必须带 get_attachments 返回的 extra_info（否则可能 403）。即使指定了 --file-token
+// 也先走 get_attachments 拿元数据，再用 file-token 过滤要下载哪些（与 lark-cli 行为一致）。
 //
 // remove（单步）:
 //   POST /open-apis/base/v3/bases/{bt}/tables/{tid}/remove_attachments      body {"attachments":{rec:{fld:[{file_token}]}}}
@@ -215,22 +218,22 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 		}
 
 		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
-			steps := []map[string]any{}
-			if len(fileTokens) == 0 {
-				steps = append(steps, map[string]any{
-					"desc":   "[1] 读取记录附件元数据（枚举全部 file_token）",
+			steps := []map[string]any{
+				{
+					"desc":   "[1] 读取记录附件元数据（拿每个附件的 extra_info；--file-token 时仍先读以取 extra）",
 					"method": "POST",
 					"url":    getAttachmentsPath,
 					"body":   map[string]any{"record_id_list": []string{recordID}},
-				})
+				},
+				{
+					"desc":   "[2] 通过 Base 附件流逐个下载（带上元数据返回的 extra_info）",
+					"method": "GET",
+					"url":    "/open-apis/drive/v1/medias/<file_token>/download",
+					"params": map[string]any{"extra": "<extra_info_if_present>"},
+				},
 			}
-			steps = append(steps, map[string]any{
-				"desc":   "[2] 通过 Base 附件流逐个下载",
-				"method": "GET",
-				"url":    "/open-apis/drive/v1/medias/<file_token>/download",
-			})
 			return renderAttachmentDryRun(
-				"2 步编排：读取记录附件元数据 → 逐个下载请求的附件文件",
+				"2 步编排：读取记录附件元数据（取 extra_info）→ 带 extra 逐个下载请求的附件文件",
 				steps,
 				map[string]any{"base_token": baseToken, "table_id": tableID, "record_id": recordID, "file_tokens": fileTokens, "output": outputPath},
 			)
@@ -241,23 +244,29 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 			return err
 		}
 
-		// [1] 若未指定 file-token，先读元数据枚举全部附件 token
-		tokens := fileTokens
-		if len(tokens) == 0 {
-			body := map[string]any{"record_id_list": []string{recordID}}
-			data, derr := client.BaseV3Call("POST", getAttachmentsPath, nil, body, token)
-			if derr != nil {
-				return derr
-			}
-			tokens = extractAttachmentFileTokens(data)
-			if len(tokens) == 0 {
-				return fmt.Errorf("记录 %s 没有可下载的附件", recordID)
-			}
+		// [1] 总是先读元数据，拿每个附件的 extra_info（Base 附件下载需要带 extra，否则可能 403）。
+		body := map[string]any{"record_id_list": []string{recordID}}
+		data, derr := client.BaseV3Call("POST", getAttachmentsPath, nil, body, token)
+		if derr != nil {
+			return derr
+		}
+		metas := extractAttachmentMetas(data)
+		if len(metas) == 0 {
+			return fmt.Errorf("记录 %s 没有可下载的附件", recordID)
 		}
 
-		// [2] 逐个下载
-		saved := make([]string, 0, len(tokens))
-		for _, ft := range tokens {
+		// 用 --file-token 过滤要下载哪些；省略则全下。
+		selected := selectAttachmentMetas(metas, fileTokens)
+		if len(selected) == 0 {
+			return fmt.Errorf("记录 %s 中找不到指定的 --file-token 附件", recordID)
+		}
+
+		// [2] 逐个下载，带上元数据返回的 extra_info。
+		downloadedTokens := make([]string, 0, len(selected))
+		saved := make([]string, 0, len(selected))
+		for _, m := range selected {
+			ft := m.FileToken
+			downloadedTokens = append(downloadedTokens, ft)
 			finalPath := outputPath
 			if finalPath == "" {
 				finalPath = ft
@@ -268,7 +277,7 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 				return fmt.Errorf("文件已存在: %s（用 --overwrite 覆盖）", finalPath)
 			}
 			fmt.Fprintf(os.Stderr, "下载附件: %s -> %s\n", ft, finalPath)
-			if derr := client.DownloadMedia(ft, finalPath, client.DownloadMediaOptions{UserAccessToken: token}); derr != nil {
+			if derr := client.DownloadMedia(ft, finalPath, client.DownloadMediaOptions{UserAccessToken: token, Extra: m.ExtraInfo}); derr != nil {
 				return fmt.Errorf("下载 %s 失败: %w", ft, derr)
 			}
 			saved = append(saved, finalPath)
@@ -276,22 +285,31 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 
 		return renderBitableResult(cmd, map[string]any{
 			"record_id":   recordID,
-			"file_tokens": tokens,
+			"file_tokens": downloadedTokens,
 			"saved_paths": saved,
 		})
 	},
 }
 
-// extractAttachmentFileTokens 从 get_attachments 返回结构中提取全部 file_token。
-// 返回结构形如 {"records":[{"fields":{fld:[{"file_token":"..."}]}}]}（容错遍历嵌套）。
-func extractAttachmentFileTokens(data map[string]any) []string {
-	var tokens []string
+// attachmentMeta 单个附件的下载元数据（file_token + 下载所需的 extra_info）。
+type attachmentMeta struct {
+	FileToken string
+	ExtraInfo string
+}
+
+// extractAttachmentMetas 从 get_attachments 返回结构中提取全部附件元数据（file_token + extra_info）。
+// 返回结构形如 {"records":[{"fields":{fld:[{"file_token":"...","extra_info":"..."}]}}]}（容错遍历嵌套）。
+// extra_info 是 Base 附件下载需要带上的 extra 查询参数（lark base +record-download-attachment 印证），
+// 同节点上与 file_token 并列；缺失则为空（下载时不带 extra）。
+func extractAttachmentMetas(data map[string]any) []attachmentMeta {
+	var metas []attachmentMeta
 	var walk func(v any)
 	walk = func(v any) {
 		switch t := v.(type) {
 		case map[string]any:
 			if ft, ok := t["file_token"].(string); ok && ft != "" {
-				tokens = append(tokens, ft)
+				extra, _ := t["extra_info"].(string)
+				metas = append(metas, attachmentMeta{FileToken: ft, ExtraInfo: extra})
 			}
 			for _, child := range t {
 				walk(child)
@@ -303,7 +321,26 @@ func extractAttachmentFileTokens(data map[string]any) []string {
 		}
 	}
 	walk(data)
-	return tokens
+	return metas
+}
+
+// selectAttachmentMetas 用 --file-token 过滤要下载的附件；wanted 为空则返回全部。
+// 保留 wanted 中存在于 metas 的项（按 metas 出现顺序），未匹配的 token 被忽略。
+func selectAttachmentMetas(metas []attachmentMeta, wanted []string) []attachmentMeta {
+	if len(wanted) == 0 {
+		return metas
+	}
+	want := make(map[string]bool, len(wanted))
+	for _, w := range wanted {
+		want[w] = true
+	}
+	out := make([]attachmentMeta, 0, len(wanted))
+	for _, m := range metas {
+		if want[m.FileToken] {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 var bitableRecordRemoveAttachmentCmd = &cobra.Command{

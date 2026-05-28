@@ -79,6 +79,33 @@ func TestVCBotFlagsRequired(t *testing.T) {
 	}
 }
 
+// TestValidateVCPageSize 验证 page-size 校验放行 0（默认）与 20-100，拒绝 1-19 与 >100
+func TestValidateVCPageSize(t *testing.T) {
+	cases := []struct {
+		pageSize int
+		wantErr  bool
+	}{
+		{0, false},   // 未传，回落默认
+		{1, true},    // 下界以下
+		{5, true},    // lark/help 声明 20-100，1-19 应拒绝
+		{19, true},   // 边界
+		{20, false},  // 下界
+		{50, false},  // 中间
+		{100, false}, // 上界
+		{101, true},  // 上界以上
+		{-1, true},   // 负数
+	}
+	for _, tc := range cases {
+		err := validateVCPageSize(tc.pageSize)
+		if tc.wantErr && err == nil {
+			t.Errorf("page-size=%d: expected error, got nil", tc.pageSize)
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("page-size=%d: unexpected error: %v", tc.pageSize, err)
+		}
+	}
+}
+
 // TestVCParseTimeToUnixSec 验证时间字符串到 Unix 秒的转换
 func TestVCParseTimeToUnixSec(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {

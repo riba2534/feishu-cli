@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -294,15 +295,41 @@ func buildFormQuestionsDeleteBody(cmd *cobra.Command) (any, error) {
 		}
 		return body, nil
 	}
-	idsCSV, _ := cmd.Flags().GetString("question-ids")
-	ids := splitAndTrim(idsCSV)
+	idsRaw, _ := cmd.Flags().GetString("question-ids")
+	ids, err := parseQuestionIDs(idsRaw)
+	if err != nil {
+		return nil, err
+	}
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("需提供 --question-ids（逗号分隔）或 --config（完整请求体）")
+		return nil, fmt.Errorf("需提供 --question-ids（逗号分隔或 JSON 数组）或 --config（完整请求体）")
 	}
 	if len(ids) > 10 {
 		return nil, fmt.Errorf("单次最多 10 个，当前传入 %d 个", len(ids))
 	}
 	return map[string]any{"question_ids": ids}, nil
+}
+
+// parseQuestionIDs 兼容两种 --question-ids 输入：
+//   - JSON 数组（TrimSpace 后以 '[' 开头，如 '["q1","q2"]'）→ json.Unmarshal 成 []string
+//   - 逗号分隔（如 'q1,q2'）→ CSV 切分
+//
+// 避免用户直接粘 lark 风格的 JSON 数组时被当作单个含括号引号的脏 ID。
+func parseQuestionIDs(s string) ([]string, error) {
+	trimmed := strings.TrimSpace(s)
+	if strings.HasPrefix(trimmed, "[") {
+		var ids []string
+		if err := json.Unmarshal([]byte(trimmed), &ids); err != nil {
+			return nil, fmt.Errorf("解析 --question-ids JSON 数组失败: %w", err)
+		}
+		out := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if id = strings.TrimSpace(id); id != "" {
+				out = append(out, id)
+			}
+		}
+		return out, nil
+	}
+	return splitAndTrim(trimmed), nil
 }
 
 func init() {

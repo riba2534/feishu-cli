@@ -124,13 +124,13 @@ var markdownDiffCmd = &cobra.Command{
 			}
 		case "remote_vs_remote":
 			fromName = "remote@version=" + fromVersion
-			fromBytes, err = fetchMarkdownVersionContent(fileToken, fromVersion, objType, token)
+			fromBytes, err = fetchMarkdownVersionContent(fileToken, fromVersion, token)
 			if err != nil {
 				return fmt.Errorf("下载 from-version 内容失败: %w", err)
 			}
 			if toVersion != "" {
 				toName = "remote@version=" + toVersion
-				toBytes, err = fetchMarkdownVersionContent(fileToken, toVersion, objType, token)
+				toBytes, err = fetchMarkdownVersionContent(fileToken, toVersion, token)
 				if err != nil {
 					return fmt.Errorf("下载 to-version 内容失败: %w", err)
 				}
@@ -193,18 +193,10 @@ func resolveMarkdownDiffMode(localFile, fromVersion, toVersion string) (string, 
 }
 
 // fetchMarkdownVersionContent 下载远端文件指定版本的内容。
-// drive 版本对象的 version 字段本身即可作为 download 的 file_token
-// （见 lark-cli markdown +diff 的 "Download the base remote Markdown version" 步骤）。
-func fetchMarkdownVersionContent(fileToken, versionID, objType, userAccessToken string) ([]byte, error) {
-	info, err := client.GetFileVersion(fileToken, versionID, objType, userAccessToken)
-	if err != nil {
-		return nil, err
-	}
-	verToken := versionID
-	if info != nil && info.Version != "" {
-		verToken = info.Version
-	}
-	return client.FetchFileContent(verToken, userAccessToken)
+// 远端版本下载 = GET /open-apis/drive/v1/files/{file_token}/download?version=N，
+// 即同一个 file_token + version 查询参数，不会产生新 token（lark dry-run 实证）。
+func fetchMarkdownVersionContent(fileToken, version, userAccessToken string) ([]byte, error) {
+	return client.FetchFileVersionContent(fileToken, version, userAccessToken)
 }
 
 // markdownDiffHunk unified diff 的一个 hunk。

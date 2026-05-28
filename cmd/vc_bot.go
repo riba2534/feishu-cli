@@ -11,6 +11,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// validateVCPageSize 校验 meeting-events 的 page-size：取值范围 20-100（lark/help 声明），
+// 0 表示未传（回落默认 20），故只在非 0 时检查下限/上限。
+func validateVCPageSize(pageSize int) error {
+	if pageSize != 0 && (pageSize < 20 || pageSize > 100) {
+		return fmt.Errorf("--page-size 取值范围 20-100（当前 %d）", pageSize)
+	}
+	return nil
+}
+
 // vcBotCmd 会议机器人父命令组
 var vcBotCmd = &cobra.Command{
 	Use:   "bot",
@@ -232,8 +241,8 @@ var vcBotEventsCmd = &cobra.Command{
 			return fmt.Errorf("--start 不能晚于 --end")
 		}
 
-		if pageSize < 0 || pageSize > 100 {
-			return fmt.Errorf("--page-size 取值范围 20-100（当前 %d）", pageSize)
+		if err := validateVCPageSize(pageSize); err != nil {
+			return err
 		}
 		if pageSize == 0 {
 			pageSize = 20
@@ -248,16 +257,24 @@ var vcBotEventsCmd = &cobra.Command{
 		}
 
 		if dryRun {
+			// 预览只放真实请求会带上的参数（与 client 端 set 逻辑一致：空值不发）。
+			query := map[string]any{
+				"meeting_id": req.MeetingID,
+				"page_size":  req.PageSize,
+			}
+			if req.StartTimeSec != "" {
+				query["start_time"] = req.StartTimeSec
+			}
+			if req.EndTimeSec != "" {
+				query["end_time"] = req.EndTimeSec
+			}
+			if req.PageToken != "" {
+				query["page_token"] = req.PageToken
+			}
 			return printJSON(map[string]any{
 				"method": "GET",
 				"path":   "/open-apis/vc/v1/bots/events",
-				"query": map[string]any{
-					"meeting_id": req.MeetingID,
-					"start_time": req.StartTimeSec,
-					"end_time":   req.EndTimeSec,
-					"page_size":  req.PageSize,
-					"page_token": req.PageToken,
-				},
+				"query":  query,
 			})
 		}
 

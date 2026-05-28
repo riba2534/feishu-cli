@@ -20,7 +20,6 @@ range 必须带 sheetId 前缀（如 0b1212!A2:A100）。
 	RunE: func(cmd *cobra.Command, args []string) error {
 		spreadsheetToken, _ := cmd.Flags().GetString("token")
 		rangeStr, _ := cmd.Flags().GetString("range")
-		output, _ := cmd.Flags().GetString("output")
 
 		if spreadsheetToken == "" || rangeStr == "" {
 			return fmt.Errorf("--token、--range 均为必填项")
@@ -34,9 +33,7 @@ range 必须带 sheetId 前缀（如 0b1212!A2:A100）。
 			return err
 		}
 
-		if output == "json" {
-			return printJSON(data)
-		}
+		// 下拉菜单 get 仅支持 json 输出（--output 默认且只接受 json），直接渲染。
 		return printJSON(data)
 	},
 }

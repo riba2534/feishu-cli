@@ -11,13 +11,9 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 )
 
-// FetchFileContent 把一个 Drive 文件（如 .md）的内容下载到内存并返回字节。
+// FetchFileContent 把一个 Drive 文件（如 .md）的最新内容下载到内存并返回字节。
 // 走 GET /open-apis/drive/v1/files/{file_token}/download（同 DownloadFileWithToken），
 // 但不落盘，便于 markdown diff 这类纯比对场景。
-//
-// 当 versionToken 非空时，下载该文件指定版本的内容（drive 版本的 version 字段本身即可作为
-// download 的 file_token——见 lark-cli `markdown +diff` 的 "Download the base remote
-// Markdown version" 步骤）；为空时下载最新内容。
 func FetchFileContent(fileToken string, userAccessToken string) ([]byte, error) {
 	tmp, err := os.CreateTemp("", "feishu-md-diff-*.md")
 	if err != nil {
@@ -28,6 +24,27 @@ func FetchFileContent(fileToken string, userAccessToken string) ([]byte, error) 
 	defer os.Remove(tmpPath)
 
 	if err := DownloadFileWithToken(fileToken, tmpPath, userAccessToken); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取下载内容失败: %w", err)
+	}
+	return data, nil
+}
+
+// FetchFileVersionContent 把一个 Drive 文件指定历史版本的内容下载到内存并返回字节。
+// 走 GET /open-apis/drive/v1/files/{file_token}/download?version=N（同一 file_token + version 查询参数）。
+func FetchFileVersionContent(fileToken, version, userAccessToken string) ([]byte, error) {
+	tmp, err := os.CreateTemp("", "feishu-md-diff-*.md")
+	if err != nil {
+		return nil, fmt.Errorf("创建临时文件失败: %w", err)
+	}
+	tmpPath := tmp.Name()
+	tmp.Close()
+	defer os.Remove(tmpPath)
+
+	if err := DownloadFileVersion(fileToken, version, tmpPath, userAccessToken); err != nil {
 		return nil, err
 	}
 	data, err := os.ReadFile(tmpPath)

@@ -221,6 +221,55 @@ func TestBuildFormQuestionsDeleteBodyCSV(t *testing.T) {
 	}
 }
 
+func TestBuildFormQuestionsDeleteBodyJSONArray(t *testing.T) {
+	c := newFormQuestionsDeleteTestCmd()
+	_ = c.Flags().Set("question-ids", `["fld001","fld002"]`)
+	body, err := buildFormQuestionsDeleteBody(c)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	m, _ := body.(map[string]any)
+	ids, ok := m["question_ids"].([]string)
+	if !ok || len(ids) != 2 || ids[0] != "fld001" || ids[1] != "fld002" {
+		t.Errorf("JSON 数组 question_ids 解析不对: %v", m["question_ids"])
+	}
+}
+
+// TestParseQuestionIDs 验证 CSV 与 JSON 数组两种输入都得到 [a b]
+func TestParseQuestionIDs(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{`a,b`, []string{"a", "b"}},
+		{` a , b `, []string{"a", "b"}},
+		{`["a","b"]`, []string{"a", "b"}},
+		{` [ "a" , "b" ] `, []string{"a", "b"}},
+		{`["a","","b"]`, []string{"a", "b"}}, // JSON 数组里空串被过滤
+		{``, nil},
+	}
+	for _, tc := range cases {
+		got, err := parseQuestionIDs(tc.in)
+		if err != nil {
+			t.Errorf("parseQuestionIDs(%q) err: %v", tc.in, err)
+			continue
+		}
+		if len(got) != len(tc.want) {
+			t.Errorf("parseQuestionIDs(%q) = %v, want %v", tc.in, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("parseQuestionIDs(%q)[%d] = %q, want %q", tc.in, i, got[i], tc.want[i])
+			}
+		}
+	}
+	// 非法 JSON 数组应报错
+	if _, err := parseQuestionIDs(`["a",`); err == nil {
+		t.Error("非法 JSON 数组应报错")
+	}
+}
+
 func TestBuildFormQuestionsDeleteBodyTooMany(t *testing.T) {
 	c := newFormQuestionsDeleteTestCmd()
 	ids := make([]string, 11)

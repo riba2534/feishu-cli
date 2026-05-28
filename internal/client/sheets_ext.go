@@ -43,9 +43,10 @@ func GetFloatImage(ctx context.Context, spreadsheetToken, sheetID, floatImageID 
 }
 
 // UpdateFloatImage 更新浮动图片 (V3 API, PATCH)。
-// 只更新非零字段；range 为新锚点单元格（单格，如 sheetId!B2:B2）。
+// range/width/height 沿用哨兵语义（非空/>0 才写）；offsetX/offsetY 用 *float64 指针表达
+// 「是否更新」——nil=不更新，非 nil=更新（含合法值 0）。
 // PATCH /open-apis/sheets/v3/spreadsheets/:token/sheets/:sheet_id/float_images/:float_image_id
-func UpdateFloatImage(ctx context.Context, spreadsheetToken, sheetID, floatImageID string, image *FloatImage, userAccessToken ...string) (*FloatImage, error) {
+func UpdateFloatImage(ctx context.Context, spreadsheetToken, sheetID, floatImageID string, image *FloatImage, offsetX, offsetY *float64, userAccessToken ...string) (*FloatImage, error) {
 	cli, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -62,11 +63,11 @@ func UpdateFloatImage(ctx context.Context, spreadsheetToken, sheetID, floatImage
 	if image.Height > 0 {
 		imgBuilder.Height(image.Height)
 	}
-	if image.OffsetX > 0 {
-		imgBuilder.OffsetX(image.OffsetX)
+	if offsetX != nil {
+		imgBuilder.OffsetX(*offsetX)
 	}
-	if image.OffsetY > 0 {
-		imgBuilder.OffsetY(image.OffsetY)
+	if offsetY != nil {
+		imgBuilder.OffsetY(*offsetY)
 	}
 
 	req := larksheets.NewPatchSpreadsheetSheetFloatImageReqBuilder().

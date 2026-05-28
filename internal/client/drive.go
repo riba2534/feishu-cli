@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -675,6 +676,54 @@ func DownloadFileWithToken(fileToken, outputPath, userAccessToken string, timeou
 	}
 
 	return saveToFile(resp.File, outputPath)
+}
+
+// DownloadFileVersion 下载云盘文件的指定历史版本内容。
+//
+// 远端版本下载 = GET /open-apis/drive/v1/files/{file_token}/download?version=N，
+// 即同一个 file_token + version 查询参数，不会产生新 token（lark dry-run 实证）。
+// SDK v3.5.3 的 NewDownloadFileReqBuilder.Build() 只拷贝 PathParams、丢弃 QueryParams，
+// 无法表达 version 查询参数，因此这里用 raw larkcore.ApiReq + client.Do 直接构造请求，
+// 二进制响应体取自 resp.RawBody。
+func DownloadFileVersion(fileToken, version, outputPath, userAccessToken string, timeout ...time.Duration) error {
+	if err := validatePath(outputPath); err != nil {
+		return err
+	}
+	if fileToken == "" {
+		return fmt.Errorf("file_token 不能为空")
+	}
+	if version == "" {
+		return fmt.Errorf("version 不能为空")
+	}
+
+	cli, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	req := &larkcore.ApiReq{
+		HttpMethod:                http.MethodGet,
+		ApiPath:                   "/open-apis/drive/v1/files/:file_token/download",
+		PathParams:                larkcore.PathParams{},
+		QueryParams:               larkcore.QueryParams{},
+		SupportedAccessTokenTypes: []larkcore.AccessTokenType{tokenType},
+	}
+	req.PathParams.Set("file_token", fileToken)
+	req.QueryParams.Set("version", version)
+
+	resp, err := cli.Do(ContextWithTimeout(resolveTimeout(downloadTimeout, timeout)), req, opts...)
+	if err != nil {
+		return fmt.Errorf("下载文件版本失败: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("下载文件版本失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	}
+	if len(resp.RawBody) > maxDownloadSize {
+		return fmt.Errorf("文件超过大小限制 (%d MB)", maxDownloadSize/(1024*1024))
+	}
+
+	return saveToFile(bytes.NewReader(resp.RawBody), outputPath)
 }
 
 // maxSingleUploadSize 单次上传的文件大小上限（20MB），超过此大小需使用分片上传

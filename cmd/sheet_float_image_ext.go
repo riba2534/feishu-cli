@@ -62,25 +62,32 @@ var sheetImageUpdateCmd = &cobra.Command{
 		rangeStr, _ := cmd.Flags().GetString("range")
 		width, _ := cmd.Flags().GetFloat64("width")
 		height, _ := cmd.Flags().GetFloat64("height")
-		offsetX, _ := cmd.Flags().GetFloat64("offset-x")
-		offsetY, _ := cmd.Flags().GetFloat64("offset-y")
 		output, _ := cmd.Flags().GetString("output")
 
-		if rangeStr == "" && width == 0 && height == 0 && offsetX == 0 && offsetY == 0 {
+		// offset-x/offset-y 用 Changed() 区分「未传」vs「显式传 0」——0 是合法偏移值。
+		var offsetX, offsetY *float64
+		if cmd.Flags().Changed("offset-x") {
+			v, _ := cmd.Flags().GetFloat64("offset-x")
+			offsetX = &v
+		}
+		if cmd.Flags().Changed("offset-y") {
+			v, _ := cmd.Flags().GetFloat64("offset-y")
+			offsetY = &v
+		}
+
+		if rangeStr == "" && width == 0 && height == 0 && offsetX == nil && offsetY == nil {
 			return fmt.Errorf("至少需要指定一个待更新字段（--range/--width/--height/--offset-x/--offset-y）")
 		}
 
 		image := &client.FloatImage{
-			Range:   unescapeSheetRange(rangeStr),
-			Width:   width,
-			Height:  height,
-			OffsetX: offsetX,
-			OffsetY: offsetY,
+			Range:  unescapeSheetRange(rangeStr),
+			Width:  width,
+			Height: height,
 		}
 
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
-		result, err := client.UpdateFloatImage(client.Context(), spreadsheetToken, sheetID, floatImageID, image, userAccessToken)
+		result, err := client.UpdateFloatImage(client.Context(), spreadsheetToken, sheetID, floatImageID, image, offsetX, offsetY, userAccessToken)
 		if err != nil {
 			return err
 		}
