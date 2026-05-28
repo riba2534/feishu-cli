@@ -118,8 +118,9 @@ func buildFormPatchBody(cmd *cobra.Command) (map[string]any, error) {
 
 // ==================== form field（表单问题） ====================
 var bitableFormFieldCmd = &cobra.Command{
-	Use:   "field",
-	Short: "表单问题管理（list/patch）",
+	Use:     "field",
+	Aliases: []string{"questions"}, // form questions create/delete/list/patch 的别名（与 lark-cli base +form-questions-* 对齐）
+	Short:   "表单问题管理（list/patch/create/delete）",
 }
 
 var bitableFormFieldListCmd = &cobra.Command{
