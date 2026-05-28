@@ -2,10 +2,12 @@
 name: feishu-cli-bitable
 description: >-
   飞书多维表格（Bitable/Base）操作。底层使用 base/v3 新 API，支持视图完整配置写入、
-  记录 upsert、记录修改历史、角色 CRUD、高级权限开关、数据聚合查询等。
+  记录 upsert、记录附件上传下载、记录修改历史、角色 CRUD、高级权限开关、数据聚合查询、
+  仪表盘 + 仪表盘块 CRUD、表单 + 表单问题 CRUD、工作流 CRUD 等。
   当用户请求"创建多维表格"、"操作数据表"、"添加记录"、"查询记录"、"管理字段"、
   "多维表格"、"base"、"bitable"、"数据表"、"视图排序"、"视图过滤"、"视图分组"、
   "角色"、"role"、"高级权限"、"advperm"、"数据聚合"、"data query"、
+  "仪表盘"、"dashboard"、"表单"、"form"、"工作流"、"workflow"、"记录附件"、
   "复制多维表格"时使用。
 argument-hint: "[base_token] [table_id]"
 user-invocable: true
@@ -62,11 +64,12 @@ feishu-cli bitable field delete         --base-token xxx --table-id tblxxx --fie
 feishu-cli bitable field search-options --base-token xxx --table-id tblxxx --field-id fldxxx --query "关键词"
 ```
 
-### 记录 record（10 命令）
+### 记录 record（14 命令）
 
 ```bash
 feishu-cli bitable record list        --base-token xxx --table-id tblxxx --view-id viewxxx --limit 100
 feishu-cli bitable record get         --base-token xxx --table-id tblxxx --record-id recxxx
+feishu-cli bitable record batch-get   --base-token xxx --table-id tblxxx --config-file ids.json
 feishu-cli bitable record search      --base-token xxx --table-id tblxxx --config-file search.json
 
 # upsert：不传 --record-id 则 POST 创建；传 --record-id 则 PATCH 更新（官方无专用 upsert 端点）
@@ -87,6 +90,16 @@ feishu-cli bitable record share-link  --base-token xxx --table-id tblxxx --recor
 # history-list：GET + query params（不是 POST body），--record-id 必填
 feishu-cli bitable record history-list --base-token xxx --table-id tblxxx --record-id recxxx
 feishu-cli bitable record history-list --base-token xxx --table-id tblxxx --record-id recxxx --page-size 50 --max-version 20
+
+# 附件：upload/download 为 2 步编排（medias/upload_all + append/get_attachments），单次 ≤50 个
+feishu-cli bitable record upload-attachment   --base-token xxx --table-id tblxxx \
+  --record-id recxxx --field-id fldxxx --file ./report.pdf --file ./shot.png   # --file 可重复
+feishu-cli bitable record download-attachment --base-token xxx --table-id tblxxx \
+  --record-id recxxx --output ./downloads/                                     # 省略 --file-token 下全部
+feishu-cli bitable record download-attachment --base-token xxx --table-id tblxxx \
+  --record-id recxxx --file-token boxcnxxxx --output ./a.pdf                    # 指定单个附件
+feishu-cli bitable record remove-attachment   --base-token xxx --table-id tblxxx \
+  --record-id recxxx --field-id fldxxx --file-token boxcnxxxx                   # --file-token 可重复
 ```
 
 ### 视图 view（5 命令 + 12 配置命令）
@@ -205,12 +218,65 @@ feishu-cli bitable data-query --base-token xxx --config '{"dimensions":[{"field_
 }
 ```
 
-### 工作流 workflow（1 命令，仅 list）
+### 工作流 workflow（6 命令）
 
 ```bash
-feishu-cli bitable workflow list --base-token xxx --page-size 50 --status enabled
-feishu-cli bitable workflow list --base-token xxx --page-token TOKEN
+feishu-cli bitable workflow list   --base-token xxx --page-size 50 --status enabled
+feishu-cli bitable workflow list   --base-token xxx --page-token TOKEN
+feishu-cli bitable workflow get    --base-token xxx --workflow-id wkfxxxx          # 含 steps
+feishu-cli bitable workflow create --base-token xxx --config '{"title":"My Workflow","steps":[...]}'
+feishu-cli bitable workflow update --base-token xxx --workflow-id wkfxxxx --config-file wf.json  # PUT 整体替换
+feishu-cli bitable workflow enable  --base-token xxx --workflow-id wkfxxxx
+feishu-cli bitable workflow disable --base-token xxx --workflow-id wkfxxxx
 ```
+
+> `update` 是 PUT 整体替换，未提供的字段不保留；`workflow_id` 为 `wkf` 前缀。
+
+### 仪表盘 dashboard（6 命令 + 仪表盘块 block 5 命令）
+
+```bash
+# 仪表盘 CRUD（原有 list/copy）；create/update 支持便捷字段 --name/--theme-style 或 --config/--config-file
+feishu-cli bitable dashboard list    --base-token xxx
+feishu-cli bitable dashboard copy    --base-token xxx --dashboard-id dsbxxxx --name "副本"
+feishu-cli bitable dashboard create  --base-token xxx --name "运营看板"
+feishu-cli bitable dashboard get     --base-token xxx --dashboard-id dsbxxxx
+feishu-cli bitable dashboard update  --base-token xxx --dashboard-id dsbxxxx --name "新名字"
+feishu-cli bitable dashboard delete  --base-token xxx --dashboard-id dsbxxxx
+feishu-cli bitable dashboard arrange --base-token xxx --dashboard-id dsbxxxx     # 服务端智能排版，无 body
+
+# 仪表盘块 block CRUD；create --type 取值见下
+feishu-cli bitable dashboard block create --base-token xxx --dashboard-id dsbxxxx \
+  --type column --name "按月统计" --data-config '{"table_name":"任务","group_by":"月份"}'
+feishu-cli bitable dashboard block list   --base-token xxx --dashboard-id dsbxxxx
+feishu-cli bitable dashboard block get    --base-token xxx --dashboard-id dsbxxxx --block-id blkxxxx
+feishu-cli bitable dashboard block update --base-token xxx --dashboard-id dsbxxxx --block-id blkxxxx --name "新块名"
+feishu-cli bitable dashboard block delete --base-token xxx --dashboard-id dsbxxxx --block-id blkxxxx
+```
+
+> block `--type` 取值：`column|bar|line|pie|ring|area|combo|scatter|funnel|wordCloud|radar|statistics|text`；图表块 `--data-config` 传 `table_name`/`series|count_all`/`group_by`/`filter`，文本块传 `text`。
+
+### 表单 form（7 命令 + 表单问题 field 4 命令）
+
+```bash
+# 表单 CRUD（原有 get/patch）
+feishu-cli bitable form create --base-token xxx --table-id tblxxx --name "报名表" --description "活动报名"
+feishu-cli bitable form get    --base-token xxx --table-id tblxxx --form-id vewxxx
+feishu-cli bitable form patch  --base-token xxx --table-id tblxxx --form-id vewxxx --name "新名字"
+feishu-cli bitable form delete --base-token xxx --table-id tblxxx --form-id vewxxx   # form_id 即表单视图 view_id
+
+# 按分享 token（shr 前缀）取详情 / 提交，无需 base_token
+feishu-cli bitable form detail --share-token shrcnxxxx
+feishu-cli bitable form submit --share-token shrcnxxxx --content '{"评分":5,"评价":"很好"}'  # 不处理附件
+
+# 表单问题 field（别名 questions）：list/patch + 批量 create/delete（单次 ≤10）
+feishu-cli bitable form field list   --base-token xxx --table-id tblxxx --form-id vewxxx
+feishu-cli bitable form field create --base-token xxx --table-id tblxxx --form-id vewxxx \
+  --questions '[{"type":"text","title":"你的名字","required":true}]'
+feishu-cli bitable form field patch  --base-token xxx --table-id tblxxx --form-id vewxxx --config-file q.json
+feishu-cli bitable form field delete --base-token xxx --table-id tblxxx --form-id vewxxx --question-ids fld001,fld002
+```
+
+> 表单问题 item 字段：`title`(必填)/`type`(text/number/select/datetime/user/attachment/location)/`description`/`required`/`multiple`/`options` 等；`submit` 如需附件先用 `record upload-attachment` 思路拿 file_token 再写进 `--content`。
 
 ## 典型工作流
 
@@ -256,7 +322,8 @@ feishu-cli bitable view view-sort-set --base-token $BASE_TOKEN --table-id $TABLE
 | 写操作（create/update/delete/batch） | `base:app`、`base:table`、`base:record`、`base:field`、`base:view` |
 | 角色管理 | `base:role:readonly` / `base:role` |
 | 高级权限 | `base:app_permission` |
-| 工作流 | `base:workflow:readonly` |
+| 工作流 | 读 `base:workflow:readonly` / 写 `base:workflow` |
+| 仪表盘 / 表单 | 读 `base:dashboard:readonly` / `base:form:readonly`，写 `base:dashboard` / `base:form` |
 
 ## 注意事项
 
@@ -265,10 +332,6 @@ feishu-cli bitable view view-sort-set --base-token $BASE_TOKEN --table-id $TABLE
 - **--config / --config-file 两种输入**：所有写操作支持 inline JSON 或文件路径
 - **批量上限**：`record batch-create` / `batch-update` 由飞书后端限制，建议单批 ≤500 条
 - **视图类型**：`view create --view-type` 可选值：`grid / kanban / gallery / gantt / calendar`
-- **未实现的 v3 命令**（后续迭代）：
-  - dashboard CRUD + dashboard-block CRUD
-  - form CRUD + form-questions CRUD
-  - workflow get/create/update/enable/disable
-  - record upload-attachment
-  
-  当前可通过飞书 Web 界面配合管理这些功能。
+- **附件命令为编排命令**：upload 走 `medias/upload_all` + `append_attachments`，download 走 `get_attachments` + `medias/{ft}/download`，单次 ≤50 个
+- **form_id = view_id**：表单的 form_id 即表单视图的 view_id；`detail`/`submit` 用 `share-token`（shr 前缀，从分享链接提取）无需 base_token
+- **仍走飞书私有扩展 API（公开 OpenAPI 无对应，可用 `feishu-cli api` 裸调兜底）**：view 独立 filter-sort 端点（`base-api.feishu.cn`）

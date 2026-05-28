@@ -107,21 +107,21 @@ feishu-cli doc import large-doc.md --title "大文档" \
 |------|------|
 | **文档** | 创建、导入、导出、编辑、批量更新、Callout、画板、异步导出/导入文件 |
 | **知识库** | 空间列表、节点增删改查、导出、空间详情、成员管理 |
-| **电子表格** | V2 基础读写 + V3 富文本 API，行列操作、样式、合并、查找替换、导出 XLSX/CSV、筛选视图 CRUD、下拉菜单数据验证 |
-| **多维表格** | base/v3 + bitable/v1 全覆盖：数据表/字段/记录 CRUD（含 batch-get）、视图配置（filter/sort/group/visible-fields/timebar/card）、仪表盘（list/copy）、表单及表单问题（get/patch/list）、角色 CRUD + 协作者（role member）、高级权限、数据聚合、工作流（list/enable/disable）、多维表格本体更新（重命名/高级权限） |
+| **电子表格** | V2 基础读写 + V3 富文本 API，行列操作、样式、批量样式（batch-set-style）、合并、查找替换、导出 XLSX/CSV、浮动图片 CRUD + 素材上传 + 单元格写图（image）、筛选视图 CRUD + 筛选条件 CRUD（filter-view condition）、下拉菜单数据验证（get/set/update/delete） |
+| **多维表格** | base/v3 + bitable/v1 全覆盖：数据表/字段/记录 CRUD（含 batch-get）、记录附件上传/下载/移除、视图配置（filter/sort/group/visible-fields/timebar/card）、仪表盘 CRUD + arrange + 仪表盘块 CRUD（dashboard block）、表单 CRUD + 分享 token 详情/提交（detail/submit）+ 表单问题 CRUD（field/questions）、角色 CRUD + 协作者（role member）、高级权限、数据聚合、工作流 CRUD（create/get/update/enable/disable/list）、多维表格本体更新（重命名/高级权限） |
 | **消息** | 发送（text/post/image/file/card 等 11 种类型）、转发、合并转发、回复、Pin、表情回复、消息书签（flag create/list/cancel）、搜索群聊（Bot/User 双身份）、历史记录（群聊 / P2P 私聊，支持 `--user-email` / `--user-id` 自动反查 p2p chat_id）、批量获取、资源下载、话题回复、**发送者名字自动解析**（输出顶层 `sender_names` 映射，覆盖退群成员） |
 | **群聊** | 创建、获取、更新、删除、分享链接、成员管理 |
-| **邮箱** | 收件箱分类/搜索、邮件详情（单条/批量/线程）、发送（默认草稿，支持 CID 内联图片自动扫描）、草稿管理、回复/全部回复/转发、邮件模板 create/list（需 User Token） |
+| **邮箱** | 收件箱分类/搜索、邮件详情（单条/批量/线程）、发送（默认草稿，支持 CID 内联图片自动扫描）、草稿管理、回复/全部回复/转发、邮件模板 create/list、邮箱签名查看（signature）（需 User Token） |
 | **日历** | 日历列表、主日历、日程增删改查、搜索、回复邀请、参与者管理、忙闲查询、日程视图（agenda）、智能时段建议、会议室查找、RSVP |
 | **任务** | 创建、查看、完成、重新打开、子任务、成员管理、提醒、评论、我的任务、任务清单（CRUD + 任务关联 + 成员管理） |
-| **视频会议** | 多维搜索（query/主持人/参会者/会议室）、会议纪要（三路径批量获取 + AI 产物 + 逐字稿下载）、录制查询（需 User Token） |
+| **视频会议** | 多维搜索（query/主持人/参会者/会议室）、会议纪要（三路径批量获取 + AI 产物 + 逐字稿下载）、录制查询、会议机器人入会/离会/会议事件（bot meeting-join/leave/events）（需 User Token） |
 | **妙记** | 妙记详情 + AI 产物（摘要/待办/章节）、音视频媒体批量下载（SSRF 防护 + 速率限制）（需 User Token） |
 | **审批** | 审批定义与实例详情查询、当前登录用户审批任务查询（待办 / 已办 / 已发起 / 抄送）、发起/撤回/抄送审批实例、通过/拒绝/转交审批任务 |
 | **考勤** | 查询用户打卡记录与日/月度考勤统计（tenant token，日期范围最长 31 天） |
 | **OKR** | 周期列表、目标/关键结果进展记录列表与创建 |
 | **权限** | 添加 / 更新 / 删除协作者、批量添加、公开权限管理、分享密码、权限检查、转移所有权 |
 | **云盘增强** | 大文件分块上传（>20MB 自动分片）、流式下载、异步导出（docx→markdown 快捷路径 + sheet/bitable CSV）、异步导入、文件夹移动（自动轮询）、富文本评论（wiki URL 解析）、异步任务查询 |
-| **原生 Markdown 文件** | Drive `.md` 文件 create/fetch/overwrite，整体保留 Markdown 源码，不转换为飞书 docx 块 |
+| **原生 Markdown 文件** | Drive `.md` 文件 create/fetch/overwrite，整体保留 Markdown 源码，不转换为飞书 docx 块；diff 本地比对远端最新/历史版本 |
 | **文件** | 云空间文件列表、创建、移动、复制、删除、上传、下载、版本管理、元数据、统计 |
 | **素材** | 上传 / 下载（图片、文件、音视频） |
 | **画板** | 精排绘图（create-notes）、Mermaid / PlantUML 导入、截图下载、节点管理 |
@@ -243,14 +243,14 @@ feishu-cli <command> [subcommand] [flags]
 Commands:
   doc       文档操作（创建、导入、导出、编辑、异步导出/导入文件）
   wiki      知识库操作（节点增删改查、空间详情、成员管理）
-  sheet     电子表格（读写、样式、V3 富文本 API、导出 XLSX/CSV、filter-view、dropdown）
-  bitable   多维表格（base/v3 API：数据表/字段/记录/视图/角色/权限/聚合/工作流，48 命令）
+  sheet     电子表格（读写、样式、batch-set-style、V3 富文本 API、导出 XLSX/CSV、image 浮图、filter-view + condition、dropdown）
+  bitable   多维表格（base/v3 + bitable/v1：数据表/字段/记录/附件/视图/仪表盘/表单/角色/权限/聚合/工作流，87 命令）
   msg       消息操作（发送、转发、合并转发、回复、Pin、表情回复、书签、批量获取、资源下载）
   chat      群聊管理（创建、更新、删除、成员管理）
-  mail      邮箱操作（分类/搜索、发送、草稿、回复、转发、CID 内联图片、模板）
+  mail      邮箱操作（分类/搜索、发送、草稿、回复、转发、CID 内联图片、模板、签名）
   drive     云盘增强（分块上传、流式下载、异步导出/导入、移动、评论，8 命令）
-  markdown  Drive 原生 Markdown 文件 CRUD（.md 整体读写，不转换 docx 块）
-  vc        视频会议（多维搜索、纪要、录制查询）
+  markdown  Drive 原生 Markdown 文件 CRUD（.md 整体读写，不转换 docx 块）+ diff 版本比对
+  vc        视频会议（多维搜索、纪要、录制查询、会议机器人入会/离会/事件）
   minutes   妙记操作（详情 + AI 产物、媒体批量下载）
   file      文件管理（列出、移动、复制、删除、上传、下载、版本管理）
   media     素材操作（上传、下载）
@@ -722,6 +722,31 @@ feishu-cli bitable view list --base-token bscnxxxx --table-id tblxxx
 feishu-cli bitable view view-filter-get --base-token bscnxxxx --table-id tblxxx --view-id vewxxx
 feishu-cli bitable role list --base-token bscnxxxx
 
+# 记录附件（上传 / 下载 / 移除）
+feishu-cli bitable record upload-attachment --base-token bscnxxxx --table-id tblxxx \
+  --record-id recxxx --field-id fldxxx --file ./report.pdf --file ./shot.png
+feishu-cli bitable record download-attachment --base-token bscnxxxx --table-id tblxxx \
+  --record-id recxxx --output ./downloads/
+feishu-cli bitable record remove-attachment --base-token bscnxxxx --table-id tblxxx \
+  --record-id recxxx --field-id fldxxx --file-token boxcnxxxx
+
+# 仪表盘（CRUD + 智能排版 + 仪表盘块）
+feishu-cli bitable dashboard create --base-token bscnxxxx --name "运营看板"
+feishu-cli bitable dashboard block create --base-token bscnxxxx --dashboard-id dsbxxxx \
+  --type column --name "按月统计" --data-config '{"table_name":"任务","group_by":"月份"}'
+feishu-cli bitable dashboard arrange --base-token bscnxxxx --dashboard-id dsbxxxx
+
+# 表单（CRUD + 分享 token 详情/提交 + 表单问题）
+feishu-cli bitable form create --base-token bscnxxxx --table-id tblxxx --name "报名表"
+feishu-cli bitable form field create --base-token bscnxxxx --table-id tblxxx --form-id vewxxx \
+  --questions '[{"type":"text","title":"你的名字","required":true}]'
+feishu-cli bitable form detail --share-token shrcnxxxx                          # 无需 base_token
+feishu-cli bitable form submit --share-token shrcnxxxx --content '{"评分":5,"评价":"很好"}'
+
+# 工作流（CRUD，update 为整体替换 PUT）
+feishu-cli bitable workflow get --base-token bscnxxxx --workflow-id wkfxxxx
+feishu-cli bitable workflow update --base-token bscnxxxx --workflow-id wkfxxxx --config-file wf.json
+
 # 云盘增强（drive）
 feishu-cli drive upload --file big.zip --folder-token fldxxx
 feishu-cli drive download --file-token boxxxx --output ./downloads/ --overwrite
@@ -757,12 +782,17 @@ feishu-cli mail template create --name "周报模板" --subject "本周进度" -
 feishu-cli mail template list
 feishu-cli mail reply --message-id msg_xxx --body "收到" --confirm-send
 feishu-cli mail forward --message-id msg_xxx --to team@example.com --body "请关注"
+feishu-cli mail signature                                          # 列出邮箱签名
+feishu-cli mail signature --detail 7012345678901234567 -o json     # 单个签名详情
 
 # 视频会议（vc，需 User Token）
 feishu-cli vc search --query "周会" --start 2026-03-20 --end 2026-03-28
 feishu-cli vc notes --meeting-ids 69xxxx,70xxxx
 feishu-cli vc notes --minute-tokens obcnxxxx --with-artifacts --download-transcript --output-dir ./notes
 feishu-cli vc recording --meeting-ids 69xxxx
+feishu-cli vc bot meeting-join --meeting-number 123456789          # 机器人按会议号入会
+feishu-cli vc bot meeting-leave --meeting-id 6911188411932033028   # 机器人离会
+feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --start 2026-03-01 --end 2026-03-31
 
 # 妙记（minutes，需 User Token）
 feishu-cli minutes get <minute_token> --with-artifacts
@@ -814,14 +844,31 @@ feishu-cli sheet export <token_or_url> --format markdown -o output.md
 feishu-cli sheet filter-view create --spreadsheet-token shtcnxxxx --sheet-id SHEET_ID \
   --range "SHEET_ID!A1:H100" --name "P0 高优"
 feishu-cli sheet filter-view list --spreadsheet-token shtcnxxxx --sheet-id SHEET_ID
+feishu-cli sheet filter-view update --token shtcnxxxx --sheet-id SHEET_ID \
+  --filter-view-id pH9xxxx --name "新名字"
+# 筛选条件（按列字母定位）
+feishu-cli sheet filter-view condition create --token shtcnxxxx --sheet-id SHEET_ID \
+  --filter-view-id pH9xxxx --condition-id E --filter-type number --compare-type less --expected '["6"]'
+feishu-cli sheet filter-view condition list --token shtcnxxxx --sheet-id SHEET_ID --filter-view-id pH9xxxx
 feishu-cli sheet dropdown set --token shtcnxxxx --range "SHEET_ID!B2:B100" \
   --options "待办,处理中,已完成"
+feishu-cli sheet dropdown update --token shtcnxxxx --sheet-id SHEET_ID \
+  --ranges "SHEET_ID!A1:A100" --options "P0,P1,P2" --multiple --colors "#FF4D4F,#FAAD14,#52C41A"
+feishu-cli sheet dropdown get --token shtcnxxxx --range "SHEET_ID!A1:A100"
+feishu-cli sheet dropdown delete --token shtcnxxxx --ranges "SHEET_ID!A1:A100"
+# 浮动图片 / 单元格写图 / 批量样式
+feishu-cli sheet image media-upload shtcnxxxx ./logo.png                     # 返回 file_token
+feishu-cli sheet image write-image shtcnxxxx SHEET_ID --range "A1" --image ./logo.png
+feishu-cli sheet batch-set-style shtcnxxxx \
+  --data '[{"ranges":["SHEET_ID!A1:A2"],"style":{"font":{"bold":true},"backColor":"#FF0000"}}]'
 
 # Drive 原生 Markdown 文件（不做 docx 块转换）
 feishu-cli markdown create --name README.md --content-file ./README.md --folder-token fldxxx
 feishu-cli markdown create --file ./README.md --folder-token fldxxx
 feishu-cli markdown fetch --file-token boxcnxxx --output-path ./remote.md
 feishu-cli markdown overwrite --file-token boxcnxxx --file ./remote.md
+feishu-cli markdown diff --file-token boxcnxxx --file ./local.md               # 远端最新 vs 本地
+feishu-cli markdown diff --file-token boxcnxxx --from-version 2 --to-version 5  # 远端版本 A vs B
 
 # 用户
 feishu-cli user info <user_id>

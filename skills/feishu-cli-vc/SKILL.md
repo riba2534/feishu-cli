@@ -2,11 +2,12 @@
 name: feishu-cli-vc
 description: >-
   飞书视频会议与妙记操作。多维搜索历史会议、获取会议纪要/AI 产物/逐字稿、
-  查询会议录制、下载妙记媒体文件。支持 meeting-ids / minute-tokens / calendar-event-ids
-  三路径入口。当用户请求"搜索会议"、"会议记录"、"会议纪要"、"逐字稿"、"妙记"、"meeting"、
-  "vc search"、"vc recording"、"minutes"、"下载妙记"、"妙记视频"、"会议录制"、
+  查询会议录制、下载妙记媒体文件、会议机器人入会/离会/会议事件。支持 meeting-ids /
+  minute-tokens / calendar-event-ids 三路径入口。当用户请求"搜索会议"、"会议记录"、
+  "会议纪要"、"逐字稿"、"妙记"、"meeting"、"vc search"、"vc recording"、"minutes"、
+  "下载妙记"、"妙记视频"、"会议录制"、"会议机器人"、"机器人入会"、"vc bot"、
   "从日程找会议"时使用。
-argument-hint: vc search | vc notes | vc recording | minutes get | minutes download
+argument-hint: vc search | vc notes | vc recording | vc bot | minutes get | minutes download
 user-invocable: true
 allowed-tools: Bash(feishu-cli vc:*), Bash(feishu-cli minutes:*), Bash(feishu-cli auth:*), Read
 ---
@@ -107,6 +108,24 @@ feishu-cli minutes download --minute-tokens <t1,t2,...> [--output <path>] [--ove
 | `--overwrite` | bool | 覆盖已存在文件 |
 | `--url-only` | bool | 只打印下载 URL，不实际下载 |
 
+### 6. 会议机器人入会 / 离会 / 会议事件（vc bot）
+
+```bash
+feishu-cli vc bot meeting-join   --meeting-number 123456789 [--password 1234] [--dry-run]
+feishu-cli vc bot meeting-leave  --meeting-id 6911188411932033028 [--dry-run]
+feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --start 2026-03-01 --end 2026-03-31
+```
+
+让会议机器人按会议号加入会议、离开会议，以及查询机器人侧的会议事件。
+
+| 子命令 | 端点 | 关键参数 |
+|------|------|---------|
+| `meeting-join` | `POST /open-apis/vc/v1/bots/join` | `--meeting-number`（必填）、`--password`（可选）、`--dry-run` |
+| `meeting-leave` | `POST /open-apis/vc/v1/bots/leave` | `--meeting-id`（必填）、`--dry-run` |
+| `meeting-events` | `GET /open-apis/vc/v1/bots/events` | `--meeting-id`、`--start`、`--end` |
+
+> `meeting-join` / `meeting-leave` 支持 `--dry-run` 只打印请求体不实际调用；`-o json` 输出原始响应。
+
 ## 使用示例
 
 ```bash
@@ -185,6 +204,9 @@ feishu-cli minutes download --minute-tokens <minute_token> --output ./media
 | `vc notes --download-transcript` | + `minutes:minutes.transcript:export` |
 | `vc notes`（calendar-event-ids 路径） | + `calendar:calendar:read`、`calendar:calendar.event:read` |
 | `vc recording` | `vc:record:readonly`（calendar 路径同上追加日历权限） |
+| `vc bot meeting-join` | `vc:meeting.bot.join:write` |
+| `vc bot meeting-leave` | `vc:meeting.bot.leave:write` |
+| `vc bot meeting-events` | vc 读权限 |
 | `minutes get` | `minutes:minutes:readonly`（`--with-artifacts` 额外需 `minutes:minutes.artifacts:read`） |
 | `minutes download` | `minutes:minutes.media:export` |
 

@@ -3,16 +3,17 @@ name: feishu-cli-markdown
 description: >-
   飞书云盘原生 Markdown 文件操作（与 doc import/export 互补）。
   markdown create 上传新 .md 到云盘；markdown fetch 下载为本地 .md；
-  markdown overwrite 用本地 .md 覆盖云盘已有文件（保 file_token 不变，分享链接持久）。
+  markdown overwrite 用本地 .md 覆盖云盘已有文件（保 file_token 不变，分享链接持久）；
+  markdown diff 在本地比对远端最新/历史版本，不改远端。
   当 doc 文档不适合（图床、密集代码块、版本管理）走 .md 原生文件路径。
   Drive upload_all + 自拼 Formdata multipart（SDK 不暴露 file_token field）。
-  当用户请求"上传 markdown"、"下载 md"、"覆盖云盘 md"时使用。
-argument-hint: create | fetch | overwrite
+  当用户请求"上传 markdown"、"下载 md"、"覆盖云盘 md"、"md diff"、"比对 markdown 版本"时使用。
+argument-hint: create | fetch | overwrite | diff
 user-invocable: true
 allowed-tools: Bash(feishu-cli markdown:*), Bash(feishu-cli drive:*), Bash(feishu-cli auth:*), Read
 ---
 
-# 飞书云盘原生 Markdown（markdown create/fetch/overwrite）
+# 飞书云盘原生 Markdown（markdown create/fetch/overwrite/diff）
 
 `markdown` 命令组把 Drive 上的 **`.md` 当作普通文件整体读写**，保留原始 Markdown 源码，**不做** Markdown ↔ 飞书 docx 块的转换。
 
@@ -120,6 +121,39 @@ feishu-cli markdown overwrite --file-token boxcnxxx --content-file ./new.md --na
 
 **核心价值**：`file_token` 保持不变 → 分享链接持久、其他人收藏的链接不失效；多次迭代场景（AI agent 每天更新同一份 `.md`）优于"删了重建"。
 
+### 4. `markdown diff` — 本地比对远端最新/历史版本（只读，不改远端）
+
+下载远端 Markdown 内容并在本地计算 unified diff，**不修改远端文件**。三种比对模式（由参数组合决定，互斥）：
+
+```bash
+# 模式 1：远端最新 vs 本地文件
+feishu-cli markdown diff --file-token boxcnxxx --file ./local.md
+
+# 模式 2：远端某版本 vs 远端最新
+feishu-cli markdown diff --file-token boxcnxxx --from-version 3
+
+# 模式 3：远端版本 A vs 版本 B（--to-version 需配合 --from-version）
+feishu-cli markdown diff --file-token boxcnxxx --from-version 2 --to-version 5 --context-lines 1
+
+# JSON 输出结构化 hunk
+feishu-cli markdown diff --file-token boxcnxxx --file ./local.md -o json
+```
+
+**关键 flag**：
+
+| flag | 说明 |
+|------|------|
+| `--file-token` | 目标 Markdown 文件 token（必填） |
+| `--file` | 本地 `.md` 路径（模式 1：与远端最新比对） |
+| `--from-version` | 起始远端版本号（模式 2/3） |
+| `--to-version` | 目标远端版本号（模式 3，需配合 `--from-version`） |
+| `--context-lines` | 每个 hunk 上下保留的未变更上下文行数（默认 3） |
+| `--obj-type` | 文件类型（解析远端版本时用，默认 `file`） |
+| `--dry-run` | 只打印比对计划，不下载/不比对 |
+| `-o json` | 输出结构化 hunk；缺省打印 unified diff 文本 |
+
+> 与 `overwrite` 配合：覆盖前先 `diff --file ./local.md` 预览本地相对远端最新的改动，确认后再 overwrite，避免误覆盖。
+
 ## 底层实现 & 踩坑
 
 ### 1. SDK 不暴露 `file_token` field —— 自拼 multipart
@@ -175,6 +209,7 @@ feishu-cli markdown overwrite --file-token boxcnxxx --content-file ./new.md --na
 | `markdown create` | `drive:file:upload`（或 `drive:drive`） |
 | `markdown fetch` | `drive:file:download`（或 `drive:drive`） |
 | `markdown overwrite` | `drive:file:upload` + `drive:drive.metadata:readonly`；且 User Token 对目标文件有编辑权限 |
+| `markdown diff` | `drive:file:download`（或 `drive:drive`） |
 
 **推荐做法**：执行 `feishu-cli auth login` 登录后，由 `auth check --scope "drive:file:upload drive:file:download"` 预检；缺 scope 时按提示 `auth login` 补申请。
 

@@ -1,12 +1,12 @@
 ---
 name: feishu-cli-mail
 description: >-
-  飞书邮箱（Mail）操作。查看邮件、发送邮件、回复、转发、管理草稿、批量获取、线程、过滤。
+  飞书邮箱（Mail）操作。查看邮件、发送邮件、回复、转发、管理草稿、批量获取、线程、过滤、邮箱签名。
   当用户请求"发邮件"、"看邮件"、"查邮件"、"回复邮件"、"转发邮件"、"邮件草稿"、"收件箱"、
-  "feishu mail"、"lark mail"、"未读邮件"时使用。
+  "邮箱签名"、"feishu mail"、"lark mail"、"未读邮件"时使用。
   所有命令需要 User Access Token（先 feishu-cli auth login）。
   首期限制：发送/草稿/回复支持纯文本或 HTML body；forward 当前仅支持纯文本 body。暂不支持普通附件；send 支持 CID 内联图片自动扫描。
-argument-hint: triage | send | reply | forward | draft-create | message | thread | template <subcmd>
+argument-hint: triage | send | reply | forward | draft-create | message | thread | signature | template <subcmd>
 user-invocable: true
 allowed-tools: Bash(feishu-cli mail:*), Bash(feishu-cli auth:*), Read
 ---
@@ -35,6 +35,7 @@ allowed-tools: Bash(feishu-cli mail:*), Bash(feishu-cli auth:*), Read
 | `mail messages` | 批量获取多封邮件 |
 | `mail thread` | 获取邮件线程（对话） |
 | `mail triage` | 列出/过滤邮件（folder/label/query/unread-only） |
+| `mail signature` | 列出/查看邮箱签名（`--detail <签名ID>` 取单个详情） |
 
 ```bash
 # 查未读收件箱
@@ -56,6 +57,12 @@ feishu-cli mail messages --message-ids m1,m2,m3
 
 # 获取线程
 feishu-cli mail thread --thread-id thread_xxx
+
+# 列出邮箱签名（默认 mailbox=me）
+feishu-cli mail signature
+feishu-cli mail signature --from me -o json
+# 查看单个签名详情（从列表里筛出该 ID 的渲染详情）
+feishu-cli mail signature --detail 7012345678901234567
 ```
 
 ### 写入类命令
@@ -142,6 +149,7 @@ feishu-cli mail draft-edit --draft-id $DRAFT_ID --to user@example.com --subject 
 |---|---|
 | `mail triage` | `mail:user_mailbox:readonly`、`mail:user_mailbox.message:readonly`、`mail:user_mailbox.message.body:read`、`mail:user_mailbox.message.address:read`、`mail:user_mailbox.message.subject:read` |
 | `mail message` / `mail messages` / `mail thread` | 同上只读集 |
+| `mail signature` | `mail:user_mailbox.settings:read` |
 | `mail send` | 上述只读权限 + `mail:user_mailbox.message:send`、`mail:user_mailbox.message:modify`（草稿创建走 `:modify`，`--confirm-send` 触发 `:send`）；`--inline-images-auto-scan` 额外需要 `drive:drive`、`drive:file:upload` 和 `auth:user.id:read`（用于获取上传 `parent_node` 所需的 open_id） |
 | `mail draft-create` / `mail draft-edit` | 上述只读权限 + `mail:user_mailbox.message:modify`（仅写草稿，不发送，不需 `:send`） |
 | `mail reply` / `mail reply-all` / `mail forward` | 上述只读权限 + `mail:user_mailbox.message:send`、`mail:user_mailbox.message:modify`（先建草稿后发送，与 `mail send --confirm-send` 同） |
