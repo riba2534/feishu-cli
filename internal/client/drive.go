@@ -736,25 +736,23 @@ func DownloadFileVersion(fileToken, version, outputPath, userAccessToken string,
 }
 
 // parseDownloadJSONError 判断 download 的 HTTP 200 响应是否为飞书业务错误体 {code,msg}。
-// 返回 isErr=true 时附带 code/msg。判定优先级：
-//  1. Content-Type 含 application/json → 当作 JSON 错误响应，parse 出 code != 0 即错误；
-//  2. Content-Type 缺失/不含 json → 仅当 RawBody TrimSpace 后以 '{' 开头且能成功
-//     parse 出 code != 0 时才视为错误（避免把恰好以 '{' 开头的二进制 JSON 文件误判）。
+// 飞书 OpenAPI 业务错误响应带 Content-Type: application/json；成功的文件下载返回文件
+// MIME / octet-stream。故仅在 Content-Type 为 JSON 时才尝试解析业务错误，parse 出 code != 0
+// 即视为错误，否则当二进制写盘。
+//
+// 局限：HTTP 200 + application/json + {code:N} 无法与「内容恰为该结构的合法 .json 文件」完美
+// 区分。本函数仅服务于 DownloadFileVersion 的文本/markdown 版本下载（.md 的 Content-Type 非
+// application/json，不触发）；若需下载可能是顶层 {code:N} 结构的 .json 文件，请用
+// DownloadMedia / DownloadFileWithToken（走 SDK Success 判定，不做此启发式）。
 func parseDownloadJSONError(header http.Header, body []byte) (int, string, bool) {
-	var isJSONCT bool
-	if header != nil {
-		isJSONCT = strings.Contains(header.Get("Content-Type"), "application/json")
-	}
-	trimmed := bytes.TrimSpace(body)
-	if !isJSONCT && (len(trimmed) == 0 || trimmed[0] != '{') {
+	if header == nil || !strings.Contains(header.Get("Content-Type"), "application/json") {
 		return 0, "", false
 	}
 	var e struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
 	}
-	if err := json.Unmarshal(trimmed, &e); err != nil {
-		// Content-Type 声称 JSON 却 parse 失败：无法提取 code，保守当二进制处理。
+	if err := json.Unmarshal(bytes.TrimSpace(body), &e); err != nil {
 		return 0, "", false
 	}
 	if e.Code != 0 {

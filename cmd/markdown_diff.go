@@ -222,16 +222,23 @@ type markdownDiffLine struct {
 	Text string `json:"text"`
 }
 
-// maxDiffLines diff 两侧各自的行数上限。LCS 用完整 (n+1)×(m+1) int 矩阵，
-// 几万行会触发数 GB 内存/OOM，故在算 LCS 前拦截。
-const maxDiffLines = 50000
+// maxDiffLines/maxDiffCells diff 大小上限。LCS 用完整 (n+1)×(m+1) int 矩阵，
+// 内存随两侧行数【乘积】增长——单侧 5 万行看似不大，但两侧各 5 万行 = 25 亿 int ≈ 10GB OOM。
+// 故同时限制单侧行数与乘积单元数（两者都满足才放行）。
+const (
+	maxDiffLines = 20000    // 单侧行数上限
+	maxDiffCells = 20000000 // LCS 矩阵 n*m 乘积上限（约 80MB int 矩阵），防 OOM
+)
 
-// checkDiffSize 在计算 LCS 之前拦截过大内容（任一侧行数超过 maxDiffLines）。
+// checkDiffSize 在计算 LCS 之前拦截过大内容（单侧行数超限，或两侧行数乘积超限）。
 func checkDiffSize(a, b string) error {
 	na := len(splitDiffLines(a))
 	nb := len(splitDiffLines(b))
 	if na > maxDiffLines || nb > maxDiffLines {
-		return fmt.Errorf("内容过大（%d 行 / %d 行），超过 diff 行数上限 %d，建议用外部 diff 工具", na, nb, maxDiffLines)
+		return fmt.Errorf("内容过大（%d 行 / %d 行），单侧超过行数上限 %d，建议用外部 diff 工具", na, nb, maxDiffLines)
+	}
+	if na*nb > maxDiffCells {
+		return fmt.Errorf("内容过大（%d × %d 行），LCS 矩阵超过 %d 单元上限（防 OOM），建议用外部 diff 工具", na, nb, maxDiffCells)
 	}
 	return nil
 }

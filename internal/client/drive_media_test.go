@@ -5,8 +5,9 @@ import (
 	"testing"
 )
 
-// TestParseDownloadJSONError 验证 download HTTP 200 响应的业务错误体识别：
-// JSON 错误体（code!=0）应判为错误；正常二进制（含恰好以 '{' 开头的 JSON 文件）不应误判。
+// TestParseDownloadJSONError 验证 download HTTP 200 响应的业务错误体识别（只信 Content-Type）：
+// Content-Type 为 application/json 且 code!=0 判为业务错误；其它（octet-stream / 无 CT）一律当
+// 二进制不判错——避免把内容恰为 {code:N} 的合法文件误判。
 func TestParseDownloadJSONError(t *testing.T) {
 	jsonCT := http.Header{"Content-Type": []string{"application/json; charset=utf-8"}}
 	octetCT := http.Header{"Content-Type": []string{"application/octet-stream"}}
@@ -18,15 +19,16 @@ func TestParseDownloadJSONError(t *testing.T) {
 		wantErr  bool
 		wantCode int
 	}{
-		{"JSON 错误体 + json CT", jsonCT, []byte(`{"code":1254043,"msg":"permission denied"}`), true, 1254043},
-		{"JSON 错误体 code=0 不算错误", jsonCT, []byte(`{"code":0,"msg":"ok"}`), false, 0},
-		{"json CT 但 parse 失败 → 保守当二进制", jsonCT, []byte(`not-json`), false, 0},
+		{"json CT + code!=0 → 业务错误", jsonCT, []byte(`{"code":1254043,"msg":"permission denied"}`), true, 1254043},
+		{"json CT + code=0 → 不算错误", jsonCT, []byte(`{"code":0,"msg":"ok"}`), false, 0},
+		{"json CT 但 parse 失败 → 当二进制", jsonCT, []byte(`not-json`), false, 0},
 		{"二进制 octet-stream", octetCT, []byte{0x89, 0x50, 0x4e, 0x47}, false, 0},
 		{"无 header 的纯二进制", nil, []byte{0x00, 0x01, 0x02}, false, 0},
-		// 关键边界：恰好以 '{' 开头的二进制 JSON 文件（无 json CT），code=0/无 code → 不误判
-		{"以 { 开头的 JSON 文件无 code 字段", octetCT, []byte(`{"name":"foo","value":42}`), false, 0},
-		{"无 CT 但 { 开头且 code!=0 → 辅助判错", nil, []byte(`{"code":99991663,"msg":"token invalid"}`), true, 99991663},
-		{"无 CT 且 { 开头但 code=0 → 不误判", nil, []byte(`{"code":0,"data":"x"}`), false, 0},
+		{"octet CT + { 开头无 code → 不误判", octetCT, []byte(`{"name":"foo","value":42}`), false, 0},
+		// 只信 CT：无 Content-Type 时即使内容 {code!=0} 也不判错（不再用 RawBody 前缀辅助）
+		{"无 CT + { 开头 + code!=0 → 不判错（只信 CT）", nil, []byte(`{"code":99991663,"msg":"x"}`), false, 0},
+		// 合法 .json 文件带 octet CT + {code!=0} 内容 → 不误判（CT 非 application/json）
+		{"octet CT + code!=0 的 JSON 文件 → 不误判", octetCT, []byte(`{"code":1,"msg":"domain data"}`), false, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

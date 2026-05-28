@@ -182,10 +182,16 @@ func TestCheckDiffSize(t *testing.T) {
 		t.Fatal("to over limit should error")
 	}
 
-	// 正好等于上限应放行（splitDiffLines 去掉末尾换行 => 行数 = maxDiffLines）
+	// 单侧正好等于行数上限、且与另一侧乘积不超 maxDiffCells → 放行
 	atLimit := strings.Repeat("x\n", maxDiffLines)
-	if err := checkDiffSize(atLimit, atLimit); err != nil {
-		t.Fatalf("at limit should pass, got %v", err)
+	if err := checkDiffSize(atLimit, small); err != nil {
+		t.Fatalf("single side at line limit (small other side) should pass, got %v", err)
+	}
+
+	// CRITICAL 保护：两侧各自不超行数上限，但行数乘积超过 maxDiffCells 也应报错（防 LCS 矩阵 OOM）
+	midLines := strings.Repeat("x\n", maxDiffCells/maxDiffLines+1) // < maxDiffLines 行，但 × atLimit 乘积超限
+	if err := checkDiffSize(atLimit, midLines); err == nil {
+		t.Fatal("product over maxDiffCells should error even when each side within line limit")
 	}
 }
 

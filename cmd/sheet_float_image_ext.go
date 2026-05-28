@@ -75,7 +75,9 @@ var sheetImageUpdateCmd = &cobra.Command{
 			offsetY = &v
 		}
 
-		if rangeStr == "" && width == 0 && height == 0 && offsetX == nil && offsetY == nil {
+		// 用 Changed() 判断 width/height 是否显式设置（而非值是否为 0）——否则 --width 0 会被这里
+		// 当成「未指定」误报，而不是落到下面 validateFloatImageUpdate 报「不能小于 20」。
+		if rangeStr == "" && !cmd.Flags().Changed("width") && !cmd.Flags().Changed("height") && offsetX == nil && offsetY == nil {
 			return fmt.Errorf("至少需要指定一个待更新字段（--range/--width/--height/--offset-x/--offset-y）")
 		}
 
