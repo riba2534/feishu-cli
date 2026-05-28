@@ -74,6 +74,42 @@ func TestNormalizeSheetWriteImageRange(t *testing.T) {
 	}
 }
 
+// TestValidateFloatImageUpdate 验证尺寸/偏移边界校验与 help 声明一致：
+// width/height 仅在显式设置时校验 ≥20，offset 校验 ≥0。
+func TestValidateFloatImageUpdate(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	cases := []struct {
+		name             string
+		widthChanged     bool
+		width            float64
+		heightChanged    bool
+		height           float64
+		offsetX, offsetY *float64
+		wantErr          bool
+	}{
+		{"全合法", true, 200, true, 150, f(0), f(5), false},
+		{"width 未设置不校验(即使 0)", false, 0, false, 0, nil, nil, false},
+		{"width 显式设置但 <20 报错", true, 10, false, 0, nil, nil, true},
+		{"width 显式设置 =20 通过", true, 20, false, 0, nil, nil, false},
+		{"height 显式设置但 <20 报错", false, 0, true, 5, nil, nil, true},
+		{"height 显式设置 =20 通过", false, 0, true, 20, nil, nil, false},
+		{"offset-x 负数报错", false, 0, false, 0, f(-1), nil, true},
+		{"offset-y 负数报错", false, 0, false, 0, nil, f(-3), true},
+		{"offset 为 0 合法", false, 0, false, 0, f(0), f(0), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateFloatImageUpdate(tc.widthChanged, tc.width, tc.heightChanged, tc.height, tc.offsetX, tc.offsetY)
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 // firstWord 取字符串首个空格前的单词。
 func firstWord(s string) string {
 	for i := 0; i < len(s); i++ {

@@ -38,6 +38,17 @@ func TestUpdateFloatImageOffsetZero(t *testing.T) {
 	}
 }
 
+// TestUpdateFloatImageNilImage 验证 image == nil 时直接返回错误（nil 防御，不解引用 panic）。
+func TestUpdateFloatImageNilImage(t *testing.T) {
+	_, err := UpdateFloatImage(context.Background(), "shtcn1", "sht1", "fi1", nil, nil, nil, "u-test")
+	if err == nil {
+		t.Fatal("image == nil 应返回错误")
+	}
+	if !strings.Contains(err.Error(), "image 不能为 nil") {
+		t.Errorf("错误信息应说明 image 为 nil，got: %v", err)
+	}
+}
+
 // TestUpdateFloatImageOffsetNilOmitted 验证 offset-x/offset-y 都传 nil 时 body 不含 offset 字段。
 func TestUpdateFloatImageOffsetNilOmitted(t *testing.T) {
 	var gotBody string

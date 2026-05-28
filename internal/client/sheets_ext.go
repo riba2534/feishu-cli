@@ -47,6 +47,9 @@ func GetFloatImage(ctx context.Context, spreadsheetToken, sheetID, floatImageID 
 // 「是否更新」——nil=不更新，非 nil=更新（含合法值 0）。
 // PATCH /open-apis/sheets/v3/spreadsheets/:token/sheets/:sheet_id/float_images/:float_image_id
 func UpdateFloatImage(ctx context.Context, spreadsheetToken, sheetID, floatImageID string, image *FloatImage, offsetX, offsetY *float64, userAccessToken ...string) (*FloatImage, error) {
+	if image == nil {
+		return nil, fmt.Errorf("image 不能为 nil")
+	}
 	cli, err := GetClient()
 	if err != nil {
 		return nil, err

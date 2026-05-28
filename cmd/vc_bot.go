@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,6 +11,24 @@ import (
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
+
+// vcStartAfterEnd 判断 start 是否晚于 end（按 Unix 秒数值比较，而非字符串字典序）。
+// 字符串字典序在位数不同时（如 "999999999" vs "1000000000"）≠ 数值序，会误判先后，
+// 故用 strconv.ParseInt 转 int64 再比。任一为空（未传）视为无需比较，返回 false。
+func vcStartAfterEnd(startSec, endSec string) (bool, error) {
+	if startSec == "" || endSec == "" {
+		return false, nil
+	}
+	s, err := strconv.ParseInt(startSec, 10, 64)
+	if err != nil {
+		return false, fmt.Errorf("解析 --start 秒数失败: %w", err)
+	}
+	e, err := strconv.ParseInt(endSec, 10, 64)
+	if err != nil {
+		return false, fmt.Errorf("解析 --end 秒数失败: %w", err)
+	}
+	return s > e, nil
+}
 
 // validateVCPageSize 校验 meeting-events 的 page-size：取值范围 20-100（lark/help 声明），
 // 0 表示未传（回落默认 20），故只在非 0 时检查下限/上限。
@@ -204,7 +223,7 @@ var vcBotEventsCmd = &cobra.Command{
 可选:
   --start        起始时间（YYYY-MM-DD / RFC3339 / Unix 秒）
   --end          结束时间（YYYY-MM-DD / RFC3339 / Unix 秒；纯日期对齐到 23:59:59）
-  --page-size    每页数量（20-100，默认 20）
+  --page-size    每页数量（20-100；不传或 0 = 用默认 20）
   --page-token   分页标记
   --dry-run      只打印将要发送的请求参数，不实际调用
   --output, -o   输出格式（json）
@@ -237,7 +256,11 @@ var vcBotEventsCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("解析 --end 失败: %w", err)
 		}
-		if startSec != "" && endSec != "" && startSec > endSec {
+		after, err := vcStartAfterEnd(startSec, endSec)
+		if err != nil {
+			return err
+		}
+		if after {
 			return fmt.Errorf("--start 不能晚于 --end")
 		}
 
@@ -334,7 +357,7 @@ func init() {
 	vcBotEventsCmd.Flags().String("meeting-id", "", "要查询的会议 ID（必填）")
 	vcBotEventsCmd.Flags().String("start", "", "起始时间（YYYY-MM-DD / RFC3339 / Unix 秒）")
 	vcBotEventsCmd.Flags().String("end", "", "结束时间（YYYY-MM-DD / RFC3339 / Unix 秒）")
-	vcBotEventsCmd.Flags().Int("page-size", 20, "每页数量（20-100）")
+	vcBotEventsCmd.Flags().Int("page-size", 20, "每页数量（20-100；不传或 0 = 用默认 20）")
 	vcBotEventsCmd.Flags().String("page-token", "", "分页标记")
 	vcBotEventsCmd.Flags().Bool("dry-run", false, "只打印请求参数，不实际调用")
 	vcBotEventsCmd.Flags().StringP("output", "o", "", "输出格式（json）")

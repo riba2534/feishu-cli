@@ -78,6 +78,27 @@ func TestSelectAttachmentMetas(t *testing.T) {
 	}
 }
 
+// TestMissingFileTokens 验证多 token 部分缺失时能列出未匹配的 token（保持顺序、去重）。
+func TestMissingFileTokens(t *testing.T) {
+	selected := []attachmentMeta{
+		{FileToken: "boxA"},
+		{FileToken: "boxC"},
+	}
+	// wanted 含两个缺失（nope1/nope2），顺序保持，重复去重
+	missing := missingFileTokens([]string{"boxA", "nope1", "boxC", "nope2", "nope1"}, selected)
+	if len(missing) != 2 || missing[0] != "nope1" || missing[1] != "nope2" {
+		t.Errorf("missing 应为 [nope1 nope2]（顺序+去重）: %v", missing)
+	}
+	// 全部命中 → 无缺失
+	if m := missingFileTokens([]string{"boxA", "boxC"}, selected); len(m) != 0 {
+		t.Errorf("全命中应无缺失: %v", m)
+	}
+	// wanted 为空（全下场景）→ 无缺失概念
+	if m := missingFileTokens(nil, selected); m != nil {
+		t.Errorf("空 wanted 应返回 nil: %v", m)
+	}
+}
+
 // ---- upload-attachment dry-run（多步编排预览） ----
 
 func TestRecordUploadAttachmentDryRun(t *testing.T) {

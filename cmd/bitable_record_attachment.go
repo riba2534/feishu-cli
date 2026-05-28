@@ -260,6 +260,11 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 		if len(selected) == 0 {
 			return fmt.Errorf("记录 %s 中找不到指定的 --file-token 附件", recordID)
 		}
+		// 多个 --file-token 时部分缺失不再静默成功：对每个未匹配 token 打 stderr 警告，
+		// 继续下载已匹配到的（不 abort）。
+		for _, tk := range missingFileTokens(fileTokens, selected) {
+			fmt.Fprintf(os.Stderr, "警告: file-token %s 在记录 %s 中未找到，跳过\n", tk, recordID)
+		}
 
 		// [2] 逐个下载，带上元数据返回的 extra_info。
 		downloadedTokens := make([]string, 0, len(selected))
@@ -343,6 +348,28 @@ func selectAttachmentMetas(metas []attachmentMeta, wanted []string) []attachment
 		}
 	}
 	return out
+}
+
+// missingFileTokens 返回 wanted 中没有出现在 selected 里的 token（保持 wanted 顺序、去重）。
+// wanted 为空时返回 nil（全下场景无「缺失」概念）。
+func missingFileTokens(wanted []string, selected []attachmentMeta) []string {
+	if len(wanted) == 0 {
+		return nil
+	}
+	got := make(map[string]bool, len(selected))
+	for _, m := range selected {
+		got[m.FileToken] = true
+	}
+	var missing []string
+	seen := make(map[string]bool, len(wanted))
+	for _, w := range wanted {
+		if got[w] || seen[w] {
+			continue
+		}
+		seen[w] = true
+		missing = append(missing, w)
+	}
+	return missing
 }
 
 var bitableRecordRemoveAttachmentCmd = &cobra.Command{

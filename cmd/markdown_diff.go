@@ -147,6 +147,10 @@ var markdownDiffCmd = &cobra.Command{
 			}
 		}
 
+		if err := checkDiffSize(string(fromBytes), string(toBytes)); err != nil {
+			return err
+		}
+
 		hunks := unifiedDiff(string(fromBytes), string(toBytes), contextLines)
 
 		if output == "json" {
@@ -216,6 +220,20 @@ type markdownDiffHunk struct {
 type markdownDiffLine struct {
 	Op   string `json:"op"`
 	Text string `json:"text"`
+}
+
+// maxDiffLines diff 两侧各自的行数上限。LCS 用完整 (n+1)×(m+1) int 矩阵，
+// 几万行会触发数 GB 内存/OOM，故在算 LCS 前拦截。
+const maxDiffLines = 50000
+
+// checkDiffSize 在计算 LCS 之前拦截过大内容（任一侧行数超过 maxDiffLines）。
+func checkDiffSize(a, b string) error {
+	na := len(splitDiffLines(a))
+	nb := len(splitDiffLines(b))
+	if na > maxDiffLines || nb > maxDiffLines {
+		return fmt.Errorf("内容过大（%d 行 / %d 行），超过 diff 行数上限 %d，建议用外部 diff 工具", na, nb, maxDiffLines)
+	}
+	return nil
 }
 
 // splitDiffLines 把内容按 \n 拆为行（去掉行尾换行，规整 \r\n）。

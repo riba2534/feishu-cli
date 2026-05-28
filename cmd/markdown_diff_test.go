@@ -166,6 +166,29 @@ func TestRenderUnifiedDiff(t *testing.T) {
 	}
 }
 
+// TestCheckDiffSize 验证 diff 行数上限拦截
+func TestCheckDiffSize(t *testing.T) {
+	small := strings.Repeat("x\n", 10)
+	if err := checkDiffSize(small, small); err != nil {
+		t.Fatalf("small content should pass, got %v", err)
+	}
+
+	// 任一侧超过 maxDiffLines 应报错
+	big := strings.Repeat("x\n", maxDiffLines+1)
+	if err := checkDiffSize(big, small); err == nil {
+		t.Fatal("from over limit should error")
+	}
+	if err := checkDiffSize(small, big); err == nil {
+		t.Fatal("to over limit should error")
+	}
+
+	// 正好等于上限应放行（splitDiffLines 去掉末尾换行 => 行数 = maxDiffLines）
+	atLimit := strings.Repeat("x\n", maxDiffLines)
+	if err := checkDiffSize(atLimit, atLimit); err != nil {
+		t.Fatalf("at limit should pass, got %v", err)
+	}
+}
+
 // TestSplitDiffLines 验证 CRLF 规整与行尾换行处理
 func TestSplitDiffLines(t *testing.T) {
 	got := splitDiffLines("a\r\nb\n")

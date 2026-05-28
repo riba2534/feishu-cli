@@ -79,6 +79,15 @@ var sheetImageUpdateCmd = &cobra.Command{
 			return fmt.Errorf("至少需要指定一个待更新字段（--range/--width/--height/--offset-x/--offset-y）")
 		}
 
+		// 与 help 声明一致的边界校验：width/height 仅在用户显式设置时校验 ≥20，offset 校验 ≥0。
+		if err := validateFloatImageUpdate(
+			cmd.Flags().Changed("width"), width,
+			cmd.Flags().Changed("height"), height,
+			offsetX, offsetY,
+		); err != nil {
+			return err
+		}
+
 		image := &client.FloatImage{
 			Range:  unescapeSheetRange(rangeStr),
 			Width:  width,
@@ -194,6 +203,24 @@ func normalizeSheetWriteImageRange(rangeStr, sheetID string) string {
 		return cell + ":" + cell
 	}
 	return prefix + "!" + cell + ":" + cell
+}
+
+// validateFloatImageUpdate 校验 sheet image update 的尺寸/偏移边界，与 help 声明一致：
+// width/height 仅在用户显式设置时校验 ≥20（飞书浮图最小尺寸），offset-x/offset-y ≥0（不为负）。
+func validateFloatImageUpdate(widthChanged bool, width float64, heightChanged bool, height float64, offsetX, offsetY *float64) error {
+	if widthChanged && width < 20 {
+		return fmt.Errorf("--width 不能小于 20（当前 %.0f）", width)
+	}
+	if heightChanged && height < 20 {
+		return fmt.Errorf("--height 不能小于 20（当前 %.0f）", height)
+	}
+	if offsetX != nil && *offsetX < 0 {
+		return fmt.Errorf("--offset-x 不能为负（当前 %.0f）", *offsetX)
+	}
+	if offsetY != nil && *offsetY < 0 {
+		return fmt.Errorf("--offset-y 不能为负（当前 %.0f）", *offsetY)
+	}
+	return nil
 }
 
 func init() {

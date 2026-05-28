@@ -719,11 +719,48 @@ func DownloadFileVersion(fileToken, version, outputPath, userAccessToken string,
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("下载文件版本失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
 	}
+	// 飞书在权限不足/版本不存在时常返 HTTP 200 + JSON 业务错误体 {code,msg}，
+	// 不拦截会被当成正常二进制写盘。优先用 Content-Type 判定是否为 JSON 错误体，
+	// 缺失/不明确时再以 RawBody 是否以 '{' 开头作辅助（正常二进制 JSON 文件也可能以 '{' 开头，
+	// 故必须能成功 parse 出非零 code 字段才算业务错误）。
+	if code, msg, isErr := parseDownloadJSONError(resp.Header, resp.RawBody); isErr {
+		return fmt.Errorf("下载版本失败: code=%d, msg=%s", code, msg)
+	}
+	// cli.Do 返回完整 RawBody（SDK v3.5.3 不支持流式），size 检查在内存载入后仅防超大文件写盘；
+	// 飞书 markdown/附件通常不大，可接受。
 	if len(resp.RawBody) > maxDownloadSize {
 		return fmt.Errorf("文件超过大小限制 (%d MB)", maxDownloadSize/(1024*1024))
 	}
 
 	return saveToFile(bytes.NewReader(resp.RawBody), outputPath)
+}
+
+// parseDownloadJSONError 判断 download 的 HTTP 200 响应是否为飞书业务错误体 {code,msg}。
+// 返回 isErr=true 时附带 code/msg。判定优先级：
+//  1. Content-Type 含 application/json → 当作 JSON 错误响应，parse 出 code != 0 即错误；
+//  2. Content-Type 缺失/不含 json → 仅当 RawBody TrimSpace 后以 '{' 开头且能成功
+//     parse 出 code != 0 时才视为错误（避免把恰好以 '{' 开头的二进制 JSON 文件误判）。
+func parseDownloadJSONError(header http.Header, body []byte) (int, string, bool) {
+	var isJSONCT bool
+	if header != nil {
+		isJSONCT = strings.Contains(header.Get("Content-Type"), "application/json")
+	}
+	trimmed := bytes.TrimSpace(body)
+	if !isJSONCT && (len(trimmed) == 0 || trimmed[0] != '{') {
+		return 0, "", false
+	}
+	var e struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if err := json.Unmarshal(trimmed, &e); err != nil {
+		// Content-Type 声称 JSON 却 parse 失败：无法提取 code，保守当二进制处理。
+		return 0, "", false
+	}
+	if e.Code != 0 {
+		return e.Code, e.Msg, true
+	}
+	return 0, "", false
 }
 
 // maxSingleUploadSize 单次上传的文件大小上限（20MB），超过此大小需使用分片上传

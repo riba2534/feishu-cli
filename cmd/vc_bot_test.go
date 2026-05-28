@@ -106,6 +106,44 @@ func TestValidateVCPageSize(t *testing.T) {
 	}
 }
 
+// TestVCStartAfterEnd 验证 start/end 用 int64 数值比较（而非字符串字典序）。
+func TestVCStartAfterEnd(t *testing.T) {
+	cases := []struct {
+		name       string
+		start, end string
+		wantAfter  bool
+		wantErr    bool
+	}{
+		// 位数不同：字典序 "999999999" > "1000000000"（误判 start 晚于 end），数值序则 start 早于 end
+		{"位数不同数值序正确-start早于end", "999999999", "1000000000", false, false},
+		// 位数不同反向：start 数值确实大于 end
+		{"位数不同start确实晚", "1000000000", "999999999", true, false},
+		{"同位数start晚", "200", "100", true, false},
+		{"同位数start早", "100", "200", false, false},
+		{"相等", "100", "100", false, false},
+		{"start空跳过", "", "100", false, false},
+		{"end空跳过", "100", "", false, false},
+		{"非数值报错", "abc", "100", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			after, err := vcStartAfterEnd(tc.start, tc.end)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got after=%v", after)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if after != tc.wantAfter {
+				t.Fatalf("vcStartAfterEnd(%q,%q) = %v, want %v", tc.start, tc.end, after, tc.wantAfter)
+			}
+		})
+	}
+}
+
 // TestVCParseTimeToUnixSec 验证时间字符串到 Unix 秒的转换
 func TestVCParseTimeToUnixSec(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
