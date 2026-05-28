@@ -42,7 +42,7 @@ allowed-tools: Bash(feishu-cli schema:*), Bash(feishu-cli api:*), Bash(feishu-cl
 
 ### 数据来源
 
-编译期 `embed` 的 `internal/registry/meta_data.json`（约 746KB），与 `auth check` 等模块共用同一份元数据。当前覆盖 **12 个 service**：approval / attendance / calendar / drive / im / mail / minutes / sheets / slides / task / vc / wiki。
+编译期 `embed` 的 `internal/registry/meta_data.json`（约 690KB），与 `auth check` 等模块共用同一份元数据。当前覆盖 **12 个 service**：approval / attendance / calendar / drive / im / mail / minutes / sheets / slides / task / vc / wiki。
 
 ---
 
@@ -116,20 +116,20 @@ feishu-cli schema list --service drive | grep -i comment
 **2. 拼调用前查参数**
 
 ```bash
-feishu-cli schema im.messages.create
-# 然后用 lark-cli api 或 feishu-cli msg send 调用
+feishu-cli schema im.chats.create
+# 然后用 feishu-cli api 或 feishu-cli chat create 调用
 ```
 
 **3. AI Agent 拿 JSON 推断调用**
 
 ```bash
-feishu-cli schema bitable.records.create --format json
+feishu-cli schema sheets.spreadsheets.create --format json
 ```
 
 **4. 确认某方法的 scope 要求**
 
 ```bash
-feishu-cli schema vc.notes.get
+feishu-cli schema vc.meeting.get
 # 看 Identity / Scopes 行即可
 ```
 
@@ -143,19 +143,18 @@ feishu-cli schema vc.notes.get
 
 ```bash
 # Step 1: schema 查 path + scope + token 类型
-feishu-cli schema im.messages.create
-# 输出: POST /open-apis/im/v1/messages
-#       Identity: tenant (bot), user
-#       Scopes:   im:message, im:message:send_as_bot
+feishu-cli schema im.chats.create
+# 输出: POST /open-apis/im/v1/chats
+#       Identity: tenant (bot)
+#       Scopes:   im:chat
 
 # Step 2: scope 不够时补
-feishu-cli auth check --scope "im:message"
-feishu-cli auth login --scope "im:message"       # 缺则补
+feishu-cli auth check --scope "im:chat"
+feishu-cli auth login --scope "im:chat"          # 缺则补
 
 # Step 3: 直接调（无需写代码 / 无需 curl）
-feishu-cli api POST /open-apis/im/v1/messages \
-  --params '{"receive_id_type":"email"}' \
-  --data '{"receive_id":"user@example.com","msg_type":"text","content":"{\"text\":\"hi\"}"}' \
+feishu-cli api POST /open-apis/im/v1/chats \
+  --data '{"name":"测试群","description":"by feishu-cli api"}' \
   --as bot
 ```
 
@@ -212,7 +211,7 @@ feishu-cli api GET 'https://xxx.feishu.cn/open-apis/authen/v1/user_info?foo=bar#
 2. **路径不存在分级提示**：未知 service / resource / method 都会列出该层的所有可用候选名，便于纠正。
 3. **resource 含点号用最长前缀匹配**：`im.chat.members.create` 会匹配 resource = `chat.members`、method = `create`，不必担心拆错。
 4. **只读不调 API**：本命令永远不发起 HTTP 请求，不消耗任何配额，没有 token 过期顾虑。要真正调用见下方"何时转其他技能"。
-5. **覆盖范围 = 12 service**：当前未含 docx / contact 等较新 endpoint；如果 `schema list` 里没列出，说明本地元数据未收录，请去飞书 OpenAPI Explorer 查在线最新版。
+5. **覆盖范围 = 12 service**：当前覆盖 approval / attendance / calendar / drive / im / mail / minutes / sheets / slides / task / vc / wiki；**未含 docx / bitable(base) / contact / authen / board / okr / tenant / application 等业务域**；如果 `schema list` 里没列出，说明本地元数据未收录，请去飞书 OpenAPI Explorer 查在线最新版（或本项目对应的专用 `feishu-cli <模块>` 命令通常都已封装好）。
 6. **JSON 输出不转义 HTML**：`<` / `>` / `&` 保留原样，便于直接吞进 jq / yq 管道。
 
 ---

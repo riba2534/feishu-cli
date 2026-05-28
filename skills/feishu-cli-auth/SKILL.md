@@ -151,14 +151,23 @@ python3 -c "import requests; print(requests.get('https://open.feishu.cn/open-api
 feishu-cli auth check --scope "search:docs:read" && feishu-cli search docs --query "..."
 ```
 
-**`auth status -o json`** —— 看本地 token 现状（默认不连服务端，加 `--verify` 才在线核验）。已登录时关键字段：
+**`auth status -o json`** —— 看本地 token 现状（默认不连服务端，加 `--verify` 才在线核验）。JSON 字段按字母序输出，已登录时关键字段（按实际输出顺序）：
 
 | 字段 | 说明 |
 |---|---|
-| `token_status` | `valid` / `needs_refresh`（access 过期但 refresh 可用，下次调用自动刷新）/ `expired` |
+| `access_token` | 脱敏后的 access token（前 6 + 末 6） |
+| `access_token_valid` | access token 是否还在有效期内 |
+| `expires_at` | access token 过期时间（RFC3339） |
 | `health` | `healthy` / `missing_refresh_token`（没拿到 refresh，对应未开 `offline_access`）/ `needs_relogin`（refresh 也过期） |
+| `identity` | `user`（User Token 可用）/ `bot`（仅剩 App Token 可用） |
+| `logged_in` | 是否登录 |
+| `refresh_expires_at` | refresh token 过期时间（有 refresh 时出现） |
 | `refresh_token_present` | 是否拿到 refresh token |
-| `cached_user.open_id` / `.name` | **当前登录的是谁**——需要本人 open_id（发消息给自己、查自己任务）时从这里取 |
+| `refresh_token_valid` | refresh token 是否还在有效期内 |
+| `scope` | 当前 token 已授权 scope 列表（空格分隔） |
+| `token_status` | `valid` / `needs_refresh`（access 过期但 refresh 可用，下次调用自动刷新）/ `expired` |
+| `cached_user.open_id` / `.name` | **当前登录的是谁**——需要本人 open_id（发消息给自己、查自己任务）时从这里取（仅当本地有 user cache 时出现） |
+| `note` | 健康度提示文案（如 `missing_refresh_token` / `expired` 场景出现） |
 | `verified` / `verify_error` | 仅 `--verify`：在线调 `user_info` 核验 token 是否仍被服务端接受 |
 
 未登录时返回 `{"logged_in": false, "identity": "bot", "note": "..."}`。
@@ -248,9 +257,10 @@ feishu-cli doctor --json
 feishu-cli doctor --offline
 feishu-cli doctor --only user_token
 feishu-cli doctor --only proxy
+feishu-cli doctor --only user_token,endpoint_open    # 多值，逗号分隔
 ```
 
-`doctor` 共 6 项检查；`--only` 仅接受其中之一（typo 会被服务端拒收）：
+`doctor` 共 6 项检查；`--only` 支持单个值或逗号分隔多个值（typo 会被本地校验拒收）：
 
 | 检查名 | 含义 |
 |---|---|

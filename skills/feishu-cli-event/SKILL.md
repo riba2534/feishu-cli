@@ -134,7 +134,7 @@ feishu-cli event status
 | Flag | 默认 | 说明 |
 |---|---|---|
 | `--max-events N` | 0（不限制） | 接收 N 条事件后退出，reason=`limit` |
-| `--timeout 30s` | 0（不限制） | 运行 D 时长后退出，reason=`timeout` |
+| `--timeout <duration>`（示例 `60s`） | 0（不限制） | 运行 D 时长后退出，reason=`timeout` |
 | `--jq .event.xxx` | "" | 极简**点路径**过滤，不支持完整 jq 语法（用 pipe 接外部 jq） |
 | `--output-dir ./events` | "" | 每条事件额外 dump 为 `<event_id>.json` 落盘（不影响 stdout） |
 | `--quiet` | false | 抑制 stderr 诊断；**AI Agent 慎用**——会一起抑制大部分 stderr，但 ready marker 仍走真实 os.Stderr 不受影响 |

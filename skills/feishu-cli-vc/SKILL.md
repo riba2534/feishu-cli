@@ -174,6 +174,8 @@ feishu-cli minutes download --minute-tokens <minute_token> --output ./media
 
 ## 权限要求
 
+> 以下为最小所需精确 scope；项目顶层 CLAUDE.md 用 `minutes:minutes*:*` 通配等价覆盖（`minutes:minutes:readonly` + `minutes:minutes.artifacts:read` + `minutes:minutes.media:export` + `minutes:minutes.transcript:export`）。
+
 | 命令 / 功能 | 必需 scope |
 |------|---------|
 | `vc search` | `vc:meeting.search:read` |

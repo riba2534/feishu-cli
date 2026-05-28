@@ -15,7 +15,10 @@ allowed-tools: Bash(feishu-cli mail:*), Bash(feishu-cli auth:*), Read
 
 查看、发送、回复、转发邮件，管理草稿，过滤收件箱。
 
-> **首期限制**：`send / draft-create / draft-edit / reply / reply-all` 支持纯文本/HTML body；`forward` 当前仅支持纯文本 body。暂不支持普通附件；`mail send --inline-images-auto-scan` 支持 CID 内联图片自动扫描。
+> **首期限制**：
+> - **body 类型**：`send / draft-create / draft-edit / reply / reply-all` 支持纯文本/HTML body（有 `--html` / `--plain-text` 控制位）；`forward` 当前仅支持纯文本 body（无 `--html` / `--plain-text` flag）。
+> - **CID 内联图片自动扫描（`--inline-images-auto-scan`）：仅 `mail send` 支持**。`draft-create / draft-edit / reply / reply-all / forward` 暂未支持此 flag，需要内嵌图请走 `mail send`。
+> - **普通附件**：所有发送命令均暂不支持。
 
 ## 前置条件
 
@@ -133,10 +136,25 @@ feishu-cli mail draft-edit --draft-id $DRAFT_ID --to user@example.com --subject 
 
 ## 权限要求
 
+所有 mail 命令均必须使用 **User Access Token**（先 `feishu-cli auth login`）。下表覆盖全部 mail 子命令：
+
 | 命令 | 必需 scope |
 |---|---|
-| `mail message/messages/thread/triage` | `mail:user_mailbox:readonly`、`mail:user_mailbox.message:readonly`、`mail:user_mailbox.message.body:read`、`mail:user_mailbox.message.address:read`、`mail:user_mailbox.message.subject:read` |
-| `mail send/draft-create/draft-edit/reply/reply-all/forward` | 上述只读权限 + `mail:user_mailbox.message:send`、`mail:user_mailbox.message:modify` |
+| `mail triage` | `mail:user_mailbox:readonly`、`mail:user_mailbox.message:readonly`、`mail:user_mailbox.message.body:read`、`mail:user_mailbox.message.address:read`、`mail:user_mailbox.message.subject:read` |
+| `mail message` / `mail messages` / `mail thread` | 同上只读集 |
+| `mail send` | 上述只读权限 + `mail:user_mailbox.message:send`、`mail:user_mailbox.message:modify`（草稿创建走 `:modify`，`--confirm-send` 触发 `:send`）；`--inline-images-auto-scan` 额外需要 `drive:drive`、`drive:file:upload` 和 `auth:user.id:read`（用于获取上传 `parent_node` 所需的 open_id） |
+| `mail draft-create` / `mail draft-edit` | 上述只读权限 + `mail:user_mailbox.message:modify`（仅写草稿，不发送，不需 `:send`） |
+| `mail reply` / `mail reply-all` / `mail forward` | 上述只读权限 + `mail:user_mailbox.message:send`、`mail:user_mailbox.message:modify`（先建草稿后发送，与 `mail send --confirm-send` 同） |
+| `mail template create` | `mail:user_mailbox:readonly` + `mail:user_mailbox.message:modify` |
+| `mail template list` | `mail:user_mailbox:readonly` |
+
+> 推荐预检：
+> ```bash
+> # 只读类
+> feishu-cli auth check --scope "mail:user_mailbox:readonly mail:user_mailbox.message:readonly mail:user_mailbox.message.body:read mail:user_mailbox.message.address:read mail:user_mailbox.message.subject:read"
+> # 写类（含 send / reply / forward / 草稿）
+> feishu-cli auth check --scope "mail:user_mailbox:readonly mail:user_mailbox.message:modify mail:user_mailbox.message:send"
+> ```
 
 ## 注意事项
 

@@ -82,8 +82,8 @@ feishu-cli sheet dropdown set --token shtcnxxxxxx --range "0b1212!C1:C100" \
 |---|---|---|
 | `--token` | 是 | 电子表格 token |
 | `--range` | 是 | **必须带 sheetId 前缀**，例如 `"0b1212!A1:A100"`（不带 `!` 直接报错） |
-| `--options` | 二选一 | CSV 逗号分隔，每项 ≤ 100 字符 |
-| `--options-json` | 二选一 | JSON 数组字符串，选项内含逗号时用 |
+| `--options` | 二选一 | CSV 逗号分隔，每项 ≤ 100 字符，总数 ≤ 500 项 |
+| `--options-json` | 二选一 | JSON 数组字符串，选项内含逗号时用；同样受 ≤ 500 项 / 每项 ≤ 100 字符限制 |
 | `--multiple` | 否 | 启用多选（默认单选） |
 | `--colors` | 否 | RGB hex CSV，长度与 options 一致；传值自动开启高亮 |
 
@@ -123,6 +123,8 @@ feishu-cli sheet filter-view list --token $TOKEN --sheet-id $SHEET -o json | \
 ## 踩坑
 
 - **`--options` / `--options-json` 互斥**：同时传会报错 `--options 和 --options-json 不能同时使用，请选其一`；含逗号的选项必走 `--options-json`，否则会被 CSV 切碎
+- **dropdown 选项数量 ≤ 500 项**：飞书 V2 dataValidation 单次最多 500 个 list 选项（见 `internal/client/sheets.go:2331`），超出 API 直接报错；批量场景请按业务维度拆多列下拉
+- **dropdown 每个选项 ≤ 100 字符**：单选项超 100 字符会被服务端拒；如果用 `--options-json` 注入长文案务必先截断或换成"短码 + 注释列"模式
 - **dropdown `--range` 必须带 `!` 前缀**：不带前缀直接报错（`--range 必须包含 sheetId 前缀`），不像 filter-view 会自动补
 - **`--colors` 长度必须 = options 长度**：例如 3 个选项就要 3 个颜色，少一个报错 `--colors 长度(X) 必须与选项数(Y) 一致`；传 colors 自动开启 `highlightValidData: true`
 - **dropdown 用英文逗号分隔 不是中文「，」**：`--options` CSV 解析器只识别 ASCII `,`，中文逗号会让多选项合并成一个，容易踩
@@ -132,14 +134,22 @@ feishu-cli sheet filter-view list --token $TOKEN --sheet-id $SHEET -o json | \
 
 ## 何时该转主命令
 
-| 需求 | 走哪 |
+本 skill **只覆盖 `filter-view` + `dropdown`**。`feishu-cli sheet` 下其余子命令全部走主命令，不属于本 skill 范围：
+
+| 需求分组 | 走哪（主命令 `feishu-cli sheet <cmd>`） |
 |---|---|
-| 读单元格、整行整列、富文本 | `feishu-cli sheet read` / `read-rich` |
-| 写入数据、追加行 | `feishu-cli sheet write` / `append` / `add-rows` |
-| 单元格样式、合并、保护、查找替换 | `feishu-cli sheet style` / `merge` / `protect` / `find` / `replace` |
-| 工作表增删改、复制、导出 | `feishu-cli sheet add-sheet` / `copy-sheet` / `export` |
-| Markdown 表格批量导入 | `feishu-cli sheet import-md`（参考 `feishu-cli-toolkit`） |
+| 创建 / 元信息 | `create` / `get` / `meta` / `list-sheets` |
+| 读取（普通 + 富文本） | `read` / `read-plain` / `read-rich` |
+| 写入 / 追加 / 插入 / 清除 | `write` / `write-rich` / `append` / `append-rich` / `insert` / `clear` |
+| 行列管理 | `add-rows` / `add-cols` / `insert-rows` / `delete-rows` / `delete-cols` |
+| 工作表管理 | `add-sheet` / `copy-sheet` / `delete-sheet` |
+| 样式 / 合并 / 保护 | `style` / `merge` / `unmerge` / `protect` / `unprotect` |
+| 查找 / 替换 / 简单筛选 | `find` / `replace` / `filter`（注意：与 `filter-view` 不同，`filter` 是临时筛选） |
+| 导出 / Markdown 导入 | `export`（XLSX/CSV/MD）/ `import-md`（参考 `feishu-cli-toolkit`） |
+| 浮动图片 | `image` |
 | 多维表格的视图过滤/排序/分组 | `feishu-cli bitable view view-*-set`（语义更强，能配条件） |
+
+> 速查：`feishu-cli sheet --help` 共 33 个子命令，本 skill 只负责其中 2 组（`filter-view` / `dropdown`），其他 31 个全部转主命令。
 
 ## 权限要求
 

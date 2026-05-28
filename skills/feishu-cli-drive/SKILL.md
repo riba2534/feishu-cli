@@ -28,8 +28,8 @@ allowed-tools: Bash(feishu-cli drive:*), Bash(feishu-cli auth:*), Read
 ## 前置条件
 
 - **认证**：
-  - **必需 User Token**（`requireUserToken`，未登录直接报错）：`upload`/`download`/`export`/`import`/`move`/`add-comment`/`task-result`/`search`，先 `feishu-cli auth login`。
-  - **登录后 User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`）：`pull`/`push`/`status`。已 `auth login` 自动用 User Token；未登录回落 App Token（注意 Bot 通常看不到你云盘里的私人文件）。
+  - **必需 User Token**（`requireUserToken`，未登录直接报错）：`upload`/`download`/`export`/`export-download`/`import`/`move`/`add-comment`/`task-result`/`search`/`apply-permission`，先 `feishu-cli auth login`。
+  - **登录后 User 优先 + App 兜底**（`resolveOptionalUserTokenWithFallback`，未登录不报错）：`pull`/`push`/`status`/`inspect`。已 `auth login` 自动用 User Token；未登录回落 App Token（注意 Bot 通常看不到你云盘里的私人文件）。
 - **预检**：`feishu-cli auth check --scope "drive:file:upload"` 可验证 scope
 
 ## 命令速查
@@ -307,6 +307,56 @@ feishu-cli drive import --file report.docx --type docx --folder-token fldxxx
 feishu-cli drive import --file big_sheet.xlsx --type bitable --folder-token fldxxx
 ```
 
+### 工作流 F：申请文档权限（apply-permission）
+
+碰到「没有权限查看此文档」时，不需要去飞书 IM 私聊文档所有者，直接在终端申请：
+
+```bash
+# 1. 先用 inspect 确认 token 类型（可选；apply-permission 也支持 URL 直接传）
+feishu-cli drive inspect --url "https://xxx.feishu.cn/docx/doxcnxxx"
+# → 输出 type=docx, title=..., token=doxcnxxx
+
+# 2. 申请只读权限（带申请说明，会出现在发给所有者的审批卡片上）
+feishu-cli drive apply-permission \
+  --token "https://xxx.feishu.cn/docx/doxcnxxx" \
+  --perm view \
+  --remark "调研 RFC，需要查看背景设计"
+
+# 3. 申请编辑权限（同一接口，--perm edit）
+feishu-cli drive apply-permission --token doxcnxxx --type docx --perm edit --remark "..."
+
+# 4. 预览即将发出的请求（不实际申请）
+feishu-cli drive apply-permission --token <url> --perm view --dry-run
+```
+
+> ⚠️ 这是「埋藏 API」（飞书文档站未收录但 lark-cli 已实现），必需 User Token + `docs:permission.member:apply` scope（或任一大权限如 `drive:drive`）。
+
+### 工作流 G：拿到 URL → 一行命令解析出 token / 标题 / 类型（inspect）
+
+写脚本或 Agent 编排时常需要从 URL 反查文档元信息，`inspect` 是最快路径：
+
+```bash
+# docx URL → 输出 type=docx + 标题 + 裸 token + canonical URL
+feishu-cli drive inspect --url "https://xxx.feishu.cn/docx/doxcnxxx"
+
+# wiki URL → 自动展开到底层文档（自动调 wiki get_node 拆 obj_token + obj_type）
+feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx"
+# → 输出 type=docx, token=<真实 docx token>
+
+# 裸 token + 显式 type → 拿标题做权限/分类
+feishu-cli drive inspect --url doxcnxxx --type docx
+
+# JSON 输出（脚本/Agent 友好）
+TOKEN=$(feishu-cli drive inspect --url <url> -o json | jq -r '.token')
+TITLE=$(feishu-cli drive inspect --url <url> -o json | jq -r '.title')
+
+# 与其他命令串起来：解析 wiki → 导出 markdown
+DOC_TOKEN=$(feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx" -o json | jq -r '.token')
+feishu-cli drive export --token $DOC_TOKEN --doc-type docx --file-extension markdown --output-dir ./out
+```
+
+> 与其他命令的区别：`inspect` 是**只读、不强制 User Token**（User 优先 + App 兜底），未登录也能查公开/Bot 可见的文档元信息；登录后会用 User Token 看到完整权限范围。
+
 ## 与老命令的对照
 
 | 老命令 | 新 drive 命令 | 差异 |
@@ -322,22 +372,27 @@ feishu-cli drive import --file big_sheet.xlsx --type bitable --folder-token fldx
 
 ## 权限要求
 
-| 命令 | 所需 scope |
-|---|---|
-| `drive upload` | `drive:file:upload` |
-| `drive download` | `drive:file:download` |
-| `drive export` / `export-download` | `docs:document.content:read`、`docs:document:export`、`drive:drive.metadata:readonly`、`drive:file:download` |
-| `drive import` | `docs:document.media:upload`、`docs:document:import` |
-| `drive move` | `space:document:move` |
-| `drive add-comment` | `docs:document.comment:create`、`docs:document.comment:write_only`、`docx:document:readonly`（若 docx）、`wiki:node:read`（若 wiki URL） |
-| `drive task-result` | `drive:drive.metadata:readonly` |
-| `drive pull` / `status` | `drive:drive.metadata:readonly`、`drive:file:download` |
-| `drive push` | `drive:drive.metadata:readonly`、`drive:file:upload`、`space:folder:create`；带 `--delete-remote` 还需要文件删除权限 |
-| `drive search` | `search:docs:read`（必需 User Token） |
+| 命令 | Token 策略 | 所需 scope |
+|---|---|---|
+| `drive upload` | 必需 User Token | `drive:file:upload` |
+| `drive download` | 必需 User Token | `drive:file:download` |
+| `drive export` | 必需 User Token | `docs:document:export`、`drive:drive.metadata:readonly`（导出 markdown 还需 `docs:document.content:read`） |
+| `drive export-download` | 必需 User Token | `drive:file:download` |
+| `drive import` | 必需 User Token | `docs:document:import`、`drive:file:upload` |
+| `drive move` | 必需 User Token | `drive:file:write` [^1] |
+| `drive add-comment` | 必需 User Token | `docs:document.comment:create`、`docs:document.comment:write_only`；wiki URL 还需 `wiki:node:read`；docx 局部评论还需 `docx:document:readonly` |
+| `drive task-result` | 必需 User Token | `drive:drive.metadata:readonly`（具体依 scenario：`import` 还需 `docs:document:import`；`export` 还需 `docs:document:export`） |
+| `drive pull` / `status` | User 优先 + App 兜底 | `drive:drive.metadata:readonly`、`drive:file:download` |
+| `drive push` | User 优先 + App 兜底 | `drive:drive.metadata:readonly`、`drive:file:upload`、`space:folder:create`；带 `--delete-remote` 还需 `drive:file:delete` |
+| `drive search` | 必需 User Token | `search:docs:read` |
+| `drive inspect` | User 优先 + App 兜底（不强制 User Token） | `drive:drive.metadata:readonly`；wiki URL 还需 `wiki:node:read` |
+| `drive apply-permission` | 必需 User Token | `docs:permission.member:apply`（或任一大权限：`drive:drive` / `docs:doc` / `docx:document` 等） |
+
+[^1]: `drive:file:write` 是 CLI help 与代码当前声明的 scope；飞书部分 API 文档历史上也提到 `space:document:move`，**具体以飞书最新 OpenAPI 文档为准**。两者覆盖同一动作，新版应用直接申请 `drive:file:write`（更通用，写类操作通用 scope）。
 
 ## 注意事项
 
-- **Token 策略**：`upload/download/export/import/move/add-comment/task-result/search` 必需 User Token；`pull/push/status` 登录后默认 User Token，未登录回落 App Token。
+- **Token 策略**：`upload/download/export/export-download/import/move/add-comment/task-result/search/apply-permission` 必需 User Token；`pull/push/status/inspect` 登录后默认 User Token，未登录回落 App Token。
 - **SSRF 防护**：下载 URL 会被校验，拒绝 localhost / 回环 IP / 内网段 / 链路本地
 - **重定向策略**：下载 HTTP 重定向最多 5 次，禁止 HTTPS → HTTP 降级
 - **大文件分块阈值**：固定 20MB，超过自动切分片

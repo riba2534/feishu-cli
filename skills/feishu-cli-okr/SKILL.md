@@ -159,8 +159,8 @@ feishu-cli okr progress create \
 | `--content-json` | 原始 ContentBlock JSON（与 `--content` 二选一） | — |
 | `--progress-percent` | 进度百分比（数字） | — |
 | `--progress-status` | 进度状态：`normal` / `risky` / `overdue` | — |
-| `--source-title` | 来源标题 | `created by feishu-cli` |
-| `--source-url` | 来源 URL（⚠️ API 必填，CLI 已填默认占位） | `https://www.feishu.cn/okr/progress` |
+| `--source-title` | 来源标题（flag 注册默认空字符串，运行时 client 层注入默认值 `created by feishu-cli`） | `created by feishu-cli` |
+| `--source-url` | 来源 URL（⚠️ API 必填；flag 注册默认空字符串，运行时 client 层注入默认值 `https://www.feishu.cn/okr/progress`） | `https://www.feishu.cn/okr/progress` |
 | `--user-id-type` | 用户 ID 类型 | `open_id` |
 | `-o, --output` | 输出格式：`json` | 文本 |
 
@@ -189,7 +189,7 @@ GET /open-apis/okr/v2/cycles    ❌ 不存在，404
 |------|---------|
 | `progress create` | 飞书 Open SDK v3.5.3 的 `Okr.ProgressRecord.Create` |
 | `cycle list` | 通用 HTTP client 直调 `/open-apis/okr/v1/periods` |
-| `progress list` | 通用 HTTP client 直调 `/open-apis/okr/v2/...` |
+| `progress list` | 通用 HTTP client 直调（按 target 类型分两条路径）：<br>• OKRTargetObjective: `/open-apis/okr/v2/objectives/{id}/progresses`<br>• OKRTargetKeyResult: `/open-apis/okr/v2/key_results/{id}/progresses` |
 
 原因：SDK 在 v3.5.3 版本只暴露了 progress record 的 Create 方法（没有 List/Get/Update/Delete），其他能力都得自己拼 HTTP。
 

@@ -6,7 +6,7 @@
 ## 目录
 
 - [卡片级](#卡片级) — schema / config / card_link / header / body
-- [展示组件](#展示组件) — markdown / div / hr / img / chart / table / person / person_list
+- [展示组件](#展示组件) — markdown / div / hr / img / img_combination / chart / table / person / person_list
 - [容器组件](#容器组件) — column_set / collapsible_panel / form / interactive_container
 - [交互组件](#交互组件) — button / input / textarea / select_static / multi_select / date_picker / overflow / checker
 - [通用布局属性](#通用布局属性-v2-新增) — margin / padding / spacing / align / element_id
@@ -153,6 +153,41 @@
 }
 ```
 - v2 **不支持** `stretch_without_padding` 通栏；通栏用 `margin: "0 -12px"` 负边距实现
+
+### img_combination（多图混排）
+
+把 2-9 张图按预设布局拼成一组展示，避免手写 `column_set` + 多个 `img` 的繁琐布局。
+
+```json
+{
+  "tag": "img_combination",
+  "element_id": "imgc_1",
+  "combination_mode": "bisect",       // double | triple | bisect | trisect | nine
+  "corner_radius": "5px",              // 圆角，[0,99]px
+  "img_list": [
+    { "img_key": "img_v2_xxx1" },
+    { "img_key": "img_v2_xxx2" },
+    { "img_key": "img_v2_xxx3" },
+    { "img_key": "img_v2_xxx4" }
+  ],
+  "margin": "0"
+}
+```
+
+**combination_mode 枚举与图片数量**：
+
+| mode | 布局 | 图片数 |
+|------|------|--------|
+| `double` | 双图并排 | 必须 2 张 |
+| `triple` | 三图（左大右两小） | 必须 3 张 |
+| `bisect` | 四宫格（2×2） | 必须 4 张 |
+| `trisect` | 六宫格（2×3） | 必须 6 张 |
+| `nine` | 九宫格（3×3） | 必须 9 张 |
+
+**坑点**：
+- `img_list` 长度必须与 `combination_mode` 严格匹配，多/少都会渲染失败
+- 每张图需先通过 `feishu-cli media upload` 上传得到 `img_key`
+- 客户端 7.4+ 才支持；老版本会回退为单图列表
 
 ### chart（图表）
 
@@ -551,6 +586,28 @@
 
 **spacing 数值对应表**：small=4px, medium=8px, large=12px, extra_large=16px
 
+### element_id 的后端用途：流式更新
+
+为组件设置 `element_id` 后，可通过 **CardKit Open API** 在消息发送后动态更新单个元素，无需重发整张卡片，适用于 AI 流式输出、状态推进等场景：
+
+```http
+PATCH /open-apis/cardkit/v1/cards/:card_id/elements/:element_id
+Content-Type: application/json
+
+{
+  "partial_update": true,           // true=增量追加，false=整体覆盖
+  "element": {
+    "tag": "markdown",
+    "content": "新追加的内容片段"
+  }
+}
+```
+
+- `:card_id` 是消息发送后返回的卡片 ID（不是 `message_id`，需用 `/cardkit/v1/cards` 创建/绑定）
+- `:element_id` 即组件 JSON 里声明的 `element_id` 值
+- 配合 `config.streaming_mode: true` 和 `streaming_config.print_strategy` 实现打字机效果
+- 详细 API 文档：`https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/cardkit-v1/card-element/patch`
+
 ---
 
 ## 颜色枚举
@@ -632,3 +689,10 @@
 > 要在折叠面板/分栏里展示表格数据，用 markdown 的 `| 列 | 列 |` 表格语法替代。
 
 **通用上限**：容器嵌套不超过 5 层；单卡 ≤ 200 组件；JSON ≤ 30KB。
+
+---
+
+## 进阶：自定义样式 与 多语言
+
+- **自定义字号/颜色**：在 `config.style.text_size.cus-N` / `config.style.color.cus-N` 定义后，组件 `text_size`、`color` 字段引用 `cus-N` 即可全卡复用。颜色项支持 `light_mode` / `dark_mode` 双值，自动适配深色模式。
+- **多语言**：v2 已废弃 v1 的 `i18n_elements`（全局多语言），改用**局部多语言**：单组件文本字段写成 `i18n_content: { "zh_cn": "...", "en_us": "...", "ja_jp": "..." }`；header 的 text_tag_list 对应 `i18n_text_tag_list`；可在 `config.locales` 数组里声明白名单语种。客户端按用户语言自动选取。

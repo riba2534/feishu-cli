@@ -20,7 +20,7 @@ allowed-tools: Bash(feishu-cli bitable:*), Bash(feishu-cli auth:*), Read, Write
 
 ## 前置条件
 
-- **认证**：所有命令默认使用 **User Access Token**（执行 `feishu-cli auth login` 登录）
+- **认证**：所有命令**必需 User Access Token**（读类、写类均强制要求 User Token，未登录直接报错）。先执行 `feishu-cli auth login` 登录
 - **App 凭证**：应用 App ID + App Secret（base/v3 需要 `X-App-Id` header，自动注入）
 
 ## 命令速查
@@ -252,8 +252,8 @@ feishu-cli bitable view view-sort-set --base-token $BASE_TOKEN --table-id $TABLE
 
 | 命令 | 所需 scope |
 |---|---|
-| 读操作（list/get/search/history） | `base:base:readonly`、`base:table:readonly`、`base:record:readonly` 等对应 readonly |
-| 写操作（create/update/delete/batch） | `base:base`、`base:table`、`base:record`、`base:field`、`base:view` 等全权限 |
+| 读操作（list/get/search/history） | `base:app:readonly`、`base:table:readonly`、`base:record:readonly`、`base:field:readonly`、`base:view:readonly` |
+| 写操作（create/update/delete/batch） | `base:app`、`base:table`、`base:record`、`base:field`、`base:view` |
 | 角色管理 | `base:role:readonly` / `base:role` |
 | 高级权限 | `base:app_permission` |
 | 工作流 | `base:workflow:readonly` |

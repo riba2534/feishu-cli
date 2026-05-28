@@ -127,11 +127,14 @@ feishu-cli perm delete <TOKEN> \
 
 ```bash
 feishu-cli perm batch-add <TOKEN> \
+  --doc-type <DOC_TYPE> \
   --members-file <members.json> \
   [--notification]
 ```
 
-members.json 格式：
+`--doc-type` 默认 `docx`，非 docx 文档（sheet / bitable / file / wiki / slides 等）必须显式指定，否则会按 docx 处理导致 API 报错。
+
+members.json 格式（顶层为 JSON 数组）：
 ```json
 [
   {"member_type": "email", "member_id": "user1@example.com", "perm": "edit"},

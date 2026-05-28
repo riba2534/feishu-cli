@@ -92,6 +92,11 @@ feishu-cli slides create --title "Demo" --user-access-token <u-xxx>
 | `--output`, `-o` | 输出格式（留空 = 文本摘要，`json` = JSON） | 文本摘要 |
 | `--user-access-token` | 显式传 User Token | 不传走 App Token |
 
+> **两层默认值分工**：`--title` 在 cobra flag 注册时默认为空字符串、`--width/--height` 注册为 `0`
+> （见 `cmd/slides_create.go:78-80`）；运行时由 client 层（`internal/client/slides.go:49-58`）
+> 把空 title 注入为 `Untitled`、把非正数尺寸注入为标准 16:9 的 `960x540`。所以「未传」≠「传 0」≠「报错」，
+> 三者最终都会走到同一个默认值。
+
 **返回**：
 
 ```

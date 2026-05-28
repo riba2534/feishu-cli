@@ -101,7 +101,7 @@ allowed-tools: Bash(feishu-cli msg:*), Bash(feishu-cli media:*), Read, Write
 | `div` | 带 fields 的多列键值 | `fields: [{is_short, text}]` |
 | `hr` | 分割线 | 无其它属性 |
 | `img` | 单图 | `img_key` + `alt` |
-| `img_combination` | 图片组合（九宫格/轮播） | `combination_layout` + `img_list` |
+| `img_combination` | 多图混排（双/三/四/六/九图） | `combination_mode` + `img_list` |
 | `chart` | VChart 图表 | `chart_spec` + `aspect_ratio` + `color_theme` |
 | `person` | 单人员 | `user_id` + `show_name` + `show_avatar` |
 | `person_list` | 人员列表 | `persons: [{user_id}]` |

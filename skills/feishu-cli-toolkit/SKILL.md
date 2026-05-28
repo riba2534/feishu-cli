@@ -5,6 +5,7 @@ description: >-
   日历/日程、任务/任务清单、基础文件/素材/评论、知识库、用户和部门查询、审批查询。
   文档读写导入导出、云盘增强、多维表格、画板、消息/群聊、邮箱、搜索、权限、OAuth、
   视频会议/妙记均优先使用对应 feishu-cli-* 专用技能。
+  sheet filter-view/dropdown 优先用 `feishu-cli-sheet`；calendar suggestion/room-find/rsvp 优先用 `feishu-cli-calendar`。
 argument-hint: <module> <command> [args]
 user-invocable: true
 allowed-tools: Bash(feishu-cli auth:*), Bash(feishu-cli sheet:*), Bash(feishu-cli calendar:*), Bash(feishu-cli task:*), Bash(feishu-cli tasklist:*), Bash(feishu-cli file:*), Bash(feishu-cli media:*), Bash(feishu-cli comment:*), Bash(feishu-cli wiki:*), Bash(feishu-cli user:*), Bash(feishu-cli dept:*), Bash(feishu-cli approval:*), Read, Write
@@ -48,7 +49,7 @@ allowed-tools: Bash(feishu-cli auth:*), Bash(feishu-cli sheet:*), Bash(feishu-cl
 | 素材 | `media upload/download` | 本文件 |
 | 评论 | `comment list/add/delete/resolve/unresolve`、`comment reply` | 本文件 |
 | 知识库 | `wiki get/export/spaces/nodes/space-get/member` | 本文件 |
-| 审批 | `approval get`、`approval task query` | 本文件 |
+| 审批 | `approval get`、`approval task query`（User Token 必需） | 本文件 |
 | 用户/部门 | `user info/search/list`、`dept get/children` | 本文件 |
 
 ## Sheet

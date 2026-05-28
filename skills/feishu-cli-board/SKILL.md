@@ -12,8 +12,9 @@ description: >-
   AI 自由作图/SVG 落画板/克隆画板/上传图片到画板/可视化/节点图/精排"时使用。
   特别地，当用户反馈"右下角半截楼""z_index 错乱""节点翻倍""复杂图渲染不全""mermaid 服务端失败"
   务必读 references/pitfalls.md 排障。
-  写类（add-board/create-notes/update/delete/clone/svg-import/upload-image/import）默认 App Token（Bot 身份），无需登录；
-  读类（image/nodes/export-code/lint）登录后自动 User Token，未登录回落 App Token。
+  写类（add-board/create-notes/update/delete/clone/svg-import/upload-image/import）使用 App Token（默认 Bot 身份），
+  无需登录；即使用户已 auth login，写类命令仍保持 App 身份不切换。
+  读类（image/nodes/export-code/lint）登录后自动用 User Token，未登录回落 App Token。
 argument-hint: "[whiteboard_id]"
 user-invocable: true
 allowed-tools: Bash(feishu-cli board:*), Bash(feishu-cli doc:*), Bash(feishu-cli media:*), Bash(python3:*), Bash(whiteboard-cli:*), Read, Write
@@ -246,13 +247,13 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 
 | 命令 | 作用 | 关键参数 |
 |------|------|---------|
-| `feishu-cli doc add-board <doc_id>` | 在文档加画板块 | `--parent-id` `--index` |
+| `feishu-cli doc add-board <doc_id>` | 在文档加画板块 | `--parent-id`（父块 ID，默认根级别）`--index`（插入位置，-1=末尾）`-o json` |
 | `feishu-cli board nodes <board_id>` | 拉所有节点 | 无 |
 | `feishu-cli board image <board_id> out.png` | 下载画板缩略图 | 无 |
 | `feishu-cli board create-notes <board_id> nodes.json` | 批量创建节点 | `--source-type` `--client-token` |
 | `feishu-cli board import <board_id> diagram.mmd --syntax mermaid` | 路径 A：服务端渲染 | `--engine [server\|local]` `--diagram-type` `--style` `--dry-run` |
 | `feishu-cli board svg-import <board_id> drawing.svg` | 路径 D：单 svg 节点 | `--x` `--y` `--width` `--height` `--source-type` `--dry-run` |
-| `python3 svg_to_board.py drawing.svg <board_id>` | 路径 C：5 步管道 | `--viewbox WxH` `--batch` `--interval` `--keep-overflow` `--dry-run` |
+| `python3 svg_to_board.py drawing.svg <board_id>` | 路径 C：5 步管道 | `--viewbox WxH`（覆盖 SVG 自带 viewBox，默认自动解析）`--keep-overflow`（不裁剪溢出节点）`--batch`（默认 300）`--interval`（默认 0.3s）`--dry-run` |
 | `feishu-cli board update <board_id> nodes.json` | 更新画板（覆盖模式） | `--overwrite` `--snapshot` `--dry-run` `--stdin` |
 | `feishu-cli board delete <board_id> --all` | 删全部节点 | `--node-ids` |
 | `feishu-cli board clone <src> <dst>` | 克隆画板 | `--batch-size` `--interval` `--filter-types` `--dry-run` |

@@ -24,8 +24,8 @@ allowed-tools: Bash(feishu-cli search:*), Bash(feishu-cli auth:*), Read
 
 ```bash
 feishu-cli auth check --scope "search:docs:read"
-# 或同时检查多个
-feishu-cli auth check --scope "search:docs:read search:message"
+# 或同时检查多个（含搜索应用）
+feishu-cli auth check --scope "search:docs:read search:message search:app"
 ```
 
 根据返回结果判断：
@@ -211,7 +211,7 @@ feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
 
 ## 搜索应用
 
-搜索飞书应用。**注意：搜索应用的 scope 需在飞书开发者后台确认是否可用，部分应用可能未开通此权限。**
+搜索飞书应用。**scope: `search:app`**（飞书官方注册表名，可在飞书开放平台 → 应用 → 权限管理搜索开通；该 scope `recommend=false`，默认不会被 `auth login --recommend` 自动包含，需要 `auth login --scope "search:app"` 显式申请。若飞书侧已重命名，以 `feishu-cli auth check --scope "search:app"` 报错信息为准。）
 
 ```bash
 feishu-cli search apps "关键词" [选项]
@@ -240,7 +240,7 @@ feishu-cli search apps "OKR" --page-size 50
 |------|------|------|
 | "缺少 User Access Token" | 从未登录 | 执行两步式登录流程 |
 | "User Access Token 已过期" | access + refresh token 都过期 | 重新登录 |
-| 99991679 权限错误提到搜索应用 | 应用未开通搜索应用权限，或该 scope 在开发者后台不可用 | 在飞书开发者后台确认是否已开通对应权限 |
+| 99991679 权限错误提到搜索应用 | 登录 scope 未包含 `search:app`，或飞书开放平台未开通该权限 | `feishu-cli auth login --scope "search:app"`；如仍报错，去飞书开放平台权限管理页搜索 `search:app` 并开通（必要时联系 tenant 管理员审批） |
 | 99991679 权限错误提到 `search:docs:read` | 登录时未包含 `search:docs:read` scope | 重新登录，scope 加上 `search:docs:read` |
 | 搜索结果为空 | 关键词不匹配或无权限文档 | 尝试更宽泛的关键词，或检查文档权限 |
 | offset + count 超过 200 | 飞书 API 限制 | 最多翻到第 200 条结果 |

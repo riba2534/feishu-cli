@@ -29,11 +29,9 @@
 
 **不受影响**（外部群也能调）：
 - `msg history` / `msg list` / `msg get` —— 读消息历史可以
-- `msg search-chats` —— 搜群可以（含外部群）
+- `msg search-chats` —— 搜群可以（含外部群，含用户所在群列表）
 - `msg send/reply/forward` —— 发消息可以
 - `chat create` —— 创建群（不涉及外部群读取）
-- `chat list`（用户所在群列表） —— 可以
-- `chat search`（搜索可见群） —— 可以
 
 ## 解锁条件
 

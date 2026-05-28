@@ -114,7 +114,7 @@ feishu-cli approval task transfer \
 
 ### `--approval-code`（`instance create` 必填）
 
-审批定义 code，可从 `approval get` 输出或飞书后台审批管理页 URL 拿到。CLI 会先用 `isValidToken` 校验格式。官方 `uat_*` 的实例撤回、抄送、任务通过/拒绝/转交不需要 `approval_code`。
+审批定义 code，可从 `approval get` 输出或飞书后台审批管理页 URL 拿到。CLI 会先用 `isValidToken` 校验格式。`instance cancel/cc` 与 `task approve/reject/transfer` 走官方 `uat_*` 用户态接口，只需 `--instance-code`（task 系列额外要 `--task-id`），不接收 `--approval-code`。
 
 ### `--user-id` + `--user-id-type`
 
@@ -238,7 +238,7 @@ feishu-cli approval task transfer \
 - `--output json`：CLI 归一化 JSON
 - `--output raw-json`：飞书 API 原始响应（拿 widget 结构 / debug 必备）
 
-`approval instance create` 和 `approval task transfer` 支持 `--output json`；其他写命令输出文本状态，失败时返回非 0。
+`approval instance create` 和 `approval task transfer` 都支持 `--output json`（两者对齐，便于脚本消费返回字段）；其他写命令输出文本状态，失败时返回非 0。
 
 ## 不在本技能范围
 

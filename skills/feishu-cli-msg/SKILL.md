@@ -1,7 +1,7 @@
 ---
 name: feishu-cli-msg
 description: >-
-  飞书消息发送。发送消息（text/post/interactive 卡片等 11 种类型）、回复消息、
+  飞书消息发送。发送消息（text/post/interactive 卡片等 10 种类型：text/post/image/file/audio/media/sticker/interactive/share_chat/share_user；system 分割线 CLI 暂未直接支持，需用 `feishu-cli api` 透传）、回复消息、
   转发/合并转发、消息加急、消息书签（flag 收藏/list/cancel）、下载消息资源（图片/文件）。
   发送/回复/转发/加急默认 App Token（Bot 身份）；msg flag 收藏/书签必需 User Token（`im:feed.flag:read/write`）；
   msg resource-download 已登录时优先 User Token，未登录回落 App Token。
@@ -23,7 +23,16 @@ allowed-tools: Bash(feishu-cli msg:*), Bash(feishu-cli media:*), Bash(feishu-cli
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
-> **查看聊天记录？** 请使用 **feishu-cli-chat** 技能（msg history/list/get/search-chats/群管理）。本技能专注于消息的发送与互动操作。
+## 与 feishu-cli-chat 技能的职责边界
+
+> **重要：CLI 路径 ≠ SKILL 归属。** `feishu-cli msg` 下的子命令同时被两个 SKILL 分管，**按动作类型划分**，不按 CLI 路径划分。
+>
+> | 动作类型 | 子命令 | 归属 SKILL |
+> | --- | --- | --- |
+> | **发送类**（本 SKILL 覆盖） | `send` / `reply` / `forward` / `merge-forward` / `urgent` / `flag` / `resource-download` | **feishu-cli-msg** |
+> | **读取类**（请用 chat SKILL） | `history` / `list` / `get` / `mget` / `thread-messages` / `search-chats` / `read-users` / `pins` | **feishu-cli-chat** |
+> | **互动类**（请用 chat SKILL） | `reaction` / `pin` / `unpin` / `delete` | **feishu-cli-chat** |
+>
 > 端到端拉一段时间窗的群消息（含话题展开、名字反解、卡片解析）直接跑：
 > ```bash
 > python3 skills/feishu-cli-chat/scripts/fetch_chat_history.py oc_xxx --since 24h
@@ -66,7 +75,6 @@ allowed-tools: Bash(feishu-cli msg:*), Bash(feishu-cli media:*), Bash(feishu-cli
 ├─ 【默认】通知/报告/告警/任何有信息量的消息 → interactive（卡片）
 ├─ 发送已上传的图片/文件/音视频 → image/file/audio/media
 ├─ 分享群聊或用户名片 → share_chat/share_user
-├─ 会话分割线（仅 p2p） → system
 └─ 仅以下场景才用 text/post：
    ├─ 用户明确要求发纯文本 → text
    └─ 用户明确要求发富文本 → post
@@ -88,7 +96,8 @@ allowed-tools: Bash(feishu-cli msg:*), Bash(feishu-cli media:*), Bash(feishu-cli
 | interactive | 卡片 | Card JSON / template_id / card_id | 30 KB |
 | share_chat | 群名片 | `{"chat_id":"oc_xxx"}` | — |
 | share_user | 个人名片 | `{"user_id":"ou_xxx"}` | — |
-| system | 系统分割线 | `{"type":"divider",...}` | 仅 p2p |
+
+> `system` 系统分割线（仅 p2p）CLI `--msg-type` 白名单暂未收录（见 `cmd/send_message.go:261-266`），需要时用 `feishu-cli api POST /open-apis/im/v1/messages` 直接透传。
 
 ## 身份说明
 
@@ -96,8 +105,7 @@ allowed-tools: Bash(feishu-cli msg:*), Bash(feishu-cli media:*), Bash(feishu-cli
 - **必需 User Token**：`msg flag` 收藏/书签子命令（`im:feed.flag:read/write`），见末尾"消息书签"章节。
 - **优先 User Token + Tenant 兜底**：`msg resource-download` 已登录时自动用 User Token 下载（要求你能看到该消息），未登录则尝试 App Token（要求 Bot 能看到该消息）。
 
-> **Reaction/Pin/获取消息/搜索群聊？** 这些操作维护在 **feishu-cli-chat** 技能（读类登录后默认 User Token，未登录回落 Bot；互动类必需 User Token）。
-> **删除消息？** 也在 feishu-cli-chat 技能中：Bot 撤回自己 24h 内消息默认走 App Token（无需登录），群管理员撤回他人消息时才传 `--user-access-token`。
+> 其他子命令（reaction/pin/delete/history/list/get/mget/thread-messages/search-chats）的 Token 策略见 **feishu-cli-chat** 技能。
 
 ## 发送命令
 
@@ -207,6 +215,30 @@ post 支持的 tag 类型：
 | code_block | 代码块 | language, text |
 | md | Markdown | text（独占段落，推荐使用） |
 
+### 图片自动上传（--upload-images）
+
+`msg send` 支持 `--upload-images`，扫描 **post / interactive** 消息中的 Markdown 图片语法 `![alt](path)`，把 `path` 指向的**本地图片**自动上传到飞书 IM 图床、替换为 `image_key`，再发送。
+
+| 维度 | 行为 |
+| --- | --- |
+| 触发条件 | 仅当 `--msg-type post` 或 `--msg-type interactive` 时生效（其他类型即使传也忽略，见 `cmd/send_message.go:212`） |
+| 适用语法 | 内容里的 `![alt](path)` 标记；URL（http/https）和已有 `image_key` 不会被改写 |
+| 路径解析 | 相对路径：以 `--content-file` 所在目录为 basePath；用 `--content` 内联 JSON 时以**当前工作目录**为 basePath（见 `cmd/send_message.go:213-220`） |
+| 失败回落 | 上传失败直接报错退出，不会继续发送残缺消息（避免 image_key 缺失被服务端拒绝） |
+| 进度提示 | 上传 > 0 张时 stderr 打印 `已自动上传 N 张本地图片` |
+
+```bash
+# post 内嵌本地图：自动上传相对路径 ./diagrams/foo.png
+feishu-cli msg send --receive-id-type email --receive-id user@example.com \
+  --msg-type post --content-file /path/to/post.json --upload-images
+
+# interactive 卡片内嵌本地图同理
+feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
+  --msg-type interactive --content-file /tmp/card.json --upload-images
+```
+
+> 不需要预先调 `feishu-cli media upload`：本标志已包装了"上传 + 替换 + 发送"的全流程。需要把图片当作独立 `image` 消息发送，请直接用 `--image <path>` 快捷方式。
+
 ### interactive 类型（卡片消息）
 
 卡片消息有三种发送方式：
@@ -300,7 +332,7 @@ feishu-cli msg send \
 |------|------|
 | text 大小限制 | 单条最大 150 KB |
 | 卡片/富文本大小限制 | 单条最大 30 KB |
-| system 消息 | 仅 p2p 会话有效，群聊无效 |
+| system 消息 | CLI `--msg-type` 暂不支持，仅 p2p 会话有效；需用 `feishu-cli api` 透传 |
 | sticker 消息 | 仅支持转发收到的表情包，不支持自行上传 |
 | 卡片按钮回调 | 按钮的交互回调需应用服务端支持，CLI 发送的按钮仅 url 跳转有效 |
 | API 频率限制 | 请求过快返回 429，等待几秒后重试 |

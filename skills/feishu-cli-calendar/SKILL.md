@@ -41,7 +41,7 @@ allowed-tools: Bash(feishu-cli calendar:*), Bash(feishu-cli auth:*), Bash(feishu
 
 | 命令 | Token 行为 |
 |------|-----------|
-| `suggestion` / `room-find` | 已 `auth login` 时自动用 User Token（查私人忙闲）；未登录回落 App Token（查公开忙闲、公司可订会议室）。`--user-access-token` 可显式指定。 |
+| `suggestion` / `room-find` | User Token 优先 + App Token 兜底：已 `auth login` 时用 User Token（查私人忙闲），未登录回落 App Token（查公开忙闲、公司可订会议室）。`--user-access-token` 可显式指定。 |
 | `rsvp` | **必需 User Token**（以本人身份答复邀请），未登录直接报错。 |
 
 权限：`calendar:calendar.free_busy:read`（suggestion / room-find）、`calendar:calendar.event:reply`（rsvp）。
@@ -268,8 +268,8 @@ feishu-cli calendar agenda --start-date 2024-01-22 --end-date 2024-01-23 -o json
 
 | 命令 | scope | Token 推荐 |
 |------|------|-----------|
-| `suggestion` | `calendar:calendar.free_busy:read` | 登录后 User Token，未登录回落 App Token |
-| `room-find` | `calendar:calendar.free_busy:read` | 登录后 User Token，未登录回落 App Token |
+| `suggestion` | `calendar:calendar.free_busy:read` | User Token 优先 + App Token 兜底 |
+| `room-find` | `calendar:calendar.free_busy:read` | User Token 优先 + App Token 兜底 |
 | `rsvp` | `calendar:calendar.event:reply` | **必需 User Token**（以本人身份答复） |
 
 预检：
