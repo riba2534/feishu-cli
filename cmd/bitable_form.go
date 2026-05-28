@@ -151,31 +151,54 @@ var bitableFormFieldListCmd = &cobra.Command{
 
 var bitableFormFieldPatchCmd = &cobra.Command{
 	Use:   "patch",
-	Short: "更新表单问题",
-	Long: `PATCH /open-apis/base/v3/bases/{base_token}/tables/{table_id}/forms/{form_id}/questions/{question_id}
+	Short: "批量更新表单问题（单次≤10）",
+	Long: `PATCH /open-apis/base/v3/bases/{base_token}/tables/{table_id}/forms/{form_id}/questions
 
-通过 --config/--config-file 传 JSON 请求体（title/description/required/visible/pre_field_id 等）。`,
+批量更新表单问题（collection 端点，单次最多 10 个，每个 item 必含 "id"）。
+用 --questions 传问题数组，或 --config/--config-file 传完整请求体 {"questions":[...]}。
+item 字段: id(必填)/title/description/required/visible/pre_field_id/option_display_mode 等。
+示例: --questions '[{"id":"fldxxxxxx","title":"更新后的标题","required":true}]'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		formID, _ := cmd.Flags().GetString("form-id")
-		questionID, _ := cmd.Flags().GetString("question-id")
-		if tableID == "" || formID == "" || questionID == "" {
-			return fmt.Errorf("--table-id / --form-id / --question-id 必填")
+		if tableID == "" || formID == "" {
+			return fmt.Errorf("--table-id 和 --form-id 必填")
 		}
-		configJSON, _ := cmd.Flags().GetString("config")
-		configFile, _ := cmd.Flags().GetString("config-file")
-		raw, err := loadJSONInput(configJSON, configFile, "config", "config-file", "请求体")
+		body, err := buildFormQuestionsBody(cmd)
 		if err != nil {
 			return err
 		}
-		var body any
-		if err := json.Unmarshal([]byte(raw), &body); err != nil {
-			return fmt.Errorf("解析 --config 失败: %w", err)
-		}
 		return bitableRun(cmd, func(bt string) bitableReq {
-			return bitableReq{method: "PATCH", path: formPath(bt, tableID, formID, "questions", questionID), body: body}
+			return bitableReq{method: "PATCH", path: formPath(bt, tableID, formID, "questions"), body: body}
 		})
 	},
+}
+
+// buildFormQuestionsBody 构造表单问题批量更新请求体 {"questions":[...]}。
+// 优先 --config/--config-file（完整请求体）；否则用 --questions（仅问题数组，自动包一层 questions）。
+func buildFormQuestionsBody(cmd *cobra.Command) (any, error) {
+	configJSON, _ := cmd.Flags().GetString("config")
+	configFile, _ := cmd.Flags().GetString("config-file")
+	if configJSON != "" || configFile != "" {
+		raw, err := loadJSONInput(configJSON, configFile, "config", "config-file", "请求体")
+		if err != nil {
+			return nil, err
+		}
+		var body any
+		if err := json.Unmarshal([]byte(raw), &body); err != nil {
+			return nil, fmt.Errorf("解析 --config 失败: %w", err)
+		}
+		return body, nil
+	}
+	questionsJSON, _ := cmd.Flags().GetString("questions")
+	if questionsJSON == "" {
+		return nil, fmt.Errorf("需提供 --questions（问题数组）或 --config（完整请求体）")
+	}
+	var questions any
+	if err := json.Unmarshal([]byte(questionsJSON), &questions); err != nil {
+		return nil, fmt.Errorf("解析 --questions 失败: %w", err)
+	}
+	return map[string]any{"questions": questions}, nil
 }
 
 func init() {
@@ -214,7 +237,7 @@ func init() {
 	addBitableWriteFlags(bitableFormFieldPatchCmd)
 	bitableFormFieldPatchCmd.Flags().String("table-id", "", "table_id（必填）")
 	bitableFormFieldPatchCmd.Flags().String("form-id", "", "form_id（必填）")
-	bitableFormFieldPatchCmd.Flags().String("question-id", "", "question_id（必填）")
-	bitableFormFieldPatchCmd.Flags().String("config", "", "JSON 请求体")
+	bitableFormFieldPatchCmd.Flags().String("questions", "", "问题数组 JSON（每项必含 id，单次≤10）")
+	bitableFormFieldPatchCmd.Flags().String("config", "", "完整 JSON 请求体 {\"questions\":[...]}（与 --questions 二选一）")
 	bitableFormFieldPatchCmd.Flags().String("config-file", "", "JSON 请求体文件")
 }

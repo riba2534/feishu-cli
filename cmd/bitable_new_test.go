@@ -114,3 +114,92 @@ func TestBuildFormPatchBodyConfigOverride(t *testing.T) {
 		t.Errorf("config 解析不对: %v", body)
 	}
 }
+
+// ---- P1 修复回归测试：form-questions-update collection 端点 + questions 数组包装 ----
+
+func newFormQuestionsTestCmd() *cobra.Command {
+	c := &cobra.Command{Use: "patch", Run: func(*cobra.Command, []string) {}}
+	c.Flags().String("questions", "", "")
+	c.Flags().String("config", "", "")
+	c.Flags().String("config-file", "", "")
+	return c
+}
+
+func TestBuildFormQuestionsBodyWrapsArray(t *testing.T) {
+	c := newFormQuestionsTestCmd()
+	_ = c.Flags().Set("questions", `[{"id":"fld1","title":"t"}]`)
+	body, err := buildFormQuestionsBody(c)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	m, ok := body.(map[string]any)
+	if !ok {
+		t.Fatalf("body 应为 map，实为 %T", body)
+	}
+	arr, ok := m["questions"].([]any)
+	if !ok || len(arr) != 1 {
+		t.Fatalf("--questions 应被包成单元素 questions 数组: %v", m["questions"])
+	}
+}
+
+func TestBuildFormQuestionsBodyConfigPassthrough(t *testing.T) {
+	c := newFormQuestionsTestCmd()
+	_ = c.Flags().Set("config", `{"questions":[{"id":"fld1"},{"id":"fld2"}]}`)
+	body, err := buildFormQuestionsBody(c)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	m, _ := body.(map[string]any)
+	if arr, ok := m["questions"].([]any); !ok || len(arr) != 2 {
+		t.Errorf("--config 应原样直传含 2 个问题: %v", m)
+	}
+}
+
+func TestBuildFormQuestionsBodyRequiresInput(t *testing.T) {
+	c := newFormQuestionsTestCmd()
+	if _, err := buildFormQuestionsBody(c); err == nil {
+		t.Error("无 --questions 也无 --config 应报错")
+	}
+}
+
+// TestWorkflowToggleUsesBaseV3ActionPath 锁住 P1-A 修复：
+// workflow enable/disable 必须走 base/v3 的 .../workflows/{id}/enable 动作端点 + PATCH，
+// 不再是旧的 bitable/v1 PUT apps/{token}/workflows/{id} + status body。
+func TestWorkflowToggleUsesBaseV3ActionPath(t *testing.T) {
+	viper.Reset()
+	tmp := t.TempDir()
+	cfgFile := tmp + "/config.yaml"
+	if err := os.WriteFile(cfgFile, []byte("app_id: a\napp_secret: b\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Init(cfgFile); err != nil {
+		t.Fatalf("config.Init: %v", err)
+	}
+	cmd := &cobra.Command{Use: "enable", Run: func(*cobra.Command, []string) {}}
+	addBitableWriteFlags(cmd)
+	cmd.Flags().String("workflow-id", "", "")
+	_ = cmd.Flags().Set("base-token", "bascn1")
+	_ = cmd.Flags().Set("workflow-id", "wkfABC")
+	_ = cmd.Flags().Set("dry-run", "true")
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := bitableWorkflowToggle(cmd, "enable")
+	_ = w.Close()
+	os.Stdout = old
+	outBytes, _ := io.ReadAll(r)
+	out := string(outBytes)
+	if err != nil {
+		t.Fatalf("dry-run 不应报错: %v", err)
+	}
+	if !strings.Contains(out, "/open-apis/base/v3/bases/bascn1/workflows/wkfABC/enable") {
+		t.Errorf("workflow enable 路径应为 base/v3 动作端点: %s", out)
+	}
+	if !strings.Contains(out, `"method": "PATCH"`) {
+		t.Errorf("workflow toggle 应为 PATCH: %s", out)
+	}
+	if strings.Contains(out, "bitable/v1") {
+		t.Errorf("workflow toggle 不应走 bitable/v1: %s", out)
+	}
+}

@@ -7,36 +7,37 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ==================== workflow enable/disable/update ====================
-// base/v3 仅暴露 workflows/list；启停走 bitable/v1 PUT apps/{app_token}/workflows/{workflow_id}
-// （文档明确：body status="Enable"|"Disable"，SDK appWorkflow.Update 同此），app_token 即 base_token。
+// ==================== workflow enable/disable ====================
+// 启停工作流走 base/v3 动作端点（与 lark-cli base +workflow-enable/disable 一致）：
+//   PATCH /open-apis/base/v3/bases/{base_token}/workflows/{workflow_id}/enable
+//   PATCH /open-apis/base/v3/bases/{base_token}/workflows/{workflow_id}/disable
+// 无请求体；bitable/v1 没有对应的启停端点（早前用 PUT apps/{token}/workflows/{id}+status 是错误路径）。
 
-func bitableWorkflowUpdate(cmd *cobra.Command, status string) error {
+func bitableWorkflowToggle(cmd *cobra.Command, action string) error {
 	workflowID, _ := cmd.Flags().GetString("workflow-id")
 	if workflowID == "" {
 		return fmt.Errorf("--workflow-id 必填")
 	}
-	body := map[string]any{"status": status}
 	return bitableRun(cmd, func(bt string) bitableReq {
-		return bitableReq{method: "PUT", path: client.BitableV1Path("apps", bt, "workflows", workflowID), body: body, useV1: true}
+		return bitableReq{method: "PATCH", path: client.BaseV3Path("bases", bt, "workflows", workflowID, action)}
 	})
 }
 
 var bitableWorkflowEnableCmd = &cobra.Command{
 	Use:   "enable",
 	Short: "启用工作流",
-	Long:  `PUT /open-apis/bitable/v1/apps/{app_token}/workflows/{workflow_id}（status=Enable）`,
+	Long:  `PATCH /open-apis/base/v3/bases/{base_token}/workflows/{workflow_id}/enable`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return bitableWorkflowUpdate(cmd, "Enable")
+		return bitableWorkflowToggle(cmd, "enable")
 	},
 }
 
 var bitableWorkflowDisableCmd = &cobra.Command{
 	Use:   "disable",
 	Short: "停用工作流",
-	Long:  `PUT /open-apis/bitable/v1/apps/{app_token}/workflows/{workflow_id}（status=Disable）`,
+	Long:  `PATCH /open-apis/base/v3/bases/{base_token}/workflows/{workflow_id}/disable`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return bitableWorkflowUpdate(cmd, "Disable")
+		return bitableWorkflowToggle(cmd, "disable")
 	},
 }
 
@@ -44,9 +45,9 @@ func init() {
 	// 挂到 bitable_misc.go 中定义的 bitableWorkflowCmd 组
 	bitableWorkflowCmd.AddCommand(bitableWorkflowEnableCmd)
 	addBitableWriteFlags(bitableWorkflowEnableCmd)
-	bitableWorkflowEnableCmd.Flags().String("workflow-id", "", "workflow_id（必填）")
+	bitableWorkflowEnableCmd.Flags().String("workflow-id", "", "workflow_id（wkf 前缀，必填）")
 
 	bitableWorkflowCmd.AddCommand(bitableWorkflowDisableCmd)
 	addBitableWriteFlags(bitableWorkflowDisableCmd)
-	bitableWorkflowDisableCmd.Flags().String("workflow-id", "", "workflow_id（必填）")
+	bitableWorkflowDisableCmd.Flags().String("workflow-id", "", "workflow_id（wkf 前缀，必填）")
 }
