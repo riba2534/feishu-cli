@@ -15,6 +15,7 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -28,6 +29,8 @@ var (
 	apiRaw            bool
 	apiIncludeHeaders bool
 	apiTimeoutSec     int
+	apiFormat         string // 输出格式: json|pretty|table|ndjson|csv（空=保持默认 pretty/raw）
+	apiJQ             string // jq 表达式（内置 gojq）
 )
 
 var apiCmd = &cobra.Command{
@@ -82,6 +85,8 @@ func init() {
 	apiCmd.Flags().BoolVar(&apiRaw, "raw", false, "原样输出响应 body（不做 pretty JSON）")
 	apiCmd.Flags().BoolVar(&apiIncludeHeaders, "include-headers", false, "在 stderr 打印响应状态码和响应头")
 	apiCmd.Flags().IntVar(&apiTimeoutSec, "timeout", 30, "请求超时（秒）")
+	apiCmd.Flags().StringVar(&apiFormat, "format", "", "输出格式: json|pretty|table|ndjson|csv（指定后走内置渲染，覆盖默认 pretty）")
+	apiCmd.Flags().StringVar(&apiJQ, "jq", "", "用 jq 表达式过滤响应（内置 gojq，无需外部 jq）")
 	apiCmd.Flags().String("user-access-token", "", "显式传入 User Access Token（覆盖 --as）")
 
 	rootCmd.AddCommand(apiCmd)
@@ -172,19 +177,36 @@ func runAPI(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr)
 	}
 
-	// 输出 body
-	outWriter := io.Writer(os.Stdout)
-	if apiOutput != "" {
-		f, err := os.Create(apiOutput)
-		if err != nil {
-			return fmt.Errorf("打开输出文件失败: %w", err)
+	// 输出 body：显式 --format / --jq 时走 internal/output（jq 过滤 + table/csv/ndjson + 大整数保精度）；
+	// 否则保持默认 pretty/raw 行为（含 -o 二进制写文件）。
+	if apiFormat != "" || apiJQ != "" {
+		o, oerr := output.NewOptions(apiFormat, apiJQ)
+		if oerr != nil {
+			return oerr
 		}
-		defer f.Close()
-		outWriter = f
-	}
-
-	if err := writeAPIResponse(outWriter, resp.RawBody, apiRaw); err != nil {
-		return err
+		o.OutputFile = apiOutput
+		var parsed any
+		dec := json.NewDecoder(bytes.NewReader(resp.RawBody))
+		dec.UseNumber()
+		if err := dec.Decode(&parsed); err != nil {
+			return fmt.Errorf("响应不是合法 JSON，无法用 --format/--jq 渲染（去掉这两个 flag 可用 --raw 原样输出）: %w", err)
+		}
+		if err := output.Render(o, parsed); err != nil {
+			return err
+		}
+	} else {
+		outWriter := io.Writer(os.Stdout)
+		if apiOutput != "" {
+			f, err := os.Create(apiOutput)
+			if err != nil {
+				return fmt.Errorf("打开输出文件失败: %w", err)
+			}
+			defer f.Close()
+			outWriter = f
+		}
+		if err := writeAPIResponse(outWriter, resp.RawBody, apiRaw); err != nil {
+			return err
+		}
 	}
 
 	// 业务错误码提示（飞书：code != 0 表示业务错误）
