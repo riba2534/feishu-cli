@@ -127,7 +127,7 @@ feishu-cli doc import large-doc.md --title "大文档" \
 | **画板** | 精排绘图（create-notes）、Mermaid / PlantUML 导入、截图下载、节点管理 |
 | **Slides** | 创建空白演示文稿、上传媒体到演示文稿 |
 | **评论** | 列出、添加、解决/恢复评论、回复管理 |
-| **搜索** | 消息搜索（默认 enrich：内容/发送者/群名/时间，`--ids-only` 退回纯 ID）、应用搜索、文档搜索（需 User Access Token） |
+| **搜索** | 消息搜索（默认返回消息 ID，`--enrich` 补全内容/发送者/群名/时间）、应用搜索、文档搜索（需 User Access Token） |
 | **用户** | 获取用户信息、用户搜索、部门用户列表 |
 | **通讯录** | 部门详情、子部门列表 |
 | **实时事件** | WebSocket 长连接订阅应用事件，支持 EventKey 列表/schema/consume/status/stop |
@@ -509,10 +509,11 @@ feishu-cli file stats <file_token> --doc-type docx
 # 获取 User Access Token（推荐，一次登录自动刷新）
 feishu-cli auth login
 
-# 搜索消息
+# 搜索消息（默认返回消息 ID，-o json 输出 {MessageIDs,HasMore,PageToken}）
 feishu-cli search messages "关键词"
 feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
 feishu-cli search messages "你好" --chat-type p2p_chat  # 搜索私聊消息
+feishu-cli search messages "会议" --enrich  # 补全内容/发送者/群名/时间
 
 # 搜索应用
 feishu-cli search apps "审批"

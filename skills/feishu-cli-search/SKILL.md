@@ -169,13 +169,23 @@ feishu-cli search messages "关键词" [选项]
 | `--end-time` | string | 结束时间（Unix 秒级时间戳） |
 | `--page-size` | int | 每页数量（默认 20） |
 | `--page-token` | string | 分页 token（上一页返回） |
-| `-o json` | string | JSON 格式输出 |
+| `--page-all` | bool | 自动翻页拉取全部（配合 `--page-limit`） |
+| `--enrich` | bool | 补全内容/发送者/群名/时间（opt-in，额外 API 调用） |
+| `--format` | string | 结构化输出：`json`/`pretty`/`table`/`ndjson`/`csv` |
+| `--jq` | string | 用 jq 表达式过滤结构化输出 |
+| `-o json` | string | JSON 格式输出（等价 `--format json`） |
+
+> **默认 vs `--enrich`**：默认仅返回消息 ID（`-o json` 输出 `{MessageIDs,HasMore,PageToken}`），与历史行为一致、向后兼容。加 `--enrich` 才会多发 `BatchGetMessages` 等 API 补全内容/发送者/群名/时间，`-o json` 此时返回 enriched 数组。
 
 ### 示例
 
 ```bash
-# 搜索消息
+# 搜索消息（默认返回消息 ID）
 feishu-cli search messages "上线"
+
+# 富化：补全内容/发送者/群名/时间
+feishu-cli search messages "上线" --enrich
+feishu-cli search messages "上线" --enrich --format table
 
 # 搜索私聊消息（search-chats 无法搜到 p2p 会话，用此方式替代）
 feishu-cli search messages "你好" --chat-type p2p_chat
@@ -197,6 +207,8 @@ feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
 
 ### JSON 输出格式
 
+默认（无 `--enrich`）：
+
 ```json
 {
   "MessageIDs": ["om_xxx", "om_yyy"],
@@ -206,6 +218,24 @@ feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
 ```
 
 返回的 `MessageIDs` 可用 `feishu-cli msg get <message_id>` 获取消息详情。
+
+加 `--enrich` 时返回 enriched 数组：
+
+```json
+[
+  {
+    "message_id": "om_xxx",
+    "msg_type": "text",
+    "chat_id": "oc_xxx",
+    "chat_name": "项目群",
+    "sender_id": "ou_xxx",
+    "sender_name": "张三",
+    "create_time": "1704067200000",
+    "time": "2024-01-01 08:00:00",
+    "text": "今天上线"
+  }
+]
+```
 
 ---
 

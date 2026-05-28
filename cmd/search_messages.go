@@ -11,9 +11,12 @@ import (
 
 var searchMessagesCmd = &cobra.Command{
 	Use:   "messages <query>",
-	Short: "搜索消息（默认 enrich 内容/发送者/群名/时间）",
-	Long: `搜索飞书消息。默认对结果做 enrich：在消息 ID 基础上补全内容、发送者、群名、时间
-（对齐 lark-cli +messages-search），不再只返回消息 ID。
+	Short: "搜索消息（默认返回消息 ID，--enrich 补全内容/发送者/群名/时间）",
+	Long: `搜索飞书消息。默认返回消息 ID（人类可读列表 + -o json 返回
+{MessageIDs,HasMore,PageToken}），与历史行为完全一致。
+
+加 --enrich 才在消息 ID 基础上补全内容、发送者、群名、时间
+（对齐 lark-cli +messages-search），此时会多发 BatchGetMessages 等 API 调用。
 
 注意：此功能需要 User Access Token（用户授权令牌），推荐通过 auth login 获取。
 
@@ -31,24 +34,27 @@ var searchMessagesCmd = &cobra.Command{
   --page-size     每页数量（默认 20）
   --page-token    分页 token
   --page-all      自动翻页拉取全部结果（配合 --page-limit 限制页数）
-  --ids-only      仅返回消息 ID（跳过 enrich，省去额外 API 调用，等价旧行为）
+  --enrich        补全内容/发送者/群名/时间（额外 API 调用，opt-in）
   --format        结构化输出: json | pretty | table | ndjson | csv
   --jq            用 jq 表达式过滤结构化输出
   --user-id-type  用户 ID 类型（open_id/union_id/user_id，默认 open_id）
 
 示例:
-  # 搜索包含"会议"的消息（默认 enrich，人类可读）
+  # 搜索包含"会议"的消息（默认返回消息 ID，人类可读）
   feishu-cli search messages "会议"
 
-  # 表格输出 + jq 只看发送者和文本
-  feishu-cli search messages "会议" --format table
-  feishu-cli search messages "会议" --jq '.[] | {sender_name, text}'
+  # JSON 输出消息 ID（旧 schema：{MessageIDs,HasMore,PageToken}）
+  feishu-cli search messages "会议" -o json
 
-  # 指定会话 + 自动翻页 + CSV
-  feishu-cli search messages "项目" --chat-ids oc_xxx --page-all --page-limit 5 --format csv
+  # 富化：补全内容/发送者/群名/时间
+  feishu-cli search messages "会议" --enrich
 
-  # 仅要消息 ID（快，旧行为）
-  feishu-cli search messages "会议" --ids-only`,
+  # 富化 + 表格输出 + jq 只看发送者和文本
+  feishu-cli search messages "会议" --enrich --format table
+  feishu-cli search messages "会议" --enrich --jq '.[] | {sender_name, text}'
+
+  # 富化 + 指定会话 + 自动翻页 + CSV
+  feishu-cli search messages "项目" --enrich --chat-ids oc_xxx --page-all --page-limit 5 --format csv`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -73,7 +79,7 @@ var searchMessagesCmd = &cobra.Command{
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
-		idsOnly, _ := cmd.Flags().GetBool("ids-only")
+		enrich, _ := cmd.Flags().GetBool("enrich")
 		pageAll, _ := cmd.Flags().GetBool("page-all")
 		pageLimit, _ := cmd.Flags().GetInt("page-limit")
 		legacyOutput, _ := cmd.Flags().GetString("output")
@@ -101,8 +107,9 @@ var searchMessagesCmd = &cobra.Command{
 			formatVal, _ = cmd.Flags().GetString("format")
 		}
 
-		// --ids-only：跳过 enrich，仅翻页收集 ID
-		if idsOnly {
+		// 默认（向后兼容）：仅翻页收集消息 ID，不做 enrich。
+		// -o json / --format json 返回旧 schema {MessageIDs,HasMore,PageToken}。
+		if !enrich {
 			ids, lastRes, err := collectMessageIDs(opts, userAccessToken, pageAll, pageLimit)
 			if err != nil {
 				return err
@@ -112,7 +119,13 @@ var searchMessagesCmd = &cobra.Command{
 				if oerr != nil {
 					return oerr
 				}
-				return output.Render(o, map[string]any{"message_ids": ids, "has_more": lastRes.HasMore, "page_token": lastRes.PageToken})
+				// 渲染 SearchMessagesResult（无 JSON tag）→ 旧 schema {MessageIDs,PageToken,HasMore}。
+				// MessageIDs 用翻页累计的全量 ids；HasMore/PageToken 取最后一页。
+				return output.Render(o, &client.SearchMessagesResult{
+					MessageIDs: ids,
+					PageToken:  lastRes.PageToken,
+					HasMore:    lastRes.HasMore,
+				})
 			}
 			if len(ids) == 0 {
 				fmt.Println("未找到匹配的消息")
@@ -126,8 +139,8 @@ var searchMessagesCmd = &cobra.Command{
 			return nil
 		}
 
-		// 默认：enrich（card-content-type 仅 enrich 路径消费，故校验下沉到此，
-		// 不让 --ids-only 因非法 --card-content-type 被提前 abort）
+		// --enrich（opt-in）：card-content-type 仅 enrich 路径消费，故校验下沉到此，
+		// 不让默认（非 enrich）模式因非法 --card-content-type 被提前 abort。
 		cardContentType, err := resolveCardContentType(cmd)
 		if err != nil {
 			return err
@@ -241,7 +254,7 @@ func init() {
 	searchMessagesCmd.Flags().Int("page-size", 20, "每页数量")
 	searchMessagesCmd.Flags().String("page-token", "", "分页 token")
 	searchMessagesCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型（open_id/union_id/user_id）")
-	searchMessagesCmd.Flags().Bool("ids-only", false, "仅返回消息 ID（跳过 enrich）")
+	searchMessagesCmd.Flags().Bool("enrich", false, "补全内容/发送者/群名/时间（额外 API 调用，opt-in）")
 	searchMessagesCmd.Flags().StringP("output", "o", "", "输出格式（json，等价 --format json；保留向后兼容）")
 	addCardContentTypeFlag(searchMessagesCmd)
 	output.AddFormatFlags(searchMessagesCmd)

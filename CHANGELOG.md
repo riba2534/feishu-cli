@@ -12,12 +12,11 @@
 
 **① 消息搜索 enrich（`search messages`）**
 
-原命令只返回消息 ID。现默认对结果做 enrich：补全 **内容 / 发送者 / 群名 / 时间**（对齐 lark `+messages-search`）：
+新增 `--enrich` opt-in 富化：在消息 ID 基础上补全 **内容 / 发送者 / 群名 / 时间**（对齐 lark `+messages-search`）。默认行为保持原 ID 输出，完全向后兼容：
 
-- 默认 enrich：search → 消息 ID → `BatchGetMessages` 取详情 → 解析发送者名/群名 → 人类可读视图
-- `--ids-only` 退回纯 ID（省额外 API 调用，等价旧行为）
-- `--format json|pretty|table|ndjson|csv` + `--jq` 结构化输出；`--page-all/--page-limit` 自动翻页
-- ⚠️ **不兼容变更**：`search messages -o json` 输出 schema 改变——旧版输出 `{MessageIDs,HasMore,PageToken}` 对象，新版默认 enrich 输出 `[]{message_id,msg_type,chat_id,chat_name,sender_id,sender_name,create_time,time,text}` 数组（`--format` 与 `-o json` 等价，`--format` 优先）。需旧式 ID 列表用 `--ids-only`
+- 默认（无 `--enrich`）：仅返回消息 ID，`-o json` / `--format json` 返回旧 schema `{MessageIDs,HasMore,PageToken}`，与升级前一致
+- `--enrich`：search → 消息 ID → `BatchGetMessages` 取详情 → 解析发送者名/群名 → 人类可读视图；`-o json` / `--format json` 返回 `[]{message_id,msg_type,chat_id,chat_name,sender_id,sender_name,create_time,time,text}` 数组
+- `--format json|pretty|table|ndjson|csv` + `--jq` 结构化输出对两种模式均生效；`--page-all/--page-limit` 自动翻页
 
 **② 多维表格补全（`bitable`）**
 
