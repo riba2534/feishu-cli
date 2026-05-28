@@ -4,6 +4,47 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [Unreleased]
+
+### 新增 — 消息搜索 enrich / 多维表格补全 / 输出工程化（jq + 表格/CSV）
+
+进一步对齐 lark-cli，补齐三类此前需回退 lark-cli 的场景。
+
+**① 消息搜索 enrich（`search messages`）**
+
+原命令只返回消息 ID。现默认对结果做 enrich：补全 **内容 / 发送者 / 群名 / 时间**（对齐 lark `+messages-search`）：
+
+- 默认 enrich：search → 消息 ID → `BatchGetMessages` 取详情 → 解析发送者名/群名 → 人类可读视图
+- `--ids-only` 退回纯 ID（省额外 API 调用，等价旧行为）
+- `--format json|pretty|table|ndjson|csv` + `--jq` 结构化输出；`--page-all/--page-limit` 自动翻页
+- ⚠️ **不兼容变更**：`search messages -o json` 输出 schema 改变——旧版输出 `{MessageIDs,HasMore,PageToken}` 对象，新版默认 enrich 输出 `[]{message_id,msg_type,chat_id,chat_name,sender_id,sender_name,create_time,time,text}` 数组（`--format` 与 `-o json` 等价，`--format` 优先）。需旧式 ID 列表用 `--ids-only`
+
+**② 多维表格补全（`bitable`）**
+
+补齐 base/v3 + bitable/v1 公开 API 支持、此前缺失的命令：
+
+- `bitable dashboard list|copy`（仪表盘）
+- `bitable form get|patch` + `bitable form field list|patch`（表单及表单问题）
+- `bitable role member list|create|delete|batch-create|batch-delete`（角色协作者）
+- `bitable workflow enable|disable`（工作流启停）
+- `bitable update`（多维表格本体重命名 / 高级权限开关）
+- `bitable record batch-get`（批量获取记录）
+- 新增 `internal/client/bitable_v1.go`：dashboard copy / role member / app update / workflow 启停 base/v3 无对应端点，走 bitable/v1（无需 `X-App-Id` header）。新命令经统一执行器 `bitableRun` + 请求描述符 `bitableReq` 路由 base/v3 与 bitable/v1，写命令支持 `--dry-run` 预览
+
+> lark-base 的 dashboard-block / form-submit / view 独立 filter-sort 端点走飞书私有扩展 API（`base-api.feishu.cn`），公开 OpenAPI 无对应，未做专用命令——可用 `feishu-cli api` 裸调兜底。
+
+**③ 输出工程化（`internal/output`）**
+
+新增统一输出包，并接入 `api` 与新命令：
+
+- `--format json|pretty|table|ndjson|csv`（`api` / `search messages` / bitable 新增命令）
+- `--jq <expr>`（内置 gojq v0.12.17，纯 Go，无需外部 jq；保持 `go 1.21` 兼容）
+- `api` 命令新增 `--format`/`--jq`（显式指定时走内置渲染，否则保持原 pretty/raw 行为）
+- 大整数精度：渲染链路用 `json.Number`（飞书 19 位 message_id/chat_id 不被 float64 截断）
+- table/csv 渲染 CJK 宽度对齐、单元格换行净化
+
+**新增依赖**：`github.com/itchyny/gojq v0.12.17`（pin 该版本保持 `go 1.21` 兼容，未抬升 go directive）。
+
 ## [v1.27.0] - 2026-05-21
 
 ### 新增 — `event` 模块（WebSocket 实时事件订阅 + daemon 进程管理）
