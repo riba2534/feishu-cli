@@ -5,13 +5,15 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
 var searchMessagesCmd = &cobra.Command{
 	Use:   "messages <query>",
-	Short: "搜索消息",
-	Long: `搜索飞书消息。
+	Short: "搜索消息（默认 enrich 内容/发送者/群名/时间）",
+	Long: `搜索飞书消息。默认对结果做 enrich：在消息 ID 基础上补全内容、发送者、群名、时间
+（对齐 lark-cli +messages-search），不再只返回消息 ID。
 
 注意：此功能需要 User Access Token（用户授权令牌），推荐通过 auth login 获取。
 
@@ -28,30 +30,25 @@ var searchMessagesCmd = &cobra.Command{
   --end-time      消息发送结束时间（Unix 时间戳，秒）
   --page-size     每页数量（默认 20）
   --page-token    分页 token
+  --page-all      自动翻页拉取全部结果（配合 --page-limit 限制页数）
+  --ids-only      仅返回消息 ID（跳过 enrich，省去额外 API 调用，等价旧行为）
+  --format        结构化输出: json | pretty | table | ndjson | csv
+  --jq            用 jq 表达式过滤结构化输出
   --user-id-type  用户 ID 类型（open_id/union_id/user_id，默认 open_id）
 
 示例:
-  # 先登录获取 Token（推荐）
-  feishu-cli auth login
-
-  # 搜索包含"会议"的消息
+  # 搜索包含"会议"的消息（默认 enrich，人类可读）
   feishu-cli search messages "会议"
 
-  # 搜索指定会话中的消息
-  feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
+  # 表格输出 + jq 只看发送者和文本
+  feishu-cli search messages "会议" --format table
+  feishu-cli search messages "会议" --jq '.[] | {sender_name, text}'
 
-  # 搜索图片类型的消息
-  feishu-cli search messages "图片" --message-type image
+  # 指定会话 + 自动翻页 + CSV
+  feishu-cli search messages "项目" --chat-ids oc_xxx --page-all --page-limit 5 --format csv
 
-  # 搜索指定时间范围内的消息
-  feishu-cli search messages "项目" --start-time 1704067200 --end-time 1704153600
-
-  # 也可以手动指定 Token
-  feishu-cli search messages "会议" --user-access-token <token>
-
-  # 或使用环境变量
-  export FEISHU_USER_ACCESS_TOKEN="u-xxx"
-  feishu-cli search messages "会议"`,
+  # 仅要消息 ID（快，旧行为）
+  feishu-cli search messages "会议" --ids-only`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -60,13 +57,11 @@ var searchMessagesCmd = &cobra.Command{
 
 		query := args[0]
 
-		// 获取 user access token（搜索 API 必需）
 		userAccessToken, err := resolveRequiredUserToken(cmd)
 		if err != nil {
 			return err
 		}
 
-		// 获取其他参数
 		chatIDsStr, _ := cmd.Flags().GetString("chat-ids")
 		fromIDsStr, _ := cmd.Flags().GetString("from-ids")
 		atChatterIDsStr, _ := cmd.Flags().GetString("at-chatter-ids")
@@ -78,25 +73,17 @@ var searchMessagesCmd = &cobra.Command{
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
-		output, _ := cmd.Flags().GetString("output")
-
-		// 解析逗号分隔的列表
-		var chatIDs, fromIDs, atChatterIDs []string
-		if chatIDsStr != "" {
-			chatIDs = splitAndTrim(chatIDsStr)
-		}
-		if fromIDsStr != "" {
-			fromIDs = splitAndTrim(fromIDsStr)
-		}
-		if atChatterIDsStr != "" {
-			atChatterIDs = splitAndTrim(atChatterIDsStr)
-		}
+		idsOnly, _ := cmd.Flags().GetBool("ids-only")
+		pageAll, _ := cmd.Flags().GetBool("page-all")
+		pageLimit, _ := cmd.Flags().GetInt("page-limit")
+		legacyOutput, _ := cmd.Flags().GetString("output")
+		jq, _ := cmd.Flags().GetString("jq")
 
 		opts := client.SearchMessagesOptions{
 			Query:        query,
-			ChatIDs:      chatIDs,
-			FromIDs:      fromIDs,
-			AtChatterIDs: atChatterIDs,
+			ChatIDs:      splitAndTrim(chatIDsStr),
+			FromIDs:      splitAndTrim(fromIDsStr),
+			AtChatterIDs: splitAndTrim(atChatterIDsStr),
 			MessageType:  messageType,
 			ChatType:     chatType,
 			FromType:     fromType,
@@ -107,33 +94,136 @@ var searchMessagesCmd = &cobra.Command{
 			UserIDType:   userIDType,
 		}
 
-		result, err := client.SearchMessages(opts, userAccessToken)
+		// 是否走结构化输出：显式 --format / --jq，或旧的 -o json
+		useStructured := cmd.Flags().Changed("format") || jq != "" || legacyOutput == "json"
+		formatVal := output.FormatJSON
+		if cmd.Flags().Changed("format") {
+			formatVal, _ = cmd.Flags().GetString("format")
+		}
+
+		// --ids-only：跳过 enrich，仅翻页收集 ID
+		if idsOnly {
+			ids, lastRes, err := collectMessageIDs(opts, userAccessToken, pageAll, pageLimit)
+			if err != nil {
+				return err
+			}
+			if useStructured {
+				o, oerr := output.NewOptions(formatVal, jq)
+				if oerr != nil {
+					return oerr
+				}
+				return output.Render(o, map[string]any{"message_ids": ids, "has_more": lastRes.HasMore, "page_token": lastRes.PageToken})
+			}
+			if len(ids) == 0 {
+				fmt.Println("未找到匹配的消息")
+				return nil
+			}
+			fmt.Printf("搜索结果（共 %d 条）:\n\n", len(ids))
+			for i, id := range ids {
+				fmt.Printf("[%d] %s\n", i+1, id)
+			}
+			printMoreHint(pageAll, lastRes)
+			return nil
+		}
+
+		// 默认：enrich（card-content-type 仅 enrich 路径消费，故校验下沉到此，
+		// 不让 --ids-only 因非法 --card-content-type 被提前 abort）
+		cardContentType, err := resolveCardContentType(cmd)
+		if err != nil {
+			return err
+		}
+		enriched, lastRes, err := collectEnrichedMessages(opts, userAccessToken, cardContentType, pageAll, pageLimit)
 		if err != nil {
 			return err
 		}
 
-		if output == "json" {
-			if err := printJSON(result); err != nil {
-				return err
+		if useStructured {
+			o, oerr := output.NewOptions(formatVal, jq)
+			if oerr != nil {
+				return oerr
 			}
-		} else {
-			if len(result.MessageIDs) == 0 {
-				fmt.Println("未找到匹配的消息")
-				return nil
-			}
-
-			fmt.Printf("搜索结果（共 %d 条）:\n\n", len(result.MessageIDs))
-			for i, msgID := range result.MessageIDs {
-				fmt.Printf("[%d] 消息 ID: %s\n", i+1, msgID)
-			}
-
-			if result.HasMore {
-				fmt.Printf("\n还有更多结果，使用 --page-token %s 获取下一页\n", result.PageToken)
-			}
+			return output.Render(o, enriched)
 		}
 
+		// 人类可读视图
+		if len(enriched) == 0 {
+			fmt.Println("未找到匹配的消息")
+			return nil
+		}
+		fmt.Printf("搜索结果（共 %d 条）:\n\n", len(enriched))
+		for i, m := range enriched {
+			chat := firstNonEmpty(m.ChatName, m.ChatID)
+			sender := firstNonEmpty(m.SenderName, m.SenderID)
+			fmt.Printf("[%d] %s | %s | %s: %s\n", i+1, m.Time, chat, sender, truncateRunes(m.Text, 120))
+			fmt.Printf("    %s\n", m.MessageID)
+		}
+		printMoreHint(pageAll, lastRes)
 		return nil
 	},
+}
+
+// collectMessageIDs 收集消息 ID，支持 --page-all 翻页（受 --page-limit 限制）。
+func collectMessageIDs(opts client.SearchMessagesOptions, token string, pageAll bool, pageLimit int) ([]string, *client.SearchMessagesResult, error) {
+	var ids []string
+	var last *client.SearchMessagesResult
+	pages := 0
+	for {
+		res, err := client.SearchMessages(opts, token)
+		if err != nil {
+			return nil, nil, err
+		}
+		last = res
+		ids = append(ids, res.MessageIDs...)
+		pages++
+		if !pageAll || !res.HasMore || (pageLimit > 0 && pages >= pageLimit) {
+			break
+		}
+		opts.PageToken = res.PageToken
+	}
+	return ids, last, nil
+}
+
+// collectEnrichedMessages 收集 enrich 后的消息，支持 --page-all 翻页（受 --page-limit 限制）。
+func collectEnrichedMessages(opts client.SearchMessagesOptions, token, cardContentType string, pageAll bool, pageLimit int) ([]client.EnrichedMessage, *client.SearchMessagesResult, error) {
+	var all []client.EnrichedMessage
+	var last *client.SearchMessagesResult
+	pages := 0
+	for {
+		enriched, res, err := client.SearchMessagesEnriched(opts, token, cardContentType)
+		if err != nil {
+			return nil, nil, err
+		}
+		last = res
+		all = append(all, enriched...)
+		pages++
+		if !pageAll || res == nil || !res.HasMore || (pageLimit > 0 && pages >= pageLimit) {
+			break
+		}
+		opts.PageToken = res.PageToken
+	}
+	return all, last, nil
+}
+
+func printMoreHint(pageAll bool, res *client.SearchMessagesResult) {
+	if !pageAll && res != nil && res.HasMore {
+		fmt.Printf("\n还有更多结果，使用 --page-token %s 获取下一页（或 --page-all 自动翻页）\n", res.PageToken)
+	}
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// truncateRunes 按 rune 截断，超长加省略号。
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 func init() {
@@ -151,5 +241,9 @@ func init() {
 	searchMessagesCmd.Flags().Int("page-size", 20, "每页数量")
 	searchMessagesCmd.Flags().String("page-token", "", "分页 token")
 	searchMessagesCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型（open_id/union_id/user_id）")
-	searchMessagesCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	searchMessagesCmd.Flags().Bool("ids-only", false, "仅返回消息 ID（跳过 enrich）")
+	searchMessagesCmd.Flags().StringP("output", "o", "", "输出格式（json，等价 --format json；保留向后兼容）")
+	addCardContentTypeFlag(searchMessagesCmd)
+	output.AddFormatFlags(searchMessagesCmd)
+	output.AddPaginationFlags(searchMessagesCmd)
 }
