@@ -187,6 +187,26 @@ func TestVCParseTimeToUnixSec(t *testing.T) {
 		}
 	})
 
+	t.Run("unix seconds passthrough", func(t *testing.T) {
+		// help 宣传接受 Unix 秒，纯整数应原样透传，不被 parseVCTime 拒绝
+		got, err := vcParseTimeToUnixSec("1709251200", false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "1709251200" {
+			t.Fatalf("got %q, want 1709251200", got)
+		}
+	})
+
+	t.Run("non-positive unix seconds rejected", func(t *testing.T) {
+		if _, err := vcParseTimeToUnixSec("0", false); err == nil {
+			t.Fatal("expected error for zero unix seconds")
+		}
+		if _, err := vcParseTimeToUnixSec("-5", false); err == nil {
+			t.Fatal("expected error for negative unix seconds")
+		}
+	})
+
 	t.Run("invalid", func(t *testing.T) {
 		if _, err := vcParseTimeToUnixSec("nonsense", false); err == nil {
 			t.Fatal("expected error for invalid input")

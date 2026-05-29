@@ -62,20 +62,30 @@ var vcBotCmd = &cobra.Command{
 }
 
 // vcParseTimeToUnixSec 把用户输入的时间字符串解析为 Unix 秒（字符串）。
-// 复用 parseVCTime 得到 RFC3339，再转秒；空输入返回空字符串。
+// 纯整数按 Unix 秒原样透传（与 --start/--end help 宣传一致）；其余走 parseVCTime
+// 解析日期/RFC3339 再转秒。空输入返回空字符串。
 func vcParseTimeToUnixSec(input string, isEnd bool) (string, error) {
-	rfc, err := parseVCTime(input, isEnd)
+	s := strings.TrimSpace(input)
+	if s == "" {
+		return "", nil
+	}
+	// 纯整数视为 Unix 秒直接透传。strconv.ParseInt 严格模式会拒绝含 '-'/'T'/':' 的
+	// 日期或 RFC3339 串（如 2026-03-01），故不会把日期误吞成时间戳。
+	if sec, err := strconv.ParseInt(s, 10, 64); err == nil {
+		if sec <= 0 {
+			return "", fmt.Errorf("Unix 秒须为正整数（当前 %q）", s)
+		}
+		return strconv.FormatInt(sec, 10), nil
+	}
+	rfc, err := parseVCTime(s, isEnd)
 	if err != nil {
 		return "", err
-	}
-	if rfc == "" {
-		return "", nil
 	}
 	t, err := time.Parse(time.RFC3339, rfc)
 	if err != nil {
 		return "", fmt.Errorf("时间转换失败: %w", err)
 	}
-	return fmt.Sprintf("%d", t.Unix()), nil
+	return strconv.FormatInt(t.Unix(), 10), nil
 }
 
 var vcBotJoinCmd = &cobra.Command{

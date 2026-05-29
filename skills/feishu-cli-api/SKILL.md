@@ -1,7 +1,7 @@
 ---
 name: feishu-cli-api
 description: >-
-  飞书 OpenAPI 裸调。api GET/POST/PUT/DELETE/PATCH <path> 直接调用任意飞书 OpenAPI endpoint，
+  飞书 OpenAPI 裸调。api GET/POST/PUT/DELETE/PATCH <path> 直接调用任意飞书 OpenAPI 接口，
   覆盖 feishu-cli 尚未封装的接口（对齐 lark-cli 的 api 能力）。支持 --params(query)/--data(body 或 @file)/
   --as auto|user|bot 身份/--dry-run 预览/-o 二进制下载/--format/--jq。
   当用户请求"调用 X API"、"裸调飞书接口"、"feishu-cli 没封装的接口怎么调"、"raw api"、
@@ -14,7 +14,7 @@ allowed-tools: Bash(feishu-cli api:*), Bash(feishu-cli schema:*), Read
 
 # 飞书 OpenAPI 裸调技能
 
-`feishu-cli api` 直接调用任意飞书 OpenAPI endpoint，覆盖尚未封装成专用命令的接口。是单工具栈下替代 `lark-cli api` 的兜底能力。
+`feishu-cli api` 直接调用任意飞书 OpenAPI 接口，覆盖尚未封装成专用命令的接口。是单工具栈下替代 `lark-cli api` 的兜底能力。
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
@@ -84,4 +84,4 @@ feishu-cli api GET /open-apis/wiki/v2/spaces --jq '.data.items' --format table
 
 ## 何时用专用命令而非 api
 
-`api` 是兜底。高频场景优先用封装好的专用命令（错误处理/参数校验/便捷 flag 更完善）：消息→`msg`、文档→`doc`、多维表格→`bitable`、表格→`sheet`、日历→`calendar` 等。仅当某 endpoint 没有对应专用命令时用 `api` 裸调。
+`api` 是兜底。高频场景优先用封装好的专用命令（错误处理/参数校验/便捷 flag 更完善）：消息→`msg`、文档→`doc`、多维表格→`bitable`、表格→`sheet`、日历→`calendar` 等。仅当某接口没有对应专用命令时用 `api` 裸调。

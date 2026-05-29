@@ -175,7 +175,7 @@ feishu-cli search messages "关键词" [选项]
 | `--jq` | string | 用 jq 表达式过滤结构化输出 |
 | `-o json` | string | JSON 格式输出（等价 `--format json`） |
 
-> **默认 vs `--enrich`**：默认仅返回消息 ID（`-o json` 输出 `{MessageIDs,HasMore,PageToken}`），与历史行为一致、向后兼容。加 `--enrich` 才会多发 `BatchGetMessages` 等 API 补全内容/发送者/群名/时间，`-o json` 此时返回 enriched 数组。
+> **默认 vs `--enrich`**：默认仅返回消息 ID（`-o json` 输出 `{MessageIDs,HasMore,PageToken}`），与历史行为一致、向后兼容。加 `--enrich` 才会多发 `BatchGetMessages` 等 API 补全内容/发送者/群名/时间，`-o json` 此时返回富化后的数组。
 
 ### 示例
 
@@ -219,7 +219,7 @@ feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
 
 返回的 `MessageIDs` 可用 `feishu-cli msg get <message_id>` 获取消息详情。
 
-加 `--enrich` 时返回 enriched 数组：
+加 `--enrich` 时返回富化后的数组：
 
 ```json
 [

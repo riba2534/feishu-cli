@@ -108,7 +108,7 @@ feishu-cli minutes download --minute-tokens <t1,t2,...> [--output <path>] [--ove
 | `--overwrite` | bool | 覆盖已存在文件 |
 | `--url-only` | bool | 只打印下载 URL，不实际下载 |
 
-### 6. 会议机器人入会 / 离会 / 会议事件（vc bot）
+### 6. 会议机器人入会 / 离会 / 会议事件
 
 ```bash
 feishu-cli vc bot meeting-join   --meeting-number 123456789 [--password 1234] [--dry-run]
