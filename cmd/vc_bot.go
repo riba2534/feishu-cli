@@ -114,10 +114,8 @@ var vcBotJoinCmd = &cobra.Command{
 		}
 
 		if dryRun {
-			body := map[string]any{"meeting_no": meetingNo}
-			if password != "" {
-				body["password"] = password
-			}
+			// 复用 client 端 body 构造器，保证预览与真实请求同源（join_type/join_identify 不漏）。
+			body := client.BuildVCBotJoinBody(client.VCBotJoinReq{MeetingNo: meetingNo, Password: password})
 			return printJSON(map[string]any{
 				"method": "POST",
 				"path":   "/open-apis/vc/v1/bots/join",

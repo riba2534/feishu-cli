@@ -11,7 +11,7 @@ import (
 // ==================== form 表单 ====================
 var bitableFormCmd = &cobra.Command{
 	Use:   "form",
-	Short: "表单管理（get/patch + field list/patch）",
+	Short: "表单管理（create/list/get/patch/delete/detail/submit + field/questions CRUD）",
 }
 
 // formPath 构造 base/v3 表单路径。form_id 即对应表单视图的 view_id。
@@ -42,7 +42,7 @@ form_id 即表单类型视图的 view_id。`,
 var bitableFormPatchCmd = &cobra.Command{
 	Use:   "patch",
 	Short: "更新表单",
-	Long: `PATCH /open-apis/base/v3/bases/{base_token}/tables/{table_id}/forms/{form_id}
+	Long: `PATCH /open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/forms/{form_id}
 
 便捷字段（仅显式设置的才提交）:
   --name                表单标题
@@ -51,7 +51,11 @@ var bitableFormPatchCmd = &cobra.Command{
   --shared-limit        分享范围: off | tenant_editable | anyone_editable
   --submit-limit-once   是否仅可提交一次（true/false）
 
-或用 --config/--config-file 传完整 JSON 请求体（与便捷字段二选一）。`,
+或用 --config/--config-file 传完整 JSON 请求体（与便捷字段二选一）。
+
+注意：走 bitable/v1 端点——base/v3 的 forms patch 只收 name/description，
+shared/shared_limit/submit_limit_once 是 bitable/v1 字段，故整体路由到 bitable/v1
+（5 个字段同源，一次调用全生效）。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		formID, _ := cmd.Flags().GetString("form-id")
@@ -68,7 +72,12 @@ var bitableFormPatchCmd = &cobra.Command{
 		}
 
 		return bitableRun(cmd, func(bt string) bitableReq {
-			return bitableReq{method: "PATCH", path: formPath(bt, tableID, formID), body: body}
+			return bitableReq{
+				method: "PATCH",
+				path:   client.BitableV1Path("apps", bt, "tables", tableID, "forms", formID),
+				body:   body,
+				useV1:  true,
+			}
 		})
 	},
 }

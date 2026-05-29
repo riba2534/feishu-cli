@@ -91,6 +91,37 @@ form_id 即表单视图 view_id。删除表单为不可逆操作。`,
 	},
 }
 
+var bitableFormListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "列出表单",
+	Long: `GET /open-apis/base/v3/bases/{base_token}/tables/{table_id}/forms
+
+列出指定数据表下的所有表单（form 类型视图），与 form create（POST 同路径）成对。
+对齐 lark-cli base +form-list。
+
+分页:
+  --page-size    每页数量（≤100）
+  --page-token   翻页游标（从上一页返回的 page_token 取）`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		tableID, _ := cmd.Flags().GetString("table-id")
+		if tableID == "" {
+			return fmt.Errorf("--table-id 必填")
+		}
+		pageSize, _ := cmd.Flags().GetInt("page-size")
+		pageToken, _ := cmd.Flags().GetString("page-token")
+		params := map[string]any{}
+		if pageSize > 0 {
+			params["page_size"] = pageSize
+		}
+		if pageToken != "" {
+			params["page_token"] = pageToken
+		}
+		return bitableRun(cmd, func(bt string) bitableReq {
+			return bitableReq{method: "GET", path: client.BaseV3Path("bases", bt, "tables", tableID, "forms"), params: params}
+		})
+	},
+}
+
 // ==================== form detail / submit（按分享 token，不含 base_token） ====================
 // 端点 ground truth（lark-cli base +form-detail/submit --dry-run 印证）：
 //   POST /open-apis/base/v3/bases/tables/forms/detail   body {"share_token":"shr..."}
@@ -341,6 +372,13 @@ func init() {
 	bitableFormCreateCmd.Flags().String("description", "", "表单描述")
 	bitableFormCreateCmd.Flags().String("config", "", "完整 JSON 请求体（与便捷字段二选一）")
 	bitableFormCreateCmd.Flags().String("config-file", "", "JSON 请求体文件")
+
+	// form list（只读，base/v3 collection 端点）
+	bitableFormCmd.AddCommand(bitableFormListCmd)
+	addBitableCommonFlags(bitableFormListCmd)
+	bitableFormListCmd.Flags().String("table-id", "", "table_id（必填）")
+	bitableFormListCmd.Flags().Int("page-size", 0, "分页大小（≤100）")
+	bitableFormListCmd.Flags().String("page-token", "", "分页 token")
 
 	bitableFormCmd.AddCommand(bitableFormDeleteCmd)
 	addBitableWriteFlags(bitableFormDeleteCmd)

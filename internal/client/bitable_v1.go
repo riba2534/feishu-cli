@@ -92,8 +92,7 @@ func BitableV1Call(method, path string, params map[string]any, body any, userAcc
 		return nil, fmt.Errorf("bitable/v1 API 响应解析失败: %w", err)
 	}
 	if code := toInt(result["code"]); code != 0 {
-		msg, _ := result["msg"].(string)
-		return nil, fmt.Errorf("bitable/v1 API 失败: code=%d, msg=%s", code, msg)
+		return nil, fmt.Errorf("bitable/v1 API 失败: code=%d, msg=%s", code, apiErrorDetail(result))
 	}
 	if data, ok := result["data"].(map[string]any); ok {
 		return data, nil

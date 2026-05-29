@@ -102,8 +102,7 @@ func BaseV3Call(method, path string, params map[string]any, body any, userAccess
 	// 检查 code
 	code := toInt(result["code"])
 	if code != 0 {
-		msg, _ := result["msg"].(string)
-		return nil, fmt.Errorf("base/v3 API 失败: code=%d, msg=%s", code, msg)
+		return nil, fmt.Errorf("base/v3 API 失败: code=%d, msg=%s", code, apiErrorDetail(result))
 	}
 
 	// 返回 data 子对象（若存在）
@@ -121,6 +120,31 @@ func BaseV3Call(method, path string, params map[string]any, body any, userAccess
 		return data, nil
 	}
 	return result, nil
+}
+
+// apiErrorDetail 从飞书响应里提取最有信息量的错误文案。
+// base/v3 业务错误（HTTP 200 + code!=0）的顶层 msg 常为空，真正的原因藏在
+// data.error.{hint,message}（如缺 name / 缺 role_type 的 field validation）。
+// 优先级：顶层 msg → data.error.hint → data.error.message；都没有返回空串。
+func apiErrorDetail(result map[string]any) string {
+	if msg, _ := result["msg"].(string); msg != "" {
+		return msg
+	}
+	data, ok := result["data"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	errObj, ok := data["error"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	if hint, _ := errObj["hint"].(string); hint != "" {
+		return hint
+	}
+	if m, _ := errObj["message"].(string); m != "" {
+		return m
+	}
+	return ""
 }
 
 // toInt 安全地把任意数字（json.Number/float64/int）转成 int
