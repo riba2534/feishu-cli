@@ -1419,6 +1419,8 @@ feishu-cli 涵盖文档、知识库、电子表格、多维表格、消息、群
       "task:tasklist:read",
       "task:tasklist:write",
       "vc:meeting",
+      "vc:meeting.bot.join:write",
+      "vc:meeting.bot.leave:write",
       "vc:meeting.meetingevent:read",
       "vc:meeting.meetingid:read",
       "vc:meeting.participant:write",

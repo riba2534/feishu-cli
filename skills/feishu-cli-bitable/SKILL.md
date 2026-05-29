@@ -69,7 +69,7 @@ feishu-cli bitable field search-options --base-token xxx --table-id tblxxx --fie
 ```bash
 feishu-cli bitable record list        --base-token xxx --table-id tblxxx --view-id viewxxx --limit 100
 feishu-cli bitable record get         --base-token xxx --table-id tblxxx --record-id recxxx
-feishu-cli bitable record batch-get   --base-token xxx --table-id tblxxx --config-file ids.json
+feishu-cli bitable record batch-get   --base-token xxx --table-id tblxxx --record-ids recxxx,recyyy
 feishu-cli bitable record search      --base-token xxx --table-id tblxxx --config-file search.json
 
 # upsert：不传 --record-id 则 POST 创建；传 --record-id 则 PATCH 更新（官方无专用 upsert 端点）
