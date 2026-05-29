@@ -35,7 +35,6 @@ var markdownDiffCmd = &cobra.Command{
 
 可选:
   --context-lines  diff 每个 hunk 上下保留的未变更上下文行数（默认 3）
-  --obj-type       文件类型（解析远端版本时用，默认 file）
   --dry-run        只打印将要执行的比对计划，不下载/不比对
   --output, -o     输出格式（json：返回结构化 hunk；缺省：打印 unified diff 文本）
 
@@ -56,7 +55,6 @@ var markdownDiffCmd = &cobra.Command{
 		localFile, _ := cmd.Flags().GetString("file")
 		fromVersion, _ := cmd.Flags().GetString("from-version")
 		toVersion, _ := cmd.Flags().GetString("to-version")
-		objType, _ := cmd.Flags().GetString("obj-type")
 		contextLines, _ := cmd.Flags().GetInt("context-lines")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		output, _ := cmd.Flags().GetString("output")
@@ -77,16 +75,12 @@ var markdownDiffCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if objType == "" {
-			objType = "file"
-		}
 
 		if dryRun {
 			plan := map[string]any{
 				"detection":     mode,
 				"file_token":    fileToken,
 				"context_lines": contextLines,
-				"obj_type":      objType,
 			}
 			switch mode {
 			case "local_vs_remote":
@@ -414,7 +408,6 @@ func init() {
 	markdownDiffCmd.Flags().String("file", "", "本地 .md 文件路径（与远端最新内容比对）")
 	markdownDiffCmd.Flags().String("from-version", "", "起始远端版本号")
 	markdownDiffCmd.Flags().String("to-version", "", "目标远端版本号（需配合 --from-version）")
-	markdownDiffCmd.Flags().String("obj-type", "file", "文件类型（解析远端版本时用）")
 	markdownDiffCmd.Flags().Int("context-lines", 3, "diff 每个 hunk 上下保留的未变更上下文行数")
 	markdownDiffCmd.Flags().Bool("dry-run", false, "只打印比对计划，不下载/不比对")
 	markdownDiffCmd.Flags().StringP("output", "o", "", "输出格式（json）")

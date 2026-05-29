@@ -148,7 +148,6 @@ feishu-cli markdown diff --file-token boxcnxxx --file ./local.md -o json
 | `--from-version` | 起始远端版本号（模式 2/3） |
 | `--to-version` | 目标远端版本号（模式 3，需配合 `--from-version`） |
 | `--context-lines` | 每个 hunk 上下保留的未变更上下文行数（默认 3） |
-| `--obj-type` | 文件类型（解析远端版本时用，默认 `file`） |
 | `--dry-run` | 只打印比对计划，不下载/不比对 |
 | `-o json` | 输出结构化 hunk；缺省打印 unified diff 文本 |
 

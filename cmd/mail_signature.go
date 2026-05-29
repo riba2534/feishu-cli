@@ -106,7 +106,7 @@ var mailSignatureCmd = &cobra.Command{
 				tag = "  [默认]"
 			}
 			fmt.Printf("[%d] %s%s\n", i+1, displayMailSignatureName(s), tag)
-			fmt.Printf("    签名 ID: %s\n", s.ID)
+			fmt.Printf("    签名 ID: %s\n", s.signatureID())
 			if rec := strings.TrimSpace(s.RecommendedUsage); rec != "" {
 				fmt.Printf("    推荐用途: %s\n", rec)
 			}

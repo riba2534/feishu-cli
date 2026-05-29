@@ -28,7 +28,7 @@ func TestMarkdownDiffCmdRegistered(t *testing.T) {
 	if len(ann) == 0 || ann[0] != "true" {
 		t.Errorf("--file-token should be required, ann=%v", ann)
 	}
-	for _, n := range []string{"file", "from-version", "to-version", "obj-type", "context-lines", "dry-run", "output"} {
+	for _, n := range []string{"file", "from-version", "to-version", "context-lines", "dry-run", "output"} {
 		if markdownDiffCmd.Flags().Lookup(n) == nil {
 			t.Errorf("--%s missing on diff", n)
 		}
