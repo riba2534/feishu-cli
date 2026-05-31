@@ -55,6 +55,9 @@ var vcBotCmd = &cobra.Command{
   - meeting-leave 需要 vc:meeting.bot.leave:write
   - meeting-events 需要 vc 读权限
 
+身份:
+  默认使用 Bot/Tenant Access Token；只有显式传 --user-access-token 时才改用 User Access Token。
+
 示例:
   feishu-cli vc bot meeting-join --meeting-number 123456789
   feishu-cli vc bot meeting-leave --meeting-id 6911188411932033028
@@ -102,6 +105,7 @@ var vcBotJoinCmd = &cobra.Command{
   --password         会议密码（如会议设了密码）
   --dry-run          只打印将要发送的请求体，不实际调用
   --output, -o       输出格式（json）
+  --user-access-token 显式改用 User Token；默认使用 Bot/Tenant 身份
 
 权限:
   vc:meeting.bot.join:write
@@ -133,10 +137,7 @@ var vcBotJoinCmd = &cobra.Command{
 			})
 		}
 
-		token, err := requireUserToken(cmd, "vc bot meeting-join")
-		if err != nil {
-			return err
-		}
+		token := resolveFlagUserToken(cmd)
 
 		data, err := client.VCBotJoinMeeting(client.VCBotJoinReq{
 			MeetingNo: meetingNo,
@@ -170,6 +171,7 @@ var vcBotLeaveCmd = &cobra.Command{
 可选:
   --dry-run      只打印将要发送的请求体，不实际调用
   --output, -o   输出格式（json）
+  --user-access-token 显式改用 User Token；默认使用 Bot/Tenant 身份
 
 权限:
   vc:meeting.bot.leave:write
@@ -197,10 +199,7 @@ var vcBotLeaveCmd = &cobra.Command{
 			})
 		}
 
-		token, err := requireUserToken(cmd, "vc bot meeting-leave")
-		if err != nil {
-			return err
-		}
+		token := resolveFlagUserToken(cmd)
 
 		data, err := client.VCBotLeaveMeeting(meetingID, token)
 		if err != nil {
@@ -235,6 +234,7 @@ var vcBotEventsCmd = &cobra.Command{
   --page-token   分页标记
   --dry-run      只打印将要发送的请求参数，不实际调用
   --output, -o   输出格式（json）
+  --user-access-token 显式改用 User Token；默认使用 Bot/Tenant 身份
 
 示例:
   feishu-cli vc bot meeting-events --meeting-id 6911188411932033028
@@ -309,10 +309,7 @@ var vcBotEventsCmd = &cobra.Command{
 			})
 		}
 
-		token, err := requireUserToken(cmd, "vc bot meeting-events")
-		if err != nil {
-			return err
-		}
+		token := resolveFlagUserToken(cmd)
 
 		data, err := client.VCBotMeetingEvents(req, token)
 		if err != nil {
@@ -353,13 +350,13 @@ func init() {
 	vcBotJoinCmd.Flags().String("password", "", "会议密码（可选）")
 	vcBotJoinCmd.Flags().Bool("dry-run", false, "只打印请求体，不实际调用")
 	vcBotJoinCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	vcBotJoinCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	vcBotJoinCmd.Flags().String("user-access-token", "", "User Access Token（显式传入时改用用户身份；默认 Bot/Tenant 身份）")
 	mustMarkFlagRequired(vcBotJoinCmd, "meeting-number")
 
 	vcBotLeaveCmd.Flags().String("meeting-id", "", "要离开的会议 ID（必填）")
 	vcBotLeaveCmd.Flags().Bool("dry-run", false, "只打印请求体，不实际调用")
 	vcBotLeaveCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	vcBotLeaveCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	vcBotLeaveCmd.Flags().String("user-access-token", "", "User Access Token（显式传入时改用用户身份；默认 Bot/Tenant 身份）")
 	mustMarkFlagRequired(vcBotLeaveCmd, "meeting-id")
 
 	vcBotEventsCmd.Flags().String("meeting-id", "", "要查询的会议 ID（必填）")
@@ -369,6 +366,6 @@ func init() {
 	vcBotEventsCmd.Flags().String("page-token", "", "分页标记")
 	vcBotEventsCmd.Flags().Bool("dry-run", false, "只打印请求参数，不实际调用")
 	vcBotEventsCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	vcBotEventsCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	vcBotEventsCmd.Flags().String("user-access-token", "", "User Access Token（显式传入时改用用户身份；默认 Bot/Tenant 身份）")
 	mustMarkFlagRequired(vcBotEventsCmd, "meeting-id")
 }

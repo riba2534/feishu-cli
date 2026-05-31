@@ -144,8 +144,8 @@ feishu-cli bitable advperm {enable|disable} --base-token ...
 feishu-cli bitable data-query ...
 # 新增命令统一支持 --format json|pretty|table|ndjson|csv + --jq；写命令支持 --dry-run
 
-# 搜索消息（默认 enrich：内容/发送者/群名/时间；--ids-only 退回纯 ID；支持 --format/--jq/--page-all）
-feishu-cli search messages "<query>" [--format table] [--jq ...] [--ids-only]
+# 搜索消息（默认返回消息 ID；--enrich 才补全内容/发送者/群名/时间；支持 --format/--jq/--page-all）
+feishu-cli search messages "<query>" [--format table] [--jq ...] [--enrich]
 
 # 通用 API 透传（api 命令支持 --jq/--format json|pretty|table|ndjson|csv）
 feishu-cli api GET <path> --jq '.data.items[].name' --format table

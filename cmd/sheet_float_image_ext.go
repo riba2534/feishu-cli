@@ -175,7 +175,11 @@ var sheetImageWriteCmd = &cobra.Command{
 			name = filepath.Base(imagePath)
 		}
 
-		rangeStr = normalizeSheetWriteImageRange(unescapeSheetRange(rangeStr), sheetID)
+		normalizedRange, err := normalizeSheetWriteImageRange(unescapeSheetRange(rangeStr), sheetID)
+		if err != nil {
+			return err
+		}
+		rangeStr = normalizedRange
 
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
@@ -189,22 +193,32 @@ var sheetImageWriteCmd = &cobra.Command{
 
 // normalizeSheetWriteImageRange 把 write-image 的目标范围规整为带 sheetId 前缀、起止单元格相同的单格范围。
 // 支持输入: "A1" / "<sheetId>!A1" / "<sheetId>!A1:A1"，输出统一为 "<sheetId>!A1:A1"。
-func normalizeSheetWriteImageRange(rangeStr, sheetID string) string {
-	body := rangeStr
+func normalizeSheetWriteImageRange(rangeStr, sheetID string) (string, error) {
+	body := strings.TrimSpace(rangeStr)
 	prefix := sheetID
-	if idx := strings.Index(rangeStr, "!"); idx >= 0 {
-		prefix = rangeStr[:idx]
-		body = rangeStr[idx+1:]
+	if idx := strings.Index(body, "!"); idx >= 0 {
+		prefix = body[:idx]
+		body = body[idx+1:]
 	}
-	// 仅取起始单元格，扩成 cell:cell。
-	cell := body
+
+	start := body
+	end := body
 	if c := strings.Index(body, ":"); c >= 0 {
-		cell = body[:c]
+		start = body[:c]
+		end = body[c+1:]
+	}
+	start = strings.TrimSpace(start)
+	end = strings.TrimSpace(end)
+	if start == "" || end == "" {
+		return "", fmt.Errorf("--range 必须是单个单元格，如 A1 或 %s!A1", sheetID)
+	}
+	if start != end {
+		return "", fmt.Errorf("sheet image write-image 只支持单个单元格，不能写入多单元格范围 %q；请改用 %s", rangeStr, start)
 	}
 	if prefix == "" {
-		return cell + ":" + cell
+		return start + ":" + start, nil
 	}
-	return prefix + "!" + cell + ":" + cell
+	return prefix + "!" + start + ":" + start, nil
 }
 
 // validateFloatImageUpdate 校验 sheet image update 的尺寸/偏移边界，与 help 声明一致：

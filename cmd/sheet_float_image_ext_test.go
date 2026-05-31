@@ -50,23 +50,35 @@ func TestSheetImageWriteFlags(t *testing.T) {
 	}
 }
 
-// TestNormalizeSheetWriteImageRange 验证 write-image 范围被规整为带前缀的单格 cell:cell
+// TestNormalizeSheetWriteImageRange 验证 write-image 只接受单格范围，并规整为带前缀的 cell:cell。
 func TestNormalizeSheetWriteImageRange(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
 		sheetID string
 		want    string
+		wantErr bool
 	}{
-		{"无前缀单格", "A1", "0b1212", "0b1212!A1:A1"},
-		{"带前缀单格", "0b1212!B2", "0b1212", "0b1212!B2:B2"},
-		{"带前缀且 cell:cell", "0b1212!C3:C3", "0b1212", "0b1212!C3:C3"},
-		{"带前缀但写成区间取起始", "0b1212!D4:D9", "0b1212", "0b1212!D4:D4"},
-		{"前缀与传入 sheetID 不同时尊重前缀", "abc!E5", "0b1212", "abc!E5:E5"},
+		{"无前缀单格", "A1", "0b1212", "0b1212!A1:A1", false},
+		{"带前缀单格", "0b1212!B2", "0b1212", "0b1212!B2:B2", false},
+		{"带前缀且 cell:cell", "0b1212!C3:C3", "0b1212", "0b1212!C3:C3", false},
+		{"前缀与传入 sheetID 不同时尊重前缀", "abc!E5", "0b1212", "abc!E5:E5", false},
+		{"同列多行报错", "0b1212!D4:D9", "0b1212", "", true},
+		{"同行多列报错", "0b1212!A1:B1", "0b1212", "", true},
+		{"无前缀多格报错", "A1:A2", "0b1212", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := normalizeSheetWriteImageRange(tt.input, tt.sheetID)
+			got, err := normalizeSheetWriteImageRange(tt.input, tt.sheetID)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("normalizeSheetWriteImageRange(%q,%q) 应报错，实际 got %q", tt.input, tt.sheetID, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("normalizeSheetWriteImageRange(%q,%q) 不应报错: %v", tt.input, tt.sheetID, err)
+			}
 			if got != tt.want {
 				t.Errorf("normalizeSheetWriteImageRange(%q,%q) = %q, want %q", tt.input, tt.sheetID, got, tt.want)
 			}
