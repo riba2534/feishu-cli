@@ -1,6 +1,9 @@
 package client
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,8 +16,14 @@ import (
 
 var rangeDownloadChunkSize int64 = 8 * 1024 * 1024
 
+const maxDownloadAPIErrorProbeBytes int64 = 1 << 20
+
 func newBearerDownloadRequest(reqURL, bearerToken, byteRange string) (*http.Request, error) {
-	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	return newBearerDownloadRequestWithContext(context.Background(), reqURL, bearerToken, byteRange)
+}
+
+func newBearerDownloadRequestWithContext(ctx context.Context, reqURL, bearerToken, byteRange string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -28,6 +37,66 @@ func newBearerDownloadRequest(reqURL, bearerToken, byteRange string) (*http.Requ
 type downloadAPIError struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
+}
+
+func inspectDownloadAPIErrorResponse(httpResp *http.Response) (io.Reader, *downloadAPIError, error) {
+	bufferedBody := bufio.NewReader(httpResp.Body)
+	if !downloadResponseMayContainAPIError(httpResp, bufferedBody) {
+		return bufferedBody, nil, nil
+	}
+
+	var probe bytes.Buffer
+	probeReader := io.TeeReader(io.LimitReader(bufferedBody, maxDownloadAPIErrorProbeBytes+1), &probe)
+	body, err := io.ReadAll(probeReader)
+	replayReader := io.MultiReader(bytes.NewReader(probe.Bytes()), bufferedBody)
+	if err != nil {
+		return replayReader, nil, err
+	}
+	if int64(len(body)) > maxDownloadAPIErrorProbeBytes {
+		return replayReader, nil, nil
+	}
+
+	var apiErr downloadAPIError
+	if err := json.Unmarshal(bytes.TrimSpace(body), &apiErr); err == nil && apiErr.Code != 0 {
+		return nil, &apiErr, nil
+	}
+	return replayReader, nil, nil
+}
+
+func downloadResponseMayContainAPIError(httpResp *http.Response, bufferedBody *bufio.Reader) bool {
+	if strings.TrimSpace(httpResp.Header.Get("Content-Disposition")) != "" {
+		return false
+	}
+	if isJSONContentType(httpResp.Header.Get("Content-Type")) {
+		return true
+	}
+
+	firstByte, ok := peekFirstNonSpaceByte(bufferedBody)
+	return ok && firstByte == '{'
+}
+
+func isJSONContentType(contentType string) bool {
+	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+}
+
+func peekFirstNonSpaceByte(bufferedBody *bufio.Reader) (byte, bool) {
+	const maxProbe = 512
+	for size := 1; size <= maxProbe; size++ {
+		buf, err := bufferedBody.Peek(size)
+		if len(buf) == 0 {
+			return 0, false
+		}
+		for _, b := range buf {
+			if b != ' ' && b != '\n' && b != '\r' && b != '\t' {
+				return b, true
+			}
+		}
+		if err != nil {
+			return 0, false
+		}
+	}
+	return 0, false
 }
 
 func parseDownloadAPIError(action string, httpResp *http.Response) (*downloadAPIError, error) {
@@ -48,7 +117,16 @@ func downloadBearerURLByRange(action, reqURL, outputPath, bearerToken string, ti
 		return fmt.Errorf("%s失败: Range 分片大小非法: %d", action, rangeDownloadChunkSize)
 	}
 
-	httpClient := &http.Client{Timeout: timeout}
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
+	defer cancel()
+
+	httpClient := &http.Client{}
 	var outFile *os.File
 	var total int64 = -1
 	var nextStart int64
@@ -66,7 +144,7 @@ func downloadBearerURLByRange(action, reqURL, outputPath, bearerToken string, ti
 	for {
 		end := nextStart + rangeDownloadChunkSize - 1
 		byteRange := fmt.Sprintf("bytes=%d-%d", nextStart, end)
-		req, err := newBearerDownloadRequest(reqURL, bearerToken, byteRange)
+		req, err := newBearerDownloadRequestWithContext(ctx, reqURL, bearerToken, byteRange)
 		if err != nil {
 			return fmt.Errorf("%s失败: %w", action, err)
 		}
@@ -77,7 +155,16 @@ func downloadBearerURLByRange(action, reqURL, outputPath, bearerToken string, ti
 		}
 
 		if httpResp.StatusCode == http.StatusOK && nextStart == 0 {
-			if err := writeStreamToFile(httpResp.Body, outputPath); err != nil {
+			bodyReader, apiErr, inspectErr := inspectDownloadAPIErrorResponse(httpResp)
+			if inspectErr != nil {
+				_ = httpResp.Body.Close()
+				return fmt.Errorf("%s失败: 读取响应失败: %w", action, inspectErr)
+			}
+			if apiErr != nil {
+				_ = httpResp.Body.Close()
+				return fmt.Errorf("%s失败: Range %s: code=%d, msg=%s", action, byteRange, apiErr.Code, apiErr.Msg)
+			}
+			if err := writeStreamToFile(bodyReader, outputPath); err != nil {
 				_ = httpResp.Body.Close()
 				return fmt.Errorf("保存文件失败: %w", err)
 			}

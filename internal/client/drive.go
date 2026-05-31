@@ -709,7 +709,18 @@ func downloadDriveFileWithUserTokenRaw(fileToken, outputPath, userAccessToken st
 		return fmt.Errorf("下载文件失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
 	}
 
-	if err := writeStreamToFile(httpResp.Body, outputPath); err != nil {
+	bodyReader, apiErr, inspectErr := inspectDownloadAPIErrorResponse(httpResp)
+	if inspectErr != nil {
+		return fmt.Errorf("下载文件失败: 读取响应失败: %w", inspectErr)
+	}
+	if apiErr != nil {
+		if isDownloadFileSizeLimitError(apiErr.Code, apiErr.Msg, nil) {
+			return downloadBearerURLByRange("下载文件", reqURL, outputPath, userAccessToken, timeout)
+		}
+		return fmt.Errorf("下载文件失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
+	}
+
+	if err := writeStreamToFile(bodyReader, outputPath); err != nil {
 		return fmt.Errorf("保存文件失败: %w", err)
 	}
 	return nil

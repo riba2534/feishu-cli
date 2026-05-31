@@ -184,8 +184,8 @@ func TestDownloadMessageResourceWithUserToken_RawHTTP(t *testing.T) {
 
 func TestDownloadMessageResourceWithUserToken_ApiError(t *testing.T) {
 	handler := func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
 		_, _ = fmt.Fprint(w, `{"code":234040,"msg":"The message is invisible to the operator."}`)
 	}
 
@@ -198,6 +198,29 @@ func TestDownloadMessageResourceWithUserToken_ApiError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "234040") {
 		t.Fatalf("error = %q, want code 234040", err)
+	}
+}
+
+func TestDownloadMessageResourceWithUserToken_HTTP200JSONErrorDoesNotWriteFile(t *testing.T) {
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"code":234040,"msg":"The message is invisible to the operator."}`)
+	}
+
+	_, cleanup := stubFeishuServer(t, handler)
+	defer cleanup()
+
+	outputPath := t.TempDir() + "/video.mov"
+	err := DownloadMessageResource("om_xxx", "file_v3_xxx", "file", outputPath, "u-test-token")
+	if err == nil {
+		t.Fatal("HTTP 200 JSON 业务错误应返回 error")
+	}
+	if !strings.Contains(err.Error(), "234040") {
+		t.Fatalf("error = %q, want code 234040", err)
+	}
+	if _, statErr := os.Stat(outputPath); !os.IsNotExist(statErr) {
+		t.Fatalf("业务错误不应落盘，stat err = %v", statErr)
 	}
 }
 
@@ -227,8 +250,8 @@ func TestDownloadMessageResourceWithUserToken_RangeFallback(t *testing.T) {
 
 		rangeHeader := r.Header.Get("Range")
 		if rangeHeader == "" {
-			w.WriteHeader(http.StatusBadRequest)
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprintf(w, `{"code":%d,"msg":"Downloaded file size exceeds limit"}`, messageResourceFileSizeExceedsLimitCode)
 			return
 		}

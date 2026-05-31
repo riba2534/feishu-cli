@@ -1316,13 +1316,24 @@ func downloadMessageResourceWithUserToken(messageID, fileKey, resourceType, outp
 		if parseErr != nil {
 			return parseErr
 		}
-		if apiErr.Code == messageResourceFileSizeExceedsLimitCode {
+		if isDownloadFileSizeLimitError(apiErr.Code, apiErr.Msg, nil) {
 			return downloadBearerURLByRange("下载消息资源", reqURL, outputPath, userAccessToken, t)
 		}
 		return fmt.Errorf("下载消息资源失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
 	}
 
-	if err := writeStreamToFile(httpResp.Body, outputPath); err != nil {
+	bodyReader, apiErr, inspectErr := inspectDownloadAPIErrorResponse(httpResp)
+	if inspectErr != nil {
+		return fmt.Errorf("下载消息资源失败: 读取响应失败: %w", inspectErr)
+	}
+	if apiErr != nil {
+		if isDownloadFileSizeLimitError(apiErr.Code, apiErr.Msg, nil) {
+			return downloadBearerURLByRange("下载消息资源", reqURL, outputPath, userAccessToken, t)
+		}
+		return fmt.Errorf("下载消息资源失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
+	}
+
+	if err := writeStreamToFile(bodyReader, outputPath); err != nil {
 		return fmt.Errorf("保存文件失败: %w", err)
 	}
 	return nil
