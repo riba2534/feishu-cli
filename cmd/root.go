@@ -49,6 +49,7 @@ var rootCmd = &cobra.Command{
   vc        视频会议（多维搜索、纪要/AI 产物/逐字稿、录制查询；User Token）
   minutes   妙记（基础信息、AI 产物、媒体下载；User Token）
   mail      邮箱（发送/回复/转发/草稿/查询；User Token）
+  apps      妙搭（Miaoda）应用（创建/发布 HTML/访问范围；User Token + spark scope）
   drive     云盘增强（分块上传、有界轮询导出/导入、富文本评论、通用 task-result）
   markdown  Drive 原生 Markdown 文件 CRUD（.md 整体读写，不转换飞书 docx 块）
   search    搜索操作（消息、应用搜索，需要用户授权）
