@@ -7,6 +7,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -36,7 +37,9 @@ var markdownDiffCmd = &cobra.Command{
 可选:
   --context-lines  diff 每个 hunk 上下保留的未变更上下文行数（默认 3）
   --dry-run        只打印将要执行的比对计划，不下载/不比对
-  --output, -o     输出格式（json：返回结构化 hunk；缺省：打印 unified diff 文本）
+  --format         json|pretty|table|ndjson|csv —— 输出结构化 hunk（缺省打印 unified diff 文本）
+  --jq             用内置 gojq 过滤结构化输出（如 --jq '.added_lines'）
+  --output, -o     [兼容] -o json 等价 --format json
 
 权限:
   - User Access Token
@@ -57,7 +60,6 @@ var markdownDiffCmd = &cobra.Command{
 		toVersion, _ := cmd.Flags().GetString("to-version")
 		contextLines, _ := cmd.Flags().GetInt("context-lines")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
-		output, _ := cmd.Flags().GetString("output")
 
 		fileToken = strings.TrimSpace(fileToken)
 		localFile = strings.TrimSpace(localFile)
@@ -94,7 +96,15 @@ var markdownDiffCmd = &cobra.Command{
 					plan["to_version"] = "latest"
 				}
 			}
-			return printJSON(plan)
+			// dry-run 计划本就是结构化数据，默认 JSON 输出；--format/--jq 也尊重。
+			o, _, oerr := resolveMarkdownDiffOutput(cmd)
+			if oerr != nil {
+				return oerr
+			}
+			if o == nil {
+				o, _ = output.NewOptions(output.FormatJSON, "")
+			}
+			return output.Render(o, plan)
 		}
 
 		token, err := requireUserToken(cmd, "markdown diff")
@@ -147,9 +157,14 @@ var markdownDiffCmd = &cobra.Command{
 
 		hunks := unifiedDiff(string(fromBytes), string(toBytes), contextLines)
 
-		if output == "json" {
+		// 用户显式要结构化输出（--format / --jq / 兼容的 -o json）时走统一渲染；否则输出 unified diff 文本。
+		o, structured, oerr := resolveMarkdownDiffOutput(cmd)
+		if oerr != nil {
+			return oerr
+		}
+		if structured {
 			added, removed := countDiffLines(hunks)
-			return printJSON(map[string]any{
+			return output.Render(o, map[string]any{
 				"detection":         mode,
 				"from":              fromName,
 				"to":                toName,
@@ -171,6 +186,27 @@ var markdownDiffCmd = &cobra.Command{
 		fmt.Print(renderUnifiedDiff(hunks))
 		return nil
 	},
+}
+
+// resolveMarkdownDiffOutput 判定 markdown diff 是否走统一结构化输出：
+// 用户未传 --format/--jq 且 -o 不为 json 时返回 (nil, false)，由调用方输出 unified diff 文本（diff 命令的自然形态）；
+// 否则返回 (*output.Options, true) 走 output 包渲染（支持 --format/--jq）。
+// -o json 作为旧式兼容别名映射到 --format json（未发版前已文档化，保留兼容）。
+func resolveMarkdownDiffOutput(cmd *cobra.Command) (*output.Options, bool, error) {
+	oldOut, _ := cmd.Flags().GetString("output")
+	jqExpr, _ := cmd.Flags().GetString("jq")
+	formatFlag, _ := cmd.Flags().GetString("format")
+	changedFormat := cmd.Flags().Changed("format")
+	changedJQ := cmd.Flags().Changed("jq")
+	if !changedFormat && !changedJQ && oldOut != "json" {
+		return nil, false, nil
+	}
+	format := formatFlag
+	if !changedFormat {
+		format = output.FormatJSON // 仅 --jq 或 -o json 时默认 JSON
+	}
+	o, err := output.NewOptions(format, jqExpr)
+	return o, true, err
 }
 
 // resolveMarkdownDiffMode 根据参数组合判定比对模式，并校验互斥/缺省。
@@ -410,7 +446,8 @@ func init() {
 	markdownDiffCmd.Flags().String("to-version", "", "目标远端版本号（需配合 --from-version）")
 	markdownDiffCmd.Flags().Int("context-lines", 3, "diff 每个 hunk 上下保留的未变更上下文行数")
 	markdownDiffCmd.Flags().Bool("dry-run", false, "只打印比对计划，不下载/不比对")
-	markdownDiffCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	markdownDiffCmd.Flags().StringP("output", "o", "", "[兼容] -o json 等价 --format json；缺省输出 unified diff 文本")
+	output.AddFormatFlags(markdownDiffCmd) // --format json|pretty|table|ndjson|csv + --jq（与其它新命令一致）
 	markdownDiffCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(markdownDiffCmd, "file-token")
 }

@@ -135,8 +135,11 @@ feishu-cli markdown diff --file-token boxcnxxx --from-version 3
 # 模式 3：远端版本 A vs 版本 B（--to-version 需配合 --from-version）
 feishu-cli markdown diff --file-token boxcnxxx --from-version 2 --to-version 5 --context-lines 1
 
-# JSON 输出结构化 hunk
-feishu-cli markdown diff --file-token boxcnxxx --file ./local.md -o json
+# 结构化输出 + 内置 jq 过滤（--format/--jq 与其它新命令一致；-o json 作兼容别名）
+feishu-cli markdown diff --file-token boxcnxxx --file ./local.md --format json
+feishu-cli markdown diff --file-token boxcnxxx --file ./local.md --jq '.added_lines'
+feishu-cli markdown diff --file-token boxcnxxx --file ./local.md --format table --jq '{identical,added_lines,removed_lines}'
+feishu-cli markdown diff --file-token boxcnxxx --file ./local.md -o json   # 兼容写法，等价 --format json
 ```
 
 **关键 flag**：
@@ -149,9 +152,11 @@ feishu-cli markdown diff --file-token boxcnxxx --file ./local.md -o json
 | `--to-version` | 目标远端版本号（模式 3，需配合 `--from-version`） |
 | `--context-lines` | 每个 hunk 上下保留的未变更上下文行数（默认 3） |
 | `--dry-run` | 只打印比对计划，不下载/不比对 |
-| `-o json` | 输出结构化 hunk；缺省打印 unified diff 文本 |
+| `--format` | `json\|pretty\|table\|ndjson\|csv` 结构化输出；缺省打印 unified diff 文本 |
+| `--jq` | 内置 gojq 过滤结构化输出（如 `--jq '.added_lines'`，无需外部 jq） |
+| `-o json` | 兼容别名，等价 `--format json` |
 
-**`-o json` 输出结构**（顶层 9 字段，便于 `jq` 取改动量 / 判一致）：
+**结构化输出结构**（`--format json` / `-o json`，顶层 9 字段，可直接 `--jq` 取改动量 / 判一致）：
 
 ```jsonc
 {
@@ -177,7 +182,7 @@ feishu-cli markdown diff --file-token boxcnxxx --file ./local.md -o json
 }
 ```
 
-常用 `jq`：`jq '.identical'` 判是否一致、`jq '.added_lines, .removed_lines'` 取改动量、`jq '.hunks[].lines[] | select(.op=="+") | .text'` 拉所有新增行。
+常用内置 `--jq`（无需外部 jq）：`--jq '.identical'` 判是否一致、`--jq '.added_lines, .removed_lines'` 取改动量、`--jq '.hunks[].lines[] | select(.op=="+") | .text'` 拉所有新增行。
 
 > 与 `overwrite` 配合：覆盖前先 `diff --file ./local.md` 预览本地相对远端最新的改动，确认后再 overwrite，避免误覆盖。
 
