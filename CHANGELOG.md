@@ -4,6 +4,20 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [Unreleased]
+
+### 新增 — 妙搭（Miaoda）应用：HTML 秒搭一键部署（`apps`）
+
+对齐官方 lark-cli `apps` 域，把妙搭（Miaoda）低代码应用平台的「一份 HTML 秒级发布成可分享的飞书应用」能力搬进 feishu-cli。全部走 User 身份（user_access_token），需要 spark scope。
+
+- `apps create` —— 创建 HTML 妙搭应用（`POST /open-apis/spark/v1/apps`），返回 `data.app.app_id`
+- `apps html-publish` —— 把 `--path`（单 HTML 文件或整目录）打包成 tar.gz，单次 multipart POST 上传并发布（`/apps/{id}/upload_and_release_html_code`），返回 `data.url`（一键部署）。客户端侧：要求根目录有 `index.html`、未压缩 ≤ 200MB / 打包后 tar.gz ≤ 20MB、默认拦截凭证文件（`.env` / `.npmrc` / `.netrc` / `.git-credentials` / `.aws/credentials` / `.docker/config.json` / `.kube/config`，`--allow-sensitive` 放行）
+- `apps update` —— 部分更新名称/描述（`PATCH /apps/{id}`）
+- `apps access-scope-get` / `apps access-scope-set` —— 查看/设置访问范围（`specific` / `public` / `tenant`，映射后端 `Range` / `All` / `Tenant`）
+- `apps list` —— 列出当前用户的应用（隐藏命令，游标分页）
+- 统一支持 `--format json|pretty|table|ndjson|csv` + `--jq`；写命令支持 `--dry-run`
+- 权限：`spark:app:write`（create/update/html-publish/access-scope-set）、`spark:app:read`（list/access-scope-get）。⚠️ feishu-cli 的 `auth login --scope` 是「替换」不是「合并」，请把 spark scope 并入完整 scope 串一起登录，避免丢失已有权限
+
 ## [v1.32.0] - 2026-06-06
 
 ### 新功能 — 多维表格支持 `--as bot|user|auto` 身份切换
