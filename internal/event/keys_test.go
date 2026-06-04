@@ -68,7 +68,7 @@ func TestDomains_Unique(t *testing.T) {
 
 func TestSanitizeAppID_RejectsBadChars(t *testing.T) {
 	cases := map[string]string{
-		"cli_a77d84747fa6500b": "cli_a77d84747fa6500b",
+		"cli_xxxx":             "cli_xxxx",
 		"cli_../../etc/passwd": "cli_etcpasswd",
 		"cli_/abs/path":        "cli_abspath",
 		"":                     "unknown",

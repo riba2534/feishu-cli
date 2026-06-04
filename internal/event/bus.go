@@ -48,7 +48,7 @@ func AppDir(appID string) (string, error) {
 }
 
 // sanitizeAppID 去除可能用于路径逃逸的字符，仅保留字母/数字/下划线/连字符。
-// 飞书 App ID 形如 `cli_a77d84747fa6500b`，本身已是安全字符集；本函数仅作纵深防御。
+// 飞书 App ID 形如 `cli_xxxx`，本身已是安全字符集；本函数仅作纵深防御。
 func sanitizeAppID(appID string) string {
 	var b strings.Builder
 	for _, r := range appID {
