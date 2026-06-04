@@ -87,7 +87,9 @@ func TestVCBotHelpDocumentsTenantDefault(t *testing.T) {
 	if !strings.Contains(vcBotCmd.Long, "默认使用 Bot/Tenant Access Token") {
 		t.Fatalf("bot Long 应说明默认使用 Bot/Tenant Access Token，实际:\n%s", vcBotCmd.Long)
 	}
-	for _, c := range []*cobra.Command{vcBotJoinCmd, vcBotLeaveCmd, vcBotEventsCmd} {
+	// meeting-join / meeting-leave 默认 Bot/Tenant 身份；meeting-events 例外——该端点拒收
+	// Tenant Token（99991663），走 User 优先 + Tenant 兜底，故单独断言（见下）。
+	for _, c := range []*cobra.Command{vcBotJoinCmd, vcBotLeaveCmd} {
 		if !strings.Contains(c.Long, "默认使用 Bot/Tenant 身份") {
 			t.Errorf("%s Long 应说明默认 Bot/Tenant 身份", c.Use)
 		}
@@ -99,6 +101,13 @@ func TestVCBotHelpDocumentsTenantDefault(t *testing.T) {
 		if !strings.Contains(f.Usage, "默认 Bot/Tenant 身份") {
 			t.Errorf("%s --user-access-token help 应说明默认 Bot/Tenant 身份，实际 %q", c.Use, f.Usage)
 		}
+	}
+	// meeting-events 端点不接受 Tenant Token，help 应说明走 User 身份。
+	if !strings.Contains(vcBotEventsCmd.Long, "User Token") && !strings.Contains(vcBotEventsCmd.Long, "User 身份") {
+		t.Errorf("meeting-events Long 应说明走 User Token，实际:\n%s", vcBotEventsCmd.Long)
+	}
+	if f := vcBotEventsCmd.Flags().Lookup("user-access-token"); f == nil || !strings.Contains(f.Usage, "User 身份") {
+		t.Errorf("meeting-events --user-access-token help 应说明 User 身份")
 	}
 }
 
@@ -187,6 +196,11 @@ func vcBotTokenModeCases() []struct {
 // 即使环境变量存在 User Token，也不能被隐式切到用户身份。
 func TestVCBotCommandsDefaultToTenantToken(t *testing.T) {
 	for _, tc := range vcBotTokenModeCases() {
+		// meeting-events 端点拒收 Tenant Token（99991663），改走 User 优先 + Tenant 兜底，
+		// 默认 token 行为不同，单独由 TestVCBotEventsDefaultsToUserToken 覆盖。
+		if tc.name == "meeting-events" {
+			continue
+		}
 		t.Run(tc.name, func(t *testing.T) {
 			isolateMsgTokenTestEnv(t)
 			t.Setenv("FEISHU_USER_ACCESS_TOKEN", "u-env-token")
@@ -212,6 +226,39 @@ func TestVCBotCommandsDefaultToTenantToken(t *testing.T) {
 				t.Fatalf("Authorization = %q, want %q", capturedAuth, testTenantAuth)
 			}
 		})
+	}
+}
+
+// TestVCBotEventsDefaultsToUserToken 验证 meeting-events 走「User 优先 + Tenant 兜底」：
+// 该端点不接受 Tenant Token（飞书网关 99991663），故已登录（env/token.json 存在 User Token）时
+// 默认就用 User 身份，而非像 join/leave 那样回落 Tenant。这是 BUG #10 修复后的正确行为。
+func TestVCBotEventsDefaultsToUserToken(t *testing.T) {
+	isolateMsgTokenTestEnv(t)
+	t.Setenv("FEISHU_USER_ACCESS_TOKEN", "u-env-token")
+
+	var capturedAuth string
+	cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/open-apis/auth/v3/tenant_access_token/internal") {
+			http.Error(w, "不应请求 tenant_access_token（meeting-events 应优先 User Token）", http.StatusInternalServerError)
+			return
+		}
+		if r.URL.Path != "/open-apis/vc/v1/bots/events" {
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		capturedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"meeting_event_list":[],"has_more":false,"page_token":""}}`)
+	})
+	defer cleanup()
+
+	cmd := newVCBotEventsTestCmd()
+	mustSetFlag(t, cmd, "meeting-id", "m1")
+	if err := vcBotEventsCmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("meeting-events 返回错误: %v", err)
+	}
+	if capturedAuth != "Bearer u-env-token" {
+		t.Fatalf("Authorization = %q, want %q（meeting-events 应优先 User Token）", capturedAuth, "Bearer u-env-token")
 	}
 }
 

@@ -17,6 +17,10 @@ const (
 	defaultDocWriteBurst  = 3
 	docLimiterIdleEvict   = 10 * time.Minute // 长时间空闲的 limiter 自动回收
 	docLimiterEvictPeriod = 5 * time.Minute  // 后台清理周期（仅在调用时触发，无独立 goroutine）
+	// DocWriteSlotAcquireTimeout 等待文档写入配额（限流排队）的最长时间，刻意 >> 单次 HTTP 的 30s：
+	// 限流排队不应与 HTTP 截止时间耦合，否则重度并发（大量 per-cell 写抢同一文档 3 QPS 桶）排队超 30s 时
+	// acquire 会 deadline exceeded，把本该重试的写直接判死。5 分钟远超任何合理排队（实测千次 acquire 最大 ~30s）。
+	DocWriteSlotAcquireTimeout = 5 * time.Minute
 )
 
 type docWriteLimiter struct {

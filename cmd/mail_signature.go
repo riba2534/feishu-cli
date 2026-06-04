@@ -12,37 +12,45 @@ import (
 
 var mailSignatureCmd = &cobra.Command{
 	Use:   "signature",
-	Short: "列出/查看邮箱签名（含默认使用信息）",
+	Short: "列出/查看邮箱签名",
 	Long: `列出或查看邮箱签名。
 
 使用飞书 GET /open-apis/mail/v1/user_mailboxes/{mailbox_id}/settings/signatures API
 读取邮箱设置里的签名列表；--detail 指定某个签名 ID 时，从列表里筛出该签名的渲染详情。
+JSON 输出同时返回 signatures 与 usages（usages 承载默认/回复默认/用途归属，飞书未公开其结构，原样透传）。
 
 可选:
-  --from         邮箱地址（默认 me）
+  --mailbox      邮箱地址（默认 me，与其它 mail 命令一致；旧名 --from 仍兼容）
   --detail       签名 ID（指定后只输出该签名详情；缺省则列出全部）
   --dry-run      只打印将要发送的请求，不实际调用
   --output, -o   输出格式（json）
 
 权限:
   - User Access Token
-  - mail:user_mailbox.settings:read
+  - mail:user_mailbox:readonly
 
 示例:
   feishu-cli mail signature
-  feishu-cli mail signature --from me -o json
+  feishu-cli mail signature --mailbox me -o json
   feishu-cli mail signature --detail 7012345678901234567`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
 		}
 
-		from, _ := cmd.Flags().GetString("from")
 		detail, _ := cmd.Flags().GetString("detail")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		output, _ := cmd.Flags().GetString("output")
 
-		mailboxID := strings.TrimSpace(from)
+		// --mailbox 为主（与 message/send/draft 等全 mail 命令一致）；--from 为兼容旧名。
+		// 显式传哪个就用哪个，--mailbox 优先；都没传则默认 me。
+		mailboxID := "me"
+		if cmd.Flags().Changed("mailbox") {
+			mailboxID, _ = cmd.Flags().GetString("mailbox")
+		} else if cmd.Flags().Changed("from") {
+			mailboxID, _ = cmd.Flags().GetString("from")
+		}
+		mailboxID = strings.TrimSpace(mailboxID)
 		if mailboxID == "" {
 			mailboxID = "me"
 		}
@@ -68,6 +76,8 @@ var mailSignatureCmd = &cobra.Command{
 
 		var parsed struct {
 			Signatures []mailSignatureItem `json:"signatures"`
+			// usages 承载每条签名的默认/回复默认/用途归属，飞书未公开其结构，原样保留不丢弃。
+			Usages []json.RawMessage `json:"usages"`
 		}
 		if err := json.Unmarshal(data, &parsed); err != nil {
 			// 解析失败时直接透传原始 data
@@ -92,7 +102,11 @@ var mailSignatureCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			return printJSON(parsed.Signatures)
+			// 输出完整响应（signatures + usages）：usages 承载默认/用途归属，不丢弃。
+			return printJSON(map[string]any{
+				"signatures": parsed.Signatures,
+				"usages":     parsed.Usages,
+			})
 		}
 
 		if len(parsed.Signatures) == 0 {
@@ -111,6 +125,9 @@ var mailSignatureCmd = &cobra.Command{
 				fmt.Printf("    推荐用途: %s\n", rec)
 			}
 			fmt.Println()
+		}
+		if len(parsed.Usages) > 0 {
+			fmt.Printf("（另有 %d 条 usages 使用信息，用 -o json 查看完整结构）\n", len(parsed.Usages))
 		}
 		return nil
 	},
@@ -171,7 +188,10 @@ func printMailSignatureDetail(s *mailSignatureItem) {
 
 func init() {
 	mailCmd.AddCommand(mailSignatureCmd)
-	mailSignatureCmd.Flags().String("from", "me", "邮箱地址（默认 me）")
+	mailSignatureCmd.Flags().String("mailbox", "me", "邮箱地址（默认 me，与其它 mail 命令一致）")
+	// --from 为兼容旧名，隐藏不在 help 显示；优先级低于 --mailbox。
+	mailSignatureCmd.Flags().String("from", "me", "邮箱地址（已废弃，请用 --mailbox）")
+	_ = mailSignatureCmd.Flags().MarkHidden("from")
 	mailSignatureCmd.Flags().String("detail", "", "签名 ID（指定后只输出该签名详情）")
 	mailSignatureCmd.Flags().Bool("dry-run", false, "只打印请求，不实际调用")
 	mailSignatureCmd.Flags().StringP("output", "o", "", "输出格式（json）")

@@ -682,7 +682,10 @@ func DownloadFileWithToken(fileToken, outputPath, userAccessToken string, timeou
 		return fmt.Errorf("下载文件失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	return writeStreamToFile(resp.File, outputPath)
+	// Bot/Tenant（SDK）下载路径保留 100MB 客户端上限（saveToFile 内含 LimitReader + 超限删盘）。
+	// user-token raw 路径（上面 downloadDriveFileWithUserTokenRaw）才刻意去掉上限——它用 Range 分片
+	// 正是为突破 100MB；两条路径上限策略不同，此处不要退化成无上限的 writeStreamToFile。
+	return saveToFile(resp.File, outputPath)
 }
 
 func downloadDriveFileWithUserTokenRaw(fileToken, outputPath, userAccessToken string, timeout time.Duration) error {

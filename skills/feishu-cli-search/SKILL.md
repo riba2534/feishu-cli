@@ -169,11 +169,16 @@ feishu-cli search messages "关键词" [选项]
 | `--end-time` | string | 结束时间（Unix 秒级时间戳） |
 | `--page-size` | int | 每页数量（默认 20） |
 | `--page-token` | string | 分页 token（上一页返回） |
-| `--page-all` | bool | 自动翻页拉取全部（配合 `--page-limit`） |
+| `--page-all` | bool | 自动翻页拉取全部（受 `--page-limit` 限制） |
+| `--page-limit` | int | 自动翻页最大页数，`0`=不限（默认 0）；配合 `--page-all` 防失控 |
 | `--enrich` | bool | 补全内容/发送者/群名/时间（opt-in，额外 API 调用） |
+| `--card-content-type` | string | interactive 卡片富化格式：`user`（默认，提取 `card_texts`）/ `raw`（平台内部完整 cardDSL）/ `rendered`（OAPI 渲染版/降级版）。**仅在 `--enrich` 时生效**，非 enrich 路径忽略 |
 | `--format` | string | 结构化输出：`json`/`pretty`/`table`/`ndjson`/`csv` |
 | `--jq` | string | 用 jq 表达式过滤结构化输出 |
+| `--user-id-type` | string | 用户 ID 类型：`open_id`（默认）/`union_id`/`user_id` |
 | `-o json` | string | JSON 格式输出（等价 `--format json`） |
+
+> **`--page-all` 截断无提示**：仅非翻页模式（`!--page-all` 且 `HasMore=true`）会打印"还有更多结果"。当 `--page-all` 因达到 `--page-limit` 提前停止（而非真正耗尽）时，CLI **不会**提示结果被截断——需要拉全量时把 `--page-limit` 设为 `0`，或结合 JSON 输出的 `HasMore` 自行判断。
 
 > **默认 vs `--enrich`**：默认仅返回消息 ID（`-o json` 输出 `{MessageIDs,HasMore,PageToken}`），与历史行为一致、向后兼容。加 `--enrich` 才会多发 `BatchGetMessages` 等 API 补全内容/发送者/群名/时间，`-o json` 此时返回富化后的数组。
 
@@ -186,6 +191,12 @@ feishu-cli search messages "上线"
 # 富化：补全内容/发送者/群名/时间
 feishu-cli search messages "上线" --enrich
 feishu-cli search messages "上线" --enrich --format table
+
+# 富化 + 控制卡片消息格式（仅 --enrich 生效）
+feishu-cli search messages "告警" --enrich --card-content-type raw
+
+# 富化 + 自动翻页（最多 5 页，防失控）
+feishu-cli search messages "项目" --enrich --page-all --page-limit 5 --format csv
 
 # 搜索私聊消息（search-chats 无法搜到 p2p 会话，用此方式替代）
 feishu-cli search messages "你好" --chat-type p2p_chat

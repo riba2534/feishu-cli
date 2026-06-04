@@ -2088,6 +2088,16 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 		splitPendingColWidth = c.pendingColWidth
 		c.pendingColWidth = nil // 列拆分场景下消费一次，避免泄漏到下一表
 	}
+	// 显式 flag(--table-column-width=explicit) 的列宽也要按列组切片，否则第二组及以后会取错列
+	// （与上面注释 splitPendingColWidth 对称）：拆分后第 i 组是 col0(标识列)+本组其余列，必须用
+	// extractIntColumns 取对应索引，而不是把完整数组传给每组让 alignAndClamp 截前 N 个（会错位，
+	// 并打印"提供 N 个列宽但表只有 M 列"的误导警告）。options 跨整篇文档共享，故循环内临时替换、函数返回时恢复。
+	var splitExplicitColWidth []int
+	if c.options.ColumnWidthMode == "explicit" && len(c.options.ColumnWidthValues) > 0 {
+		splitExplicitColWidth = c.options.ColumnWidthValues
+		origExplicit := c.options.ColumnWidthValues
+		defer func() { c.options.ColumnWidthValues = origExplicit }()
+	}
 	var results []*ConvertTableResult
 	for _, colIndices := range colGroups {
 		groupCols := len(colIndices)
@@ -2110,9 +2120,12 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 			groupDataRowElements[i] = extractColumnElements(rowElems, colIndices)
 		}
 
-		// 计算该列组的列宽：先把 pending 切到本组的索引，再走 resolveColumnWidths
+		// 计算该列组的列宽：先把 pending(注释)/explicit(flag) 切到本组的索引，再走 resolveColumnWidths
 		if splitPendingColWidth != nil {
 			c.pendingColWidth = extractIntColumns(splitPendingColWidth, colIndices)
+		}
+		if splitExplicitColWidth != nil {
+			c.options.ColumnWidthValues = extractIntColumns(splitExplicitColWidth, colIndices)
 		}
 		groupColWidths := c.resolveColumnWidths(groupHeader, groupDataRows, groupCols)
 

@@ -48,7 +48,7 @@ allowed-tools: Bash(feishu-cli auth:*), Bash(feishu-cli sheet:*), Bash(feishu-cl
 | 基础文件 | `file list/mkdir/move/copy/delete/download/upload/version/meta/stats` | 本文件 |
 | 素材 | `media upload/download` | 本文件 |
 | 评论 | `comment list/add/delete/resolve/unresolve`、`comment reply` | 本文件 |
-| 知识库 | `wiki get/export/spaces/nodes/space-get/member` | 本文件 |
+| 知识库 | `wiki get/update/export/spaces/nodes/space-get/member` | 本文件 |
 | 审批 | `approval get`、`approval task query`（User Token 必需） | 本文件 |
 | 用户/部门 | `user info/search/list`、`dept get/children` | 本文件 |
 
@@ -97,16 +97,19 @@ feishu-cli tasklist tasks <tasklist_guid>
 
 ## File / Media
 
-基础文件和素材命令适合简单 App Token 场景；大文件、resume、云盘 diff 用 `feishu-cli-drive`。
+基础文件和素材命令适合简单 App Token 场景；上传 resume、云盘 diff 用 `feishu-cli-drive`。
 
 ```bash
 feishu-cli file list <folder_token>
 feishu-cli file upload ./report.pdf --parent fldxxx
 feishu-cli file download <file_token> -o ./report.pdf
+feishu-cli file download <file_token> -o large.zip --timeout 30m       # 大文件可调超时
 feishu-cli file mkdir "新文件夹" --parent fldxxx
 feishu-cli media upload image.png --parent-type docx_image --parent-node <document_id>
 feishu-cli media download <file_token> -o ./image.png
 ```
+
+> `file download` 已登录自动用 User Token（`resolveOptionalUserTokenWithFallback`，也可显式 `--user-access-token`）。用户身份下载走 raw HTTP，遇飞书大文件限制（100MB+）会自动用 HTTP Range 分片下载并合并——和 `drive download` 一致，因此 toolkit 即可处理用户态大文件，不必再绕 `feishu-cli-drive`。
 
 ## Comment / Wiki
 
@@ -118,6 +121,7 @@ feishu-cli comment resolve <file_token> <comment_id> --type docx
 feishu-cli wiki spaces
 feishu-cli wiki nodes <space_id>
 feishu-cli wiki get <node_token>
+feishu-cli wiki update <node_token> --title "新标题"              # 改节点标题（仅 doc/docx/快捷方式；需 wiki:node:update）
 feishu-cli wiki space-get <space_id>                              # 知识库基础信息（名称/类型/可见性/分享状态）
 feishu-cli wiki member list <space_id>
 

@@ -10,7 +10,7 @@ import (
 // ==================== role 子命令组 ====================
 var bitableRoleCmd = &cobra.Command{
 	Use:   "role",
-	Short: "角色管理（list/get/create/update/delete）",
+	Short: "角色管理（list/get/create/update/delete）+ member 子组（协作者增删）",
 }
 
 func bitableRolePath(baseToken string, extra ...string) string {
@@ -129,10 +129,10 @@ var bitableDataQueryCmd = &cobra.Command{
 	},
 }
 
-// ==================== workflow list ====================
+// ==================== workflow ====================
 var bitableWorkflowCmd = &cobra.Command{
 	Use:   "workflow",
-	Short: "工作流管理（list）",
+	Short: "工作流管理（list/get/create/update/enable/disable）",
 }
 
 var bitableWorkflowListCmd = &cobra.Command{

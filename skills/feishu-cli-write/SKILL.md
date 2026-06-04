@@ -80,9 +80,16 @@ feishu-cli doc content-update <document_id> --mode append \
 # 完全覆盖
 feishu-cli doc content-update <document_id> --mode overwrite \
   --markdown-file /tmp/full.md
+
+# 控制 Markdown 表格列宽（默认按内容启发式自动计算）
+feishu-cli doc content-update <document_id> --mode append \
+  --markdown-file /tmp/with-table.md \
+  --table-column-width 80,200,*,120
 ```
 
 关键规则：用户说“修改/替换/更新某段”时用 `replace_range` 或 `replace_all`，不要 append 导致重复。
+
+`--table-column-width`（content-update / add 通用，默认 `auto`）：`auto` 按内容启发式 | `fixed` 固定宽度 | `N1,N2,...` 像素列表（`*` 表示该列走 auto）。仅 Markdown 内容类型生效；也可在表格上方写注释 `<!-- feishu-colwidth: 80,200,*,30% -->` 覆盖（注释优先级高于 flag）。
 
 ## Markdown 图片
 
@@ -108,6 +115,8 @@ feishu-cli doc media-insert <document_id> --file /path/to/report.pdf --type file
 feishu-cli doc add <document_id> content.md --content-type markdown --upload-images
 feishu-cli doc add <document_id> --content '[{"block_type":2,...}]' --source-type content
 feishu-cli doc add <document_id> doc.md --content-type markdown --block-id <parent_block_id> --index 0
+# 带表格的 Markdown 可指定列宽（仅 markdown 内容类型生效）
+feishu-cli doc add <document_id> table.md --content-type markdown --table-column-width auto
 
 feishu-cli doc update <document_id> <block_id> --content-file update.json
 

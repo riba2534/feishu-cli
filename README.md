@@ -719,6 +719,7 @@ feishu-cli bitable record upsert --base-token bscnxxxx --table-id tblxxx --confi
 feishu-cli bitable record upsert --base-token bscnxxxx --table-id tblxxx --record-id recxxx --config '{"fields":{"状态":"完成"}}'
 feishu-cli bitable record batch-create --base-token bscnxxxx --table-id tblxxx --config '{"fields":["fld1"],"rows":[["val1"],["val2"]]}'
 feishu-cli bitable record batch-delete --base-token bscnxxxx --table-id tblxxx --record-ids rec_1,rec_2,rec_3
+feishu-cli bitable record batch-get    --base-token bscnxxxx --table-id tblxxx --record-ids rec_1,rec_2  # 批量获取记录
 feishu-cli bitable record share-link   --base-token bscnxxxx --table-id tblxxx --record-ids rec_1,rec_2  # 批量共享链接（v1.29+）
 feishu-cli bitable record list --base-token bscnxxxx --table-id tblxxx
 feishu-cli bitable view list --base-token bscnxxxx --table-id tblxxx
@@ -746,9 +747,22 @@ feishu-cli bitable form field create --base-token bscnxxxx --table-id tblxxx --f
 feishu-cli bitable form detail --share-token shrcnxxxx                          # 无需 base_token
 feishu-cli bitable form submit --share-token shrcnxxxx --content '{"评分":5,"评价":"很好"}'
 
-# 工作流（CRUD，update 为整体替换 PUT）
-feishu-cli bitable workflow get --base-token bscnxxxx --workflow-id wkfxxxx
-feishu-cli bitable workflow update --base-token bscnxxxx --workflow-id wkfxxxx --config-file wf.json
+# 角色协作者（member list/create/delete/batch-create/batch-delete）
+feishu-cli bitable role member list   --base-token bscnxxxx --role-id rolxxxx
+feishu-cli bitable role member create --base-token bscnxxxx --role-id rolxxxx --member-id ou_xxx --member-id-type open_id
+feishu-cli bitable role member delete --base-token bscnxxxx --role-id rolxxxx --member-id ou_xxx --member-id-type open_id
+feishu-cli bitable role member batch-create --base-token bscnxxxx --role-id rolxxxx --member-ids ou_a,ou_b --member-id-type open_id
+
+# 多维表格元信息更新（重命名 / 高级权限开关）
+feishu-cli bitable update --base-token bscnxxxx --name "新表名"           # 重命名
+feishu-cli bitable update --base-token bscnxxxx --is-advanced             # 开启高级权限（--is-advanced=false 关闭）
+
+# 工作流（list/get/create/update/enable/disable；update 为整体替换 PUT）
+feishu-cli bitable workflow list    --base-token bscnxxxx
+feishu-cli bitable workflow get     --base-token bscnxxxx --workflow-id wkfxxxx
+feishu-cli bitable workflow update  --base-token bscnxxxx --workflow-id wkfxxxx --config-file wf.json
+feishu-cli bitable workflow enable  --base-token bscnxxxx --workflow-id wkfxxxx
+feishu-cli bitable workflow disable --base-token bscnxxxx --workflow-id wkfxxxx
 
 # 云盘增强（drive）
 feishu-cli drive upload --file big.zip --folder-token fldxxx
@@ -789,14 +803,14 @@ feishu-cli mail forward --message-id msg_xxx --to team@example.com --body "请�
 feishu-cli mail signature                                          # 列出邮箱签名
 feishu-cli mail signature --detail 7012345678901234567 -o json     # 单个签名详情
 
-# 视频会议（vc，需 User Token）
+# 视频会议（vc）：search/notes/recording 需 User Token；bot meeting-join/leave 默认 Bot/Tenant 身份
 feishu-cli vc search --query "周会" --start 2026-03-20 --end 2026-03-28
 feishu-cli vc notes --meeting-ids 69xxxx,70xxxx
 feishu-cli vc notes --minute-tokens obcnxxxx --with-artifacts --download-transcript --output-dir ./notes
 feishu-cli vc recording --meeting-ids 69xxxx
-feishu-cli vc bot meeting-join --meeting-number 123456789          # 机器人按会议号入会
-feishu-cli vc bot meeting-leave --meeting-id 6911188411932033028   # 机器人离会
-feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --start 2026-03-01 --end 2026-03-31
+feishu-cli vc bot meeting-join --meeting-number 123456789          # 机器人入会（Bot/Tenant 身份）
+feishu-cli vc bot meeting-leave --meeting-id 6911188411932033028   # 机器人离会（Bot/Tenant 身份）
+feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --start 2026-03-01 --end 2026-03-31  # 需 User Token（端点拒收 Tenant）
 
 # 妙记（minutes，需 User Token）
 feishu-cli minutes get <minute_token> --with-artifacts

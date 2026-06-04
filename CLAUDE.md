@@ -60,9 +60,9 @@ export FEISHU_APP_SECRET=xxx
 通过 **OAuth 2.0 Device Flow（RFC 8628）** 获取 User Access Token，用于搜索、审批任务查询等需要用户授权的功能。**无需配置重定向 URL 白名单**（v1.18+ 已删除 Authorization Code Flow）。
 
 **Token 使用策略**（按命令分三类，对应 `cmd/utils.go` 三个 helper）：
-- **读类 · User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`，约 85 个命令）：`msg history/list/get/mget/thread-messages/resource-download`、`task get/list/subtask list/comment list/tasklist get/list/tasks`、`calendar get/list/primary/agenda/freebusy/suggestion/room-find/event get/list/search/attendee list`、`file meta/stats/list/version list/get/download`、`board image/nodes/export-code/lint`、`user read`、`wiki get/nodes/spaces/export/member list`、`drive pull/push/status`、**sheet 全家桶**（所有 sheet 子命令含写）等。优先级链：`--user-access-token` → `FEISHU_USER_ACCESS_TOKEN` → `~/.feishu-cli/token.json`（过期自动刷新）→ `config.yaml` 的 `user_access_token` → App Token 兜底。
-- **写类 · 默认 Bot 身份**（`resolveOptionalUserToken`）：所有 `add/create/update/delete/move/copy/import/upload/send/reply/forward/merge-forward` 类命令、`comment reply`、`doc content-update / table 写`、`msg delete`（Bot 自撤回）等。**不会自动加载 token.json**，仅当显式传 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到 User Token。
-- **必须 User Token**（`resolveRequiredUserToken` / `requireUserToken`）：`search docs/messages/apps`、`approval task query/approve/reject/transfer`、`approval instance get/cancel/cc`、`task my`（`my_tasks`）、`msg pin/reaction/search-chats/flag`、`chat get/update/delete/member`、`vc/minutes/mail` 全部、`drive upload/download/export/import/move/add-comment/task-result/search`、`calendar rsvp`、`markdown create/fetch/overwrite` 等。失败直接报错。
+- **读类 · User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`，约 85 个命令）：`msg history/list/get/mget/thread-messages/resource-download`、`task get/list/subtask list/comment list/tasklist get/list/tasks`、`calendar get/list/primary/agenda/freebusy/suggestion/room-find/event get/list/search/attendee list`、`file meta/stats/list/version list/get/download`、`board image/nodes/export-code/lint`、`user read`、`wiki get/nodes/spaces/export/member list`、`drive pull/push/status`、`vc bot meeting-events`（端点拒收 Tenant Token，User 优先）、**sheet 全家桶**（所有 sheet 子命令含写）等。优先级链：`--user-access-token` → `FEISHU_USER_ACCESS_TOKEN` → `~/.feishu-cli/token.json`（过期自动刷新）→ `config.yaml` 的 `user_access_token` → App Token 兜底。
+- **写类 · 默认 Bot 身份**（`resolveOptionalUserToken`）：所有 `add/create/update/delete/move/copy/import/upload/send/reply/forward/merge-forward` 类命令、`comment reply`、`doc content-update / table 写`、`msg delete`（Bot 自撤回）等。**不会自动加载 token.json**，仅当显式传 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到 User Token。`vc bot meeting-join/leave` 同属默认 Bot 身份，但用更严格的 `resolveFlagUserToken`：**只认 `--user-access-token` flag，连 `FEISHU_USER_ACCESS_TOKEN` 环境变量都不读**。
+- **必须 User Token**（`resolveRequiredUserToken` / `requireUserToken`）：`search docs/messages/apps`、`approval task query/approve/reject/transfer`、`approval instance get/cancel/cc`、`task my`（`my_tasks`）、`msg pin/reaction/search-chats/flag`、`chat get/update/delete/member`、`vc search/notes/recording`、`minutes/mail` 全部、`drive upload/download/export/import/move/add-comment/task-result/search`、`calendar rsvp`、`markdown create/fetch/overwrite/diff` 等。失败直接报错。
 - **审批任务查询**：`approval task query` 会调用 `/authen/v1/user_info` 推断 `open_id`，缓存到 `~/.feishu-cli/user_profile.json`，`auth logout` 时自动清理
 
 **登录命令四种模式**：
@@ -159,9 +159,11 @@ feishu-cli mail {triage|send|draft-create|reply|forward|message|thread} ...
 # 云盘增强
 feishu-cli drive {upload|download|export|import|move|add-comment|task-result} ...
 
-# 视频会议与妙记（全部需 User Token）
-feishu-cli vc {search|notes|recording} ...
-feishu-cli minutes {get|download} --minute-tokens ...
+# 视频会议与妙记
+feishu-cli vc {search|notes|recording} ...                       # 需 User Token
+feishu-cli vc bot {meeting-join|meeting-leave} ...               # 默认 Bot/Tenant 身份
+feishu-cli vc bot meeting-events --meeting-id ...                # 需 User Token（端点拒收 Tenant）
+feishu-cli minutes {get|download} --minute-tokens ...           # 需 User Token
 
 # 画板（v1.25+ 新增能力 ⭐）
 feishu-cli board svg-import <id> drawing.svg                    # SVG 单节点装饰（< 2KB 小元素）

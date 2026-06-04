@@ -39,8 +39,10 @@ feishu-cli api <METHOD> <path> [flags]
 | `--user-access-token` | 显式传 User Access Token（`--as user/auto` 时用） |
 | `--dry-run` | 只打印将发送的请求（method/path/query/body/identity），不实际调用 |
 | `-o <file>` | 写原始响应体到文件（binary-safe，适合下载类接口） |
-| `--format json\|pretty\|table\|ndjson\|csv` | 响应渲染格式（默认 json） |
-| `--jq '<expr>'` | 用内置 gojq 过滤响应（无需外部 jq） |
+| `--format json\|pretty\|table\|ndjson\|csv` | 响应渲染格式（指定后走内置渲染，覆盖默认 pretty；仅适用于 JSON 响应） |
+| `--jq '<expr>'` | 用内置 gojq 过滤响应（无需外部 jq；仅适用于 JSON 响应） |
+
+> **`-o` 二进制下载 与 `--format/--jq` 互斥**：默认 / `--raw` / 纯 `-o` 走原样写文件路径（binary-safe）；一旦带上 `--format` 或 `--jq`，响应会先按 JSON 解析再渲染，二进制响应会 decode 失败并报错「响应不是合法 JSON，无法用 --format/--jq 渲染（去掉这两个 flag 可用 --raw 原样输出）」。下载媒体/文件时只用 `-o`，不要叠加 `--format/--jq`。
 
 > 大整数精度：响应用 `UseNumber` 解析，飞书 19 位 `message_id`/`chat_id` 等不会被降级丢精度。
 

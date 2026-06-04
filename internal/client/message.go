@@ -1370,7 +1370,20 @@ type BatchGetMessagesResult struct {
 //
 // cardContentType 透传给每次 GetMessage 调用；空字符串则维持原渲染版返回。
 // 每次 GetMessage 内部会自动展开 merge_forward 子消息，结果聚合到返回值的 map 中。
+// 任一消息获取失败即整批返回错误（严格模式）。
 func BatchGetMessages(messageIDs []string, userAccessToken, cardContentType string) (*BatchGetMessagesResult, error) {
+	return batchGetMessages(messageIDs, userAccessToken, cardContentType, false)
+}
+
+// BatchGetMessagesBestEffort 与 BatchGetMessages 相同，但单条 GetMessage 失败时跳过该条
+// （对应 Messages[i] 留 nil），不中断整批——用于 enrich「尽力补全」语义：搜索结果会跨
+// 大量会话返回消息 ID，个别消息可能因撤回 / 退群 / 无可见性而 GetMessage 失败，best-effort
+// 保证一条坏消息不会让整页 / 整次 --page-all 富化结果归零。
+func BatchGetMessagesBestEffort(messageIDs []string, userAccessToken, cardContentType string) (*BatchGetMessagesResult, error) {
+	return batchGetMessages(messageIDs, userAccessToken, cardContentType, true)
+}
+
+func batchGetMessages(messageIDs []string, userAccessToken, cardContentType string, bestEffort bool) (*BatchGetMessagesResult, error) {
 	const batchGetMessagesConcurrency = 5
 	results := make([]*larkim.Message, len(messageIDs))
 	errs := make([]error, len(messageIDs))
@@ -1403,9 +1416,11 @@ func BatchGetMessages(messageIDs []string, userAccessToken, cardContentType stri
 		}()
 	}
 	wg.Wait()
-	for _, err := range errs {
-		if err != nil {
-			return nil, err
+	if !bestEffort {
+		for _, err := range errs {
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	out := &BatchGetMessagesResult{Messages: results}

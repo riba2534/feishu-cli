@@ -167,9 +167,11 @@ feishu-cli api POST /open-apis/im/v1/chats \
 | `--data-file <path>` | Body 从文件读（`-` 表示 stdin） |
 | `--as bot\|user\|auto` | 强制身份；auto = user 优先回退 bot |
 | `--dry-run` | 仅打印请求，不实际调 |
+| `--format json\|pretty\|table\|ndjson\|csv` | 响应渲染格式（指定后走内置渲染，覆盖默认 pretty） |
+| `--jq '<expr>'` | 内置 gojq 过滤响应（无需外部 jq） |
 | `--raw` | 原样输出（默认 pretty JSON） |
 | `--include-headers` | stderr 打印响应头 |
-| `--output <file>` | 写入文件而非 stdout |
+| `--output <file>` / `-o` | 写入文件而非 stdout（`-o` 二进制下载与 `--format/--jq` 互斥，见 `feishu-cli-api` skill） |
 | `--timeout <seconds>` | 自定义超时（默认 30s） |
 
 ### 内置错误码翻译（v1.29+）

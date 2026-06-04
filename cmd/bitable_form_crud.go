@@ -137,7 +137,8 @@ func runFormShareToken(cmd *cobra.Command, segments []string, body any) error {
 	req := bitableReq{method: "POST", path: path, body: body}
 
 	if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
-		o, oerr := output.NewOptions(output.FormatJSON, "")
+		// dry-run 预览尊重 --format/--jq（与实调路径 renderBitableResult 一致）。
+		o, oerr := output.ParseOptions(cmd)
 		if oerr != nil {
 			return oerr
 		}
@@ -207,7 +208,10 @@ var bitableFormSubmitCmd = &cobra.Command{
 }
 
 // buildFormSubmitContent 解析 --content/--content-file 为字段值 map。
-// 兼容用户传 {"fields":{...}} 包装：自动解包为内层 map（与 form-submit 的 content 语义对齐）。
+// content 直接就是「字段名→值」的裸 map（与飞书 form-submit 的 content 语义一致，区别于
+// record 的 {"fields":{...}} 外层包装）。这里【不】做 fields 自动解包：对「恰好只有一个
+// 名为 fields 的对象型字段」的表单，自动解包会静默丢掉外层、造成提交内容错误且难以察觉；
+// 而误传 record 风格 {"fields":{...}} 的用户会收到飞书「无此字段」的明确报错，可立即纠正。
 func buildFormSubmitContent(cmd *cobra.Command) (any, error) {
 	contentJSON, _ := cmd.Flags().GetString("content")
 	contentFile, _ := cmd.Flags().GetString("content-file")
@@ -218,11 +222,6 @@ func buildFormSubmitContent(cmd *cobra.Command) (any, error) {
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		return nil, fmt.Errorf("解析 --content 失败: %w", err)
-	}
-	if fields, ok := parsed["fields"]; ok {
-		if fm, ok := fields.(map[string]any); ok && len(parsed) == 1 {
-			return fm, nil
-		}
 	}
 	return parsed, nil
 }

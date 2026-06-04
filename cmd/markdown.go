@@ -26,6 +26,7 @@ var markdownCmd = &cobra.Command{
   create     创建 .md 文件（从字符串或本地文件）
   fetch      读取 .md 文件内容
   overwrite  覆盖现有 .md 文件
+  diff       比对远端 Markdown（版本间，或远端 vs 本地文件），本地计算 unified diff（不改远端）
 
 权限要求:
   - User Access Token（推荐，避免 owner 是 bot）

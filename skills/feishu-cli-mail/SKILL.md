@@ -35,7 +35,7 @@ allowed-tools: Bash(feishu-cli mail:*), Bash(feishu-cli auth:*), Read
 | `mail messages` | 批量获取多封邮件 |
 | `mail thread` | 获取邮件线程（对话） |
 | `mail triage` | 列出/过滤邮件（folder/label/query/unread-only） |
-| `mail signature` | 列出/查看邮箱签名（`--detail <签名ID>` 取单个详情） |
+| `mail signature` | 列出/查看邮箱签名（`--mailbox` 定位邮箱，旧名 `--from` 仍兼容；`--detail <签名ID>` 取单个详情；`-o json` 返回完整 `{signatures, usages}`；支持 `--dry-run`） |
 
 ```bash
 # 查未读收件箱
@@ -60,7 +60,7 @@ feishu-cli mail thread --thread-id thread_xxx
 
 # 列出邮箱签名（默认 mailbox=me）
 feishu-cli mail signature
-feishu-cli mail signature --from me -o json
+feishu-cli mail signature --mailbox me -o json   # JSON 输出含完整 {signatures, usages}
 # 查看单个签名详情（从列表里筛出该 ID 的渲染详情）
 feishu-cli mail signature --detail 7012345678901234567
 ```
@@ -149,7 +149,7 @@ feishu-cli mail draft-edit --draft-id $DRAFT_ID --to user@example.com --subject 
 |---|---|
 | `mail triage` | `mail:user_mailbox:readonly`、`mail:user_mailbox.message:readonly`、`mail:user_mailbox.message.body:read`、`mail:user_mailbox.message.address:read`、`mail:user_mailbox.message.subject:read` |
 | `mail message` / `mail messages` / `mail thread` | 同上只读集 |
-| `mail signature` | `mail:user_mailbox.settings:read` |
+| `mail signature` | `mail:user_mailbox:readonly`（签名只需这一个，无需 message.* 系列） |
 | `mail send` | 上述只读权限 + `mail:user_mailbox.message:send`、`mail:user_mailbox.message:modify`（草稿创建走 `:modify`，`--confirm-send` 触发 `:send`）；`--inline-images-auto-scan` 额外需要 `drive:drive`、`drive:file:upload` 和 `auth:user.id:read`（用于获取上传 `parent_node` 所需的 open_id） |
 | `mail draft-create` / `mail draft-edit` | 上述只读权限 + `mail:user_mailbox.message:modify`（仅写草稿，不发送，不需 `:send`） |
 | `mail reply` / `mail reply-all` / `mail forward` | 上述只读权限 + `mail:user_mailbox.message:send`、`mail:user_mailbox.message:modify`（先建草稿后发送，与 `mail send --confirm-send` 同） |
@@ -158,7 +158,9 @@ feishu-cli mail draft-edit --draft-id $DRAFT_ID --to user@example.com --subject 
 
 > 推荐预检：
 > ```bash
-> # 只读类
+> # 仅签名（只需一个 scope，不要过度申请 message.* 系列）
+> feishu-cli auth check --scope "mail:user_mailbox:readonly"
+> # 消息只读类（message / messages / thread / triage）
 > feishu-cli auth check --scope "mail:user_mailbox:readonly mail:user_mailbox.message:readonly mail:user_mailbox.message.body:read mail:user_mailbox.message.address:read mail:user_mailbox.message.subject:read"
 > # 写类（含 send / reply / forward / 草稿）
 > feishu-cli auth check --scope "mail:user_mailbox:readonly mail:user_mailbox.message:modify mail:user_mailbox.message:send"

@@ -151,6 +151,34 @@ feishu-cli markdown diff --file-token boxcnxxx --file ./local.md -o json
 | `--dry-run` | 只打印比对计划，不下载/不比对 |
 | `-o json` | 输出结构化 hunk；缺省打印 unified diff 文本 |
 
+**`-o json` 输出结构**（顶层 9 字段，便于 `jq` 取改动量 / 判一致）：
+
+```jsonc
+{
+  "detection": "local_vs_remote",   // 比对模式：local_vs_remote（模式 1）/ remote_vs_remote（模式 2/3）
+  "from": "remote (latest)",        // 左侧来源名（模式 1="remote (latest)"；模式 2/3="remote@version=N"）
+  "to": "local: ./local.md",        // 右侧来源名（模式 1="local: <path>"；模式 2="remote (latest)"；模式 3="remote@version=N"）
+  "size_bytes_before": 1024,        // 左侧内容字节数
+  "size_bytes_after": 1088,         // 右侧内容字节数
+  "identical": false,               // 是否无差异（等价于 hunks 为空）
+  "added_lines": 5,                 // 新增行数（统计所有 hunk 中 op="+"）
+  "removed_lines": 2,               // 删除行数（统计所有 hunk 中 op="-"）
+  "hunks": [                        // unified diff 的 hunk 数组（无差异时为空数组）
+    {
+      "old_start": 10, "old_lines": 4,   // 左侧起始行 / 行数
+      "new_start": 10, "new_lines": 7,   // 右侧起始行 / 行数
+      "lines": [
+        { "op": " ", "text": "上下文行" },   // op: " "=未变 / "-"=删除 / "+"=新增
+        { "op": "-", "text": "旧内容" },
+        { "op": "+", "text": "新内容" }
+      ]
+    }
+  ]
+}
+```
+
+常用 `jq`：`jq '.identical'` 判是否一致、`jq '.added_lines, .removed_lines'` 取改动量、`jq '.hunks[].lines[] | select(.op=="+") | .text'` 拉所有新增行。
+
 > 与 `overwrite` 配合：覆盖前先 `diff --file ./local.md` 预览本地相对远端最新的改动，确认后再 overwrite，避免误覆盖。
 
 ## 底层实现 & 踩坑
@@ -169,6 +197,12 @@ feishu-cli markdown diff --file-token boxcnxxx --file ./local.md -o json
 
 - `markdown create` 调 `client.UploadFileWithToken`（> 20MB 时该函数会自动切到分片管线，但 `markdown create` 主场景是文本 `.md` 远小于 20MB）
 - `markdown overwrite` **只支持 ≤ 20MB 小文件**，大文件覆盖需要分片接口，本命令组未实现。如果是几十 MB 的 `.md`（罕见，比如海量日志贴）走 `drive upload` 分片管线创建新文件，无法保留原 file_token。
+
+**`markdown diff` 另有独立的行数/矩阵上限**（与 20MB 上传上限无关，防 LCS 矩阵 OOM）：
+
+- **单侧 ≤ 20000 行**：任一侧超过即报错 `内容过大（N 行 / M 行），单侧超过行数上限 20000，建议用外部 diff 工具`
+- **两侧行数乘积 ≤ 2000 万单元**：LCS 用完整 `(n+1)×(m+1)` int 矩阵，内存随两侧行数**乘积**增长；乘积超限报错 `内容过大（N × M 行），LCS 矩阵超过 20000000 单元上限（防 OOM），建议用外部 diff 工具`
+- 两条都在下载完成、计算 LCS **之前**拦截（`cmd/markdown_diff.go:checkDiffSize`）。长 `.md`（海量日志贴、全量代码 dump）跑 diff 命中该报错时，改用本地 `diff` / `git diff` 等外部工具，或先用 `markdown fetch` 落盘两侧再外部比对。
 
 ### 3. `.md` 后缀强制校验
 

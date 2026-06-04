@@ -140,3 +140,48 @@ func TestSearchMessagesEnrichedEmpty(t *testing.T) {
 		t.Errorf("空结果处理不对: enriched=%d res=%v", len(enriched), res)
 	}
 }
+
+// TestSearchMessagesEnrichedBestEffort 验证 BUG#7 修复：--enrich 用 best-effort 批量取详情，
+// 个别消息 GetMessage 失败（撤回/退群/无可见性）时跳过该条、不让整页富化归零，且保留其余成功项的顺序。
+func TestSearchMessagesEnrichedBestEffort(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/open-apis/search/v2/message":
+			// 三条结果，中间一条不可读
+			_, _ = io.WriteString(w, `{"code":0,"msg":"ok","data":{"items":["om_ok1","om_bad","om_ok2"],"has_more":false,"page_token":""}}`)
+		case "/open-apis/im/v1/messages/om_ok1":
+			_, _ = io.WriteString(w, `{"code":0,"msg":"ok","data":{"items":[{"message_id":"om_ok1","msg_type":"text","create_time":"1700000000000","chat_id":"oc_1","body":{"content":"{\"text\":\"first\"}"}}]}}`)
+		case "/open-apis/im/v1/messages/om_bad":
+			// 模拟不可读消息（撤回/退群/无可见性）→ GetMessage 返回 error
+			_, _ = io.WriteString(w, `{"code":230002,"msg":"message not found"}`)
+		case "/open-apis/im/v1/messages/om_ok2":
+			_, _ = io.WriteString(w, `{"code":0,"msg":"ok","data":{"items":[{"message_id":"om_ok2","msg_type":"text","create_time":"1700000001000","chat_id":"oc_1","body":{"content":"{\"text\":\"third\"}"}}]}}`)
+		case "/open-apis/im/v1/chats/oc_1":
+			_, _ = io.WriteString(w, `{"code":0,"msg":"ok","data":{"name":"群","chat_id":"oc_1"}}`)
+		default:
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	setupTestConfig(t, srv.URL)
+
+	enriched, res, err := SearchMessagesEnriched(SearchMessagesOptions{Query: "x", PageSize: 10}, "u-test", "user")
+	// best-effort：个别消息失败不应让整批报错（修复前严格版会整页归零）
+	if err != nil {
+		t.Fatalf("best-effort 下个别消息失败不应整批报错，得: %v", err)
+	}
+	if res == nil {
+		t.Fatal("res 不应为 nil")
+	}
+	// 失败的 om_bad 被跳过，保留 2 条成功的（保持搜索返回顺序）
+	if len(enriched) != 2 {
+		t.Fatalf("应保留 2 条成功 enriched（om_bad 跳过），得 %d", len(enriched))
+	}
+	if enriched[0].MessageID != "om_ok1" || enriched[1].MessageID != "om_ok2" {
+		t.Errorf("顺序/内容不对: %s, %s", enriched[0].MessageID, enriched[1].MessageID)
+	}
+	if enriched[0].Text != "first" || enriched[1].Text != "third" {
+		t.Errorf("text 不对: %q, %q", enriched[0].Text, enriched[1].Text)
+	}
+}

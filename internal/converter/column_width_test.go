@@ -202,6 +202,49 @@ func TestColumnWidth_HTMLBlockComment_EndToEnd(t *testing.T) {
 	}
 }
 
+// TestColumnWidth_ExplicitFlag_ColumnSplit 验证 BUG#9：>9 列表用 --table-column-width(explicit)
+// 时，列宽必须按列组切片——第二组是 col0(标识列)+col9+col10，应取对应索引的列宽 [v0,v9,v10]，
+// 而不是把完整数组的前 3 个 [v0,v1,v2] 套上去（修复前的错位行为）。与注释路径(splitPendingColWidth)对称。
+func TestColumnWidth_ExplicitFlag_ColumnSplit(t *testing.T) {
+	// 11 列（超 9 触发列拆分），1 数据行
+	header := "| c0 | c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 | c9 | c10 |"
+	sep := "|---|---|---|---|---|---|---|---|---|---|---|"
+	row := "| 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |"
+	md := []byte(header + "\n" + sep + "\n" + row + "\n")
+	values := []int{110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210}
+	conv := NewMarkdownToBlock(md, ConvertOptions{ColumnWidthMode: "explicit", ColumnWidthValues: values}, "")
+	res, err := conv.ConvertWithTableData()
+	if err != nil {
+		t.Fatalf("convert: %v", err)
+	}
+	var tables []*larkdocx.Block
+	for _, n := range res.BlockNodes {
+		if n.Block != nil && n.Block.Table != nil {
+			tables = append(tables, n.Block)
+		}
+	}
+	if len(tables) != 2 {
+		t.Fatalf("11 列应拆成 2 个列组表，实际 %d", len(tables))
+	}
+	// group1: col0..col8 → 列宽 110..190
+	cw1 := tables[0].Table.Property.ColumnWidth
+	want1 := []int{110, 120, 130, 140, 150, 160, 170, 180, 190}
+	if !reflect.DeepEqual(cw1, want1) {
+		t.Errorf("group1 列宽错误: got %v want %v", cw1, want1)
+	}
+	// group2: col0(标识列)+col9+col10 → 列宽 [110,200,210]，绝不能是前 3 个 [110,120,130]
+	cw2 := tables[1].Table.Property.ColumnWidth
+	want2 := []int{110, 200, 210}
+	if !reflect.DeepEqual(cw2, want2) {
+		t.Errorf("group2 列宽应按列组切片(col0/col9/col10)=%v，得到 %v（修复前的 bug 是错误的前 3 个值）", want2, cw2)
+	}
+
+	// 顺带验证：explicit flag 是全局的，不应被本次列拆分消费掉——同一 conv 再转一张表仍生效。
+	if len(conv.options.ColumnWidthValues) != 11 {
+		t.Errorf("列拆分不应破坏全局 options.ColumnWidthValues，剩余 %d 个", len(conv.options.ColumnWidthValues))
+	}
+}
+
 // TestColumnWidth_PendingDoesNotLeakAcrossBlocks 验证 review-fix-1：
 // 注释和表格之间夹了非空块（heading/paragraph）时，pendingColWidth 必须被清空，
 // 不能让"悬浮"注释污染下游表格列宽。

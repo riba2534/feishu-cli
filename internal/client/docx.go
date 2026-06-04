@@ -212,7 +212,7 @@ func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, 
 			Build()).
 		Build()
 
-	if err := AcquireDocWriteSlot(Context(), documentID); err != nil {
+	if err := AcquireDocWriteSlot(ContextWithTimeout(DocWriteSlotAcquireTimeout), documentID); err != nil {
 		return nil, nil, fmt.Errorf("等待文档写入配额失败: %w", err)
 	}
 	resp, err := client.Docx.DocumentBlockChildren.Create(Context(), req, UserTokenOption(firstString(userAccessToken))...)
@@ -255,7 +255,7 @@ func UpdateBlock(documentID string, blockID string, updateContent any, userAcces
 		UpdateBlockRequest(&updateBody).
 		Build()
 
-	if err := AcquireDocWriteSlot(Context(), documentID); err != nil {
+	if err := AcquireDocWriteSlot(ContextWithTimeout(DocWriteSlotAcquireTimeout), documentID); err != nil {
 		return nil, fmt.Errorf("等待文档写入配额失败: %w", err)
 	}
 	resp, err := client.Docx.DocumentBlock.Patch(Context(), req, UserTokenOption(firstString(userAccessToken))...)
@@ -300,7 +300,7 @@ func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex in
 			Build()).
 		Build()
 
-	if err := AcquireDocWriteSlot(Context(), documentID); err != nil {
+	if err := AcquireDocWriteSlot(ContextWithTimeout(DocWriteSlotAcquireTimeout), documentID); err != nil {
 		return nil, fmt.Errorf("等待文档写入配额失败: %w", err)
 	}
 	resp, err := client.Docx.DocumentBlockChildren.BatchDelete(Context(), req, UserTokenOption(firstString(userAccessToken))...)
@@ -365,7 +365,7 @@ func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateB
 		reqBuilder.ClientToken(opts.ClientToken)
 	}
 
-	if err := AcquireDocWriteSlot(Context(), documentID); err != nil {
+	if err := AcquireDocWriteSlot(ContextWithTimeout(DocWriteSlotAcquireTimeout), documentID); err != nil {
 		return nil, nil, fmt.Errorf("等待文档写入配额失败: %w", err)
 	}
 	resp, err := client.Docx.DocumentBlock.BatchUpdate(Context(), reqBuilder.Build(), UserTokenOption(opts.UserAccessToken)...)

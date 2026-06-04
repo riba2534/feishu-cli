@@ -53,10 +53,12 @@ var vcBotCmd = &cobra.Command{
 权限:
   - meeting-join 需要 vc:meeting.bot.join:write
   - meeting-leave 需要 vc:meeting.bot.leave:write
-  - meeting-events 需要 vc 读权限
+  - meeting-events 需要 User Token（先 auth login）+ vc:meeting.meetingevent:read
 
 身份:
-  默认使用 Bot/Tenant Access Token；只有显式传 --user-access-token 时才改用 User Access Token。
+  meeting-join / meeting-leave 默认使用 Bot/Tenant Access Token；显式传 --user-access-token 改用 User 身份。
+  meeting-events 走「User 优先 + Tenant 兜底」：已登录自动用 User Token（该端点不接受 Tenant Token，
+  未登录会被 99991663 拒绝，请先 feishu-cli auth login）。
 
 示例:
   feishu-cli vc bot meeting-join --meeting-number 123456789
@@ -234,7 +236,7 @@ var vcBotEventsCmd = &cobra.Command{
   --page-token   分页标记
   --dry-run      只打印将要发送的请求参数，不实际调用
   --output, -o   输出格式（json）
-  --user-access-token 显式改用 User Token；默认使用 Bot/Tenant 身份
+  --user-access-token 覆盖登录态；缺省时自动用已登录 User Token（本端点必须 User 身份，不接受 Tenant Token）
 
 示例:
   feishu-cli vc bot meeting-events --meeting-id 6911188411932033028
@@ -309,7 +311,11 @@ var vcBotEventsCmd = &cobra.Command{
 			})
 		}
 
-		token := resolveFlagUserToken(cmd)
+		// meeting-events 端点（GET /bots/events）不接受 tenant_access_token（会被网关以
+		// 99991663 "Invalid access token for authorization" 拒绝），故走「User 优先 + Tenant 兜底」：
+		// 已登录时自动用 token.json 的 User Token；未登录才回落 Tenant（回落后该端点仍会 99991663，
+		// 提示用户需先 feishu-cli auth login）。与 CLAUDE.md 既有 vc 读类策略一致。
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		data, err := client.VCBotMeetingEvents(req, token)
 		if err != nil {
@@ -366,6 +372,6 @@ func init() {
 	vcBotEventsCmd.Flags().String("page-token", "", "分页标记")
 	vcBotEventsCmd.Flags().Bool("dry-run", false, "只打印请求参数，不实际调用")
 	vcBotEventsCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	vcBotEventsCmd.Flags().String("user-access-token", "", "User Access Token（显式传入时改用用户身份；默认 Bot/Tenant 身份）")
+	vcBotEventsCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态；缺省自动用已登录 User Token，本端点必须 User 身份）")
 	mustMarkFlagRequired(vcBotEventsCmd, "meeting-id")
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -48,11 +49,16 @@ func bitableAttachmentCellBody(recordID, fieldID string, fileTokens []string) ma
 }
 
 // renderAttachmentDryRun 打印多步编排的 dry-run 预览。
-func renderAttachmentDryRun(desc string, steps []map[string]any, extra map[string]any) error {
-	o, err := output.NewOptions(output.FormatJSON, "")
+// dry-run 也尊重 --format/--jq（与 bitableRun / runFormShareToken 一致）。
+// 但 download-attachment 的 --output 是「附件下载保存路径」而非结果输出文件，ParseOptions 会把它读进
+// OutputFile，若不清空，dry-run 预览会被写进用户的下载目标文件（覆盖）或在 --output 是目录时报错。
+// dry-run 预览本就只该打到 stdout，故这里强制 OutputFile 为空。
+func renderAttachmentDryRun(cmd *cobra.Command, desc string, steps []map[string]any, extra map[string]any) error {
+	o, err := output.ParseOptions(cmd)
 	if err != nil {
 		return err
 	}
+	o.OutputFile = "" // dry-run 预览只打 stdout，绝不写 --output（对 download-attachment 的下载路径语义尤其关键）
 	payload := map[string]any{
 		"description": desc,
 		"api":         steps,
@@ -128,6 +134,7 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 				},
 			}
 			return renderAttachmentDryRun(
+				cmd,
 				"2 步编排：上传本地文件到 Base → 追加 file_token 到附件单元格",
 				steps,
 				map[string]any{"base_token": baseToken, "table_id": tableID, "record_id": recordID, "field_id": fieldID},
@@ -233,6 +240,7 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 				},
 			}
 			return renderAttachmentDryRun(
+				cmd,
 				"2 步编排：读取记录附件元数据（取 extra_info）→ 带 extra 逐个下载请求的附件文件",
 				steps,
 				map[string]any{"base_token": baseToken, "table_id": tableID, "record_id": recordID, "file_tokens": fileTokens, "output": outputPath},
@@ -269,15 +277,27 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 		// [2] 逐个下载，带上元数据返回的 extra_info。
 		downloadedTokens := make([]string, 0, len(selected))
 		saved := make([]string, 0, len(selected))
+		usedPaths := make(map[string]bool) // 本次下载已占用的路径，用于同名附件去重
 		for _, m := range selected {
 			ft := m.FileToken
 			downloadedTokens = append(downloadedTokens, ft)
+			// 文件名优先用附件原始名（get_attachments 返回的 name），回退 file_token；
+			// safeOutputPath 去掉路径分隔符/特殊字符，避免目录逃逸。
+			name := safeOutputPath(strings.TrimSpace(m.Name), "")
+			if name == "" {
+				name = ft
+			}
 			finalPath := outputPath
 			if finalPath == "" {
-				finalPath = ft
+				finalPath = name
 			} else if stat, serr := os.Stat(finalPath); serr == nil && stat.IsDir() {
-				finalPath = filepath.Join(finalPath, ft)
+				finalPath = filepath.Join(finalPath, name)
 			}
+			// 同一目录内多个同名附件（或与本次已下载文件重名）时，加 file_token 前缀保唯一，避免互相覆盖。
+			if usedPaths[finalPath] {
+				finalPath = filepath.Join(filepath.Dir(finalPath), ft+"_"+filepath.Base(finalPath))
+			}
+			usedPaths[finalPath] = true
 			if _, serr := os.Stat(finalPath); serr == nil && !overwrite {
 				return fmt.Errorf("文件已存在: %s（用 --overwrite 覆盖）", finalPath)
 			}
@@ -298,14 +318,16 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 	},
 }
 
-// attachmentMeta 单个附件的下载元数据（file_token + 下载所需的 extra_info）。
+// attachmentMeta 单个附件的下载元数据（file_token + extra_info + 原始文件名）。
 type attachmentMeta struct {
 	FileToken string
 	ExtraInfo string
+	Name      string // 附件原始文件名（get_attachments 返回），下载时优先用作本地文件名
 }
 
-// extractAttachmentMetas 从 get_attachments 返回结构中提取全部附件元数据（file_token + extra_info）。
-// 返回结构形如 {"records":[{"fields":{fld:[{"file_token":"...","extra_info":"..."}]}}]}（容错遍历嵌套）。
+// extractAttachmentMetas 从 get_attachments 返回结构中提取全部附件元数据（file_token + extra_info + name）。
+// 真实响应形如 {"attachments":{rec_id:{field_id:[{"file_token":"...","name":"...","extra_info":"...","size":N}]}}}，
+// 这里用递归遍历容错任意嵌套：凡遇到含 file_token 的对象即取其同级 name/extra_info。
 // extra_info 是 Base 附件下载需要带上的 extra 查询参数（lark base +record-download-attachment 印证），
 // 同节点上与 file_token 并列；缺失则为空（下载时不带 extra）。
 func extractAttachmentMetas(data map[string]any) []attachmentMeta {
@@ -316,7 +338,8 @@ func extractAttachmentMetas(data map[string]any) []attachmentMeta {
 		case map[string]any:
 			if ft, ok := t["file_token"].(string); ok && ft != "" {
 				extra, _ := t["extra_info"].(string)
-				metas = append(metas, attachmentMeta{FileToken: ft, ExtraInfo: extra})
+				name, _ := t["name"].(string)
+				metas = append(metas, attachmentMeta{FileToken: ft, ExtraInfo: extra, Name: name})
 			}
 			for _, child := range t {
 				walk(child)

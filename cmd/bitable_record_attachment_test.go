@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -131,15 +133,26 @@ func TestRecordUploadAttachmentDryRun(t *testing.T) {
 
 // ---- download-attachment dry-run ----
 
-func TestRecordDownloadAttachmentDryRunAll(t *testing.T) {
-	initTestConfig(t)
+// newDownloadAttachmentTestCmd 镜像真实 download-attachment 的 flag 注册（见
+// cmd/bitable_record_attachment.go 的 init）：刻意【不】注册 --format/--jq（真实命令不注册它们），
+// --output 是「附件下载保存路径」语义。之前测试误用 addBitableWriteFlags 注册了 --format/--jq、
+// 与真实命令不一致，且从不传 --output 路径，掩盖了 dry-run 把预览写进 --output 的回归。
+func newDownloadAttachmentTestCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "download-attachment", RunE: bitableRecordDownloadAttachmentCmd.RunE}
-	addBitableWriteFlags(cmd)
+	addBaseTokenFlag(cmd)
+	cmd.Flags().String("user-access-token", "", "")
+	cmd.Flags().Bool("dry-run", false, "")
 	cmd.Flags().String("table-id", "", "")
 	cmd.Flags().String("record-id", "", "")
 	cmd.Flags().StringArray("file-token", nil, "")
 	cmd.Flags().String("output", "", "")
 	cmd.Flags().Bool("overwrite", false, "")
+	return cmd
+}
+
+func TestRecordDownloadAttachmentDryRunAll(t *testing.T) {
+	initTestConfig(t)
+	cmd := newDownloadAttachmentTestCmd()
 
 	// 省略 file-token → 应含 get_attachments 步骤 + download 带 extra
 	out, err := captureRunE(t, cmd, map[string]string{
@@ -161,13 +174,7 @@ func TestRecordDownloadAttachmentDryRunAll(t *testing.T) {
 
 func TestRecordDownloadAttachmentDryRunSingleToken(t *testing.T) {
 	initTestConfig(t)
-	cmd := &cobra.Command{Use: "download-attachment", RunE: bitableRecordDownloadAttachmentCmd.RunE}
-	addBitableWriteFlags(cmd)
-	cmd.Flags().String("table-id", "", "")
-	cmd.Flags().String("record-id", "", "")
-	cmd.Flags().StringArray("file-token", nil, "")
-	cmd.Flags().String("output", "", "")
-	cmd.Flags().Bool("overwrite", false, "")
+	cmd := newDownloadAttachmentTestCmd()
 
 	// 指定单个 file-token → 仍应先 get_attachments（取 extra_info），与 lark-cli 行为一致
 	out, err := captureRunE(t, cmd, map[string]string{
@@ -182,6 +189,47 @@ func TestRecordDownloadAttachmentDryRunSingleToken(t *testing.T) {
 	}
 	if !strings.Contains(out, "extra") {
 		t.Errorf("download 步骤应带 extra 参数: %s", out)
+	}
+}
+
+// TestRecordDownloadAttachmentDryRunOutputNotConsumed 回归防护：download-attachment 的 --output
+// 是「下载保存路径」语义，dry-run 预览必须打到 stdout，绝不能被当成结果输出文件写进该路径
+// （否则会覆盖用户的下载目标文件 / 在 --output 是目录时报错）。
+func TestRecordDownloadAttachmentDryRunOutputNotConsumed(t *testing.T) {
+	initTestConfig(t)
+
+	// 场景 A：--output 是文件 → dry-run 不能覆写它，预览走 stdout
+	dir := t.TempDir()
+	outFile := filepath.Join(dir, "target.pdf")
+	if err := os.WriteFile(outFile, []byte("ORIGINAL"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := newDownloadAttachmentTestCmd()
+	out, err := captureRunE(t, cmd, map[string]string{
+		"base-token": "bascn1", "table-id": "tbl1", "record-id": "rec1",
+		"file-token": "boxA", "output": outFile, "dry-run": "true",
+	})
+	if err != nil {
+		t.Fatalf("传 --output 文件时 dry-run 不应报错: %v", err)
+	}
+	if !strings.Contains(out, "get_attachments") {
+		t.Errorf("dry-run 预览应打到 stdout（而非写进 --output 文件）: %q", out)
+	}
+	if b, _ := os.ReadFile(outFile); string(b) != "ORIGINAL" {
+		t.Errorf("dry-run 不应改写 --output 下载目标文件，实际内容: %q", string(b))
+	}
+
+	// 场景 B：--output 是已存在目录（省略 file-token 下载全部到目录的合法用法）→ dry-run 不应报 is a directory
+	cmd2 := newDownloadAttachmentTestCmd()
+	out2, err := captureRunE(t, cmd2, map[string]string{
+		"base-token": "bascn1", "table-id": "tbl1", "record-id": "rec1",
+		"output": dir, "dry-run": "true",
+	})
+	if err != nil {
+		t.Fatalf("--output 为目录时 dry-run 不应报错（曾因 OutputFile 被当结果文件而 is a directory）: %v", err)
+	}
+	if !strings.Contains(out2, "get_attachments") {
+		t.Errorf("dry-run 预览应打到 stdout: %q", out2)
 	}
 }
 

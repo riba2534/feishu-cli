@@ -18,11 +18,14 @@ range 必须带 sheetId 前缀（如 0b1212!A2:A100）。
 示例:
   feishu-cli sheet dropdown get --token shtcnxxxxxx --range "0b1212!A1:A100"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken, _ := cmd.Flags().GetString("token")
+		spreadsheetToken, err := readSheetSpreadsheetToken(cmd)
+		if err != nil {
+			return err
+		}
 		rangeStr, _ := cmd.Flags().GetString("range")
 
 		if spreadsheetToken == "" || rangeStr == "" {
-			return fmt.Errorf("--token、--range 均为必填项")
+			return fmt.Errorf("--token/--spreadsheet-token、--range 均为必填项")
 		}
 		rangeStr = unescapeSheetRange(rangeStr)
 
@@ -56,7 +59,10 @@ ranges 可指定多个范围（每个需带 sheetId 前缀）；选项用 --opti
       --ranges "0b1212!A1:A100,0b1212!B1:B100" --options "P0,P1,P2" --multiple \
       --colors "#FF4D4F,#FAAD14,#52C41A"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken, _ := cmd.Flags().GetString("token")
+		spreadsheetToken, err := readSheetSpreadsheetToken(cmd)
+		if err != nil {
+			return err
+		}
 		sheetID, _ := cmd.Flags().GetString("sheet-id")
 		rangesStr, _ := cmd.Flags().GetString("ranges")
 		optionsCSV, _ := cmd.Flags().GetString("options")
@@ -66,7 +72,7 @@ ranges 可指定多个范围（每个需带 sheetId 前缀）；选项用 --opti
 		highlight, _ := cmd.Flags().GetBool("highlight")
 
 		if spreadsheetToken == "" || sheetID == "" || rangesStr == "" {
-			return fmt.Errorf("--token、--sheet-id、--ranges 均为必填项")
+			return fmt.Errorf("--token/--spreadsheet-token、--sheet-id、--ranges 均为必填项")
 		}
 		if strings.TrimSpace(optionsJSON) != "" && strings.TrimSpace(optionsCSV) != "" {
 			return fmt.Errorf("--options 和 --options-json 不能同时使用，请选其一")
@@ -111,11 +117,14 @@ ranges 每个需带 sheetId 前缀，最多 100 个，逗号分隔。
   feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100"
   feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100,0b1212!B1:B100"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken, _ := cmd.Flags().GetString("token")
+		spreadsheetToken, err := readSheetSpreadsheetToken(cmd)
+		if err != nil {
+			return err
+		}
 		rangesStr, _ := cmd.Flags().GetString("ranges")
 
 		if spreadsheetToken == "" || rangesStr == "" {
-			return fmt.Errorf("--token、--ranges 均为必填项")
+			return fmt.Errorf("--token/--spreadsheet-token、--ranges 均为必填项")
 		}
 
 		ranges := splitSheetCSV(unescapeSheetRange(rangesStr))
@@ -152,12 +161,14 @@ func init() {
 
 	// get
 	sheetDropdownGetCmd.Flags().String("token", "", "电子表格 token（必填）")
+	sheetDropdownGetCmd.Flags().String("spreadsheet-token", "", "电子表格 token（lark-cli 兼容别名，与 --token 等价）")
 	sheetDropdownGetCmd.Flags().String("range", "", "单元格范围，必须带 sheetId 前缀（如 0b1212!A1:A100）（必填）")
 	sheetDropdownGetCmd.Flags().StringP("output", "o", "json", "输出格式: json（默认）")
 	sheetDropdownGetCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 
 	// update
 	sheetDropdownUpdateCmd.Flags().String("token", "", "电子表格 token（必填）")
+	sheetDropdownUpdateCmd.Flags().String("spreadsheet-token", "", "电子表格 token（lark-cli 兼容别名，与 --token 等价）")
 	sheetDropdownUpdateCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	sheetDropdownUpdateCmd.Flags().String("ranges", "", "范围，逗号分隔（每个需带 sheetId 前缀）（必填）")
 	sheetDropdownUpdateCmd.Flags().String("options", "", "下拉选项，逗号分隔（与 --options-json 二选一）")
@@ -169,6 +180,7 @@ func init() {
 
 	// delete
 	sheetDropdownDeleteCmd.Flags().String("token", "", "电子表格 token（必填）")
+	sheetDropdownDeleteCmd.Flags().String("spreadsheet-token", "", "电子表格 token（lark-cli 兼容别名，与 --token 等价）")
 	sheetDropdownDeleteCmd.Flags().String("ranges", "", "范围，逗号分隔（每个需带 sheetId 前缀，最多 100 个）（必填）")
 	sheetDropdownDeleteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

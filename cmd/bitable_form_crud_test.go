@@ -151,18 +151,40 @@ func TestFormSubmitDryRunWrapsContent(t *testing.T) {
 	}
 }
 
-func TestBuildFormSubmitContentUnwrapsFields(t *testing.T) {
+// TestBuildFormSubmitContentNoUnwrap 验证 form submit 的 content 不做 fields 自动解包：
+// content 是裸字段 map，{"fields":{...}} 应原样作为「字段名 fields → 对象值」保留，
+// 避免对恰好有名为 fields 字段的表单静默丢数据（见 buildFormSubmitContent 注释）。
+func TestBuildFormSubmitContentNoUnwrap(t *testing.T) {
 	c := &cobra.Command{Use: "submit", Run: func(*cobra.Command, []string) {}}
 	c.Flags().String("content", "", "")
 	c.Flags().String("content-file", "", "")
+
+	// {"fields":{...}} 不解包，原样保留外层 fields 键。
 	_ = c.Flags().Set("content", `{"fields":{"a":1}}`)
 	content, err := buildFormSubmitContent(c)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	m, ok := content.(map[string]any)
-	if !ok || m["a"] == nil {
-		t.Errorf("{\"fields\":{...}} 应解包为内层 map: %v", content)
+	if !ok {
+		t.Fatalf("content 应为 map: %v", content)
+	}
+	inner, ok := m["fields"].(map[string]any)
+	if !ok {
+		t.Fatalf("fields 键应原样保留为对象，不被解包: %v", m)
+	}
+	if inner["a"] == nil {
+		t.Errorf("内层应原样保留 a: %v", inner)
+	}
+
+	// 直接的字段 map 原样返回。
+	_ = c.Flags().Set("content", `{"评分":5}`)
+	content2, err := buildFormSubmitContent(c)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if m2, ok := content2.(map[string]any); !ok || m2["评分"] == nil {
+		t.Errorf("直接字段 map 应原样返回: %v", content2)
 	}
 }
 

@@ -20,7 +20,7 @@ allowed-tools: Bash(feishu-cli vc:*), Bash(feishu-cli minutes:*), Bash(feishu-cl
 
 ## 前置条件
 
-- **认证**：所有 vc / minutes 命令都需要 **User Access Token**（推荐先 `auth check --scope "..."`，再执行 `feishu-cli auth login --scope "..."` 或 `--domain vc --domain minutes --recommend`）
+- **认证**：vc 读类（`vc search/notes/recording`、`vc bot meeting-events`）与 minutes 全部命令需要 **User Access Token**（推荐先 `auth check --scope "..."`，再执行 `feishu-cli auth login --scope "..."` 或 `--domain vc --domain minutes --recommend`）；**例外**：`vc bot meeting-join` / `vc bot meeting-leave` 默认走 **Bot/Tenant 身份**，仅靠 App ID + App Secret 即可，无需登录（详见第 6 节与「注意事项」的身份说明）
 - **App 凭证**：应用 App ID + App Secret（环境变量 `FEISHU_APP_ID` + `FEISHU_APP_SECRET` 或 `~/.feishu-cli/config.yaml`）
 - **预检**：`feishu-cli auth status` 查看登录状态；`feishu-cli auth check --scope "vc:meeting.search:read"` 预检 scope
 
@@ -118,13 +118,16 @@ feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --start 2026-0
 
 让会议机器人按会议号加入会议、离开会议，以及查询机器人侧的会议事件。
 
-| 子命令 | 端点 | 关键参数 |
-|------|------|---------|
-| `meeting-join` | `POST /open-apis/vc/v1/bots/join` | `--meeting-number`（必填）、`--password`（可选）、`--dry-run` |
-| `meeting-leave` | `POST /open-apis/vc/v1/bots/leave` | `--meeting-id`（必填）、`--dry-run` |
-| `meeting-events` | `GET /open-apis/vc/v1/bots/events` | `--meeting-id`、`--start`、`--end` |
+| 子命令 | 端点 | 身份 | 关键参数 |
+|------|------|------|---------|
+| `meeting-join` | `POST /open-apis/vc/v1/bots/join` | 默认 Bot/Tenant | `--meeting-number`（必填）、`--password`（可选）、`--dry-run`、`-o json` |
+| `meeting-leave` | `POST /open-apis/vc/v1/bots/leave` | 默认 Bot/Tenant | `--meeting-id`（必填）、`--dry-run`、`-o json` |
+| `meeting-events` | `GET /open-apis/vc/v1/bots/events` | 必须 User Token | `--meeting-id`（必填）、`--start`、`--end`、`--page-size`（20-100，默认 20）、`--page-token`、`--dry-run`、`-o json` |
 
-> `meeting-join` / `meeting-leave` 支持 `--dry-run` 只打印请求体不实际调用；`-o json` 输出原始响应。
+> 三个子命令均支持 `--dry-run`（只打印将要发送的请求参数/请求体，不实际调用）与 `-o json`（输出原始响应）。
+> `meeting-join` / `meeting-leave` 默认用 Bot/Tenant 身份，无需登录；只有显式传 `--user-access-token` flag 才切到 User 身份（这两个命令用 `resolveFlagUserToken`，**不读** `FEISHU_USER_ACCESS_TOKEN` 环境变量）。
+> `meeting-events` 端点不接受 Tenant Token：已登录会自动用 User Token，未登录会被 `99991663` 拒绝 → 需先 `feishu-cli auth login`。
+> `meeting-events` 的 `--page-size` 取值范围是 **20-100**（与 `vc search` 的 1-30 不同）；传 0 或不传走默认 20，传 1-19 会被拒。
 
 ## 使用示例
 
@@ -159,6 +162,16 @@ feishu-cli minutes download --minute-tokens obcnxxxx --url-only
 
 # 获取妙记信息并展示 AI 摘要
 feishu-cli minutes get obcnxxxx --with-artifacts
+
+# 机器人按会议号入会（默认 Bot/Tenant 身份，无需登录）
+feishu-cli vc bot meeting-join --meeting-number 123456789 --password 1234
+
+# 预览离会请求体不实际调用
+feishu-cli vc bot meeting-leave --meeting-id 6911188411932033028 --dry-run
+
+# 查询机器人会议事件（必须 User Token），分页 + JSON 输出
+feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 \
+  --start 2026-03-01 --end 2026-03-31 --page-size 50 -o json
 ```
 
 ## 典型工作流
@@ -206,7 +219,7 @@ feishu-cli minutes download --minute-tokens <minute_token> --output ./media
 | `vc recording` | `vc:record:readonly`（calendar 路径同上追加日历权限） |
 | `vc bot meeting-join` | `vc:meeting.bot.join:write` |
 | `vc bot meeting-leave` | `vc:meeting.bot.leave:write` |
-| `vc bot meeting-events` | vc 读权限 |
+| `vc bot meeting-events` | vc 读权限（必须 User Token；未登录会被 `99991663` 拒绝） |
 | `minutes get` | `minutes:minutes:readonly`（`--with-artifacts` 额外需 `minutes:minutes.artifacts:read`） |
 | `minutes download` | `minutes:minutes.media:export` |
 
@@ -214,7 +227,10 @@ feishu-cli minutes download --minute-tokens <minute_token> --output ./media
 
 ## 注意事项
 
-- **Token 必需**：所有命令都走 User Access Token。未登录时会中文错误提示并引导 `feishu-cli auth login`。可通过 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 环境变量覆盖。
+- **Token 身份分三档**：
+  - **必须 User Token**：`vc search/notes/recording`、`vc bot meeting-events`、`minutes get/download`。未登录会中文报错并引导 `feishu-cli auth login`；`meeting-events` 端点不接受 Tenant Token，未登录直接被 `99991663` 拒绝。
+  - **默认 Bot/Tenant**：`vc bot meeting-join` / `vc bot meeting-leave`，仅需 App ID + App Secret，无需登录；只有显式传 `--user-access-token` flag 才切到 User 身份（用 `resolveFlagUserToken`，**不读** `FEISHU_USER_ACCESS_TOKEN` 环境变量）。
+  - 覆盖登录态：除 `meeting-join`/`meeting-leave`（仅认 `--user-access-token` flag）外，其余命令也可用 `FEISHU_USER_ACCESS_TOKEN` 环境变量。
 - **时间格式**：`vc search --start/--end` 接受 `YYYY-MM-DD` / `YYYY-MM-DD HH:MM:SS` / RFC3339，均按本地时区解析；纯日期的 `--end` 自动对齐到 23:59:59。
 - **批量上限**：所有 CSV 类入参统一 50 条上限，超出直接报错。
 - **minute_token 格式**：字母数字组合，长度≥5；命令会前置校验。

@@ -26,7 +26,7 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli 
 1. **三阶段并发管道**：顺序创建块 → 并发处理图表/表格 → 失败回退
 2. **Mermaid/PlantUML → 飞书画板**：`mermaid`/`plantuml`/`puml` 代码块自动转换为飞书画板
 3. **图表故障容错**：语法错误自动降级为代码块展示，服务端错误自动重试（默认最多 10 次，可用 `--diagram-retries` 调整）
-4. **大表格智能处理**：行 > 9 时创建 9 行初始表 + `insert_table_row` API 追加到同一 block（视觉连贯，每行约 1 次 API 往返；verbose 模式 ≥ 5 行打印进度）；列 > 9 按列组拆分保留首列作为标识
+4. **大表格智能处理**：行 > 9 时创建 9 行初始表 + `insert_table_row` API 追加到同一 block（视觉连贯，每行约 1 次 API 往返；verbose 模式 ≥ 5 行打印进度）；列 > 9 按列组拆分保留首列作为标识。**单元格内容填充已走 `batch_update` 批量加速（v1.29+，#159）**：阶段二预热 `cellMap` 后按批（single-group cell 每批 ≤ 30 个）一次性写入，失败再降级为 per-cell；典型 4×6×8 表从 ~70s 降到 ~3s（25-30x）
 5. **表格列宽**：默认按内容启发式（中文 14px / 英文 8px，最小 80px，最大 400px）。可通过紧邻表格上方注释 `<!-- feishu-colwidth: 80,200,*,30% -->`（单位 px / 百分比 / `*` 走 auto）或 CLI flag `--table-column-width=auto|fixed|N1,N2,...` 全局覆盖；注释优先级高于 flag
 6. **API 限流自动重试**：画板创建和图表导入遇到 HTTP 429 时自动重试，读取服务端 `x-ogw-ratelimit-reset` 响应头精确计算退避时间，采用指数退避策略，默认最多重试 10 次
 7. **并发控制**：图表和表格分别使用独立的 worker 池（默认图表 5、表格 3 并发）
@@ -259,7 +259,7 @@ for f in *.md; do feishu-cli doc import "$f" --title "${f%.md}" --upload-images;
 ### 三阶段并发管道架构
 
 1. **阶段一（顺序）**：创建所有文档块，收集图表（Mermaid/PlantUML）和表格任务
-2. **阶段二（并发）**：使用 worker 池并发处理图表导入和表格填充
+2. **阶段二（并发）**：使用 worker 池并发处理图表导入和表格填充。表格单元格填充先预热 `cellMap`，再走 `batch_update` API 批量写入（single-group cell 每批 ≤ 30 个），仅在批量失败时降级为 per-cell；行 > 9 的 `insert_table_row` 追加仍逐行串行（受单文档 3 QPS 节流）
 3. **阶段三（逆序）**：处理失败的图表 → 删除空画板块，插入代码块作为降级展示
 
 ### Mermaid 已知限制
@@ -314,7 +314,7 @@ for f in *.md; do feishu-cli doc import "$f" --title "${f%.md}" --upload-images;
 |------|------|----------|
 | 认证失败 / Token 过期 | 未登录或 Token 已失效 | 执行 `feishu-cli auth login` 重新认证（Device Flow，自动注入 offline_access） |
 | 图表降级为代码块 | Mermaid/PlantUML 语法不兼容飞书渲染引擎 | 参考 `references/doc-guide.md` 调整语法（禁花括号、禁 par 等） |
-| 超长表格导入耗时显著 | 行 > 9 时 CLI 通过 `insert_table_row` API **逐行串行追加**到同一 block（每行约 1 次 API 往返） | 属于正常行为；verbose 模式每 5 行打印进度。行数极多（200+）时建议改用电子表格（Sheet）承载 |
+| 超长表格导入耗时显著 | 单元格内容填充已走 `batch_update` 批量加速（v1.29+，~25-30x），主要耗时来自行 > 9 时 `insert_table_row` API **逐行串行追加**到同一 block（受单文档 3 QPS 节流，每行约 1 次 API 往返） | 属于正常行为；verbose 模式每 5 行打印进度。行数极多（200+）时建议改用电子表格（Sheet）承载 |
 | 表格被拆分为多个 block | 列 > 9 时 CLI 按列组拆分（每组 ≤ 9 列），首列作为标识在所有组中保留 | 属于正常行为，避免拆分后行无法识别 |
 | 图片上传失败 | 网络不通或图片 URL 不可访问 | 检查网络连通性；失败的图片会自动创建占位块，不影响整体导入 |
 | 文档创建成功但无法编辑 | 未按 owner 配置添加权限 | 设置 `FEISHU_OWNER_EMAIL` 后执行 `perm add`；仅当 `transfer_ownership=true` 时再执行 `perm transfer-owner` |

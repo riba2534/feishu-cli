@@ -50,7 +50,9 @@ func bitableRun(cmd *cobra.Command, build func(baseToken string) bitableReq) err
 		if req.useV1 {
 			apiVer = "bitable/v1"
 		}
-		o, oerr := output.NewOptions(output.FormatJSON, "")
+		// dry-run 预览也尊重用户的 --format/--jq（与实调路径 renderBitableResult 一致），
+		// 避免 help 列了 --format/--jq 却在 dry-run 时静默失效。
+		o, oerr := output.ParseOptions(cmd)
 		if oerr != nil {
 			return oerr
 		}

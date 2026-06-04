@@ -106,18 +106,24 @@ feishu-cli sheet dropdown set --token shtcnxxxxxx --range "0b1212!B1:B100" \
 feishu-cli sheet dropdown set --token shtcnxxxxxx --range "0b1212!C1:C100" \
   --options-json '["a, b","c"]'
 
-# get —— 读取区域的下拉菜单设置（range 必须带 sheetId 前缀）
+# get —— 读取区域的下拉菜单设置（range 必须带 sheetId 前缀）；输出为 JSON（JSON-only，无 text 模式）
 feishu-cli sheet dropdown get --token shtcnxxxxxx --range "0b1212!A1:A100"
 
-# update —— 更新下拉（--sheet-id + --ranges 多范围，支持 --multiple / --colors）
+# update —— 更新下拉（--sheet-id + --ranges 多范围，支持 --multiple / --colors / --highlight）
 feishu-cli sheet dropdown update --token shtcnxxxxxx --sheet-id 0b1212 \
   --ranges "0b1212!A1:A100,0b1212!B1:B100" --options "P0,P1,P2" --multiple --colors "#FF4D4F,#FAAD14,#52C41A"
+
+# update —— 仅开启上色高亮（不传 --colors 也能高亮，--highlight 是 update 相对 set 独有的能力）
+feishu-cli sheet dropdown update --token shtcnxxxxxx --sheet-id 0b1212 \
+  --ranges "0b1212!A1:A100" --options "P0,P1,P2" --highlight
 
 # delete —— 删除下拉（--ranges 逗号分隔，每个带前缀，最多 100 个）
 feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100,0b1212!B1:B100"
 ```
 
 > `set` 用 `--range`（单个），`update`/`delete` 用 `--ranges`（多范围逗号分隔，`update` 还需 `--sheet-id`）。
+> `get`/`update`/`delete` 均接受 `--spreadsheet-token` 作为 `--token` 的 lark-cli 兼容别名（`set` 仅 `--token`）。
+> `update` 独有 `--highlight`：仅开启选项上色高亮（`highlightValidData=true`），传 `--colors` 时自动开启；`get` 只输出 JSON（无 text 模式）。
 
 ### 浮动图片 image（7 命令）
 
@@ -158,16 +164,15 @@ feishu-cli sheet batch-set-style shtcnxxxxxx \
 
 **关键参数**：
 
-| flag | 必填 | 说明 |
+| 参数 | 必填 | 说明 |
 |---|---|---|
-| `--token` | 是 | 电子表格 token |
-| `--range` | 是 | **必须带 sheetId 前缀**，例如 `"0b1212!A1:A100"`（不带 `!` 直接报错） |
-| `--options` | 二选一 | CSV 逗号分隔，每项 ≤ 100 字符，总数 ≤ 500 项 |
-| `--options-json` | 二选一 | JSON 数组字符串，选项内含逗号时用；同样受 ≤ 500 项 / 每项 ≤ 100 字符限制 |
-| `--multiple` | 否 | 启用多选（默认单选） |
-| `--colors` | 否 | RGB hex CSV，长度与 options 一致；传值自动开启高亮 |
+| `<spreadsheet_token>` | 是 | 位置参数，电子表格 token（URL `/sheets/<token>`） |
+| `--data` | 是 | `{ranges, style}` 对象的 JSON 数组；每个 `range` **必须带 sheetId 前缀**（如 `0b1212!A1:C3`） |
+| `--user-access-token` | 否 | 显式覆盖登录态（访问无 App 权限的表格时用） |
 
-底层调用：`POST /open-apis/sheets/v2/spreadsheets/{token}/dataValidation`，`dataValidationType: list`。
+> `style` 沿用飞书 V2 `styles_batch_update` 原始结构：`font`（含 `bold` / `italic` / `fontSize` / `clean`）/ `hAlign` / `vAlign` / `backColor` / `foreColor` / `borderType` / `borderColor` / `formatter` / `clean`。
+
+底层调用：`PUT /open-apis/sheets/v2/spreadsheets/{token}/styles_batch_update`（`internal/client/sheets.go`）。
 
 ## 典型工作流
 
@@ -211,7 +216,7 @@ feishu-cli sheet filter-view list --token $TOKEN --sheet-id $SHEET -o json | \
 - **dropdown 用英文逗号分隔 不是中文「，」**：`--options` CSV 解析器只识别 ASCII `,`，中文逗号会让多选项合并成一个，容易踩
 - **filter-view 条件已可用 CLI 写**：用 `filter-view condition create/update`（按列字母 `--condition-id` 定位）；多维表格（非电子表格）的复杂条件仍走 **`feishu-cli bitable view view-filter-set`**
 - **filter-view 范围 v.s. 单元格写入限制**：filter-view `--range` 仅圈定视图作用域，**不写入数据**；写入受 V3 单 cell ≤ 50000 字符 / 单批 ≤ 5000 cells / 10 ranges 限制（详见主 `feishu-cli sheet` 命令）
-- **`-o json` 仅 filter-view 支持**：dropdown set 只回吐成功摘要文本（API 本身只返回 code/msg）
+- **`-o json` 支持面**：`filter-view`（含 `condition get/list/create/update`）、`image get/update/media-upload` 都支持 `-o json`（默认 `text`）；`dropdown get` 是 **JSON-only**（默认且只输出 JSON，无 `text` 模式）。仅 `dropdown set/update/delete` 与 `image write-image` 无 `-o`，只回吐成功摘要文本（API 本身只返回 code/msg）
 
 ## 何时该转主命令
 
