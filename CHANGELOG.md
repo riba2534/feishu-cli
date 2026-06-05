@@ -4,6 +4,17 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [Unreleased]
+
+### 新增 — `feishu-cli-html-box` 技能：自包含 HTML 嵌入文档渲染为 HTML Box
+
+把一份自包含的单文件 HTML 嵌入飞书云文档，渲染成 HTML Box（妙笔网页 / Magic Page）沙箱 iframe。纯 skill（无新增 Go 命令），通过 `feishu-cli api` 透传实现。
+
+- 嵌入机制：插 `block_type=14`（code，`language=24`）HTML 代码块 + `block_type=40`（add_ons，`component_type_id=blk_6900429af84180025ce76527`）HTML Box widget，HTML 直接预填进 `add_ons.record`（渲染源），默认灌完删源代码块只留 iframe
+- 统一身份：建文档与插块都走同一 `--as`（默认 user），避免身份不一致导致无编辑权限
+- 内置 recipe `animated-flowchart`：结构化 nodes/edges/timeline JSON → 自动播放的自包含 SVG 拓扑动画 HTML（节点/连线高亮、消息 token 流动、进度点、固定浅色主题、响应式无内滚动条）
+- 脚本：`scripts/publish_html_box.py`（建/灌/删源，支持 `--dry-run`/`--keep-source`/`--doc-token`）、`scripts/animate_diagram.py`（动画生成器）
+
 ## [v1.30.0] - 2026-06-04
 
 ### 性能与功能 — 表格批量填充提速 25-30x，列宽可自定义
