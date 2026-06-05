@@ -72,8 +72,10 @@ python3 skills/feishu-cli-html-box/scripts/publish_html_box.py \
 
 ```bash
 # 1) 建文档（用 api 透传，保证与插块同身份）
+# 注意：feishu-cli api --jq 输出的是 JSON，标量字符串会带引号（如 "EnAw..."）。
+# 结果要拼进 URL 路径时务必追加 | tr -d '"' 去引号，否则路径变成 documents/"EnAw..."/... 而 404。
 DOC=$(feishu-cli api POST /open-apis/docx/v1/documents --as user \
-  --data '{"title":"我的 HTML Box"}' --jq '.data.document.document_id')
+  --data '{"title":"我的 HTML Box"}' --jq '.data.document.document_id' | tr -d '"')
 
 # 2) 插入 HTML 代码块（language=24, wrap=true）—— 记下返回的 block_id
 HTML=$(cat my_app.html)
@@ -101,7 +103,7 @@ PATCH 那个代码块即可，widget 的 record 会被飞书自动同步：
 ```bash
 BLOCK=$(feishu-cli api GET "/open-apis/docx/v1/documents/$DOC/blocks" --as user \
   --params '{"page_size":500}' \
-  --jq '[.data.items[] | select(.block_type==14 and .code.style.language==24)][0].block_id')
+  --jq '[.data.items[] | select(.block_type==14 and .code.style.language==24)][0].block_id' | tr -d '"')
 feishu-cli api PATCH "/open-apis/docx/v1/documents/$DOC/blocks/$BLOCK" --as user \
   --data "$(python3 -c 'import json,sys;print(json.dumps({"update_code":{"style":{"language":24,"wrap":True},"elements":[{"text_run":{"content":sys.stdin.read()}}]}}))' < my_app.html)"
 ```
@@ -113,7 +115,7 @@ feishu-cli api PATCH "/open-apis/docx/v1/documents/$DOC/blocks/$BLOCK" --as user
 ```bash
 BOX=$(feishu-cli api GET "/open-apis/docx/v1/documents/$DOC/blocks" --as user \
   --params '{"page_size":500}' \
-  --jq '[.data.items[] | select(.block_type==40 and .add_ons.component_type_id=="blk_6900429af84180025ce76527")][0].block_id')
+  --jq '[.data.items[] | select(.block_type==40 and .add_ons.component_type_id=="blk_6900429af84180025ce76527")][0].block_id' | tr -d '"')
 feishu-cli api PATCH "/open-apis/docx/v1/documents/$DOC/blocks/$BOX" --as user \
   --data "$(python3 -c 'import json,sys;h=sys.stdin.read();print(json.dumps({"update_add_ons":{"component_type_id":"blk_6900429af84180025ce76527","record":json.dumps({"html":h})}}))' < my_app.html)"
 ```
@@ -143,6 +145,7 @@ feishu-cli api PATCH "/open-apis/docx/v1/documents/$DOC/blocks/$BOX" --as user \
 
 ## 8. 实测的坑
 
+- **`--jq` 标量带引号**：`feishu-cli api --jq` 走 JSON 渲染，取出的字符串带引号（`"xxx"`）。把它当路径片段拼接（如 `documents/$DOC/...`）会得到 `documents/"xxx"/...` 而 404；务必 `| tr -d '"'` 去引号（或改用 `python3` 解析）。注意：`publish_html_box.py` 用 `json.loads` 解析完整响应，不受此影响。
 - **language 写错（最常见）**：`code.style.language` 不显式填 24，飞书不会把 HTML 同步进 widget 的 record，iframe 空白。
 - **顺序错**：必须「建文档 → POST 代码块 → POST widget → 视情况删代码块」。先 POST widget 再 POST 代码块，record 不回填。
 - **删早了**：删代码块要在 widget 创建响应里确认 `record` 已含 HTML 之后；record 还是 `{}` 时删源码块会留下空白盒子。脚本直接预填 record 规避了这一点。
