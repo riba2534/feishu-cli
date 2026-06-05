@@ -1,0 +1,61 @@
+{
+  "title": "Supervisor / Manager",
+  "sub": "Agents-as-tools · centralized orchestration",
+  "nodes": [
+    { "id": "user", "x": 40, "y": 240, "w": 100, "label": "User", "kind": "user" },
+    { "id": "manager", "x": 230, "y": 230, "w": 180, "label": "Manager", "sub": "supervisor", "kind": "accent" },
+    { "id": "research", "x": 580, "y": 50, "w": 170, "label": "Research", "sub": "specialist" },
+    { "id": "coder", "x": 580, "y": 230, "w": 170, "label": "Coder", "sub": "specialist" },
+    { "id": "reviewer", "x": 580, "y": 410, "w": 170, "label": "Reviewer", "sub": "specialist" },
+    { "id": "final", "x": 230, "y": 430, "w": 180, "label": "Final Answer", "kind": "dark" }
+  ],
+  "edges": {
+    "u-m": { "from": "user", "to": "manager", "label": "request" },
+    "m-r": { "from": "manager", "to": "research", "label": "call as tool", "curve": -20 },
+    "m-c": { "from": "manager", "to": "coder", "label": "call" },
+    "m-rv": { "from": "manager", "to": "reviewer", "label": "call", "curve": 20 },
+    "m-f": { "from": "manager", "to": "final" }
+  },
+  "timeline": [
+    {
+      "caption": "<b>User</b> sends request; <b>Manager</b> takes control of the conversation.",
+      "fire": ["u-m"],
+      "activate": ["user", "manager"]
+    },
+    {
+      "caption": "Manager delegates research to <b>Research specialist</b> (agent-as-tool).",
+      "fire": ["m-r"],
+      "activate": ["manager", "research"]
+    },
+    {
+      "caption": "Research returns results; conversation stays with Manager.",
+      "fire": ["!m-r"],
+      "activate": ["manager"]
+    },
+    {
+      "caption": "Manager calls <b>Coder</b> to write / edit code.",
+      "fire": ["m-c"],
+      "activate": ["manager", "coder"]
+    },
+    {
+      "caption": "Coder returns code snippet.",
+      "fire": ["!m-c"],
+      "activate": ["manager"]
+    },
+    {
+      "caption": "Manager calls <b>Reviewer</b> to check quality.",
+      "fire": ["m-rv"],
+      "activate": ["manager", "reviewer"]
+    },
+    {
+      "caption": "Reviewer returns review verdict.",
+      "fire": ["!m-rv"],
+      "activate": ["manager"]
+    },
+    {
+      "caption": "Manager aggregates all results, outputs <b>Final Answer</b>. Intermediate steps hidden from user.",
+      "fire": ["m-f"],
+      "activate": ["manager", "final"]
+    }
+  ]
+}

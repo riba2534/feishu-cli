@@ -244,7 +244,7 @@ python3 skills/feishu-cli-board/scripts/svg_to_board.py drawing.svg <whiteboard_
 
 ## Claude Code 技能
 
-位于 `skills/` 目录，当前 25 个。README 的“AI 技能集成”章节是对外安装清单；这里按职责分组，方便 Agent 路由：
+位于 `skills/` 目录，当前 26 个。README 的“AI 技能集成”章节是对外安装清单；这里按职责分组，方便 Agent 路由：
 
 | 技能 | 说明 |
 |------|------|
@@ -253,7 +253,7 @@ python3 skills/feishu-cli-board/scripts/svg_to_board.py drawing.svg <whiteboard_
 | 消息协作 | `feishu-cli-msg` / `feishu-cli-card` / `feishu-cli-chat` / `feishu-cli-event` |
 | 数据与表格 | `feishu-cli-bitable` / `feishu-cli-sheet` / `feishu-cli-search` / `feishu-cli-schema` |
 | 云盘与素材 | `feishu-cli-drive` / `feishu-cli-markdown` |
-| 画板与展示 | `feishu-cli-board` / `feishu-cli-slides` |
+| 画板与展示 | `feishu-cli-board` / `feishu-cli-slides` / `feishu-cli-html-box`（自包含 HTML → 文档 HTML Box，含 animated-flowchart recipe） |
 | 业务域 | `feishu-cli-mail` / `feishu-cli-vc` / `feishu-cli-approval` / `feishu-cli-attendance` / `feishu-cli-calendar` / `feishu-cli-okr` |
 | 兜底入口 | `feishu-cli-toolkit`：仅在没有更专用 skill 时使用，覆盖基础 sheet/calendar/task/file/media/comment/wiki/user/dept |
 
