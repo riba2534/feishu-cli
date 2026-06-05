@@ -4,6 +4,27 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [v1.31.0] - 2026-06-05
+
+### 新功能 — 妙笔BOX（htmlbox）HTML 小组件命令
+
+飞书文档里**唯一能跑动画、可交互内容**的载体落地为正式命令。妙笔BOX 是 AddOns HTML 小组件块（`block_type=40`），把一整页 HTML 存进 `add_ons.record`，飞书在 iframe 沙箱里真实执行 CSS/JS——CSS 动画、ECharts、Three.js、Canvas、真实地图、3D 图表都能动（区别于画板的 SVG 节点会被服务端栅格化成静态图）。
+
+**新增命令** `feishu-cli doc htmlbox {create|update|get|delete}`：
+
+- `create`：往文档插入妙笔BOX 块（`--html` / `--html-file` / stdin 三选一，`--index` / `--parent-id` 控制位置）
+- `update`：更新块 HTML。飞书 API 不支持原地改 `add_ons`（PATCH 返回 `1770001`），改走「**先建后删**、同位置重建」——新块在原位置创建成功后才删旧块，中途失败不丢数据，返回 `new_block_id`
+- `get`：读回块 HTML（`--raw` 逐字节输出便于存文件/再编辑，默认输出含 `html` 字段的结构）
+- `delete`：删除妙笔BOX 块（仅限 `block_type=40`，防误删其他块）
+- 统一接入 `--format` / `--jq` / `--dry-run`；默认 Bot 身份（操作自建文档无需登录）
+
+**配套 `feishu-cli-htmlbox` 技能**：SKILL.md + 3 个 references——`mechanism.md`（块机制 / iframe 沙箱边界 / 与画板的 trade-off）、`html-recipes.md`（CSS 动画 / ECharts / Canvas / Dashboard 自包含范例）、`pitfalls.md`（真实创建大批量图沉淀的 9 类实战踩坑：JS 报错白屏不报错、CDN 加载时序、真实地图 `registerMap`、`record` 双重编码、批量追加限流等）。
+
+### 测试与质量
+
+- 新增 7 个单测：record JSON 编码转义、`loadHTMLInput`（含「不 TrimSpace 保原文」这一 `get --raw` 还原保证）、`<script>` / HTML 注释 / `U+2028` payload roundtrip、unicode/emoji roundtrip
+- 指针解引用统一用 `client.StringVal`，`update` 补 `len==0` 防御，`get --raw` 空内容时 stderr 告警
+
 ## [v1.30.0] - 2026-06-04
 
 ### 性能与功能 — 表格批量填充提速 25-30x，列宽可自定义

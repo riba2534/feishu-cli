@@ -24,6 +24,7 @@ var docCmd = &cobra.Command{
   import-file    导入文件为云文档
   media-download 下载文档素材（图片/文件/画板缩略图）
   media-insert   向文档插入图片或文件
+  htmlbox        妙笔BOX HTML 小组件块（create/update/get/delete，可跑动画/图表）
 
 示例:
   # 创建文档
