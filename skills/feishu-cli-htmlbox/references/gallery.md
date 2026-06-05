@@ -20,11 +20,12 @@
 
 ### ECharts 骨架（数据/分布/构成/关系/流程类都用它）
 
-把任一 ECharts 配方的 `OPT` 粘到 `★` 处即可。已含异步等待、`onerror` 兜底、`resize` 自适应、状态提示。
+把任一 ECharts 配方的 `OPT` 粘到 `★` 处即可。已含异步等待、`onerror` 兜底、`resize` 自适应、状态提示，以及妙笔BOX 高度协议 `<meta name="html-box-height-mode" content="auto">`（`auto`=宿主块高度跟内容，适合固定高度图表；全屏 Dashboard 才用 `viewport`）。异步变高（延迟加载、动态追加）后调 `window.magic&&window.magic.updateHeight()` 刷新宿主块高度。
 
 ```html
 <!doctype html><html lang="zh"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><style>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="html-box-height-mode" content="auto"><style>
 html,body{margin:0;background:#0f1729;color:#e6edf7;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
 #wrap{padding:8px 10px 12px}#chart{width:100%;height:380px}#st{margin:6px;font-size:13px;color:#8aa0c0;text-align:center}
 </style></head><body><div id="wrap"><div id="chart"></div><p id="st">加载中…</p></div>
@@ -56,7 +57,8 @@ backgroundColor:'#0f1729',
 ### Canvas 骨架（粒子 / 自绘动画）
 
 ```html
-<!doctype html><html><head><meta charset="utf-8"><style>
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="html-box-height-mode" content="auto"><style>
 html,body{margin:0;background:#0a0e1a}#c{display:block;width:100%;height:300px}
 </style></head><body><canvas id="c"></canvas><script>
 var cv=document.getElementById('c'),x=cv.getContext('2d');

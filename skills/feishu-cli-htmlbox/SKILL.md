@@ -6,7 +6,8 @@ description: >-
   力导向关系图/时序/甘特）、真实地图与经纬度飞线、echarts-gl 3D（map3D/3D柱/3D散点/3D曲面）、Three.js 真 3D 场景、
   词云、水球、纯 CSS 动画、Canvas 粒子、SVG 矢量动画、KPI 滚动大屏。
   当用户要"在飞书文档里画图/做动画/能动的图/可交互图表/数据大屏/Dashboard/折线图/柱状图/地图/飞线图/3D图/
-  关系图/流程动画/ECharts/可视化"，或提到"妙笔BOX/HTML 小组件/让飞书文档里的图动起来/嵌入网页到飞书文档"时，
+  关系图/流程动画/ECharts/可视化"，或要做**能调 AI / 读写多维表 / 持久化状态 / 拿用户身份的交互式文档小程序**，
+  或提到"妙笔BOX/HTML 小组件/让飞书文档里的图动起来/嵌入网页到飞书文档/window.magic"时，
   **必须用本技能**。注意：要"动"只能用妙笔BOX；画板（feishu-cli-board）的 SVG 节点会被服务端栅格化成静态图、不会动。
 argument-hint: <document_id> [block_id]
 user-invocable: true
@@ -43,6 +44,20 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli 
 | **真 3D 场景（旋转星球 / GPU 粒子 / 几何体）** | Three.js（WebGL） | `references/geo-3d.md` |
 
 不确定用哪个？**默认 ECharts**（覆盖绝大多数统计/关系图）；只有要真实地理、可旋转 3D、或 ECharts 给不出的自由视觉，才上 geo-3d / Canvas / SVG。
+
+## 不止画图：window.magic 文档小程序运行时
+
+妙笔BOX 的 iframe 里，飞书注入了一个 `window.magic` 运行时——**OpenAPI 建的块也有**（已实测，注入认 `component_type_id` 不认来源）。所以它不只是画图，还能做**会读数据、能交互、有状态的文档小程序**。当任务需要下面任一项，看 `references/window-magic.md`：
+
+| 需求 | 能力 |
+|---|---|
+| 当前用户身份（名字 / open_id，用于个性化或写人员字段） | `window.magic.user` |
+| 读当前文档全文 / 元信息（喂 AI、统计、生成目录） | `getDocAsMarkdown` / `getPageMeta` |
+| 持久化状态（计数器 / 抽奖 / 祝福墙 / 已读列表） | `window.magic.redis` / `store`（**禁 localStorage**，见 pitfalls） |
+| 图表接真实数据源（活数据 Dashboard） | `base_records_search` 拉多维表 → ECharts |
+| 文档内调 AI（摘要 / 问答 / 文案，无需自带 key） | `window.magic.ai`（豆包） |
+
+⚠ `window.magic` **只在飞书文档端注入**，本地 `file://` 预览必为 `undefined`——所有用法都要判存兜底，否则本地白屏。
 
 ## 绘制工作流（每张图都照做）
 
@@ -83,5 +98,6 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli 
 
 - `references/gallery.md` — **主力配方库**：4 种通用骨架（ECharts/Canvas/Three.js/SVG-CSS）+ 按图表类型的可直接用配方
 - `references/geo-3d.md` — 地图 / echarts-gl 3D / Three.js 的完整可跑模板（这几类有 CDN/registerMap/坐标系/着色坑）
+- `references/window-magic.md` — **文档小程序运行时**：`window.magic` 能力配方（用户身份 / 读文档 / 持久化 / 多维表 / AI），含判存兜底范式与活数据 Dashboard、文档内 AI 卡等组合配方
 - `references/pitfalls.md` — 画图避坑与白屏排查（来自真实创建一篇 47 图大文档）
 - `references/mechanism.md` — 块机制 / 身份 / update 速查（只在排查 token、组件 ID、update 行为时才需要）

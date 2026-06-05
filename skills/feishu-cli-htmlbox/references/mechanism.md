@@ -25,6 +25,12 @@
 | 加载 jsdelivr CDN（echarts / echarts-gl / three / gsap 实测可用） | 超大体积（避免内联巨型 base64，改用 CDN 或飞书图床） |
 | 内联 `<svg>`（含 SMIL `<animate>`，是真浏览器渲染、会动） | 超长阻塞 JS |
 
+## 沙箱运行时：window.magic（文档小程序能力）
+
+妙笔BOX 的 iframe 里飞书注入了一个 `window.magic` 运行时——**OpenAPI 建的块也有**（已真机实测，注入认 `component_type_id`、不认块来源；feishu-cli 建的块与妙笔编辑器建的等价）。它让 HTML 里能：拿当前用户身份（`magic.user`）、读当前文档全文（`getDocAsMarkdown`）、持久化（`redis`/`store`）、读写多维表（`base_records_*`）、调 AI（`magic.ai`）。所以妙笔BOX 不只是画图，还是**文档小程序平台**。
+
+⚠ `window.magic` 只在飞书文档端注入，本地 `file://` 预览没有——用前必须判存兜底。完整能力清单与配方见 `references/window-magic.md`。
+
 ## 与画板（feishu-cli-board）的区别
 
 | | 妙笔BOX（本技能） | 画板 `board svg-import` |

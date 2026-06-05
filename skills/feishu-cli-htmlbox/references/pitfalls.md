@@ -14,6 +14,7 @@
 7. [update 改图 block_id 会变](#7-update-改图-block_id-会变)
 8. [批量追加多图 + 文档标题层级](#8-批量追加多图--文档标题层级)
 9. [落库前本地验证流程（标准动作）](#9-落库前本地验证流程)
+10. [状态持久化禁区：别用 localStorage](#10-状态持久化禁区别用-localstorage)
 
 ---
 
@@ -158,3 +159,20 @@ feishu-cli doc htmlbox create   <doc> --html-file g40.html
 3. 检查渲染：canvas 或 svg 数 > 0、加载状态文本已清空、console 无 error。
 4. **截图肉眼确认**——「有 canvas」不等于「画对了、在动」，看一眼最实在。
 5. 通过后再 `doc htmlbox create`。失败就在本地修到好，别反复 create/update 去污染线上文档。
+
+---
+
+## 10. 状态持久化禁区：别用 localStorage
+
+要在妙笔BOX 里存状态（计数器 / 抽奖 / 祝福墙 / 已读列表 / 用户上次选择），**别用 `localStorage`**——飞书沙箱环境里它会静默失效（官方妙笔文档三处反复强调）。用注入的 `window.magic` 持久化 API：
+
+- `window.magic.store.get/set`：当前组件**私有**（各看各的），需阅读权限；`store.global_get/set` = 所有读者共享。
+- `window.magic.redis.get/set`：**复制文档后仍共享**，需编辑权限；`redis.global_get/set` = 跨文档共享。
+
+```js
+var m = window.magic;
+if (m && m.redis) { await m.redis.set('count', n); n = +(await m.redis.get('count')) || 0; }
+else { n = 0; /* 本地预览兜底，绝不退回 localStorage */ }
+```
+
+`window.magic` 只在飞书文档端注入，本地 `file://` 没有——所以**带状态的配方必须判存兜底**（本地走 mock）。完整能力与配方见 `references/window-magic.md`。
