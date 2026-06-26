@@ -128,13 +128,22 @@ func SparkHTMLPublish(appID string, tarball []byte, userAccessToken string) (map
 	if err != nil {
 		return nil, fmt.Errorf("妙搭 html-publish 上传失败: %w", err)
 	}
-	return parseHTMLPublishResponse(resp.RawBody)
+	return parseHTMLPublishResponse(resp.StatusCode, resp.RawBody)
 }
 
-// parseHTMLPublishResponse 解析 html-publish 响应：业务 code!=0 → 带 hint 的 error；
-// 成功只白名单提取 data.url（对齐官方 lark-cli，刻意丢掉 status/release_id 等兄弟字段，
-// 后端新增字段不会无意泄漏到输出）。
-func parseHTMLPublishResponse(raw []byte) (map[string]any, error) {
+// parseHTMLPublishResponse 解析 html-publish 响应：HTTP 4xx/5xx 透出原始 body（与
+// parseSparkResponse 一致，避免网关级失败被笼统的「解析失败」掩盖真实状态码）；
+// 业务 code!=0 → 带 hint 的 error；成功只白名单提取 data.url（对齐官方 lark-cli，
+// 刻意丢掉 status/release_id 等兄弟字段，后端新增字段不会无意泄漏到输出）。
+func parseHTMLPublishResponse(statusCode int, raw []byte) (map[string]any, error) {
+	if statusCode >= http.StatusBadRequest {
+		bodyPreview := strings.TrimSpace(string(raw))
+		if bodyPreview == "" {
+			return nil, fmt.Errorf("妙搭 html-publish HTTP %d", statusCode)
+		}
+		return nil, fmt.Errorf("妙搭 html-publish HTTP %d: %s", statusCode, bodyPreview)
+	}
+
 	var env struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`

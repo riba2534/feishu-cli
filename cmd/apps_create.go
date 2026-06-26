@@ -72,9 +72,3 @@ func init() {
 	appsCreateCmd.Flags().String("icon-url", "", "应用图标 URL（不填用默认）")
 	addAppsWriteFlags(appsCreateCmd)
 }
-
-// flagString 读取字符串 flag，忽略错误（未注册 flag 返回空串）。
-func flagString(cmd *cobra.Command, name string) string {
-	v, _ := cmd.Flags().GetString(name)
-	return v
-}

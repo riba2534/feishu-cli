@@ -15,6 +15,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// flagString 读取字符串 flag，忽略错误（未注册 flag 返回空串）。
+func flagString(cmd *cobra.Command, name string) string {
+	v, _ := cmd.Flags().GetString(name)
+	return v
+}
+
+// flagInt 读取整型 flag，忽略错误。
+func flagInt(cmd *cobra.Command, name string) int {
+	v, _ := cmd.Flags().GetInt(name)
+	return v
+}
+
 // resolveOptionalUserToken 解析显式指定的 user_access_token（可选）
 // 仅检查 --user-access-token 参数和 FEISHU_USER_ACCESS_TOKEN 环境变量，
 // 不自动从 token.json 加载，确保能用 App Token 的 API 默认使用 App Token（租户身份）

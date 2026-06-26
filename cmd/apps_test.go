@@ -477,3 +477,37 @@ func TestAppsHTMLPublish_SensitiveBlocksInRunE(t *testing.T) {
 		t.Errorf("放行后清单应含 sensitive_waived，实际:\n%s", out)
 	}
 }
+
+// TestAppsWalkCandidates_SkipsSymlink 锁住安全行为：目录遍历只收 regular file，
+// symlink（即便指向目录外文件）必须被 IsRegular() 跳过，不进入打包清单。
+func TestAppsWalkCandidates_SkipsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html></html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	external := filepath.Join(t.TempDir(), "secret.txt") // 目录外的敏感文件
+	if err := os.WriteFile(external, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, filepath.Join(dir, "leak.txt")); err != nil {
+		t.Skipf("当前平台不支持 symlink: %v", err)
+	}
+
+	got, err := appsWalkCandidates(dir)
+	if err != nil {
+		t.Fatalf("appsWalkCandidates: %v", err)
+	}
+
+	var hasIndex bool
+	for _, c := range got {
+		if c.RelPath == "leak.txt" {
+			t.Fatalf("symlink 应被跳过，却出现在打包清单: %+v", got)
+		}
+		if c.RelPath == "index.html" {
+			hasIndex = true
+		}
+	}
+	if !hasIndex {
+		t.Fatalf("regular file index.html 应被收集，实际清单: %+v", got)
+	}
+}

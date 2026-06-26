@@ -54,9 +54,3 @@ func init() {
 	appsListCmd.Flags().String("page-token", "", "上一页返回的分页游标")
 	addAppsCommonFlags(appsListCmd)
 }
-
-// flagInt 读取整型 flag，忽略错误。
-func flagInt(cmd *cobra.Command, name string) int {
-	v, _ := cmd.Flags().GetInt(name)
-	return v
-}
