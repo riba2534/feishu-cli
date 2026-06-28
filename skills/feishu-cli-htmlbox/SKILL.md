@@ -34,6 +34,7 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli 
 | 饼 / 漏斗 / 桑基 Sankey / 主题河流 / 仪表盘 gauge / 水球 liquidFill | ECharts(+扩展) | `references/gallery.md` › 构成流向 |
 | 力导向关系图（可拖拽）/ 组织树 tree / 旭日 sunburst / 矩形树图 treemap | ECharts | `references/gallery.md` › 关系层级 |
 | 时序 / 状态机 / 甘特 / CI流水线 / 看板流动 | ECharts custom / CSS | `references/gallery.md` › 流程时序 |
+| 拓扑 / Agent 编排动画 / 多 Agent 协作回放 | `scripts/animate_diagram.py`（结构化 JSON → 自包含 SVG 动画 HTML） | `references/animated-flowchart.md` |
 | 词云 wordCloud | echarts-wordcloud | `references/gallery.md` › 构成流向 |
 | 纯 CSS 动画（旋转/脉动/进度条/打字机/变色） | CSS `@keyframes`（最稳，不依赖外网） | `references/gallery.md` › 创意动画 |
 | 粒子流 / 星空 / 自绘动画 | Canvas + `requestAnimationFrame` | `references/gallery.md` › 创意动画 |
@@ -96,7 +97,9 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli 
 ## 参考文档与脚本
 
 - `scripts/verify.sh <html> [等待秒数]` — **落库前验证脚本**（工作流第 2 步用它）：全新 session 打开 → 抓 page error/console → 数 canvas/svg → 截图 → 给通过判定；退出码 0 才算初步通过，仍须肉眼看截图
+- `scripts/animate_diagram.py --pattern pattern.json --out x.html` — 拓扑 / Agent 编排动画生成器：结构化 JSON → 自包含 SVG 动画 HTML
 - `references/gallery.md` — **主力配方库**：4 种通用骨架（ECharts/Canvas/Three.js/SVG-CSS）+ 按图表类型的可直接用配方
+- `references/animated-flowchart.md` — 拓扑 / Agent 编排动画 recipe，配套输入格式见 `references/pattern-schema.md`
 - `references/geo-3d.md` — 地图 / echarts-gl 3D / Three.js 的完整可跑模板（这几类有 CDN/registerMap/坐标系/着色坑）
 - `references/window-magic.md` — **文档小程序运行时**：`window.magic` 能力配方（用户身份 / 读文档 / 持久化 / 多维表 / AI），含判存兜底范式与活数据 Dashboard、文档内 AI 卡等组合配方
 - `references/pitfalls.md` — 画图避坑与白屏排查（来自真实创建一篇 47 图大文档）
