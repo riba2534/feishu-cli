@@ -1,7 +1,7 @@
 # 地图 / 3D / Three.js 完整模板
 
 这几类有 CDN 加载、`registerMap`、坐标系、着色等坑，所以**给完整可直接 `create` 的 HTML**（都已本地验证渲染）。
-通用配色：深色底 `#0f1729`，蓝 `#2e6cff` / 青 `#36e0c6` / 金 `#ffd166`。落库前仍按 SKILL 工作流第 2 步本地验证（地图/CDN 类多等到 4s）。
+通用配色：深色底 `#0f1729`；**数据系列色**遵循 `gallery.md` 开头的统一色板约定（`#3370ff` / `#bf8600` / `#00ad96` 起按序）；地图发光、大气层等**特效装饰色**沿用模板原值即可。落库前仍按 SKILL 工作流第 2 步本地验证（地图/CDN 类多等到 4s）。
 
 ## 目录
 - [真实地图着色 choropleth](#真实地图着色-choropleth)
@@ -36,10 +36,10 @@ function render(geo){
   c.setOption({backgroundColor:'#0f1729',
     title:{text:'全国业务分布',subtext:'各省接入量',left:'center',top:8,textStyle:{color:'#cde0ff',fontSize:16},subtextStyle:{color:'#6f86ab'}},
     tooltip:{trigger:'item',backgroundColor:'rgba(16,26,46,.92)',textStyle:{color:'#e6edf7'},formatter:function(p){return p.name+'<br/>'+(p.value||0)}},
-    visualMap:{min:0,max:1900,left:18,bottom:18,calculable:true,inRange:{color:['#10243e','#1e5fa8','#36e0c6','#ffd166']},textStyle:{color:'#9fb6d6'}},
+    visualMap:{min:0,max:1900,left:18,bottom:18,calculable:true,inRange:{color:['#1c3672','#2b57bd','#4b80f5','#8ab1ff','#cedfff']},textStyle:{color:'#9fb6d6'}},
     series:[{type:'map',map:'china',roam:false,zoom:1.2,label:{show:false},
       itemStyle:{borderColor:'rgba(120,180,255,.35)',areaColor:'#10243e'},
-      emphasis:{label:{show:true,color:'#fff'},itemStyle:{areaColor:'#2e6cff'}},data:PROV}]});
+      emphasis:{label:{show:true,color:'#fff'},itemStyle:{areaColor:'#3370ff'}},data:PROV}]});
   document.getElementById('st').textContent='';addEventListener('resize',function(){c.resize()});
 }
 function boot(){if(typeof echarts==='undefined')return setTimeout(boot,150);
@@ -70,9 +70,9 @@ function render(geo){
     title:{text:'实时数据飞线',left:'center',top:8,textStyle:{color:'#cde0ff',fontSize:16}},
     geo:{map:'china',roam:false,zoom:1.2,itemStyle:{areaColor:'#0c1c33',borderColor:'rgba(90,150,230,.35)'},emphasis:{itemStyle:{areaColor:'#13294a'}}},
     series:[
-      {type:'lines',coordinateSystem:'geo',zlevel:2,effect:{show:true,period:5,trailLength:.4,symbol:'arrow',symbolSize:7,color:'#7df0ff'},lineStyle:{width:1.2,opacity:.6,curveness:.25,color:'#36e0c6'},data:lines},
-      {type:'effectScatter',coordinateSystem:'geo',zlevel:3,rippleEffect:{brushType:'stroke',scale:3},symbolSize:8,itemStyle:{color:'#43e8c4'},label:{show:true,position:'right',formatter:'{b}',color:'#bcd2f0',fontSize:10},data:sc},
-      {type:'effectScatter',coordinateSystem:'geo',zlevel:4,rippleEffect:{brushType:'stroke',scale:5},symbolSize:16,itemStyle:{color:'#ffd166'},label:{show:true,position:'top',formatter:'{b}',color:'#ffe6a3',fontWeight:600},data:[{name:HUB,value:G[HUB]}]}]});
+      {type:'lines',coordinateSystem:'geo',zlevel:2,effect:{show:true,period:5,trailLength:.4,symbol:'arrow',symbolSize:7,color:'#ffffff'},lineStyle:{width:1.2,opacity:.6,curveness:.25,color:'#00ad96'},data:lines},
+      {type:'effectScatter',coordinateSystem:'geo',zlevel:3,rippleEffect:{brushType:'stroke',scale:3},symbolSize:8,itemStyle:{color:'#00ad96'},label:{show:true,position:'right',formatter:'{b}',color:'#bcd2f0',fontSize:10},data:sc},
+      {type:'effectScatter',coordinateSystem:'geo',zlevel:4,rippleEffect:{brushType:'stroke',scale:5},symbolSize:16,itemStyle:{color:'#bf8600'},label:{show:true,position:'top',formatter:'{b}',color:'#ffe6a3',fontWeight:600},data:[{name:HUB,value:G[HUB]}]}]});
   document.getElementById('st').textContent='';addEventListener('resize',function(){c.resize()});
 }
 ```
@@ -89,13 +89,13 @@ function render(geo){
   var c=echarts.init(document.getElementById('chart'));
   c.setOption({backgroundColor:'#0f1729',
     title:{text:'3D 立体中国地图',left:'center',top:8,textStyle:{color:'#cde0ff',fontSize:16}},
-    visualMap:{min:0,max:1900,left:18,bottom:18,calculable:true,inRange:{color:['#10243e','#1e5fa8','#36e0c6','#ffd166']},textStyle:{color:'#9fb6d6'}},
+    visualMap:{min:0,max:1900,left:18,bottom:18,calculable:true,inRange:{color:['#1c3672','#2b57bd','#4b80f5','#8ab1ff','#cedfff']},textStyle:{color:'#9fb6d6'}},
     series:[{type:'map3D',map:'china',regionHeight:3,shading:'realistic',
       realisticMaterial:{roughness:.55,metalness:.1},
       light:{main:{intensity:1.4,shadow:true,alpha:40,beta:30},ambient:{intensity:.35}},
       viewControl:{distance:130,alpha:55,beta:8,autoRotate:true,autoRotateSpeed:8},
       itemStyle:{borderColor:'rgba(125,240,255,.5)',borderWidth:.6},
-      emphasis:{itemStyle:{color:'#ffd166'}},label:{show:false},data:PROV}]});
+      emphasis:{itemStyle:{color:'#bf8600'}},label:{show:false},data:PROV}]});
   document.getElementById('st').textContent='';addEventListener('resize',function(){c.resize()});
 }
 ```
@@ -110,7 +110,7 @@ function render(geo){
 // OPT（粘进「带 echarts-gl 的骨架」，等待条件用 typeof echarts!=='undefined'）
 OPT = { backgroundColor:'#0f1729',
   title:{text:'3D 柱状',left:'center',top:8,textStyle:{color:'#cde0ff',fontSize:16}},
-  visualMap:{max:100,inRange:{color:['#1e5fa8','#36e0c6','#ffd166']},left:14,bottom:16,textStyle:{color:'#9fb6d6'}},
+  visualMap:{max:100,inRange:{color:['#2b57bd','#4b80f5','#8ab1ff']},left:14,bottom:16,textStyle:{color:'#9fb6d6'}},
   xAxis3D:{type:'category',data:['A','B','C','D']},yAxis3D:{type:'category',data:['一','二','三']},zAxis3D:{type:'value'},
   grid3D:{viewControl:{autoRotate:true,distance:200},light:{main:{intensity:1.2},ambient:{intensity:.4}}},
   series:[{type:'bar3D',shading:'lambert',data:(function(){var a=[];for(var x=0;x<4;x++)for(var y=0;y<3;y++)a.push([x,y,Math.round(Math.random()*100)]);return a})()}]
@@ -133,7 +133,8 @@ function w(){if(typeof echarts==='undefined'||typeof echarts.getMap==='undefined
   var c=echarts.init(document.getElementById('chart'));
   c.setOption({backgroundColor:'#0f1729',
     title:{text:'3D 曲面',left:'center',top:8,textStyle:{color:'#cde0ff',fontSize:16}},
-    visualMap:{dimension:2,min:-1,max:1,left:14,bottom:16,calculable:true,inRange:{color:['#10243e','#1e5fa8','#36e0c6','#ffd166']},textStyle:{color:'#9fb6d6'}},
+    // z∈[-1,1] 是极性数据 → diverging：两极最亮、中点贴近画布读作"零"
+    visualMap:{dimension:2,min:-1,max:1,left:14,bottom:16,calculable:true,inRange:{color:['#8ab1ff','#2b57bd','#373a3d','#893b00','#ea6a03']},textStyle:{color:'#9fb6d6'}},
     xAxis3D:{},yAxis3D:{},zAxis3D:{},
     grid3D:{viewControl:{autoRotate:true,distance:200,alpha:25,beta:40},light:{main:{intensity:1.2},ambient:{intensity:.4}}},
     series:[{type:'surface',wireframe:{show:false},shading:'color',

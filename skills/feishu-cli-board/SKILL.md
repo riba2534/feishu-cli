@@ -135,6 +135,11 @@ feishu-cli board import --engine local
 ### 快速开始（一键脚本）
 
 ```bash
+# Step 0: 定色板（生成 SVG 之前）—— 色值取自统一色板，不自创
+#   结构分组用浅底/深边对、数据系列用 categorical 原色，见 references/style.md。
+#   原样按序取用统一色板时无需校验（已预校验，结论见 feishu-cli-dataviz palette.md）；
+#   仅当改色值/换底色时先跑校验（定位方式见 references/style.md"数据图表的系列色"一节）。
+
 # Step 1: 准备 SVG（手写 / Python 生成 / AI 吐）
 # 示例：用 Claude 生成一个增长飞轮 SVG，保存为 flywheel.svg
 
@@ -211,11 +216,11 @@ cat > /tmp/shapes.json << 'EOF'
   {"type":"composite_shape","x":100,"y":100,"width":160,"height":40,"z_index":10,
    "composite_shape":{"type":"round_rect"},
    "text":{"text":"服务 A","font_size":14,"font_weight":"regular","horizontal_align":"center","vertical_align":"mid"},
-   "style":{"fill_color":"#FFFFFF","fill_opacity":100,"border_style":"solid","border_color":"#5178C6","border_width":"medium","border_opacity":100}},
+   "style":{"fill_color":"#FFFFFF","fill_opacity":100,"border_style":"solid","border_color":"#1446C2","border_width":"medium","border_opacity":100}},
   {"type":"composite_shape","x":400,"y":100,"width":160,"height":40,"z_index":10,
    "composite_shape":{"type":"round_rect"},
    "text":{"text":"服务 B","font_size":14,"font_weight":"regular","horizontal_align":"center","vertical_align":"mid"},
-   "style":{"fill_color":"#FFFFFF","fill_opacity":100,"border_style":"solid","border_color":"#509863","border_width":"medium","border_opacity":100}}
+   "style":{"fill_color":"#FFFFFF","fill_opacity":100,"border_style":"solid","border_color":"#0C6800","border_width":"medium","border_opacity":100}}
 ]
 EOF
 feishu-cli board create-notes $BOARD_ID /tmp/shapes.json -o json
@@ -238,7 +243,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 
 - **节点 JSON Schema**：`references/schema.md`
 - **布局策略**：`references/layout.md`（分层条带 / 行列对齐 / 岛屿式 / 树状）
-- **配色系统**：`references/style.md`（5 套色板 + 结构规则）
+- **配色系统**：`references/style.md`（统一色板取用方式 + 5 个主题变体 + 结构规则）
 - **连线策略**：`references/connectors.md`（snap_to / shape / 间距）
 - **排版规则**：`references/typography.md`（字号层级）
 - **信息规划**：`references/content.md`（信息量参考）
@@ -304,6 +309,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 6. **节点文字简短**：标题 + 简短说明（< 12 字），不写长段落
 7. **同组节点视觉一致**：同分组用相同 `fill_color / border_color`
 8. **节点数上限**：单画板 > 2000 节点时编辑器开始卡顿，考虑拆图或简化
+9. **色值取自统一色板**：分组/系列色按 `references/style.md` 按序取用，不自创、不循环；改色值/换底色时才需跑 `feishu-cli-dataviz` 校验器（默认色板已预校验）
 
 ---
 
@@ -320,6 +326,8 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 | 节点数翻倍 / 颜色加深 | 重传导致翻倍 → `board delete --all` 后重传 | `references/pitfalls.md` ⭐ |
 | 文字和背景色太接近 | 调 fill_color 或 text.text_color，确保对比度 | `references/style.md` |
 | 分组看不出来 | 同分组用同色，跨组换色 | `references/style.md` |
+| 数据系列颜色难分辨（色盲/投影） | 系列色改按统一色板顺序取用并跑校验器 | `feishu-cli-dataviz` |
+| 不确定该画柱状/折线/饼 | 按数据任务选形式，别按用户口头图表名 | `feishu-cli-dataviz` |
 | `2890002 invalid arg` | 含多余字段（id/locked/children 等只读字段） | `references/schema.md` |
 | Mermaid 服务端报错 | 切 `--engine local` 或改 SVG | `references/mermaid-engines.md` |
 
@@ -349,7 +357,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 | `references/examples-real.md` | 设计参考（14 张实战图的模式 + SVG 元素 + 节点密度） |
 | `references/schema.md` | 走路径 E 时必读（节点 JSON 权威参考） |
 | `references/layout.md` | 走路径 E 时必读（5 种布局策略 + 间距规则） |
-| `references/style.md` | 路径 C/E 配色参考（5 套色板） |
+| `references/style.md` | 路径 C/E 配色参考（统一色板取用方式 + 5 个主题变体） |
 | `references/connectors.md` | 用连线时参考（snap_to / shape 选择） |
 | `references/typography.md` | 文字排版参考（字号层级） |
 | `references/content.md` | 信息量规划（避免过载） |

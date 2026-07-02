@@ -45,6 +45,10 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli 
 
 不确定用哪个？**默认 ECharts**（覆盖绝大多数统计/关系图）；只有要真实地理、可旋转 3D、或 ECharts 给不出的自由视觉，才上 geo-3d / Canvas / SVG。
 
+**不确定画什么形式**（柱还是线？要不要干脆一个大数字？）→ 先看 `feishu-cli-dataviz` 技能
+（任务→形式启发式 + 反模式清单）。**系列配色**统一取该技能色板 dark 列（约定见
+`references/gallery.md` 开头），不自创色值。
+
 ## 不止画图：window.magic 文档小程序运行时
 
 妙笔BOX 的 iframe 里，飞书注入了一个 `window.magic` 运行时——**OpenAPI 建的块也有**（已实测，注入认 `component_type_id` 不认来源）。所以它不只是画图，还能做**会读数据、能交互、有状态的文档小程序**。当任务需要下面任一项，看 `references/window-magic.md`：
@@ -61,7 +65,7 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli 
 
 ## 绘制工作流（每张图都照做）
 
-1. **照配方写一页自包含 HTML 到 `/tmp/x.html`**。从 `gallery.md` / `geo-3d.md` 取对应骨架 + 配方；统一深色背景、容器固定高度（如 `#chart{height:360px}`）、`width:100%`、监听 `resize` 调 `chart.resize()`。
+1. **照配方写一页自包含 HTML 到 `/tmp/x.html`**。从 `gallery.md` / `geo-3d.md` 取对应骨架 + 配方；统一深色背景、容器固定高度（如 `#chart{height:360px}`）、`width:100%`、监听 `resize` 调 `chart.resize()`。系列色按 `gallery.md` 开头的配色约定取用；换了色就先跑一遍色板校验（命令在同一段）。
 2. **本地浏览器验证它真渲染、真在动——这步不能跳**。iframe 里任何顶层 JS 错误会让整张图**白屏且不报错**（未捕获异常走 pageerror、不进 console），光读代码看不出来。直接跑封装好的验证脚本——它用全新浏览器 session 打开页面、抓 page error / console、数 canvas/svg 节点、截图，并据此给通过/未过判定：
    ```bash
    scripts/verify.sh /tmp/x.html        # 地图/CDN 重的加等待秒数：scripts/verify.sh /tmp/x.html 5

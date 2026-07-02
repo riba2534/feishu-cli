@@ -63,6 +63,7 @@
         "aspect_ratio": "16:9",
         "chart_spec": {
           "type": "bar",
+          "color": ["#2ea121"],
           "title": { "text": "__CHART_TITLE__" },
           "data": {
             "values": [

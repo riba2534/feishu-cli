@@ -178,9 +178,9 @@ col_gap = 20, row_gap = 15
 **不同分区用不同颜色**（从 style.md 色板选取）：
 
 ```
-接入层背景: fill_color="#F0F4FC", border_color="#5178C6"
-服务层背景: fill_color="#EAE2FE", border_color="#8569CB"
-数据层背景: fill_color="#DFF5E5", border_color="#509863"
+接入层背景: fill_color="#E6EFFF", border_color="#1446C2"
+服务层背景: fill_color="#EFECFF", border_color="#611DC5"
+数据层背景: fill_color="#E0F6DD", border_color="#0C6800"
 ```
 
 ---

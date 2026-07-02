@@ -85,6 +85,7 @@
             "aspect_ratio": "16:9",
             "chart_spec": {
               "type": "line",
+              "color": ["#f54a45"],
               "title": { "text": "错误率趋势（最近 1 小时）" },
               "data": {
                 "values": [

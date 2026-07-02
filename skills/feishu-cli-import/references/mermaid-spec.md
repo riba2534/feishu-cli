@@ -519,17 +519,22 @@ sequenceDiagram
 
 ### classDef 颜色定义（复制到每个 flowchart 图表末尾）
 
+色值取自 `feishu-cli-dataviz` 统一色板，与 board/htmlbox/card 管线同一套色相家族：
+前 8 类（db…legacy 的彩色部分）用"浅底/深边派生对"（fill 淡底、stroke/文字深边，
+这 8 对的深边对白底对比度 ≥ 7:1）；fe/ext 两类中性角色用色板的中性阶
+（fe = 灰淡底 + secondary ink 边，ext = 白底 + muted 灰边，读作"系统外的空心节点"）：
+
 ```
-classDef db fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
-classDef es fill:#fff3e0,stroke:#e65100,color:#bf360c
-classDef mq fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c
-classDef dw fill:#fce4ec,stroke:#c62828,color:#b71c1c
-classDef svc fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
-classDef faas fill:#e0f7fa,stroke:#00838f,color:#006064
-classDef cfg fill:#fffde7,stroke:#f9a825,color:#f57f17
-classDef fe fill:#f5f5f5,stroke:#616161,color:#212121
-classDef legacy fill:#ffebee,stroke:#c62828,stroke-dasharray:5 5
-classDef ext fill:#eceff1,stroke:#455a64,color:#263238
+classDef db fill:#e0f6dd,stroke:#0c6800,color:#0c6800
+classDef es fill:#ffeadf,stroke:#893b00,color:#893b00
+classDef mq fill:#efecff,stroke:#611dc5,color:#611dc5
+classDef dw fill:#ffe7f1,stroke:#990064,color:#990064
+classDef svc fill:#e6efff,stroke:#1446c2,color:#1446c2
+classDef faas fill:#d3f8ef,stroke:#006456,color:#006456
+classDef cfg fill:#fdecd1,stroke:#714e00,color:#714e00
+classDef fe fill:#f2f3f5,stroke:#646a73,color:#1f2329
+classDef legacy fill:#ffe9e6,stroke:#a30011,stroke-dasharray:5 5
+classDef ext fill:#ffffff,stroke:#8f959e,color:#1f2329
 ```
 
 ### 实体类型 → 颜色 + 形状 对照表
@@ -562,7 +567,7 @@ classDef ext fill:#eceff1,stroke:#455a64,color:#263238
 ```
 DB=绿色圆柱体 | ES=橙色圆柱体 | MQ=紫色体育场形
 RPC=蓝色矩形 | FaaS=青色矩形 | 配置=黄色矩形
-前端=灰色圆角 | 旧系统=红色虚线 | 外部=灰蓝色矩形
+前端=灰底圆角 | 旧系统=红色虚线 | 外部=白底灰边矩形
 ```
 
 ### 图表类型选择
@@ -574,9 +579,13 @@ RPC=蓝色矩形 | FaaS=青色矩形 | 配置=黄色矩形
 需要状态转换？      → stateDiagram-v2
 需要数据库表关系？  → erDiagram
 需要项目排期？      → gantt
-需要占比分布？      → pie
+需要占比分布？      → pie（≤6 片；相近占比用表格/条形更诚实）
 需要层级梳理？      → mindmap
 ```
+
+**数据图表（占比/趋势/对比）先按数据任务选形式**，不按用户口头图表名 —— 判断
+启发式与反模式清单见 `feishu-cli-dataviz` 技能；Mermaid 画不了的形式（柱状对比、
+多系列趋势）考虑 htmlbox（要动）或 board SVG（静态）管线。
 
 ### 安全检查速记
 

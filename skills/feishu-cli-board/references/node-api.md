@@ -94,10 +94,10 @@ feishu-cli doc add-board <document_id> -o json
     "vertical_align": "mid"
   },
   "style": {
-    "fill_color": "#8569cb",
+    "fill_color": "#611dc5",
     "fill_opacity": 100,
     "border_style": "solid",
-    "border_color": "#5178C6",
+    "border_color": "#1446C2",
     "border_width": "medium",
     "border_opacity": 100
   },

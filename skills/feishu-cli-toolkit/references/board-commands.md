@@ -109,7 +109,7 @@ feishu-cli doc add-board <document_id> --parent-id <block_id> --index 0
 feishu-cli board create-notes <whiteboard_id> nodes.json
 
 # 直接传入 JSON
-feishu-cli board create-notes <whiteboard_id> '[{"type":"composite_shape","x":100,"y":100,"width":200,"height":50,"composite_shape":{"type":"round_rect"},"text":{"text":"Hello"},"style":{"fill_color":"#8569cb","border_style":"none","fill_opacity":100}}]' --source-type content
+feishu-cli board create-notes <whiteboard_id> '[{"type":"composite_shape","x":100,"y":100,"width":200,"height":50,"composite_shape":{"type":"round_rect"},"text":{"text":"Hello"},"style":{"fill_color":"#611dc5","border_style":"none","fill_opacity":100}}]' --source-type content
 
 # JSON 输出（返回节点 ID 列表）
 feishu-cli board create-notes <whiteboard_id> nodes.json -o json

@@ -119,7 +119,7 @@ async function boot(){
   c.setOption({backgroundColor:'#0f1729',
     xAxis:{type:'category',data:cat,axisLabel:{color:'#9fb6d6'}},
     yAxis:{type:'value',axisLabel:{color:'#9fb6d6'}},
-    series:[{type:'bar',data:val,itemStyle:{color:'#36e0c6',borderRadius:[4,4,0,0]}}]});
+    series:[{type:'bar',data:val,itemStyle:{color:'#00ad96',borderRadius:[4,4,0,0]}}]});
   document.getElementById('st').textContent=''; addEventListener('resize',function(){c.resize()});
 }
 </script>

@@ -1,0 +1,50 @@
+{
+  "$comment": "统一色板的机器可读单一来源。人读版（含校验结论与取用方式）见 ../references/palette.md；改色后跑 check_docs.js 同步核查全部技能文档。",
+  "categorical": {
+    "order": ["blue", "yellow", "turquoise", "orange", "purple", "red", "carmine", "green"],
+    "light": ["#3370ff", "#d99904", "#04b49c", "#ed6d0c", "#7f3bf5", "#f54a45", "#f14ba9", "#2ea121"],
+    "dark": ["#3370ff", "#bf8600", "#00ad96", "#ea6a03", "#7f3bf5", "#f54a45", "#f04aa8", "#2ea121"]
+  },
+  "allPairsSafeSubset": {
+    "$comment": "散点/气泡/地图（--pairs all）场景的最大安全子集：任意两色 CVD ΔE ≥ 12",
+    "slots": [1, 2, 3, 6],
+    "light": ["#3370ff", "#d99904", "#04b49c", "#f54a45"],
+    "dark": ["#3370ff", "#bf8600", "#00ad96", "#f54a45"]
+  },
+  "derivedPairs": {
+    "$comment": "浅底/深边派生对（Mermaid classDef / board 分组背景 / 流程图节点）",
+    "blue": { "fill": "#e6efff", "stroke": "#1446c2" },
+    "yellow": { "fill": "#fdecd1", "stroke": "#714e00" },
+    "turquoise": { "fill": "#d3f8ef", "stroke": "#006456" },
+    "orange": { "fill": "#ffeadf", "stroke": "#893b00" },
+    "purple": { "fill": "#efecff", "stroke": "#611dc5" },
+    "red": { "fill": "#ffe9e6", "stroke": "#a30011" },
+    "carmine": { "fill": "#ffe7f1", "stroke": "#990064" },
+    "green": { "fill": "#e0f6dd", "stroke": "#0c6800" },
+    "neutralFe": { "fill": "#f2f3f5", "stroke": "#646a73" },
+    "neutralExt": { "fill": "#ffffff", "stroke": "#8f959e" }
+  },
+  "sequentialBlue": ["#cedfff", "#b7d0ff", "#a0c0ff", "#8ab1ff", "#73a1ff", "#5c90ff", "#4b80f5", "#3e72e5", "#3364d2", "#2b57bd", "#244ca5", "#1f418c", "#1c3672"],
+  "status": { "good": "#217a12", "warning": "#b97d00", "serious": "#c9571c", "critical": "#c02622" },
+  "diverging": { "cool": "blue", "warm": "orange", "midLight": "#f2f3f5", "midDark": "#373a3d" },
+  "surfaces": { "light": "#ffffff", "dark": "#1f1f1f", "htmlboxCanvas": "#0f1729" },
+  "chrome": {
+    "inkPrimary": { "light": "#1f2329", "dark": "#ebebeb" },
+    "inkSecondary": { "light": "#646a73", "dark": "#a6a6a6" },
+    "muted": "#8f959e",
+    "grid": { "light": "#dee0e3", "dark": "#383838" },
+    "baseline": { "light": "#bbbfc4", "dark": "#4a4a4a" },
+    "tint": { "light": "#f2f3f5", "dark": "#2a2a2a" }
+  },
+  "deprecated": {
+    "$comment": "已废弃色值清单，check_docs.js 据此扫描残留。分组仅为可读性。",
+    "boardClassic": ["#f0f4fc", "#5178c6", "#eae2fe", "#8569cb", "#dff5e5", "#509863", "#fef1ce", "#d4b45b", "#fee3e2", "#d25d5a"],
+    "boardBusiness": ["#edf2f7", "#4a6fa5", "#d4e0ed", "#e8edf3", "#5a7b9a", "#8895a7", "#718bae", "#2d4a7a"],
+    "boardTech": ["#0f172a", "#1e293b", "#3b82f6", "#8b5cf6", "#10b981", "#334155", "#2563eb", "#475569"],
+    "boardFresh": ["#f0fdf4", "#86efac", "#14532d", "#dcfce7", "#4ade80", "#ecfdf5", "#6ee7b7", "#f0fdfa", "#5eead4", "#134e4a", "#16a34a"],
+    "boardMinimal": ["#dee2e6", "#e9ecef", "#adb5bd", "#f1f3f5", "#868e96", "#ced4da", "#495057"],
+    "htmlboxOld": ["#36e0c6", "#ffd166", "#2e6cff", "#7df0ff", "#9d7bff", "#ff7a90", "#43e8c4", "#1e5fa8", "#3b7bff"],
+    "mermaidOld": ["#e8f5e9", "#2e7d32", "#1b5e20", "#fff3e0", "#e65100", "#bf360c", "#f3e5f5", "#6a1b9a", "#4a148c", "#fce4ec", "#c62828", "#b71c1c", "#e3f2fd", "#1565c0", "#0d47a1", "#e0f7fa", "#00838f", "#006064", "#fffde7", "#f9a825", "#f57f17", "#ffebee", "#eceff1", "#455a64", "#263238"],
+    "superseded": ["#c38900", "#eff0f1", "#d5e8d4"]
+  }
+}

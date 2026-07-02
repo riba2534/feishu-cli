@@ -46,7 +46,7 @@ feishu-cli 使用飞书 OpenAPI 原生 JSON 格式，所有节点通过绝对坐
     "fill_color": "#FFFFFF",
     "fill_opacity": 100,
     "border_style": "solid",
-    "border_color": "#5178C6",
+    "border_color": "#1446C2",
     "border_width": "medium",
     "border_opacity": 100
   }
@@ -165,7 +165,7 @@ feishu-cli 使用飞书 OpenAPI 原生 JSON 格式，所有节点通过绝对坐
   "z_index": 10,
   "svg": {
     "key": "",
-    "svg_code": "<svg viewBox=\"0 0 245 245\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 120 0 A 120 120 0 0 1 240 120 L 180 120 A 60 60 0 0 0 120 60 Z\" fill=\"#8569CB\" opacity=\"0.85\"/></svg>",
+    "svg_code": "<svg viewBox=\"0 0 245 245\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 120 0 A 120 120 0 0 1 240 120 L 180 120 A 60 60 0 0 0 120 60 Z\" fill=\"#611DC5\" opacity=\"0.85\"/></svg>",
     "type": 0
   },
   "style": {
@@ -284,10 +284,10 @@ feishu-cli board svg-import <whiteboard_id> drawing.svg --dry-run
     "vertical_align": "top"
   },
   "style": {
-    "fill_color": "#F0F4FC",
+    "fill_color": "#E6EFFF",
     "fill_opacity": 25,
     "border_style": "solid",
-    "border_color": "#5178C6",
+    "border_color": "#1446C2",
     "border_width": "narrow",
     "border_opacity": 40
   }
@@ -361,12 +361,12 @@ cat > /tmp/shapes.json << 'EOF'
   {"type":"composite_shape","x":100,"y":100,"width":160,"height":40,
    "composite_shape":{"type":"round_rect"},
    "text":{"text":"服务 A","font_size":14,"font_weight":"regular","horizontal_align":"center","vertical_align":"mid"},
-   "style":{"fill_color":"#FFFFFF","fill_opacity":100,"border_style":"solid","border_color":"#5178C6","border_width":"medium","border_opacity":100},
+   "style":{"fill_color":"#FFFFFF","fill_opacity":100,"border_style":"solid","border_color":"#1446C2","border_width":"medium","border_opacity":100},
    "z_index":10},
   {"type":"composite_shape","x":400,"y":100,"width":160,"height":40,
    "composite_shape":{"type":"round_rect"},
    "text":{"text":"服务 B","font_size":14,"font_weight":"regular","horizontal_align":"center","vertical_align":"mid"},
-   "style":{"fill_color":"#FFFFFF","fill_opacity":100,"border_style":"solid","border_color":"#509863","border_width":"medium","border_opacity":100},
+   "style":{"fill_color":"#FFFFFF","fill_opacity":100,"border_style":"solid","border_color":"#0C6800","border_width":"medium","border_opacity":100},
    "z_index":10}
 ]
 EOF
