@@ -183,11 +183,10 @@ func GetComment(fileToken string, commentID string, fileType string, userAccessT
 	}, nil
 }
 
-// DeleteComment 删除评论
-// 注意：当前飞书 SDK 版本不支持删除评论 API
-func DeleteComment(fileToken string, commentID string, fileType string) error {
-	return fmt.Errorf("删除评论功能暂不支持：当前 SDK 版本未提供删除评论 API")
-}
+// 飞书 Open API 没有「删除整条评论」的端点（SDK fileComment 仅有
+// BatchQuery/Create/Get/List/Patch，无 Delete）。评论本质是一条回复线程，
+// 只能通过 DeleteCommentReply 删除单条回复，或用 PatchComment 标记已解决。
+// 因此此处不提供 DeleteComment，相关指引见 cmd/delete_comment.go。
 
 // PatchComment 更新评论解决状态
 // userAccessToken 非空时使用 User Token，否则使用 App Token。
