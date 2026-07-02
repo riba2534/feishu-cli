@@ -27,6 +27,23 @@ go test ./...                     # 运行所有测试
 go vet ./...                      # 静态检查
 ```
 
+### 质量标准（任何改动提交前必须满足）
+
+1. **实物验证铁律：任何改动，都必须使用实际编译的二进制产物进行验证。**
+   先 `go build -o feishu-cli .`（或 `make build`）编译当前代码，再用编译出的二进制
+   实跑受影响的命令确认行为符合预期（读操作真实调用；写操作优先 `--dry-run`，必要时
+   在测试文档/画板上真实执行）。禁止只凭 `go vet`、单元测试或静态读代码就宣告完成；
+   文档/技能中对 CLI 行为的描述，同样以新编译二进制的实跑结果为准。
+2. **基线全绿**：`gofmt -l cmd internal` 无输出、`go test ./...`、`go vet ./...` 通过。
+3. **结论附证据**：报告"已完成/已修复"必须附带验证命令及其输出（或退出码/截图），
+   不做未验证的声明。
+4. **可执行文档必须实跑**：README / skills 里给出的命令、脚本、示例，改动后逐条实跑；
+   涉及可视化配色的改动，跑 `skills/feishu-cli-dataviz/scripts/validate_palette.js`
+   校验色板、`scripts/check_docs.js` 核查文档一致性，全绿才算完成。
+5. **隐私扫描**：提交前按下方"开发规范"第 6 条检查敏感信息。
+
+发版有更严格的完整清单，见「发布 Release 规范」。
+
 ### 开发规范
 
 1. **错误处理**：使用中文错误信息，提供解决建议
@@ -246,7 +263,7 @@ python3 skills/feishu-cli-board/scripts/svg_to_board.py drawing.svg <whiteboard_
 
 ## Claude Code 技能
 
-位于 `skills/` 目录，当前 28 个。README 的“AI 技能集成”章节是对外安装清单；这里按职责分组，方便 Agent 路由：
+位于 `skills/` 目录，当前 29 个。README 的“AI 技能集成”章节是对外安装清单；这里按职责分组，方便 Agent 路由：
 
 | 技能 | 说明 |
 |------|------|
@@ -255,7 +272,7 @@ python3 skills/feishu-cli-board/scripts/svg_to_board.py drawing.svg <whiteboard_
 | 消息协作 | `feishu-cli-msg` / `feishu-cli-card` / `feishu-cli-chat` / `feishu-cli-event` |
 | 数据与表格 | `feishu-cli-bitable` / `feishu-cli-sheet` / `feishu-cli-search` / `feishu-cli-schema` |
 | 云盘与素材 | `feishu-cli-drive` / `feishu-cli-markdown` |
-| 画板与展示 | `feishu-cli-board` / `feishu-cli-slides` / `feishu-cli-htmlbox`（妙笔BOX HTML 小组件，文档里跑动画/图表） / `feishu-cli-apps`（妙搭 Miaoda HTML 应用一键部署，User Token + spark scope） |
+| 画板与展示 | `feishu-cli-board` / `feishu-cli-slides` / `feishu-cli-htmlbox`（妙笔BOX HTML 小组件，文档里跑动画/图表） / `feishu-cli-apps`（妙搭 Miaoda HTML 应用一键部署，User Token + spark scope） / `feishu-cli-dataviz`（可视化设计系统：统一色板 + 校验器 + 图表形式选择，board/htmlbox/card/import 画图配色的公共规范层） |
 | 业务域 | `feishu-cli-mail` / `feishu-cli-vc` / `feishu-cli-approval` / `feishu-cli-attendance` / `feishu-cli-calendar` / `feishu-cli-okr` |
 | 兜底入口 | `feishu-cli-toolkit`：仅在没有更专用 skill 时使用，覆盖基础 sheet/calendar/task/file/media/comment/wiki/user/dept |
 
