@@ -155,6 +155,11 @@ var exportWikiTreeCmd = &cobra.Command{
 				continue
 			}
 
+			// 将图片路径从 CWD 相对路径改为文档相对路径，确保 md 预览图片正确解析
+			if assetsDirOverride != "" && markdown != "" {
+				markdown = makeImagePathsDocumentRelative(markdown, assetsDirOverride, job.OutputPath)
+			}
+
 			if err := os.WriteFile(job.OutputPath, []byte(markdown), 0600); err != nil {
 				stats.Failed++
 				stats.Failures = append(stats.Failures, treeFailure{
@@ -408,6 +413,22 @@ func printTreeSummary(stats *treeStats, outputDir string) {
 	}
 }
 
+
+// makeImagePathsDocumentRelative 将 markdown 中的 CWD 相对资源路径
+// 改为以文档所在目录为基准的相对路径，确保 VSCode 等 markdown 预览器
+// 能从 md 文件所在目录正确解析图片（以及画板缩略图等）引用。
+func makeImagePathsDocumentRelative(markdown, assetsDir, outputPath string) string {
+	if assetsDir == "" {
+		return markdown
+	}
+	docDir := filepath.Dir(outputPath)
+	rel, err := filepath.Rel(docDir, assetsDir)
+	if err != nil {
+		// 无法计算相对路径时保持原样
+		return markdown
+	}
+	return strings.ReplaceAll(markdown, assetsDir, rel)
+}
 // truncate 截断长字符串用于错误展示。
 func truncate(s string, n int) string {
 	if len(s) <= n {

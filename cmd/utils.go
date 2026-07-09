@@ -333,7 +333,7 @@ func unescapeSheetRange(rangeStr string) string {
 func safeOutputPath(baseName string, ext string) string {
 	// 移除路径分隔符和不安全字符
 	safeName := strings.Map(func(r rune) rune {
-		if r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|' {
+		if r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|' || r == ' ' {
 			return '_'
 		}
 		return r
