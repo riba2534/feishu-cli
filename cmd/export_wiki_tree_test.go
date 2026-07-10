@@ -16,7 +16,7 @@ func TestSanitizeWikiTitle(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"normal", "Hello World", "Hello World"},
+		{"normal", "Hello World", "Hello_World"},
 		{"chinese", "学习计划", "学习计划"},
 		{"slash", "a/b/c", "a_b_c"},
 		{"backslash", `a\b\c`, "a_b_c"},
@@ -26,12 +26,12 @@ func TestSanitizeWikiTitle(t *testing.T) {
 		{"quote", `a"b`, "a_b"},
 		{"angle brackets", "a<b>c", "a_b_c"},
 		{"pipe", "a|b", "a_b"},
-		{"all special", `a/\:*?"<>|b`, "a_________b"},
+		{"all special", `a/\:*?"<>| b`, "a__________b"},
 		{"empty", "", "untitled"},
 		{"only spaces", "   ", "untitled"},
 		{"only dots", "...", "untitled"},
 		{"trailing dots and spaces", "  hello.  ", "hello"},
-		{"emoji preserved", "Go 学习指引 ⭐", "Go 学习指引 ⭐"},
+		{"emoji preserved", "Go 学习指引 ⭐", "Go_学习指引_⭐"},
 	}
 
 	for _, tt := range tests {
@@ -209,5 +209,53 @@ func TestWikiTreeNodeAssetsDirSkipsWhenDisabled(t *testing.T) {
 	})
 	if got != "" {
 		t.Fatalf("wikiTreeNodeAssetsDir() = %q, want empty", got)
+	}
+}
+
+func TestMakeImagePathsDocumentRelative(t *testing.T) {
+	tests := []struct {
+		name       string
+		markdown   string
+		assetsDir  string
+		outputPath string
+		want       string
+	}{
+		{
+			name:       "simple relative",
+			markdown:   "![image](backup/assets/Team/Plan/image_1.png)",
+			assetsDir:  filepath.Join("backup", "assets", "Team", "Plan"),
+			outputPath: filepath.Join("backup", "Team", "Plan.md"),
+			want:       "![image](../assets/Team/Plan/image_1.png)",
+		},
+		{
+			name:       "deep nested",
+			markdown:   "![image](rbk3.4_api/assets/TCP_IP_API/overview/coord/image_1.png)",
+			assetsDir:  filepath.Join("rbk3.4_api", "assets", "TCP_IP_API", "overview", "coord"),
+			outputPath: filepath.Join("rbk3.4_api", "TCP_IP_API", "overview", "coord.md"),
+			want:       "![image](../../assets/TCP_IP_API/overview/coord/image_1.png)",
+		},
+		{
+			name:       "empty assets dir",
+			markdown:   "![image](image_1.png)",
+			assetsDir:  "",
+			outputPath: "some/file.md",
+			want:       "![image](image_1.png)",
+		},
+		{
+			name:       "no image refs",
+			markdown:   "# Hello World\n\nSome text.\n",
+			assetsDir:  "assets",
+			outputPath: "file.md",
+			want:       "# Hello World\n\nSome text.\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := makeImagePathsDocumentRelative(tt.markdown, tt.assetsDir, tt.outputPath)
+			if got != tt.want {
+				t.Errorf("makeImagePathsDocumentRelative() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

@@ -155,6 +155,11 @@ var exportWikiTreeCmd = &cobra.Command{
 				continue
 			}
 
+			// 将图片路径从 CWD 相对路径改为文档相对路径，确保 md 预览图片正确解析
+			if assetsDirOverride != "" && markdown != "" {
+				markdown = makeImagePathsDocumentRelative(markdown, assetsDirOverride, job.OutputPath)
+			}
+
 			if err := os.WriteFile(job.OutputPath, []byte(markdown), 0600); err != nil {
 				stats.Failed++
 				stats.Failures = append(stats.Failures, treeFailure{
@@ -305,6 +310,10 @@ func listAllWikiChildren(spaceID, parentToken, userAccessToken string) ([]*clien
 // 然后处理空标题 / 单点目录等极端情况。
 func sanitizeWikiTitle(title string) string {
 	cleaned := safeOutputPath(strings.TrimSpace(title), "")
+	// 空格替换为下划线（wiki 标题作为文件/目录名时空格易引发问题）。
+	// 仅在此处局部处理，避免污染 safeOutputPath 的其他调用方
+	// （附件原始名、云盘导出文件名、妙记标题等应保留空格）。
+	cleaned = strings.ReplaceAll(cleaned, " ", "_")
 	cleaned = strings.Trim(cleaned, ". ")
 	if cleaned == "" {
 		return "untitled"
@@ -406,6 +415,25 @@ func printTreeSummary(stats *treeStats, outputDir string) {
 			fmt.Printf("  - [%s] %s\n    %s\n", f.NodeToken, f.Path, truncate(f.Error, 200))
 		}
 	}
+}
+
+// makeImagePathsDocumentRelative 将 markdown 中的 CWD 相对资源路径
+// 改为以文档所在目录为基准的相对路径，确保 VSCode 等 markdown 预览器
+// 能从 md 文件所在目录正确解析图片（以及画板缩略图等）引用。
+func makeImagePathsDocumentRelative(markdown, assetsDir, outputPath string) string {
+	if assetsDir == "" {
+		return markdown
+	}
+	docDir := filepath.Dir(outputPath)
+	rel, err := filepath.Rel(docDir, assetsDir)
+	if err != nil {
+		// 无法计算相对路径时保持原样
+		return markdown
+	}
+	// 统一为正斜杠：markdown 图片路径在所有平台都用 / 分隔，
+	// Windows 上 filepath.Rel/Join 返回反斜杠会让图片 URL 无法解析。
+	rel = filepath.ToSlash(rel)
+	return strings.ReplaceAll(markdown, filepath.ToSlash(assetsDir), rel)
 }
 
 // truncate 截断长字符串用于错误展示。

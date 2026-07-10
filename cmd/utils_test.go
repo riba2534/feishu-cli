@@ -256,6 +256,23 @@ func TestSafeOutputPath_ExactlyMaxLength(t *testing.T) {
 	}
 }
 
+// TestSafeOutputPath_PreservesSpaces 验证 safeOutputPath 不替换空格。
+// 空格→下划线是 wiki 标题专属需求（见 export_wiki_tree.go 的 sanitizeWikiTitle），
+// 不应影响附件原始名、云盘导出文件名、妙记标题等需要保留空格的场景（回归防护）。
+func TestSafeOutputPath_PreservesSpaces(t *testing.T) {
+	cases := map[string]string{
+		"简单空格":    "my report",
+		"多个空格":    "2024 年度 总结",
+		"空格与特殊字符": "a b/c:d",
+	}
+	for name, input := range cases {
+		got := safeOutputPath(input, "")
+		if !strings.Contains(got, " ") {
+			t.Errorf("%s: safeOutputPath(%q) = %q, 应保留空格", name, input, got)
+		}
+	}
+}
+
 func TestMustMarkFlagRequired_Success(t *testing.T) {
 	cmd := &cobra.Command{
 		Use: "test",
