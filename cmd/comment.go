@@ -13,7 +13,7 @@ var commentCmd = &cobra.Command{
   list        列出文档评论
   add         添加评论
   get         获取评论详情
-  delete      删除评论
+  delete      删除评论（飞书不支持整条删除，改用 reply delete / resolve）
   resolve     标记评论为已解决
   unresolve   标记评论为未解决
   reply       评论回复管理（list/add/delete）
