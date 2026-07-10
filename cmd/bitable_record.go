@@ -63,13 +63,39 @@ var bitableRecordGetCmd = &cobra.Command{
 
 var bitableRecordSearchCmd = &cobra.Command{
 	Use:   "search",
-	Short: "搜索记录（支持复杂过滤/排序）",
-	Long:  `POST /records/search，通过 --config 传入完整的搜索请求体（filter/sort/field_names 等）`,
+	Short: "搜索记录（关键词搜索 + 结构化过滤/排序）",
+	Long: `POST /records/search，按关键词或结构化条件搜索记录。
+
+便捷 flag（推荐）:
+  --keyword           搜索关键词
+  --search-field      搜索字段名/ID（可重复；--keyword 时必填）
+  --filter-json       结构化过滤 JSON，如 {"logic":"and","conditions":[["名称","==","测试"]]}
+  --sort-json         排序 JSON 数组，如 [{"field":"名称","desc":true}]
+  --view-id           限定视图
+  --offset / --limit  分页（limit 1-200，默认 10）
+
+示例:
+  # 关键词搜索
+  feishu-cli bitable record search --base-token <bt> --table-id <tid> --keyword 测试 --search-field 名称
+
+  # 结构化过滤（filter 结构遵循 base/v3 records/search 规范）
+  feishu-cli bitable record search --base-token <bt> --table-id <tid> \
+    --filter-json '<filter JSON>'
+
+  # 完整请求体（逃生舱，--config）
+  feishu-cli bitable record search --base-token <bt> --table-id <tid> \
+    --config '{"keyword":"测试","search_fields":["名称"],"filter":{...}}'
+
+注意: search 用 filter/keyword 结构，不是 upsert 的 {"fields":{...}} 格式。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
-		return runBaseV3WithJSON(cmd, "POST", func(baseToken string) string {
+		body, err := buildRecordSearchBody(cmd)
+		if err != nil {
+			return err
+		}
+		return runBaseV3WithBody(cmd, "POST", func(baseToken string) string {
 			return bitableRecordPath(baseToken, tableID, "search")
-		})
+		}, body)
 	},
 }
 
@@ -132,6 +158,94 @@ func loadRecordBody(cmd *cobra.Command) (any, error) {
 		}
 	}
 	return parsed, nil
+}
+
+// buildRecordSearchBody 构造 record search 请求体。
+// 优先级：--config/--config-file（完整 body 逃生舱）> 便捷 flag 拼装。
+// 对 --config 做友好检测：若误传 upsert 的 {"fields":{...}} 格式，给出明确指引，
+// 避免用户把 upsert 的请求体套到 search 端点（会触发 800010701 校验失败）。
+func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
+	configJSON, _ := cmd.Flags().GetString("config")
+	configFile, _ := cmd.Flags().GetString("config-file")
+	configProvided := strings.TrimSpace(configJSON) != "" || strings.TrimSpace(configFile) != ""
+
+	keyword, _ := cmd.Flags().GetString("keyword")
+	searchFields, _ := cmd.Flags().GetStringSlice("search-field")
+	filterJSON, _ := cmd.Flags().GetString("filter-json")
+	sortJSON, _ := cmd.Flags().GetString("sort-json")
+	viewID, _ := cmd.Flags().GetString("view-id")
+	usedConvenience := strings.TrimSpace(keyword) != "" || len(searchFields) > 0 ||
+		strings.TrimSpace(filterJSON) != "" || strings.TrimSpace(sortJSON) != "" || strings.TrimSpace(viewID) != ""
+
+	if configProvided {
+		if usedConvenience {
+			return nil, fmt.Errorf("--config 与 --keyword/--search-field/--filter-json/--sort-json/--view-id 互斥，请二选一")
+		}
+		raw, err := loadJSONInput(configJSON, configFile, "config", "config-file", "搜索请求体")
+		if err != nil {
+			return nil, err
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+			return nil, fmt.Errorf("解析 --config 失败: %w", err)
+		}
+		// 友好检测：误传 upsert 的 {"fields":{...}} 格式（顶层只有 fields，无 filter/keyword/search_fields）
+		if _, hasFields := parsed["fields"]; hasFields {
+			_, hasFilter := parsed["filter"]
+			_, hasKw := parsed["keyword"]
+			_, hasSf := parsed["search_fields"]
+			if !hasFilter && !hasKw && !hasSf {
+				return nil, fmt.Errorf("--config 顶层是 fields（这是 record upsert 的请求体格式），record search 需要 keyword/filter 结构\n建议改用关键词搜索: --keyword 值 --search-field 字段名（或参考 base/v3 records/search 文档构造 filter 请求体）")
+			}
+		}
+		return parsed, nil
+	}
+
+	// 便捷 flag 模式校验
+	kw := strings.TrimSpace(keyword)
+	if kw == "" && strings.TrimSpace(filterJSON) == "" {
+		return nil, fmt.Errorf("record search 至少需要 --keyword 或 --filter-json（或用 --config 传完整请求体）")
+	}
+	if kw != "" && len(searchFields) == 0 {
+		return nil, fmt.Errorf("--keyword 非 0 时必须配合 --search-field（指定在哪些字段里搜索）")
+	}
+	offset, _ := cmd.Flags().GetInt("offset")
+	limit, _ := cmd.Flags().GetInt("limit")
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 200 {
+		return nil, fmt.Errorf("--limit 范围 1-200，当前 %d", limit)
+	}
+
+	body := map[string]any{"offset": offset, "limit": limit}
+	if kw != "" {
+		body["keyword"] = kw
+	}
+	if len(searchFields) > 0 {
+		body["search_fields"] = searchFields
+	}
+	if v := strings.TrimSpace(viewID); v != "" {
+		body["view_id"] = v
+	}
+	if raw := strings.TrimSpace(filterJSON); raw != "" {
+		var f any
+		if err := json.Unmarshal([]byte(raw), &f); err != nil {
+			return nil, fmt.Errorf("解析 --filter-json 失败: %w", err)
+		}
+		body["filter"] = f
+	}
+	if raw := strings.TrimSpace(sortJSON); raw != "" {
+		var s any
+		if err := json.Unmarshal([]byte(raw), &s); err != nil {
+			return nil, fmt.Errorf("解析 --sort-json 失败: %w", err)
+		}
+		body["sort"] = s
+	}
+	return body, nil
 }
 
 var bitableRecordBatchCreateCmd = &cobra.Command{
@@ -352,10 +466,21 @@ func init() {
 	bitableRecordHistoryListCmd.Flags().Int("max-version", 0, "最大版本号")
 	mustMarkFlagRequired(bitableRecordHistoryListCmd, "record-id")
 
-	// search / upsert / batch-create / batch-update 需要 --config
-	for _, c := range []*cobra.Command{bitableRecordSearchCmd, bitableRecordUpsertCmd,
+	// upsert / batch-create / batch-update 需要 --config（裸 JSON 透传）
+	for _, c := range []*cobra.Command{bitableRecordUpsertCmd,
 		bitableRecordBatchCreateCmd, bitableRecordBatchUpdateCmd} {
 		c.Flags().String("config", "", "JSON 请求体")
 		c.Flags().String("config-file", "", "JSON 请求体文件")
 	}
+
+	// search 既有 --config 逃生舱，也有便捷 flag（二者互斥）
+	bitableRecordSearchCmd.Flags().String("config", "", "完整搜索请求体 JSON（逃生舱，与便捷 flag 互斥）")
+	bitableRecordSearchCmd.Flags().String("config-file", "", "完整搜索请求体 JSON 文件")
+	bitableRecordSearchCmd.Flags().String("keyword", "", "搜索关键词")
+	bitableRecordSearchCmd.Flags().StringSlice("search-field", nil, "搜索字段名/ID（可重复；--keyword 时必填）")
+	bitableRecordSearchCmd.Flags().String("filter-json", "", "结构化过滤条件 JSON（logic/conditions），见命令 Long 示例")
+	bitableRecordSearchCmd.Flags().String("sort-json", "", "排序 JSON 数组（field/desc），见命令 Long 示例")
+	bitableRecordSearchCmd.Flags().String("view-id", "", "限定视图 ID")
+	bitableRecordSearchCmd.Flags().Int("offset", 0, "分页 offset")
+	bitableRecordSearchCmd.Flags().Int("limit", 10, "分页大小（1-200，默认 10）")
 }
