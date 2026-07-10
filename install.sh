@@ -6,9 +6,10 @@ BINARY_NAME="feishu-cli"
 DEFAULT_INSTALL_DIR="/usr/local/bin"
 tmpdir=""
 
-# 颜色输出
-info()  { printf "\033[34m[INFO]\033[0m  %s\n" "$*"; }
-ok()    { printf "\033[32m[OK]\033[0m    %s\n" "$*"; }
+# 颜色输出（全部走 stderr：stdout 仅保留给函数通过 $(...) 返回数据，
+# 避免日志被 version=$(get_latest_version) 之类的命令替换捕获，污染下载 URL）
+info()  { printf "\033[34m[INFO]\033[0m  %s\n" "$*" >&2; }
+ok()    { printf "\033[32m[OK]\033[0m    %s\n" "$*" >&2; }
 err()   { printf "\033[31m[ERROR]\033[0m %s\n" "$*" >&2; }
 
 # 检测操作系统
@@ -91,6 +92,16 @@ get_latest_version() {
         err "无法获取最新版本号（GitHub API 可能已达速率限制，可设置 GITHUB_TOKEN 环境变量提升配额到 5000/小时）"
         exit 1
     fi
+
+    # 去除可能混入的空白/控制字符，并校验版本号格式（防御性兜底）：
+    # 一旦版本号被异常内容污染（如日志、HTML），此处提前报错，
+    # 而不是带着脏字符去拼接 download_url 让 curl 报 "bad range in URL"。
+    version=$(printf '%s' "$version" | tr -d '[:space:][:cntrl:]')
+    if ! printf '%s' "$version" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+        err "获取到的版本号格式异常: '${version}'（期望形如 v1.2.3）"
+        exit 1
+    fi
+
     echo "$version"
 }
 
