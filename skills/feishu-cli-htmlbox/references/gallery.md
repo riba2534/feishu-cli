@@ -30,7 +30,7 @@
 - [分布统计](#分布统计)：涟漪散点 / 热力 / 日历热力 / 箱线 / K线 / 平行坐标
 - [构成流向](#构成流向)：漏斗 / 桑基 / 主题河流 / 仪表盘 / 水球 / 词云
 - [关系层级](#关系层级)：力导向关系图 / 组织树 / 旭日 / 矩形树图
-- [流程时序](#流程时序)：状态机 / 看板流动 / 甘特
+- [流程时序](#流程时序)：拓扑 / 编排动画 / 状态机 / 看板流动 / 甘特
 - [创意动画](#创意动画)：CSS 三件套 / Canvas 粒子 / SVG 路径 / 维恩 / 像素柱 / KPI 大屏
 
 ---
@@ -319,6 +319,10 @@ OPT = { backgroundColor:'#0f1729', series:[{type:'tree',data:[TREE],top:30,left:
 ---
 
 ## 流程时序
+
+| 你要画的图 | 引擎 / 方案 | 配方位置 |
+|---|---|---|
+| 拓扑 / 编排动画 / Agent 协作回放 | `scripts/animate_diagram.py`（结构化 JSON → 自包含 SVG 动画 HTML） | `references/animated-flowchart.md` |
 
 时序图 / 状态机 / CI 流水线这类「流程」，ECharts 没有现成 series，两条路：
 1. **简单的用 graph**（节点 + 有向边 `edgeSymbol:['none','arrow']`，`layout:'none'` 手摆坐标），见上方力导向改 `layout:'none'`。
