@@ -324,7 +324,7 @@ feishu-cli auth login                 # OAuth 用户授权
 ### 流程要点
 
 1. 发版前验证：`gofmt -l cmd internal`、`go test ./...`、`go vet ./...`、敏感信息扫描
-2. `make build-all` 构建所有平台（**不要直接 `go build`**，否则版本号不会注入）
+2. `VERSION=vX.Y.Z; make build-all VERSION="$VERSION"` 构建所有平台（**不要在打 tag 前直接跑无 `VERSION` 的 `make build-all`**，否则 `git describe` 会注入上一版 tag 的开发版本号）
 3. 按规范打包成 tar.gz（参考现有 release 资产结构）
 4. 本地验证安装包结构和 `install.sh` 资产命名
 5. 在 main 分支打 tag 并 push：`VERSION=vX.Y.Z; git tag $VERSION && git push origin $VERSION`

@@ -4,6 +4,47 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [v1.35.0] - 2026-07-12
+
+本版新增统一可视化设计系统、HTMLBox 编排动画生成器和多维表格记录搜索便捷模式，并修复 Wiki 导出、评论回复身份和安装脚本的已知问题。
+
+### 新增 — 统一可视化设计系统（`feishu-cli-dataviz`）
+
+- 新增图表形式选择、明暗主题色板、反模式清单和多载体配色规范，统一 board、HTMLBox、card 和 doc import 的可视化输出。
+- `validate_palette.js` 新增 categorical、circular、all-pairs、HTMLBox 深色画布和 ordinal 共 9 组定稿门禁；重复色、首尾区分度和色盲安全性均可自动检查。
+- `check_docs.js` 扫描技能文档中的 3/4/6/8 位 CSS hex，未登记的非 canonical 色值会直接阻断发布。
+
+### 新增 — HTMLBox Agent 编排动画生成器
+
+- `animate_diagram.py` 将结构化 JSON 转为自包含 SVG 动画 HTML，支持自动播放、暂停、上一步、下一步和进度定位。
+- 补齐 `prefers-reduced-motion`、安全字幕渲染、Bezier/store 几何裁切和短时间线回归测试。
+
+### 新增 — 多维表格记录搜索便捷模式
+
+- `bitable record search` 新增 `--keyword`、可重复 `--search-field`、`--filter-json`、`--sort-json`、`--view-id`、`--offset` 和 `--limit`。
+- `--config` / `--config-file` 保留完整请求体逃生舱，与便捷参数严格互斥；字段名中的逗号不再被错误拆分。
+
+### 修复 — Wiki 树导出媒体路径
+
+- `wiki export-tree --download-images` 为每篇文档使用独立素材目录，并将媒体引用改写为相对 Markdown 文件的路径。
+- 覆盖 Quote、Callout、表格单元格内的多图片和 video，同时跳过 fenced/inline code、普通链接和未下载素材。
+- 补齐 Windows 路径、空格、绝对/相对路径和转义反引号边界。
+
+### 修复 — 评论删除与回复身份
+
+- `comment delete` 不再伪装成可用的整条评论删除接口，改为返回删除自己回复或将评论标记为已解决的可执行指引。
+- `comment reply add/delete` 默认统一使用当前 App/Bot 身份；只有显式提供 User Token 时才切换为用户身份，避免默认添加后无法默认删除。
+
+### 修复 — 安装脚本版本获取
+
+- `install.sh` 将过程日志统一写入 stderr，防止 GitHub API fallback 日志污染版本号和下载 URL。
+- 增加版本号格式校验，异常响应会在发起下载前直接报错。
+
+### 验证
+
+- `go test -count=1 ./...`、`go vet ./...`、`gofmt`、Dataviz 九组色板门禁和 HTMLBox 5 个 Python 回归测试全部通过。
+- 最终二进制实跑 Bitable/Comment 本地 mock 7 个场景全部成功；真实只读 Wiki 导出生成 3 个 Markdown 和 1 个素材，本地媒体引用 0 损坏。
+
 ## [v1.34.0] - 2026-06-28
 
 新增 5 项能力 + 1 项修复，全部经真实飞书 API round-trip 验证。
