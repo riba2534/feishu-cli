@@ -44,6 +44,14 @@ func TestDeleteCommentReturnsGuidance(t *testing.T) {
 				t.Errorf("args=%v: 错误信息缺少 %q，实际: %s", args, want, msg)
 			}
 		}
+		for _, want := range []string{"--user-access-token", "同一 App", "默认"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("args=%v: 身份指引缺少 %q，实际: %s", args, want, msg)
+			}
+		}
+		if strings.Contains(msg, "App/Bot 身份会返回") {
+			t.Errorf("args=%v: 不应再声称所有 Bot 身份都会失败，实际: %s", args, msg)
+		}
 	}
 }
 

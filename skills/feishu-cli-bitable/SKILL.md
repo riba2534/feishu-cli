@@ -107,9 +107,15 @@ feishu-cli bitable record batch-get   --base-token xxx --table-id tblxxx --recor
 # batch-get 可选 flag：返回分享链接 / 自动计算字段 / 指定用户字段 ID 类型
 feishu-cli bitable record batch-get   --base-token xxx --table-id tblxxx --record-ids recxxx,recyyy \
   --with-shared-url --automatic-fields --user-id-type open_id   # user-id-type: open_id|union_id|user_id
-# record search：用 --keyword（推荐），不要混用 upsert 的 {"fields":{...}}
+# record search：便捷模式必须同时提供 --keyword 和至少一个 --search-field
 feishu-cli bitable record search      --base-token xxx --table-id tblxxx --keyword 测试 --search-field 名称
-# 结构化过滤用 --filter-json（遵循 base/v3 records/search 规范）或 --config 传完整请求体
+# 多个搜索字段重复传 --search-field；字段名含逗号时仍作为一个完整字段名
+feishu-cli bitable record search      --base-token xxx --table-id tblxxx --keyword Alice \
+  --search-field 'Last, First' --search-field 邮箱
+# --filter-json 只能叠加在 keyword 搜索上；高级场景用 --config 传完整请求体
+feishu-cli bitable record search      --base-token xxx --table-id tblxxx --keyword 测试 \
+  --search-field 名称 --filter-json '{"logic":"and","conditions":[["状态","==","启用"]]}'
+# --config/--config-file 与所有便捷 flag（包括 --offset/--limit）互斥
 
 # upsert：不传 --record-id 则 POST 创建；传 --record-id 则 PATCH 更新（官方无专用 upsert 端点）
 feishu-cli bitable record upsert      --base-token xxx --table-id tblxxx --config '{"fields":{"名称":"测试"}}'

@@ -39,6 +39,7 @@ python3 -m http.server 8799 --bind 127.0.0.1
 
 - 自动播放走完所有时间线步骤。
 - 播放 / 暂停、上一步 / 下一步、进度点都可用。
+- 点击暂停后节点脉冲和飞行 token 都停止。
 - 背景是浅色，不是黑色。
 - iframe 内容无竖向滚动条。
 - 全屏预览用更大的视口，而不是卡在小卡片宽度。
@@ -63,9 +64,11 @@ feishu-cli doc htmlbox create <docx_token> --html-file animated-diagram.html
 
 ## Pattern 数据规则
 
-- 节点坐标参考 `900 x 540` 坐标系摆放；生成时 viewBox 会按所有节点的实际包围盒 + padding 自动收紧（aspect-ratio 跟随），无需手动铺满整个画布。
+- 节点坐标参考 `900 x 540` 坐标系摆放；生成时 viewBox 会按矩形、`store` 圆和二次 Bézier 曲线的实际包围盒 + padding 自动收紧（aspect-ratio 跟随），无需手动铺满整个画布。
 - 节点需要稳定的 `id`、`x`、`y`、`label`；`w`、`h`、`sub`、`kind` 可选。
 - 连线以 edge ID 为 key。时间线的 `fire` 用这些 ID 引用连线。
 - 时间线 `fire` 项前缀 `!` 表示 token 反向流动。
-- 字幕保持简短；允许内联 `<b>` 和 `<code>`。
+- 字幕保持简短；只允许无属性的内联 `<b>` 和 `<code>`。其他标签（包括带 `onclick` 等属性的标签）按普通文本显示。
+- `duration` 同时控制切步、连线完成和 token 飞行时长；短步骤不会残留上一批 token。
+- 暂停会冻结节点脉冲并清理飞行 token；系统“减少动态效果”开启时默认静态展示第一步。
 - `kind: "accent"` 用于当前编排者，`kind: "dark"` 用于最终 / 输出节点，`kind: "user"` 用于用户气泡。

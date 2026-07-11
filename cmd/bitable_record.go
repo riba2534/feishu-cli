@@ -68,8 +68,8 @@ var bitableRecordSearchCmd = &cobra.Command{
 
 便捷 flag（推荐）:
   --keyword           搜索关键词
-  --search-field      搜索字段名/ID（可重复；--keyword 时必填）
-  --filter-json       结构化过滤 JSON，如 {"logic":"and","conditions":[["名称","==","测试"]]}
+  --search-field      搜索字段名/ID（可重复；便捷模式必填）
+  --filter-json       结构化过滤 JSON，需叠加在 keyword 搜索上
   --sort-json         排序 JSON 数组，如 [{"field":"名称","desc":true}]
   --view-id           限定视图
   --offset / --limit  分页（limit 1-200，默认 10）
@@ -78,9 +78,9 @@ var bitableRecordSearchCmd = &cobra.Command{
   # 关键词搜索
   feishu-cli bitable record search --base-token <bt> --table-id <tid> --keyword 测试 --search-field 名称
 
-  # 结构化过滤（filter 结构遵循 base/v3 records/search 规范）
+  # 在关键词搜索上叠加结构化过滤（filter 结构遵循 base/v3 records/search 规范）
   feishu-cli bitable record search --base-token <bt> --table-id <tid> \
-    --filter-json '<filter JSON>'
+    --keyword 测试 --search-field 名称 --filter-json '<filter JSON>'
 
   # 完整请求体（逃生舱，--config）
   feishu-cli bitable record search --base-token <bt> --table-id <tid> \
@@ -170,16 +170,17 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 	configProvided := strings.TrimSpace(configJSON) != "" || strings.TrimSpace(configFile) != ""
 
 	keyword, _ := cmd.Flags().GetString("keyword")
-	searchFields, _ := cmd.Flags().GetStringSlice("search-field")
+	searchFields, _ := cmd.Flags().GetStringArray("search-field")
 	filterJSON, _ := cmd.Flags().GetString("filter-json")
 	sortJSON, _ := cmd.Flags().GetString("sort-json")
 	viewID, _ := cmd.Flags().GetString("view-id")
 	usedConvenience := strings.TrimSpace(keyword) != "" || len(searchFields) > 0 ||
-		strings.TrimSpace(filterJSON) != "" || strings.TrimSpace(sortJSON) != "" || strings.TrimSpace(viewID) != ""
+		strings.TrimSpace(filterJSON) != "" || strings.TrimSpace(sortJSON) != "" || strings.TrimSpace(viewID) != "" ||
+		cmd.Flags().Changed("offset") || cmd.Flags().Changed("limit")
 
 	if configProvided {
 		if usedConvenience {
-			return nil, fmt.Errorf("--config 与 --keyword/--search-field/--filter-json/--sort-json/--view-id 互斥，请二选一")
+			return nil, fmt.Errorf("--config/--config-file 与 --keyword/--search-field/--filter-json/--sort-json/--view-id/--offset/--limit 互斥，请二选一")
 		}
 		raw, err := loadJSONInput(configJSON, configFile, "config", "config-file", "搜索请求体")
 		if err != nil {
@@ -203,21 +204,18 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 
 	// 便捷 flag 模式校验
 	kw := strings.TrimSpace(keyword)
-	if kw == "" && strings.TrimSpace(filterJSON) == "" {
-		return nil, fmt.Errorf("record search 至少需要 --keyword 或 --filter-json（或用 --config 传完整请求体）")
+	if kw == "" {
+		return nil, fmt.Errorf("record search 便捷模式必须提供 --keyword（或用 --config 传完整请求体）")
 	}
-	if kw != "" && len(searchFields) == 0 {
-		return nil, fmt.Errorf("--keyword 非 0 时必须配合 --search-field（指定在哪些字段里搜索）")
+	if len(searchFields) == 0 {
+		return nil, fmt.Errorf("--keyword 必须配合至少一个 --search-field（指定在哪些字段里搜索）")
 	}
 	offset, _ := cmd.Flags().GetInt("offset")
 	limit, _ := cmd.Flags().GetInt("limit")
 	if offset < 0 {
 		offset = 0
 	}
-	if limit <= 0 {
-		limit = 10
-	}
-	if limit > 200 {
+	if limit < 1 || limit > 200 {
 		return nil, fmt.Errorf("--limit 范围 1-200，当前 %d", limit)
 	}
 
@@ -477,8 +475,8 @@ func init() {
 	bitableRecordSearchCmd.Flags().String("config", "", "完整搜索请求体 JSON（逃生舱，与便捷 flag 互斥）")
 	bitableRecordSearchCmd.Flags().String("config-file", "", "完整搜索请求体 JSON 文件")
 	bitableRecordSearchCmd.Flags().String("keyword", "", "搜索关键词")
-	bitableRecordSearchCmd.Flags().StringSlice("search-field", nil, "搜索字段名/ID（可重复；--keyword 时必填）")
-	bitableRecordSearchCmd.Flags().String("filter-json", "", "结构化过滤条件 JSON（logic/conditions），见命令 Long 示例")
+	bitableRecordSearchCmd.Flags().StringArray("search-field", nil, "搜索字段名/ID（可重复；便捷模式必填）")
+	bitableRecordSearchCmd.Flags().String("filter-json", "", "结构化过滤条件 JSON（logic/conditions，需配合 --keyword/--search-field），见命令 Long 示例")
 	bitableRecordSearchCmd.Flags().String("sort-json", "", "排序 JSON 数组（field/desc），见命令 Long 示例")
 	bitableRecordSearchCmd.Flags().String("view-id", "", "限定视图 ID")
 	bitableRecordSearchCmd.Flags().Int("offset", 0, "分页 offset")

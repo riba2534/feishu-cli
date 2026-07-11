@@ -14,8 +14,10 @@
  *   单一色相、亮度单调、相邻步 ΔL ≥ 0.06、最浅步对底色对比度 ≥ 2:1。
  *
  * 用法（Node，任意版本，无依赖）：
+ *   node validate_palette.js                       # 复验 palette.json 定稿组合
  *   node validate_palette.js "#3370ff,#0fb5ae,..." --mode light
  *   node validate_palette.js "#5c8dff,..." --mode dark --surface "#1f1f1f"
+ *   node validate_palette.js "..." --pairs circular   # 饼/环图：相邻项含首尾闭环
  *   node validate_palette.js "..." --pairs all        # 散点/气泡/地图：任意两色都可能相邻
  *   node validate_palette.js "#d6e2ff,#94b4ff,..." --ordinal
  *   加 --json 输出机器可读结果。
@@ -148,10 +150,27 @@ function checkCategorical(palette, opts) {
   var mode = opts.mode || "light";
   var surface = opts.surface || SURFACE_DEFAULT[mode];
   var pairs = opts.pairs || "adjacent";
+  if (pairs !== "adjacent" && pairs !== "circular" && pairs !== "all") throw new Error("pairs 只接受 adjacent|circular|all（收到 " + pairs + "）");
   var band = L_BAND[mode];
   var checks = [];
   var failed = false;
   var cols = palette.map(oklch);
+
+  // 0. 重复色永远不合法。即使重复项不相邻，它们也无法承载两个系列身份。
+  var positions = {};
+  palette.forEach(function (color, index) {
+    var key = color.toLowerCase();
+    if (!positions[key]) positions[key] = [];
+    positions[key].push(index + 1);
+  });
+  var duplicates = Object.keys(positions).filter(function (key) { return positions[key].length > 1; });
+  if (duplicates.length) failed = true;
+  checks.push({
+    name: "色值唯一", level: duplicates.length ? "fail" : "pass",
+    detail: duplicates.length
+      ? "重复: " + duplicates.map(function (key) { return key + " (slot " + positions[key].join("/") + ")"; }).join(", ")
+      : "无重复色值",
+  });
 
   // 1. 亮度带
   var offBand = [];
@@ -175,13 +194,14 @@ function checkCategorical(palette, opts) {
     detail: grayish.length ? "低于 " + C_MIN + "（读作灰色）: " + grayish.join(", ") : "全部 C ≥ " + C_MIN,
   });
 
-  // 3. 色盲区分度：堆叠/柱/线只查相邻对；散点/气泡/地图任意两色可相邻 → --pairs all
+  // 3. 色盲区分度：普通序列查相邻，饼/环图还查首尾，散点/地图查任意两色。
   var idxPairs = [];
   var n = palette.length;
   if (pairs === "all") {
     for (var i = 0; i < n; i++) for (var j = i + 1; j < n; j++) idxPairs.push([i, j]);
   } else {
     for (var k = 0; k + 1 < n; k++) idxPairs.push([k, k + 1]);
+    if (pairs === "circular" && n > 2) idxPairs.push([n - 1, 0]);
   }
   var worst = null;
   var worstTritan = null;
@@ -196,7 +216,7 @@ function checkCategorical(palette, opts) {
   var cvdLevel = !worst ? "pass" : worst.dE >= DE_TARGET ? "pass" : worst.dE >= DE_FLOOR ? "warn" : "fail";
   if (cvdLevel === "fail") failed = true;
   checks.push({
-    name: "色盲区分度(" + (pairs === "all" ? "全对" : "相邻") + ")", level: cvdLevel,
+    name: "色盲区分度(" + (pairs === "all" ? "全对" : pairs === "circular" ? "相邻+首尾" : "相邻") + ")", level: cvdLevel,
     detail: worst
       ? "最差 " + worst.a + " ↔ " + worst.b + " ΔE=" + worst.dE.toFixed(1) + " (" + worst.kind + ")；目标≥" + DE_TARGET + "，地板 " + DE_FLOOR + "–" + DE_TARGET + " 须配二级编码 · tritan 最差 ΔE=" + worstTritan.toFixed(1) + "（参考值，不作门槛）"
       : "单色无需检查",
@@ -307,7 +327,7 @@ if (IS_NODE_CLI) {
   var listArg = null;
   var usageExit = function (msg) {
     console.error(msg);
-    console.error('用法: node validate_palette.js "#hex,#hex,..." [--mode light|dark] [--surface #hex] [--pairs adjacent|all] [--ordinal] [--json]');
+    console.error('用法: node validate_palette.js ["#hex,#hex,..." [--mode light|dark] [--surface #hex] [--pairs adjacent|circular|all] [--ordinal] [--json]]');
     process.exit(2);
   };
   for (var ai = 0; ai < args.length; ai++) {
@@ -329,9 +349,31 @@ if (IS_NODE_CLI) {
     }
   }
   if (opt.mode !== "light" && opt.mode !== "dark") usageExit("--mode 只接受 light|dark（收到 " + opt.mode + "）");
-  if (opt.pairs !== "adjacent" && opt.pairs !== "all") usageExit("--pairs 只接受 adjacent|all（收到 " + opt.pairs + "）");
+  if (opt.pairs !== "adjacent" && opt.pairs !== "circular" && opt.pairs !== "all") usageExit("--pairs 只接受 adjacent|circular|all（收到 " + opt.pairs + "）");
   var colors = (listArg || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean);
-  if (!colors.length) usageExit("缺少色板参数");
+  if (!colors.length && args.length) usageExit("缺少色板参数");
+  if (!colors.length) {
+    var preset = require("./palette.json");
+    var presetCases = [
+      { name: "categorical light", colors: preset.categorical.light, mode: "light", surface: SURFACE_DEFAULT.light, pairs: "adjacent" },
+      { name: "categorical dark", colors: preset.categorical.dark, mode: "dark", surface: SURFACE_DEFAULT.dark, pairs: "adjacent" },
+      { name: "circular light", colors: preset.categorical.light, mode: "light", surface: SURFACE_DEFAULT.light, pairs: "circular" },
+      { name: "circular dark", colors: preset.categorical.dark, mode: "dark", surface: SURFACE_DEFAULT.dark, pairs: "circular" },
+      { name: "all-pairs light", colors: preset.allPairsSafeSubset.light, mode: "light", surface: SURFACE_DEFAULT.light, pairs: "all" },
+      { name: "all-pairs dark", colors: preset.allPairsSafeSubset.dark, mode: "dark", surface: SURFACE_DEFAULT.dark, pairs: "all" },
+      { name: "HTMLBox dark canvas", colors: preset.categorical.dark, mode: "dark", surface: preset.surfaces.htmlboxCanvas, pairs: "adjacent" },
+      { name: "ordinal light", colors: [3, 5, 7, 9].map(function (i) { return preset.sequentialBlue[i]; }), mode: "light", surface: SURFACE_DEFAULT.light, ordinal: true },
+      { name: "ordinal dark", colors: [0, 3, 6, 10].map(function (i) { return preset.sequentialBlue[i]; }), mode: "dark", surface: SURFACE_DEFAULT.dark, ordinal: true },
+    ];
+    var presetFailed = false;
+    presetCases.forEach(function (item) {
+      var result = item.ordinal ? checkOrdinal(item.colors, item) : checkCategorical(item.colors, item);
+      console.log("\n定稿组合: " + item.name);
+      printReport(result, { mode: item.mode, surface: item.surface, ordinal: !!item.ordinal, count: item.colors.length });
+      if (!result.ok) presetFailed = true;
+    });
+    process.exit(presetFailed ? 1 : 0);
+  }
   var surface = opt.surface || SURFACE_DEFAULT[opt.mode];
   var res;
   try {

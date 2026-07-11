@@ -34,14 +34,20 @@ description: >-
    `references/palette.md`，**不自创色值、不循环生成第 9 个色**。
 4. **校验色板 —— 跑脚本，不要目测**（`scripts/` 相对本技能根目录）：
    ```bash
+   node scripts/validate_palette.js
    node scripts/validate_palette.js "#3370ff,#d99904,..." --mode light
    node scripts/validate_palette.js "..." --mode dark --surface "#1f1f1f"
    ```
+   无参数会复验 `palette.json` 的 light/dark categorical、circular、all-pairs、
+   HTMLBox 深蓝画布和 light/dark ordinal 定稿组合。
+   文档一致性检查识别 `#RGB/#RGBA/#RRGGBB/#RRGGBBAA`：`#RGB` 展开后匹配
+   canonical；带 alpha 的 4/8 位色必须在 `palette.json.docHexExceptions` 按文件、
+   按原值精确登记，禁止静默丢弃 alpha 后放行。
    **原样按序取用 `palette.md` 定稿色值时无需重跑**（定稿结论已写在该文件里）；
    改色值、换底色、或走 all-pairs 场景时才需要。FAIL 必须修掉才能继续；
    WARN（色盲 ΔE 8–12 地板区、对比度不足 3:1 救济区）只在配齐二级编码
    （直接标签 / 留白间隔 / 表格视图）时才合法。
-   散点/气泡/地图加 `--pairs all` —— 该场景**不用全 8 色**，用 `palette.md`
+   饼图/环图加 `--pairs circular`（首尾也相邻）；散点/气泡/地图加 `--pairs all` —— 该场景**不用全 8 色**，用 `palette.md`
    的 all-pairs 安全子集（4 色）；单色 ramp 加 `--ordinal`。
 5. **应用标记规格与自检**。细标记（bar ≤ 24px、线 2px）、相邻填充留 2px 底色间隔、
    网格用发丝线实线、文字永远穿文字色（系列身份由旁边的色块承载，不给文字上系列色）。

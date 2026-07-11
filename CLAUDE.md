@@ -38,8 +38,9 @@ go vet ./...                      # 静态检查
 3. **结论附证据**：报告"已完成/已修复"必须附带验证命令及其输出（或退出码/截图），
    不做未验证的声明。
 4. **可执行文档必须实跑**：README / skills 里给出的命令、脚本、示例，改动后逐条实跑；
-   涉及可视化配色的改动，跑 `skills/feishu-cli-dataviz/scripts/validate_palette.js`
-   校验色板、`scripts/check_docs.js` 核查文档一致性，全绿才算完成。
+   涉及可视化配色的改动，从仓库根运行
+   `node skills/feishu-cli-dataviz/scripts/validate_palette.js` 复验定稿色板、
+   `node skills/feishu-cli-dataviz/scripts/check_docs.js` 核查文档一致性，全绿才算完成。
 5. **隐私扫描**：提交前按下方"开发规范"第 6 条检查敏感信息。
 
 发版有更严格的完整清单，见「发布 Release 规范」。

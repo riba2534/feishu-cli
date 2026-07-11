@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -50,6 +51,7 @@ HTML_TEMPLATE = r"""<!doctype html>
   .viz {
     width: 100%;
     max-width: min(1180px, calc(100vw - 2 * clamp(8px, 2vw, 22px)));
+    max-height: calc(100vh - 2 * clamp(8px, 2vw, 22px));
     display: flex;
     flex-direction: column;
     gap: clamp(8px, 1.2vw, 14px);
@@ -77,6 +79,7 @@ HTML_TEMPLATE = r"""<!doctype html>
   .canvas-wrap {
     position: relative;
     width: 100%;
+    min-height: 0;
     aspect-ratio: __ASPECT_RATIO__;
     overflow: hidden;
     border-radius: 12px;
@@ -191,6 +194,10 @@ HTML_TEMPLATE = r"""<!doctype html>
     0%, 100% { filter: drop-shadow(0 0 6px var(--brand-ring)) drop-shadow(0 4px 14px var(--brand-ring)); }
     50% { filter: drop-shadow(0 0 14px var(--brand-ring)) drop-shadow(0 8px 22px var(--brand-ring)); }
   }
+  .viz.paused svg.diagram .node.active .node-rect,
+  .viz.paused svg.diagram .node.kind-store.active circle {
+    animation-play-state: paused;
+  }
   svg.diagram .edge {
     stroke: var(--border); stroke-width: 1.25; fill: none;
     transition: stroke 240ms ease, stroke-width 240ms ease, opacity 240ms ease;
@@ -214,6 +221,12 @@ HTML_TEMPLATE = r"""<!doctype html>
     filter: drop-shadow(0 0 6px oklch(0.65 0.14 70 / 0.55));
   }
   svg.diagram .arrow-head { fill: var(--brand); }
+  @media (prefers-reduced-motion: reduce) {
+    .live-dot .ping,
+    svg.diagram .node.active .node-rect,
+    svg.diagram .node.kind-store.active circle { animation: none !important; }
+    svg.diagram *, .caption, .ctrl, .dot { transition: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -267,14 +280,21 @@ HTML_TEMPLATE = r"""<!doctype html>
     var t = Math.min(tx, ty) + ARROW_TRIM;
     return { x: cx + ux * t, y: cy + uy * t };
   }
+  function trimToNodeEdge(n, dx, dy) {
+    var c = nodeCenter(n), w = n.w || NODE_W, h = n.h || NODE_H;
+    if (n.kind !== "store") return trimToEdge(c.cx, c.cy, w, h, dx, dy);
+    var len = Math.hypot(dx, dy);
+    if (len < 1e-6) return { x: c.cx, y: c.cy };
+    var distance = w / 2 + ARROW_TRIM;
+    return { x: c.cx + dx / len * distance, y: c.cy + dy / len * distance };
+  }
   function buildPath(edge, nodesById) {
     var from = nodesById[edge.from], to = nodesById[edge.to];
     if (!from || !to) return "";
     var f = nodeCenter(from), t = nodeCenter(to);
-    var fw = from.w || NODE_W, fh = from.h || NODE_H, tw = to.w || NODE_W, th = to.h || NODE_H;
     var dx = t.cx - f.cx, dy = t.cy - f.cy;
-    var start = trimToEdge(f.cx, f.cy, fw, fh, dx, dy);
-    var end = trimToEdge(t.cx, t.cy, tw, th, -dx, -dy);
+    var start = trimToNodeEdge(from, dx, dy);
+    var end = trimToNodeEdge(to, -dx, -dy);
     var curve = edge.curve || 0;
     if (curve === 0) return "M" + start.x + "," + start.y + " L" + end.x + "," + end.y;
     var mx = (start.x + end.x) / 2, my = (start.y + end.y) / 2;
@@ -283,6 +303,7 @@ HTML_TEMPLATE = r"""<!doctype html>
     return "M" + start.x + "," + start.y + " Q" + (mx + px * curve) + "," + (my + py * curve) + " " + end.x + "," + end.y;
   }
   function spawnTokens(pathEl, gBubbles, duration, reverse) {
+    if (reducedMotion || duration <= 0) return;
     var len = pathEl.getTotalLength(), tokens = [];
     for (var i = 0; i < TOKEN_COUNT; i++) {
       var tk = document.createElementNS(SVG_NS, "circle");
@@ -318,7 +339,7 @@ HTML_TEMPLATE = r"""<!doctype html>
         var fade = Math.min(t * 5, 1, (1 - t) * 5);
         tk.setAttribute("opacity", String(Math.max(0, fade) * 0.95));
       }
-      if (elapsed < duration + 200) handle.id = requestAnimationFrame(tick);
+      if (elapsed < duration) handle.id = requestAnimationFrame(tick);
       else finish();
     }
     handle.id = requestAnimationFrame(tick);
@@ -412,6 +433,8 @@ HTML_TEMPLATE = r"""<!doctype html>
   var tl = PATTERN.timeline || [];
   var step = 0, playing = false, doneSet = {}, nextTimer = null, pendingTimers = [];
   var activeRAFs = []; // 正在飞行的 token 动画句柄；pause/gotoStep 时取消，避免幽灵 token
+  var vizRoot = document.querySelector(".viz");
+  var reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var capEl = document.getElementById("caption");
   var stepCurEl = document.getElementById("stepCur");
   var stepTotEl = document.getElementById("stepTot");
@@ -444,10 +467,35 @@ HTML_TEMPLATE = r"""<!doctype html>
     activeRAFs = [];
   }
   function setCaption(s) {
-    capEl.innerHTML = s.caption || "-";
+    var caption = s.caption || "-";
+    var tokenPattern = /<\/?(?:b|code)>/gi;
+    var stack = [capEl], cursor = 0, match;
+    capEl.replaceChildren();
+    function appendText(value) {
+      if (value) stack[stack.length - 1].appendChild(document.createTextNode(value));
+    }
+    while ((match = tokenPattern.exec(caption)) !== null) {
+      appendText(caption.slice(cursor, match.index));
+      var token = match[0].toLowerCase();
+      var closing = token.charAt(1) === "/";
+      var tagName = token.replace(/[<\/>]/g, "");
+      if (!closing) {
+        var inline = document.createElement(tagName);
+        stack[stack.length - 1].appendChild(inline);
+        stack.push(inline);
+      } else if (stack.length > 1 && stack[stack.length - 1].tagName.toLowerCase() === tagName) {
+        stack.pop();
+      } else {
+        appendText(match[0]);
+      }
+      cursor = tokenPattern.lastIndex;
+    }
+    appendText(caption.slice(cursor));
     capEl.style.animation = "none";
-    void capEl.offsetWidth;
-    capEl.style.animation = "capIn 0.26s cubic-bezier(.22,1,.36,1)";
+    if (!reducedMotion) {
+      void capEl.offsetWidth;
+      capEl.style.animation = "capIn 0.26s cubic-bezier(.22,1,.36,1)";
+    }
   }
   function setNodes(s) {
     var act = {}, dim = {};
@@ -481,10 +529,13 @@ HTML_TEMPLATE = r"""<!doctype html>
     });
     btnPlay.innerHTML = playing ? "&#10074;&#10074; Pause" : "&#9654; Play";
     liveDot.classList.toggle("paused", !playing);
+    vizRoot.classList.toggle("paused", !playing);
   }
   function fireStep(idx) {
     var s = tl[idx];
     if (!s) return 1500;
+    var dur = (s.duration || 1500) / SPEED;
+    clearActiveRAFs();
     setCaption(s);
     setNodes(s);
     paintEdgesBase();
@@ -497,10 +548,9 @@ HTML_TEMPLATE = r"""<!doctype html>
       path.classList.add("firing");
       path.classList.remove("done");
       if (edgeLabels[eid]) edgeLabels[eid].classList.add("show");
-      spawnTokens(path, gBubbles, Math.min((1500 / SPEED) * 0.85, 1400), reverse);
+      spawnTokens(path, gBubbles, Math.min(dur * 0.85, 1400), reverse);
       firingEids.push(eid);
     });
-    var dur = (s.duration || 1500) / SPEED;
     pendingTimers.push(setTimeout(function () {
       firingEids.forEach(function (eid) {
         var path = edgePaths[eid];
@@ -552,7 +602,10 @@ HTML_TEMPLATE = r"""<!doctype html>
   btnPlay.addEventListener("click", function () { playing ? pause() : play(); });
   document.getElementById("btnPrev").addEventListener("click", function () { gotoStep(step - 1); });
   document.getElementById("btnNext").addEventListener("click", function () { gotoStep(step + 1); });
-  requestAnimationFrame(function () { requestAnimationFrame(function () { updateUI(); play(); }); });
+  requestAnimationFrame(function () { requestAnimationFrame(function () {
+    if (reducedMotion) renderStatic(0);
+    else { updateUI(); play(); }
+  }); });
 })();
 </script>
 </body>
@@ -618,10 +671,11 @@ def _escape_json_for_inline_script(pattern_json: str) -> str:
 
 
 def compute_viewbox(pattern: dict) -> str:
-    """按节点实际包围盒 + padding 计算 viewBox，避免内容不铺满画布时的大块留白。"""
+    """按实际节点和二次 Bézier 包围盒计算 viewBox，避免裁切或大块留白。"""
     nodes = pattern.get("nodes") or []
     pad = 24
     xs, ys = [], []
+    nodes_by_id = {}
     for n in nodes:
         if not isinstance(n, dict):
             continue
@@ -629,15 +683,82 @@ def compute_viewbox(pattern: dict) -> str:
         y = n.get("y", 0)
         w = n.get("w", 140)
         h = n.get("h", 54)
-        xs.extend([x, x + w])
-        ys.extend([y, y + h])
+        nodes_by_id[n.get("id")] = n
+        if n.get("kind") == "store":
+            radius = w / 2
+            center_x, center_y = x + w / 2, y + h / 2
+            xs.extend([center_x - radius, center_x + radius])
+            ys.extend([center_y - radius, center_y + radius])
+        else:
+            xs.extend([x, x + w])
+            ys.extend([y, y + h])
+
+    def center(node: dict) -> tuple[float, float]:
+        return (
+            node.get("x", 0) + node.get("w", 140) / 2,
+            node.get("y", 0) + node.get("h", 54) / 2,
+        )
+
+    def trim(node: dict, dx: float, dy: float) -> tuple[float, float]:
+        cx, cy = center(node)
+        length = math.hypot(dx, dy)
+        if length < 1e-6:
+            return cx, cy
+        ux, uy = dx / length, dy / length
+        if node.get("kind") == "store":
+            distance = node.get("w", 140) / 2 + 4
+        else:
+            half_w, half_h = node.get("w", 140) / 2, node.get("h", 54) / 2
+            tx = half_w / abs(ux) if abs(ux) > 1e-6 else math.inf
+            ty = half_h / abs(uy) if abs(uy) > 1e-6 else math.inf
+            distance = min(tx, ty) + 4
+        return cx + ux * distance, cy + uy * distance
+
+    def quadratic_values(p0: float, p1: float, p2: float) -> list[float]:
+        values = [p0, p2]
+        denominator = p0 - 2 * p1 + p2
+        if abs(denominator) > 1e-9:
+            t = (p0 - p1) / denominator
+            if 0 < t < 1:
+                values.append((1 - t) ** 2 * p0 + 2 * (1 - t) * t * p1 + t ** 2 * p2)
+        return values
+
+    for edge in (pattern.get("edges") or {}).values():
+        if not isinstance(edge, dict):
+            continue
+        source, target = nodes_by_id.get(edge.get("from")), nodes_by_id.get(edge.get("to"))
+        if not source or not target:
+            continue
+        from_x, from_y = center(source)
+        to_x, to_y = center(target)
+        dx, dy = to_x - from_x, to_y - from_y
+        start = trim(source, dx, dy)
+        end = trim(target, -dx, -dy)
+        curve = edge.get("curve", 0) or 0
+        if curve:
+            length = math.hypot(end[0] - start[0], end[1] - start[1]) or 1
+            perp_x = -(end[1] - start[1]) / length
+            perp_y = (end[0] - start[0]) / length
+            control = (
+                (start[0] + end[0]) / 2 + perp_x * curve,
+                (start[1] + end[1]) / 2 + perp_y * curve,
+            )
+            xs.extend(quadratic_values(start[0], control[0], end[0]))
+            ys.extend(quadratic_values(start[1], control[1], end[1]))
+        else:
+            xs.extend([start[0], end[0]])
+            ys.extend([start[1], end[1]])
     if not xs:
         return "0 0 900 540"
-    min_x = max(0, min(xs) - pad)
-    min_y = max(0, min(ys) - pad)
+    min_x = min(xs) - pad
+    min_y = min(ys) - pad
     max_x = max(xs) + pad
     max_y = max(ys) + pad
-    return f"{min_x} {min_y} {max_x - min_x} {max_y - min_y}"
+
+    def number(value: float) -> str:
+        return str(int(value)) if float(value).is_integer() else f"{value:.6f}".rstrip("0").rstrip(".")
+
+    return " ".join(number(value) for value in (min_x, min_y, max_x - min_x, max_y - min_y))
 
 
 def render(pattern: dict) -> str:

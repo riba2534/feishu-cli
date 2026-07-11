@@ -22,10 +22,10 @@ var replyCmd = &cobra.Command{
   # 列出评论回复
   feishu-cli comment reply list <file_token> <comment_id> --type docx
 
-  # 添加评论回复（推荐登录后使用，以用户身份发布）
+  # 添加评论回复（默认同一 App 的 Bot 身份；用户身份需显式传 User Token）
   feishu-cli comment reply add <file_token> <comment_id> --text "回复内容"
 
-  # 删除评论回复（飞书只允许回复作者删除，需 User Token）
+  # 删除评论回复（身份必须匹配作者：Bot 回复默认同一 App，用户回复显式传 User Token）
   feishu-cli comment reply delete <file_token> <comment_id> <reply_id> --type docx`,
 }
 
@@ -95,12 +95,11 @@ var addReplyCmd = &cobra.Command{
   file_token    文档 Token
   comment_id    评论 ID
 
-建议使用 User Access Token（登录态），回复会以用户身份发出；否则以 App/Bot 身份发出，
-且该回复只能被同一 App 自己删除（Bot 身份经常收到 1069303 forbidden）。
+默认使用当前 App/Bot 身份发布，后续可由同一 App 默认删除；若要以用户身份发布，
+需显式提供 --user-access-token（或 FEISHU_USER_ACCESS_TOKEN），后续也须使用该用户身份删除。
 
 示例:
-  # 登录后自动使用 User Token（推荐）
-  feishu-cli auth login
+  # 默认使用当前 App/Bot 身份
   feishu-cli comment reply add doccnXXX 6916106822734578184 \
     --text "已处理，请查看最新版本。" --type docx
 
@@ -123,7 +122,8 @@ var addReplyCmd = &cobra.Command{
 			return fmt.Errorf("回复内容不能为空，请通过 --text 提供")
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		// 添加属于写操作：默认保持当前 App/Bot 身份，仅显式 flag/env 时切换为 User。
+		userAccessToken := resolveOptionalUserToken(cmd)
 
 		reply, err := client.CreateCommentReply(fileToken, commentID, fileType, text, userAccessToken)
 		if err != nil {
@@ -156,8 +156,8 @@ var deleteReplyCmd = &cobra.Command{
   comment_id    评论 ID
   reply_id      回复 ID
 
-注意：飞书 Open API 只允许回复作者本人删除；使用 App Token（Bot 身份）删除用户回复会得到
-1069303 forbidden。通常需要先 feishu-cli auth login 或显式提供 --user-access-token。
+注意：飞书 Open API 只允许回复作者身份删除。默认使用当前 App 的 Bot 身份，适合删除
+同一 App 创建的 Bot 回复；删除用户回复时需显式提供该作者的 --user-access-token。
 
 示例:
   feishu-cli comment reply delete doccnXXX 6916106822734578184 6916106822734594568 --type docx`,
@@ -171,7 +171,8 @@ var deleteReplyCmd = &cobra.Command{
 		commentID := args[1]
 		replyID := args[2]
 		fileType, _ := cmd.Flags().GetString("type")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		// 删除属于写操作：默认保持当前 App/Bot 身份，仅显式 flag/env 时切换为 User。
+		userAccessToken := resolveOptionalUserToken(cmd)
 
 		if err := client.DeleteCommentReply(fileToken, commentID, replyID, fileType, userAccessToken); err != nil {
 			return err

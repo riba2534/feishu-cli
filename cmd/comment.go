@@ -49,10 +49,10 @@ var commentCmd = &cobra.Command{
   # 列出评论回复
   feishu-cli comment reply list <file_token> <comment_id> --type docx
 
-  # 添加评论回复（推荐登录后以用户身份发布）
+  # 添加评论回复（默认同一 App 的 Bot 身份；用户身份需显式传 User Token）
   feishu-cli comment reply add <file_token> <comment_id> --text "回复内容"
 
-  # 删除评论回复（飞书只允许回复作者删除，需 User Token）
+  # 删除评论回复（身份必须匹配作者：Bot 回复默认同一 App，用户回复显式传 User Token）
   feishu-cli comment reply delete <file_token> <comment_id> <reply_id> --type docx`,
 }
 

@@ -36,6 +36,20 @@
     "baseline": { "light": "#bbbfc4", "dark": "#4a4a4a" },
     "tint": { "light": "#f2f3f5", "dark": "#2a2a2a" }
   },
+  "docHexExceptions": {
+    "$comment": "check_docs.js 的逐文件精确例外。保留原始 3/4/6/8 位写法；带 alpha 的 #RGBA/#RRGGBBAA 必须按原值登记。仅登记外部协议示例、非颜色编号或 HTMLBox 深蓝画布 chrome；新增项必须给出具体文件，禁止全局放行。",
+    "feishu-cli-board/references/schema.md": ["#4e83fd"],
+    "feishu-cli-card/SKILL.md": ["#ff0000"],
+    "feishu-cli-card/references/components.md": ["#ff0000"],
+    "feishu-cli-htmlbox/references/gallery.md": ["#cde0ff", "#9fb6d6", "#2b4a7a", "#e6edf7", "#8aa0c0", "#6f86ab", "#0a0e1a", "#bcd2f0", "#0c1c33", "#1a2a44", "#1e3454", "#13294a"],
+    "feishu-cli-htmlbox/references/geo-3d.md": ["#e6edf7", "#8aa0c0", "#cde0ff", "#6f86ab", "#9fb6d6", "#10243e", "#0c1c33", "#13294a", "#bcd2f0", "#ffe6a3", "#2b4a7a", "#5d769a"],
+    "feishu-cli-htmlbox/references/window-magic.md": ["#e6edf7", "#9fb6d6"],
+    "feishu-cli-import/SKILL.md": ["#159", "#164"],
+    "feishu-cli-import/references/doc-guide.md": ["#164"],
+    "feishu-cli-sheet/SKILL.md": ["#ff4d4f", "#faad14", "#52c41a", "#ff0000", "#00ff00"],
+    "feishu-cli-slides/SKILL.md": ["#135"],
+    "feishu-cli-toolkit/references/sheet-commands.md": ["#ffff00", "#ff0000"]
+  },
   "deprecated": {
     "$comment": "已废弃色值清单，check_docs.js 据此扫描残留。分组仅为可读性。",
     "boardClassic": ["#f0f4fc", "#5178c6", "#eae2fe", "#8569cb", "#dff5e5", "#509863", "#fef1ce", "#d4b45b", "#fee3e2", "#d25d5a"],

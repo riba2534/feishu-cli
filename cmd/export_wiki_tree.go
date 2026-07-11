@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -417,23 +418,307 @@ func printTreeSummary(stats *treeStats, outputDir string) {
 	}
 }
 
-// makeImagePathsDocumentRelative 将 markdown 中的 CWD 相对资源路径
-// 改为以文档所在目录为基准的相对路径，确保 VSCode 等 markdown 预览器
-// 能从 md 文件所在目录正确解析图片（以及画板缩略图等）引用。
+// makeImagePathsDocumentRelative 将已下载媒体的 CWD 相对路径改为以文档目录为基准。
+// 只改写图片/画板的 Markdown destination 和已下载视频的 src，避免误伤正文、代码和普通链接。
 func makeImagePathsDocumentRelative(markdown, assetsDir, outputPath string) string {
 	if assetsDir == "" {
 		return markdown
 	}
-	docDir := filepath.Dir(outputPath)
-	rel, err := filepath.Rel(docDir, assetsDir)
-	if err != nil {
-		// 无法计算相对路径时保持原样
+	assetsPath, ok := portableAbsolutePath(assetsDir)
+	if !ok {
 		return markdown
 	}
-	// 统一为正斜杠：markdown 图片路径在所有平台都用 / 分隔，
-	// Windows 上 filepath.Rel/Join 返回反斜杠会让图片 URL 无法解析。
-	rel = filepath.ToSlash(rel)
-	return strings.ReplaceAll(markdown, filepath.ToSlash(assetsDir), rel)
+	output, ok := portableAbsolutePath(outputPath)
+	if !ok {
+		return markdown
+	}
+	assetsFromDoc, ok := portableRelativePath(path.Dir(output), assetsPath)
+	if !ok {
+		return markdown
+	}
+
+	rewriteDestination := func(destination string) (string, bool) {
+		destinationPath, ok := portableAbsolutePath(destination)
+		if !ok {
+			return "", false
+		}
+		withinAssets, ok := portableRelativePath(assetsPath, destinationPath)
+		if !ok || withinAssets == "." || withinAssets == ".." || strings.HasPrefix(withinAssets, "../") {
+			return "", false
+		}
+		return path.Join(assetsFromDoc, withinAssets), true
+	}
+
+	return rewriteMarkdownMediaPaths(markdown, rewriteDestination)
+}
+
+// portableAbsolutePath 将当前平台路径和 Windows 风格路径统一成 / 分隔的绝对形式。
+func portableAbsolutePath(value string) (string, bool) {
+	value = strings.TrimSpace(strings.ReplaceAll(value, `\`, "/"))
+	if value == "" || strings.Contains(value, "://") {
+		return "", false
+	}
+	if isWindowsAbsolutePath(value) || strings.HasPrefix(value, "/") {
+		return path.Clean(value), true
+	}
+	absolute, err := filepath.Abs(filepath.FromSlash(value))
+	if err != nil {
+		return "", false
+	}
+	return filepath.ToSlash(absolute), true
+}
+
+func isWindowsAbsolutePath(value string) bool {
+	return len(value) >= 3 && ((value[0] >= 'A' && value[0] <= 'Z') || (value[0] >= 'a' && value[0] <= 'z')) && value[1] == ':' && value[2] == '/'
+}
+
+// portableRelativePath 类似 filepath.Rel，但在非 Windows 主机上也能处理 Windows 路径。
+func portableRelativePath(base, target string) (string, bool) {
+	base = path.Clean(strings.ReplaceAll(base, `\`, "/"))
+	target = path.Clean(strings.ReplaceAll(target, `\`, "/"))
+	baseVolume := portablePathVolume(base)
+	targetVolume := portablePathVolume(target)
+	if !strings.EqualFold(baseVolume, targetVolume) {
+		return "", false
+	}
+	if baseVolume != "" {
+		base = strings.TrimPrefix(base, base[:2])
+		target = strings.TrimPrefix(target, target[:2])
+	}
+	relative, err := filepath.Rel(filepath.FromSlash(base), filepath.FromSlash(target))
+	if err != nil {
+		return "", false
+	}
+	return filepath.ToSlash(relative), true
+}
+
+func portablePathVolume(value string) string {
+	if isWindowsAbsolutePath(value) {
+		return strings.ToUpper(value[:2])
+	}
+	return ""
+}
+
+func rewriteMarkdownMediaPaths(markdown string, rewrite func(string) (string, bool)) string {
+	lines := strings.SplitAfter(markdown, "\n")
+	inFence := false
+	fenceChar := byte(0)
+	fenceLength := 0
+	for i, line := range lines {
+		content := exportedMediaContainerContent(line)
+		if char, length, trailing, ok := exportedMediaFence(content); ok {
+			if !inFence {
+				inFence, fenceChar, fenceLength = true, char, length
+			} else if char == fenceChar && length >= fenceLength && trailing == "" {
+				inFence = false
+			}
+			continue
+		}
+		if inFence {
+			continue
+		}
+		if strings.HasPrefix(content, "    ") || strings.HasPrefix(content, "\t") {
+			continue
+		}
+		lines[i] = rewriteExportedMediaLine(line, rewrite)
+	}
+	return strings.Join(lines, "")
+}
+
+// exportedMediaContainerContent 去掉 converter 为 QuoteContainer/Callout 添加的引用前缀，
+// 让其中的 fenced/indented code 仍按代码处理，而不是被当成媒体引用。
+func exportedMediaContainerContent(line string) string {
+	line = strings.TrimRight(line, "\r\n")
+	for {
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		if indent > 3 || indent == len(line) || line[indent] != '>' {
+			return line
+		}
+		line = line[indent+1:]
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			line = line[1:]
+		}
+	}
+}
+
+func exportedMediaFence(line string) (byte, int, string, bool) {
+	line = strings.TrimRight(line, "\r\n")
+	indent := len(line) - len(strings.TrimLeft(line, " "))
+	if indent > 3 || indent == len(line) {
+		return 0, 0, "", false
+	}
+	line = line[indent:]
+	if line[0] != '`' && line[0] != '~' {
+		return 0, 0, "", false
+	}
+	length := 0
+	for length < len(line) && line[length] == line[0] {
+		length++
+	}
+	if length < 3 {
+		return 0, 0, "", false
+	}
+	return line[0], length, strings.TrimSpace(line[length:]), true
+}
+
+// rewriteExportedMediaLine 处理 converter 会生成的图片/画板 destination 和 video src。
+// 支持 QuoteContainer/Callout 前缀及表格单元格中的多个媒体，但跳过 fenced/indented/inline code；
+// 普通链接、引用式图片、带 title 的手写图片和非 assets 路径由调用方保持原样。
+func rewriteExportedMediaLine(line string, rewrite func(string) (string, bool)) string {
+	var result strings.Builder
+	last := 0
+	inlineCodeLength := 0
+	for i := 0; i < len(line); {
+		if line[i] == '`' && !exportedMarkdownEscaped(line, i) {
+			length := 1
+			for i+length < len(line) && line[i+length] == '`' {
+				length++
+			}
+			if inlineCodeLength == 0 && hasClosingBacktickRun(line, i+length, length) {
+				inlineCodeLength = length
+			} else if inlineCodeLength == length {
+				inlineCodeLength = 0
+			}
+			i += length
+			continue
+		}
+		if inlineCodeLength != 0 {
+			i++
+			continue
+		}
+
+		if strings.HasPrefix(line[i:], "![") {
+			start, end, destination, angleWrapped, next, ok := exportedImageDestination(line, i)
+			if ok {
+				if replacement, changed := rewrite(destination); changed {
+					if !angleWrapped && strings.ContainsAny(replacement, " \t()") {
+						replacement = "<" + replacement + ">"
+					}
+					result.WriteString(line[last:start])
+					result.WriteString(replacement)
+					last = end
+				}
+				i = next
+				continue
+			}
+		}
+
+		if strings.HasPrefix(line[i:], "<video") {
+			start, end, destination, next, ok := exportedVideoSource(line, i)
+			if ok {
+				if replacement, changed := rewrite(destination); changed {
+					result.WriteString(line[last:start])
+					result.WriteString(replacement)
+					last = end
+				}
+				i = next
+				continue
+			}
+		}
+		i++
+	}
+	result.WriteString(line[last:])
+	return result.String()
+}
+
+func exportedMarkdownEscaped(line string, index int) bool {
+	backslashes := 0
+	for index > 0 && line[index-1] == '\\' {
+		backslashes++
+		index--
+	}
+	return backslashes%2 == 1
+}
+
+func hasClosingBacktickRun(line string, start, wanted int) bool {
+	for i := start; i < len(line); {
+		if line[i] != '`' || exportedMarkdownEscaped(line, i) {
+			i++
+			continue
+		}
+		length := 1
+		for i+length < len(line) && line[i+length] == '`' {
+			length++
+		}
+		if length == wanted {
+			return true
+		}
+		i += length
+	}
+	return false
+}
+
+func exportedImageDestination(line string, imageStart int) (int, int, string, bool, int, bool) {
+	openOffset := strings.Index(line[imageStart+2:], "](")
+	if openOffset < 0 {
+		return 0, 0, "", false, imageStart + 2, false
+	}
+	contentStart := imageStart + 2 + openOffset + 2
+	close := exportedClosingParen(line, contentStart)
+	if close < 0 {
+		return 0, 0, "", false, imageStart + 2, false
+	}
+	start, end := contentStart, close
+	for start < end && (line[start] == ' ' || line[start] == '\t') {
+		start++
+	}
+	for end > start && (line[end-1] == ' ' || line[end-1] == '\t') {
+		end--
+	}
+	if start == end {
+		return 0, 0, "", false, close + 1, false
+	}
+	destination := line[start:end]
+	if (strings.Contains(destination, ` "`) && strings.HasSuffix(destination, `"`)) ||
+		(strings.Contains(destination, " '") && strings.HasSuffix(destination, "'")) {
+		return 0, 0, "", false, close + 1, false
+	}
+	angleWrapped := strings.HasPrefix(destination, "<") && strings.HasSuffix(destination, ">")
+	if angleWrapped {
+		start++
+		end--
+		destination = line[start:end]
+	}
+	return start, end, destination, angleWrapped, close + 1, true
+}
+
+func exportedClosingParen(line string, start int) int {
+	depth := 0
+	for i := start; i < len(line); i++ {
+		switch line[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth == 0 {
+				return i
+			}
+			depth--
+		}
+	}
+	return -1
+}
+
+func exportedVideoSource(line string, videoStart int) (int, int, string, int, bool) {
+	tagOffset := strings.IndexByte(line[videoStart:], '>')
+	if tagOffset < 0 {
+		return 0, 0, "", videoStart + len("<video"), false
+	}
+	tagEnd := videoStart + tagOffset
+	tag := line[videoStart:tagEnd]
+	for _, marker := range []string{`src="`, "src='"} {
+		start := strings.Index(tag, marker)
+		if start < 0 {
+			continue
+		}
+		start += videoStart + len(marker)
+		endOffset := strings.IndexByte(line[start:tagEnd], marker[len(marker)-1])
+		if endOffset < 0 {
+			return 0, 0, "", tagEnd + 1, false
+		}
+		end := start + endOffset
+		return start, end, line[start:end], tagEnd + 1, true
+	}
+	return 0, 0, "", tagEnd + 1, false
 }
 
 // truncate 截断长字符串用于错误展示。

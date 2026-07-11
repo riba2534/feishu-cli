@@ -213,6 +213,21 @@ func TestWikiTreeNodeAssetsDirSkipsWhenDisabled(t *testing.T) {
 }
 
 func TestMakeImagePathsDocumentRelative(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd() error = %v", err)
+	}
+	dotAssetsCmd := &cobra.Command{}
+	dotAssetsCmd.Flags().Bool("download-images", true, "")
+	dotAssetsCmd.Flags().String("assets-dir", ".", "")
+	dotPlanAssetsDir := wikiTreeNodeAssetsDir(dotAssetsCmd, "backup", treeJob{
+		Node:       &client.WikiNode{ObjType: "docx"},
+		OutputPath: filepath.Join("backup", "Plan.md"),
+	})
+	if dotPlanAssetsDir != "Plan" {
+		t.Fatalf("--assets-dir . 的 Plan 节点资源目录 = %q, want Plan", dotPlanAssetsDir)
+	}
+
 	tests := []struct {
 		name       string
 		markdown   string
@@ -235,6 +250,27 @@ func TestMakeImagePathsDocumentRelative(t *testing.T) {
 			want:       "![image](../../assets/TCP_IP_API/overview/coord/image_1.png)",
 		},
 		{
+			name: "quote callout table and video",
+			markdown: "> ![引用](backup/assets/Team/Plan/quote.png)\n" +
+				"> [!NOTE]\n> ![提示](backup/assets/Team/Plan/callout.png)\n" +
+				"> `![行内代码](backup/assets/Team/Plan/inline-code.png)`\n" +
+				"> ```markdown\n> ![围栏代码](backup/assets/Team/Plan/fenced-code.png)\n> ```\n" +
+				"| 图片 | 视频 | 普通链接 |\n| --- | --- | --- |\n" +
+				"| ![单元格](backup/assets/Team/Plan/cell image.png)<br>![画板](backup/assets/Team/Plan/board.png) | " +
+				`<video controls src="backup/assets/Team/Plan/demo video.mp4"></video>` +
+				" | [文档](backup/assets/Team/Plan/readme.md) |\n",
+			assetsDir:  filepath.Join("backup", "assets", "Team", "Plan"),
+			outputPath: filepath.Join("backup", "Team", "Plan.md"),
+			want: "> ![引用](../assets/Team/Plan/quote.png)\n" +
+				"> [!NOTE]\n> ![提示](../assets/Team/Plan/callout.png)\n" +
+				"> `![行内代码](backup/assets/Team/Plan/inline-code.png)`\n" +
+				"> ```markdown\n> ![围栏代码](backup/assets/Team/Plan/fenced-code.png)\n> ```\n" +
+				"| 图片 | 视频 | 普通链接 |\n| --- | --- | --- |\n" +
+				"| ![单元格](<../assets/Team/Plan/cell image.png>)<br>![画板](../assets/Team/Plan/board.png) | " +
+				`<video controls src="../assets/Team/Plan/demo video.mp4"></video>` +
+				" | [文档](backup/assets/Team/Plan/readme.md) |\n",
+		},
+		{
 			name:       "empty assets dir",
 			markdown:   "![image](image_1.png)",
 			assetsDir:  "",
@@ -247,6 +283,74 @@ func TestMakeImagePathsDocumentRelative(t *testing.T) {
 			assetsDir:  "assets",
 			outputPath: "file.md",
 			want:       "# Hello World\n\nSome text.\n",
+		},
+		{
+			name: "unmatched backtick does not hide later media",
+			markdown: "正文包含一个 \\` 字符\n" +
+				"![图片](backup/assets/Team/Plan/image.png)\n" +
+				"正文 \\` ![另一张](backup/assets/Team/Plan/escaped.png) \\` 字符\n" +
+				"合法行内代码 `![代码](backup/assets/Team/Plan/code.png)` 保持不变\n",
+			assetsDir:  filepath.Join("backup", "assets", "Team", "Plan"),
+			outputPath: filepath.Join("backup", "Team", "Plan.md"),
+			want: "正文包含一个 \\` 字符\n" +
+				"![图片](../assets/Team/Plan/image.png)\n" +
+				"正文 \\` ![另一张](../assets/Team/Plan/escaped.png) \\` 字符\n" +
+				"合法行内代码 `![代码](backup/assets/Team/Plan/code.png)` 保持不变\n",
+		},
+		{
+			name: "only media destinations are rewritten",
+			markdown: "# Plan\n\nPlan 正文保持不变。\n\n" +
+				"`Plan/image_1.png`\n\n" +
+				"    ![缩进代码](Plan/indented.png)\n\t![Tab代码](Plan/tab.png)\n\n" +
+				"```markdown\n```literal\n![代码示例](Plan/code.png)\n```\n\n" +
+				"[普通链接](Plan/readme.md)\n\n" +
+				"![图片](Plan/image 1.png)\n" +
+				`<video controls src="Plan/demo video.mp4"></video>` + "\n",
+			assetsDir:  dotPlanAssetsDir,
+			outputPath: filepath.Join("backup", "Plan.md"),
+			want: "# Plan\n\nPlan 正文保持不变。\n\n" +
+				"`Plan/image_1.png`\n\n" +
+				"    ![缩进代码](Plan/indented.png)\n\t![Tab代码](Plan/tab.png)\n\n" +
+				"```markdown\n```literal\n![代码示例](Plan/code.png)\n```\n\n" +
+				"[普通链接](Plan/readme.md)\n\n" +
+				"![图片](<../Plan/image 1.png>)\n" +
+				`<video controls src="../Plan/demo video.mp4"></video>` + "\n",
+		},
+		{
+			name:       "absolute output and relative assets",
+			markdown:   "![image](backup/assets/image_1.png)",
+			assetsDir:  filepath.Join("backup", "assets"),
+			outputPath: filepath.Join(cwd, "backup", "Team", "Plan.md"),
+			want:       "![image](../assets/image_1.png)",
+		},
+		{
+			name:       "relative output and absolute assets",
+			markdown:   "![image](" + filepath.ToSlash(filepath.Join(cwd, "backup", "assets", "image_1.png")) + ")",
+			assetsDir:  filepath.Join(cwd, "backup", "assets"),
+			outputPath: filepath.Join("backup", "Team", "Plan.md"),
+			want:       "![image](../assets/image_1.png)",
+		},
+		{
+			name:       "windows paths and spaces",
+			markdown:   `![image](C:\backup\assets\Team\Plan\image 1.png)`,
+			assetsDir:  `C:\backup\assets\Team\Plan`,
+			outputPath: `C:\backup\Team\Plan.md`,
+			want:       `![image](<../assets/Team/Plan/image 1.png>)`,
+		},
+		{
+			name: "failed downloads and unrelated images stay unchanged",
+			markdown: "<image token=\"img_token\"/>\n" +
+				"<whiteboard token=\"board_token\"/>\n" +
+				"![remote](https://example.com/assets/image.png)\n" +
+				"![reference][image-ref]\n" +
+				"![titled](assets/image.png \"title\")\n",
+			assetsDir:  "assets",
+			outputPath: "Plan.md",
+			want: "<image token=\"img_token\"/>\n" +
+				"<whiteboard token=\"board_token\"/>\n" +
+				"![remote](https://example.com/assets/image.png)\n" +
+				"![reference][image-ref]\n" +
+				"![titled](assets/image.png \"title\")\n",
 		},
 	}
 

@@ -290,8 +290,8 @@ func ListCommentReplies(fileToken, commentID, fileType string, pageSize int, pag
 }
 
 // DeleteCommentReply 删除评论回复
-// 注意：飞书 Open API 只允许回复作者本人删除（App Bot 身份会得到 1069303 forbidden），
-// 因此调用方几乎总是需要提供 userAccessToken（回复作者的 User Token）。
+// 注意：飞书 Open API 只允许回复作者身份删除。用户回复需使用作者的 User Token，
+// Bot 回复需使用创建它的同一 App 的 Bot Token。
 func DeleteCommentReply(fileToken, commentID, replyID, fileType, userAccessToken string) error {
 	client, err := GetClient()
 	if err != nil {
@@ -326,8 +326,8 @@ func DeleteCommentReply(fileToken, commentID, replyID, fileType, userAccessToken
 //	POST /open-apis/drive/v1/files/{file_token}/comments/{comment_id}/replies?file_type=docx
 //
 // 权限要求（User Token）：docs:document.comment:create
-// App Token 同样可以调用（tenant 身份），但飞书侧多数场景推荐用户身份发起回复，
-// 否则回复人会显示为 Bot，且该回复无法通过 DeleteCommentReply 删除（只有作者能删）。
+// App Token 同样可以调用（tenant 身份），此时回复人显示为 Bot；删除该回复时需继续使用
+// 创建它的同一 App 身份，用户身份创建的回复则需使用作者的 User Token。
 func CreateCommentReply(fileToken, commentID, fileType, content, userAccessToken string) (*CommentReply, error) {
 	client, err := GetClient()
 	if err != nil {

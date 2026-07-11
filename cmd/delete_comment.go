@@ -18,8 +18,8 @@ const deleteCommentUnsupportedMsg = `飞书 Open API 不支持删除整条评论
   • 将评论标记为已解决（保留记录、折叠显示）:
       feishu-cli comment resolve <file_token> <comment_id> --type <type>
 
-注意: 飞书只允许回复作者本人删除自己的回复，需以该作者的 User Token 发起
-（先 feishu-cli auth login）；App/Bot 身份会返回 1069303 forbidden。`
+注意: 飞书只允许回复作者身份删除自己的回复。用户发布的回复需显式传入该作者的
+--user-access-token；Bot 发布的回复使用创建它的同一 App 身份（默认，省略 User Token）。`
 
 var deleteCommentCmd = &cobra.Command{
 	Use:   "delete <file_token> <comment_id>",
