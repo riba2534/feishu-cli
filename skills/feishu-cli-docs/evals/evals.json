@@ -1,0 +1,45 @@
+{
+  "skill_name": "feishu-cli-docs",
+  "evals": [
+    {
+      "id": 1,
+      "workflows": ["read"],
+      "prompt": "读一下这个飞书 sheet 并总结，不要把文件留在项目目录；表里有图片，顺便告诉我该不该加 --download-images。",
+      "expected_output": "选择 read/sheet export 到临时路径，并明确 sheet export 不支持 --download-images。",
+      "expectations": ["使用 sheet export --format markdown 和临时路径", "明确不向 sheet export 传 --download-images"],
+      "files": []
+    },
+    {
+      "id": 2,
+      "workflows": ["import"],
+      "prompt": "把 report.md 导入飞书，里面有 mermaid、plantuml 和 svg 三种 fenced code block。给出导入前检查和命令。",
+      "expected_output": "读取 import 与 doc-guide，覆盖 Mermaid/PlantUML/SVG，给出 doc import。",
+      "expectations": ["导入前检查同时覆盖 Mermaid、PlantUML 和 SVG", "给出 feishu-cli doc import 命令"],
+      "files": []
+    },
+    {
+      "id": 3,
+      "workflows": ["markdown"],
+      "prompt": "我不是要创建 docx，只想把 README.md 原样存到飞书云盘，之后还能 diff 和覆盖且 token 不变。",
+      "expected_output": "选择 markdown create/diff/overwrite，而不是 doc import。",
+      "expectations": ["使用 markdown create、diff 和 overwrite", "明确原生 .md 与 doc import 的边界"],
+      "files": []
+    },
+    {
+      "id": 4,
+      "workflows": ["write"],
+      "prompt": "把已有飞书文档 doxcnxxx 里的“## 风险”章节替换成本地 risk.md，不能在文末重复追加，也不要新建文档。给出准确命令。",
+      "expected_output": "使用 doc content-update 的 replace_range 模式按标题替换章节，不使用 doc import 或 append。",
+      "expectations": ["命令使用 doc content-update doxcnxxx --mode replace_range", "使用 --selection-by-title 和 --markdown-file risk.md", "不使用 doc import 或 append 模式"],
+      "files": []
+    },
+    {
+      "id": 5,
+      "workflows": ["export"],
+      "prompt": "把飞书文档 doxcnxxx 导出到 /tmp/report.md，同时下载图片到 /tmp/report-assets，保留 front matter，并把 @用户展开成友好名称。给出命令和导出后的最小验证。",
+      "expected_output": "使用 doc export 的显式输出、素材、front matter 与 mention 展开参数，并验证文件及素材。",
+      "expectations": ["命令使用 doc export doxcnxxx --output /tmp/report.md", "命令包含 --download-images、--assets-dir /tmp/report-assets、--front-matter 和 --expand-mentions", "验证 /tmp/report.md 存在且非空，并检查素材目录"],
+      "files": []
+    }
+  ]
+}

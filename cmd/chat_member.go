@@ -32,7 +32,7 @@ var chatMemberCmd = &cobra.Command{
 
 外部群提示:
   外部群（external=true）所有"群信息/成员/配置"类 API 默认 232033 拒绝。
-  需要 App 开启「对外共享能力」+ Bot 在群里。详见 skills/feishu-cli-chat/references/external-chat.md`,
+  需要 App 开启「对外共享能力」+ Bot 在群里。详见 skills/feishu-cli-messaging/references/workflows/chat/references/external-chat.md`,
 }
 
 // resolveChatToken 按 --as 解析应该传给 client 的 token 字符串。

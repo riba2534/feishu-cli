@@ -1,0 +1,29 @@
+{
+  "skill_name": "feishu-cli-meetings",
+  "evals": [
+    {
+      "id": 1,
+      "workflows": ["vc"],
+      "prompt": "搜索我上周参加的会议并下载妙记逐字稿，说明身份和 scope 前置。",
+      "expected_output": "vc search/minutes 使用 User Token，并先 auth check。",
+      "expectations": ["说明 vc search 和 minutes 使用 User Token", "业务命令前给出 auth check"],
+      "files": []
+    },
+    {
+      "id": 2,
+      "workflows": ["vc"],
+      "prompt": "让会议机器人加入会议。环境里有 FEISHU_USER_ACCESS_TOKEN，但我没有传 flag，它会用谁的身份？",
+      "expected_output": "join/leave 只认显式 flag；未传时使用 Bot，不读取环境变量。",
+      "expectations": ["说明 join/leave 只认显式 --user-access-token", "未传 flag 时选择 Bot 并忽略环境变量"],
+      "files": []
+    },
+    {
+      "id": 3,
+      "workflows": ["vc"],
+      "prompt": "查询 meeting bot 的会议事件。Tenant Token 可不可以？",
+      "expected_output": "meeting-events 端点拒收 Tenant Token，必须使用 User Token。",
+      "expectations": ["明确 meeting-events 拒收 Tenant Token", "要求 User Token"],
+      "files": []
+    }
+  ]
+}

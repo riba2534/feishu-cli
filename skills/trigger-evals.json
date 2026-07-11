@@ -1,0 +1,402 @@
+[
+  {
+    "query": "CLI 没有封装这个飞书接口，帮我调用 POST /open-apis/contact/v3/users/batch_get_id，先 dry-run 看请求，不要手写 curl。",
+    "expected_skill": "feishu-cli-platform",
+    "expected_workflow": "api",
+    "legacy_skill": "feishu-cli-api"
+  },
+  {
+    "query": "查一下审批实例 ic_xxx 的详情，然后把待办 task_xxx 转交给 ou_target，执行前先检查需要的用户权限。",
+    "expected_skill": "feishu-cli-work",
+    "expected_workflow": "approval",
+    "legacy_skill": "feishu-cli-approval"
+  },
+  {
+    "query": "我有一个 ./dist 目录，想一键发布成妙搭 HTML 应用，拿到访问 URL 后设置成组织内可见。",
+    "expected_skill": "feishu-cli-visual",
+    "expected_workflow": "apps",
+    "legacy_skill": "feishu-cli-apps"
+  },
+  {
+    "query": "帮我查 ou_xxx 这个月的出勤统计，包括迟到早退和请假，按日输出 JSON。",
+    "expected_skill": "feishu-cli-work",
+    "expected_workflow": "attendance",
+    "legacy_skill": "feishu-cli-attendance"
+  },
+  {
+    "query": "feishu-cli 突然提示 User Token 过期，我还要补 search 域权限；请先诊断，再用 Device Flow 重新登录。",
+    "expected_skill": "feishu-cli-platform",
+    "expected_workflow": "auth",
+    "legacy_skill": "feishu-cli-auth"
+  },
+  {
+    "query": "把 /base/bascnxxx 里的 tblxxx 按“工号” upsert 一批记录，并固定用 bot 身份跑在 cron 里。",
+    "expected_skill": "feishu-cli-data",
+    "expected_workflow": "bitable",
+    "legacy_skill": "feishu-cli-bitable"
+  },
+  {
+    "query": "给我在飞书画板画一张可编辑的系统架构图，节点和连线都要能单独调整，最后跑一下 lint。",
+    "expected_skill": "feishu-cli-visual",
+    "expected_workflow": "board",
+    "legacy_skill": "feishu-cli-board"
+  },
+  {
+    "query": "帮我找三位参会人明天下午共同空闲的 30 分钟，再筛一间 8 到 12 人的会议室。",
+    "expected_skill": "feishu-cli-work",
+    "expected_workflow": "calendar",
+    "legacy_skill": "feishu-cli-calendar"
+  },
+  {
+    "query": "做一张飞书 V2 项目告警卡片，要有红色状态标签、折叠详情、负责人和“查看监控”按钮。",
+    "expected_skill": "feishu-cli-messaging",
+    "expected_workflow": "card",
+    "legacy_skill": "feishu-cli-card"
+  },
+  {
+    "query": "看看 oc_xxx 群最近 100 条聊天记录并展开话题回复，然后给这条消息加个 reaction 并 pin 住。",
+    "expected_skill": "feishu-cli-messaging",
+    "expected_workflow": "chat",
+    "legacy_skill": "feishu-cli-chat"
+  },
+  {
+    "query": "这份季度数据适合用什么图？请按飞书统一色板设计一个含趋势、目标线和异常标记的数据图表。",
+    "expected_skill": "feishu-cli-visual",
+    "expected_workflow": "dataviz",
+    "legacy_skill": "feishu-cli-dataviz"
+  },
+  {
+    "query": "把 80MB 的 big.zip 分块上传到飞书云盘 fldxxx，失败要能重试；上传前先检查 drive scope。",
+    "expected_skill": "feishu-cli-storage",
+    "expected_workflow": "drive",
+    "legacy_skill": "feishu-cli-drive"
+  },
+  {
+    "query": "用 WebSocket 临时监听 im.message.receive_v1，收到两条消息或 60 秒后退出，并把事件逐条保存成 JSON。",
+    "expected_skill": "feishu-cli-messaging",
+    "expected_workflow": "event",
+    "legacy_skill": "feishu-cli-event"
+  },
+  {
+    "query": "把这个飞书 docx 导出成 Markdown 到 /tmp，并把图片和画板素材一起下载到 assets 目录。",
+    "expected_skill": "feishu-cli-docs",
+    "expected_workflow": "export",
+    "legacy_skill": "feishu-cli-export"
+  },
+  {
+    "query": "在飞书文档里放一个会自动刷新、支持 hover tooltip 和点击筛选的 ECharts 数据大屏，不要静态截图。",
+    "expected_skill": "feishu-cli-visual",
+    "expected_workflow": "htmlbox",
+    "legacy_skill": "feishu-cli-htmlbox"
+  },
+  {
+    "query": "把 report.md 导入成飞书文档，里面的 Mermaid、PlantUML 和 SVG 代码块都要转换成画板。",
+    "expected_skill": "feishu-cli-docs",
+    "expected_workflow": "import",
+    "legacy_skill": "feishu-cli-import"
+  },
+  {
+    "query": "给 user@example.com 写一封项目周报邮件，先保存草稿让我确认，暂时不要真的发送。",
+    "expected_skill": "feishu-cli-mail",
+    "expected_workflow": "mail",
+    "legacy_skill": "feishu-cli-mail"
+  },
+  {
+    "query": "把本地 README.md 原样上传为飞书云盘里的 .md 文件，以后要能 diff 并覆盖且 token 保持不变。",
+    "expected_skill": "feishu-cli-docs",
+    "expected_workflow": "markdown",
+    "legacy_skill": "feishu-cli-markdown"
+  },
+  {
+    "query": "把 post.json 作为富文本消息发到 oc_xxx，里面的三张本地图片要自动上传并替换成 image_key。",
+    "expected_skill": "feishu-cli-messaging",
+    "expected_workflow": "msg",
+    "legacy_skill": "feishu-cli-msg"
+  },
+  {
+    "query": "给 KR 7123456789012345678 上报本周 65% 的 risky 进展，并关联到周报文档链接。",
+    "expected_skill": "feishu-cli-work",
+    "expected_workflow": "okr",
+    "legacy_skill": "feishu-cli-okr"
+  },
+  {
+    "query": "给 doxcnxxx 加一个可编辑协作者 user@example.com，并给 shtcnxxx 查看当前公开权限设置。",
+    "expected_skill": "feishu-cli-storage",
+    "expected_workflow": "perm",
+    "legacy_skill": "feishu-cli-perm"
+  },
+  {
+    "query": "读取这个 /wiki/wikcnxxx 节点的正文并总结其中的风险项，不要修改文档，也不要把临时文件留在仓库。",
+    "expected_skill": "feishu-cli-docs",
+    "expected_workflow": "read",
+    "legacy_skill": "feishu-cli-read"
+  },
+  {
+    "query": "帮我查 calendar.events.instance_view 这个飞书 OpenAPI 的请求路径、query 参数、body 和所需 scope。",
+    "expected_skill": "feishu-cli-platform",
+    "expected_workflow": "schema",
+    "legacy_skill": "feishu-cli-schema"
+  },
+  {
+    "query": "跨飞书搜索标题含“灾备方案”的 docx 和 wiki，只要我有权限看到的结果，并以 JSON 返回。",
+    "expected_skill": "feishu-cli-platform",
+    "expected_workflow": "search",
+    "legacy_skill": "feishu-cli-search"
+  },
+  {
+    "query": "给 /sheets/shtcnxxx 的工作表创建一个筛选视图，再给 E 列设置小于 6 的数字筛选条件。",
+    "expected_skill": "feishu-cli-data",
+    "expected_workflow": "sheet",
+    "legacy_skill": "feishu-cli-sheet"
+  },
+  {
+    "query": "从 XML 模板创建一份飞书 Slides 演示文稿，使用默认 16:9 尺寸，并把生成结果发给我。",
+    "expected_skill": "feishu-cli-visual",
+    "expected_workflow": "slides",
+    "legacy_skill": "feishu-cli-slides"
+  },
+  {
+    "query": "建一个“发布清单”任务列表，把 task_guid 加进去，列出清单内任务后再移除它。",
+    "expected_skill": "feishu-cli-work",
+    "expected_workflow": "task",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "没有专用命令时，用通用 API 透传查询这个飞书端点，先 dry-run 核对路径和参数。",
+    "expected_skill": "feishu-cli-platform",
+    "expected_workflow": "api",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "在飞书里全局搜索标题包含“容灾演练”的文档和消息，以 JSON 返回。",
+    "expected_skill": "feishu-cli-platform",
+    "expected_workflow": "search",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "按邮箱 user@example.com 查用户 open_id，再列出这个用户所在部门的子部门。",
+    "expected_skill": "feishu-cli-platform",
+    "expected_workflow": "directory",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "用基础 file 命令列出 fldxxx 目录，并下载其中的 file_token 到本地。",
+    "expected_skill": "feishu-cli-storage",
+    "expected_workflow": "file-media",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "列出文档 doxcnxxx 的评论，回复指定 comment_id 后把它标记为已解决。",
+    "expected_skill": "feishu-cli-storage",
+    "expected_workflow": "comment",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "列出知识空间 spcxxx 的节点，把 wikcnxxx 重命名后查询成员列表。",
+    "expected_skill": "feishu-cli-storage",
+    "expected_workflow": "wiki",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "创建一个内部群，把 ou_xxx 加入群聊，再生成群分享链接。",
+    "expected_skill": "feishu-cli-messaging",
+    "expected_workflow": "chat",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "读取普通飞书 Sheet 的 A1:C10，追加两行数据后导出为 Markdown。",
+    "expected_skill": "feishu-cli-data",
+    "expected_workflow": "sheet",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "把 PlantUML 流程图导入飞书画板，并查询生成后的节点。",
+    "expected_skill": "feishu-cli-visual",
+    "expected_workflow": "board",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "在主日历创建明天下午的评审日程，添加参会人后查询事件详情。",
+    "expected_skill": "feishu-cli-work",
+    "expected_workflow": "calendar",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "查询审批定义 approval_code 和我的待办审批任务，不要修改审批状态。",
+    "expected_skill": "feishu-cli-work",
+    "expected_workflow": "approval",
+    "legacy_skill": "feishu-cli-toolkit"
+  },
+  {
+    "query": "搜索我上周参加的视频会议，找到对应妙记并下载逐字稿和录制文件。",
+    "expected_skill": "feishu-cli-meetings",
+    "expected_workflow": "vc",
+    "legacy_skill": "feishu-cli-vc"
+  },
+  {
+    "query": "把飞书文档 doxcnxxx 的“## 结论”章节替换为 conclusion.md，不能 append 出一个重复章节。",
+    "expected_skill": "feishu-cli-docs",
+    "expected_workflow": "write",
+    "legacy_skill": "feishu-cli-write"
+  },
+  {
+    "query": "检查当前飞书 CLI 配置是否健康，并告诉我 Token 还剩多久过期。",
+    "expected_skill": "feishu-cli-platform",
+    "expected_workflow": "auth"
+  },
+  {
+    "query": "只读分析这个 docx 文档的块结构，并总结所有风险项。",
+    "expected_skill": "feishu-cli-docs",
+    "expected_workflow": "read"
+  },
+  {
+    "query": "创建一份飞书文档，把本地 Markdown 追加到末尾并保留嵌套列表。",
+    "expected_skill": "feishu-cli-docs",
+    "expected_workflow": "write"
+  },
+  {
+    "query": "比较本地 README.md 和飞书云盘原生 Markdown 文件的差异，但先不要覆盖。",
+    "expected_skill": "feishu-cli-docs",
+    "expected_workflow": "markdown"
+  },
+  {
+    "query": "把 200MB 文件断点续传到飞书云盘，并轮询异步任务直到完成。",
+    "expected_skill": "feishu-cli-storage",
+    "expected_workflow": "drive"
+  },
+  {
+    "query": "给文档增加可编辑协作者并设置分享密码，不要转移所有权。",
+    "expected_skill": "feishu-cli-storage",
+    "expected_workflow": "perm"
+  },
+  {
+    "query": "复制知识库节点到另一个空间，并保留原节点标题。",
+    "expected_skill": "feishu-cli-storage",
+    "expected_workflow": "wiki"
+  },
+  {
+    "query": "回复这条飞书消息并加急给指定用户，发送前展示目标。",
+    "expected_skill": "feishu-cli-messaging",
+    "expected_workflow": "msg"
+  },
+  {
+    "query": "生成一张包含审批按钮和趋势图的飞书 V2 交互卡片。",
+    "expected_skill": "feishu-cli-messaging",
+    "expected_workflow": "card"
+  },
+  {
+    "query": "订阅飞书消息事件，收到三条后退出并输出 NDJSON。",
+    "expected_skill": "feishu-cli-messaging",
+    "expected_workflow": "event"
+  },
+  {
+    "query": "给 Sheet 的状态列设置下拉选项并创建筛选视图。",
+    "expected_skill": "feishu-cli-data",
+    "expected_workflow": "sheet"
+  },
+  {
+    "query": "批量写入 Sheet 单元格并给表头加粗和冻结首行。",
+    "expected_skill": "feishu-cli-data",
+    "expected_workflow": "sheet"
+  },
+  {
+    "query": "在多维表格里创建字段并按业务主键 upsert 记录。",
+    "expected_skill": "feishu-cli-data",
+    "expected_workflow": "bitable"
+  },
+  {
+    "query": "查询 Bitable 视图的筛选和分组配置，再以 bot 身份更新。",
+    "expected_skill": "feishu-cli-data",
+    "expected_workflow": "bitable"
+  },
+  {
+    "query": "导出普通飞书电子表格为 CSV，并保留指定工作表。",
+    "expected_skill": "feishu-cli-data",
+    "expected_workflow": "sheet"
+  },
+  {
+    "query": "在飞书文档嵌入可交互的 ECharts 地图，支持 hover 和点击筛选。",
+    "expected_skill": "feishu-cli-visual",
+    "expected_workflow": "htmlbox"
+  },
+  {
+    "query": "把本地 HTML 目录发布成妙搭应用并限制为组织内可见。",
+    "expected_skill": "feishu-cli-visual",
+    "expected_workflow": "apps"
+  },
+  {
+    "query": "查询本月考勤统计，分别列出迟到、早退和请假。",
+    "expected_skill": "feishu-cli-work",
+    "expected_workflow": "attendance"
+  },
+  {
+    "query": "分诊飞书收件箱，只列未读且带附件的邮件。",
+    "expected_skill": "feishu-cli-mail",
+    "expected_workflow": "mail"
+  },
+  {
+    "query": "回复这封飞书邮件并引用原文，但先保存草稿。",
+    "expected_skill": "feishu-cli-mail",
+    "expected_workflow": "mail"
+  },
+  {
+    "query": "转发指定邮件线程给 user@example.com，并添加说明。",
+    "expected_skill": "feishu-cli-mail",
+    "expected_workflow": "mail"
+  },
+  {
+    "query": "创建带 CID 内联图片的 HTML 邮件模板，不要立即发送。",
+    "expected_skill": "feishu-cli-mail",
+    "expected_workflow": "mail"
+  },
+  {
+    "query": "设置飞书邮箱签名并创建只看高优先级邮件的过滤器。",
+    "expected_skill": "feishu-cli-mail",
+    "expected_workflow": "mail"
+  },
+  {
+    "query": "读取指定邮件线程的全部消息正文和附件元数据。",
+    "expected_skill": "feishu-cli-mail",
+    "expected_workflow": "mail"
+  },
+  {
+    "query": "发送飞书邮件前先生成预览并等待我明确确认。",
+    "expected_skill": "feishu-cli-mail",
+    "expected_workflow": "mail"
+  },
+  {
+    "query": "搜索昨天参加的视频会议并读取对应 AI 会议摘要。",
+    "expected_skill": "feishu-cli-meetings",
+    "expected_workflow": "vc"
+  },
+  {
+    "query": "下载指定妙记的逐字稿和音视频文件到本地。",
+    "expected_skill": "feishu-cli-meetings",
+    "expected_workflow": "vc"
+  },
+  {
+    "query": "查询会议录制信息并列出所有可下载的媒体文件。",
+    "expected_skill": "feishu-cli-meetings",
+    "expected_workflow": "vc"
+  },
+  {
+    "query": "让飞书会议机器人加入 meeting_id，结束后再安全离会。",
+    "expected_skill": "feishu-cli-meetings",
+    "expected_workflow": "vc"
+  },
+  {
+    "query": "根据 minute token 获取妙记详情和 AI 产物。",
+    "expected_skill": "feishu-cli-meetings",
+    "expected_workflow": "vc"
+  },
+  {
+    "query": "按参会人和时间范围检索历史会议，不要创建新日程。",
+    "expected_skill": "feishu-cli-meetings",
+    "expected_workflow": "vc"
+  },
+  {
+    "query": "监听指定会议的实时事件并保存原始 JSON。",
+    "expected_skill": "feishu-cli-meetings",
+    "expected_workflow": "vc"
+  }
+]

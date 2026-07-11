@@ -1,0 +1,53 @@
+{
+  "skill_name": "feishu-cli-platform",
+  "evals": [
+    {
+      "id": 1,
+      "workflows": ["schema", "api"],
+      "prompt": "我要调用一个 CLI 没封装的飞书接口。先帮我查 calendar.events.instance_view 的 path、参数和 scope，再给出 user 身份的 dry-run 命令。不要用 curl。",
+      "expected_output": "先路由 schema 再路由 api，使用 --as user 和 --dry-run。",
+      "expectations": ["先给出 schema 查询，再给出 api 调用", "api 命令同时包含 --as user 和 --dry-run"],
+      "files": []
+    },
+    {
+      "id": 2,
+      "workflows": ["api"],
+      "prompt": "这个 URL 能直接喂给 api 吗：https://xxx.feishu.cn/open-apis/authen/v1/user_info?foo=bar#profile；请给我安全的命令。",
+      "expected_output": "指出租户 host 与 fragment 限制，提取 /open-apis path 并移除 fragment。",
+      "expectations": ["明确租户 host 不会被自动剥离", "最终命令不含 #fragment，path 以 /open-apis/ 开头"],
+      "files": []
+    },
+    {
+      "id": 3,
+      "workflows": ["auth"],
+      "prompt": "我要跑 bitable 定时任务，不想依赖个人登录；同时告诉我 vc bot 入会读取哪些 User Token 来源。",
+      "expected_output": "bitable 使用 --as bot；vc bot join/leave 只接受显式 flag，不自动读环境或 token.json。",
+      "expectations": ["Bitable 定时任务使用 --as bot", "说明 vc bot join/leave 只认显式 --user-access-token"],
+      "files": []
+    },
+    {
+      "id": 4,
+      "workflows": ["auth"],
+      "prompt": "Agent 单轮会超时，我需要申请 search 域推荐权限。不要阻塞等待授权：先给用户授权链接，用户完成后下一轮再继续。请给两步 Device Flow 命令，并说明不能重复执行第一步。",
+      "expected_output": "使用 --no-wait --json 获取 device_code，再用同一 device_code 续轮询。",
+      "expectations": ["第一步使用 auth login --domain search --recommend --no-wait --json", "第二步使用 auth login --device-code <device_code> --json", "明确重复第一步会使先前授权链接失效"],
+      "files": []
+    },
+    {
+      "id": 5,
+      "workflows": ["search"],
+      "prompt": "跨所有会话找包含“上线回滚”的私聊消息，需要直接看到消息正文和发送者，最多自动翻 3 页并用表格输出。执行前先检查权限。",
+      "expected_output": "预检 search:message，再使用 search messages 的私聊、富化、分页和表格参数。",
+      "expectations": ["先执行 auth check --scope \"search:message\"", "搜索命令使用 search messages \"上线回滚\" 和 --chat-type p2p_chat", "命令包含 --enrich、--page-all、--page-limit 3 和 --format table"],
+      "files": []
+    },
+    {
+      "id": 6,
+      "workflows": ["directory"],
+      "prompt": "只读查询 user@example.com 对应的飞书用户，再列出部门 od_xxx 的直属子部门；不要修改通讯录，也不要根据 token 前缀猜 ID 类型。",
+      "expected_output": "使用 user search 与 dept children 的只读命令，并说明 ID 类型应显式指定。",
+      "expectations": ["使用 user search --email user@example.com", "使用 dept children od_xxx", "明确只读查询且 ID 类型应根据实际输入显式设置，而非靠前缀猜测"],
+      "files": []
+    }
+  ]
+}

@@ -42,7 +42,15 @@ tmp/
 temp/
 *.tmp
 *.log
+skills/*-workspace/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # 导出的资源文件
-assets/
+/assets/
 *.md.bak

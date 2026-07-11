@@ -1,0 +1,161 @@
+{
+  "schema": "2.0",
+  "config": {
+    "update_multi": true,
+    "enable_forward": true,
+    "width_mode": "fill"
+  },
+  "header": {
+    "template": "blue",
+    "title": {
+      "tag": "plain_text",
+      "content": "📖 __ARTICLE_TITLE__"
+    },
+    "subtitle": {
+      "tag": "plain_text",
+      "content": "__ARTICLE_SUBTITLE__"
+    }
+  },
+  "body": {
+    "direction": "vertical",
+    "vertical_spacing": "medium",
+    "elements": [
+      {
+        "tag": "markdown",
+        "content": "**一句话摘要**：__TL_DR__\n\n<font color='grey'>原文链接</font>：[__ORIGIN_TITLE__](__ORIGIN_URL__)"
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "fields": [
+          {
+            "is_short": true,
+            "text": { "tag": "lark_md", "content": "**✍️ 作者**\n__AUTHOR__" }
+          },
+          {
+            "is_short": true,
+            "text": { "tag": "lark_md", "content": "**📅 发布**\n__PUBLISHED_AT__" }
+          },
+          {
+            "is_short": true,
+            "text": { "tag": "lark_md", "content": "**⏱ 阅读**\n__READ_TIME__" }
+          },
+          {
+            "is_short": true,
+            "text": { "tag": "lark_md", "content": "**🏷️ 分类**\n`__CATEGORY__`" }
+          }
+        ]
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "collapsible_panel",
+        "expanded": true,
+        "header": {
+          "title": { "tag": "markdown", "content": "🎯 **核心观点**" },
+          "background_color": "grey",
+          "padding": "4px 8px 4px 8px",
+          "icon": {
+            "tag": "standard_icon",
+            "token": "down-small-ccm_outlined",
+            "size": "16px 16px"
+          },
+          "icon_position": "right",
+          "icon_expanded_angle": -180
+        },
+        "elements": [
+          {
+            "tag": "markdown",
+            "content": "- __POINT_1__\n- __POINT_2__\n- __POINT_3__"
+          }
+        ]
+      },
+      {
+        "tag": "collapsible_panel",
+        "expanded": true,
+        "header": {
+          "title": { "tag": "markdown", "content": "📊 **关键数据**" },
+          "background_color": "grey",
+          "padding": "4px 8px 4px 8px",
+          "icon": {
+            "tag": "standard_icon",
+            "token": "down-small-ccm_outlined",
+            "size": "16px 16px"
+          },
+          "icon_position": "right",
+          "icon_expanded_angle": -180
+        },
+        "elements": [
+          {
+            "tag": "markdown",
+            "content": "__KEY_METRIC_1__ 为 <font color='green'>__VALUE_1__</font>\n\n__KEY_METRIC_2__ 为 <font color='red'>__VALUE_2__</font>\n\n__KEY_METRIC_3__ 为 __VALUE_3__"
+          }
+        ]
+      },
+      {
+        "tag": "collapsible_panel",
+        "expanded": false,
+        "header": {
+          "title": { "tag": "markdown", "content": "💡 **深度解读（点击展开）**" },
+          "background_color": "grey",
+          "padding": "4px 8px 4px 8px",
+          "icon": {
+            "tag": "standard_icon",
+            "token": "down-small-ccm_outlined",
+            "size": "16px 16px"
+          },
+          "icon_position": "right",
+          "icon_expanded_angle": -180
+        },
+        "elements": [
+          {
+            "tag": "markdown",
+            "content": "__DEEP_ANALYSIS__（可放 200-500 字的深度解读，不用考虑长度，折叠面板本身就是藏次要信息）"
+          }
+        ]
+      },
+      {
+        "tag": "collapsible_panel",
+        "expanded": false,
+        "header": {
+          "title": { "tag": "markdown", "content": "🌟 **精彩引用（点击展开）**" },
+          "background_color": "grey",
+          "padding": "4px 8px 4px 8px",
+          "icon": {
+            "tag": "standard_icon",
+            "token": "down-small-ccm_outlined",
+            "size": "16px 16px"
+          },
+          "icon_position": "right",
+          "icon_expanded_angle": -180
+        },
+        "elements": [
+          {
+            "tag": "markdown",
+            "content": "> 「__QUOTE_1__」\n\n> 「__QUOTE_2__」"
+          }
+        ]
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "button",
+        "text": { "tag": "plain_text", "content": "📖 阅读原文" },
+        "type": "primary",
+        "width": "default",
+        "behaviors": [
+          { "type": "open_url", "default_url": "__ORIGIN_URL__" }
+        ]
+      },
+      {
+        "tag": "markdown",
+        "text_size": "notation",
+        "content": "<font color='grey'>📡 由 feishu-cli-messaging 技能生成 · 摘要基于原文整理</font>"
+      }
+    ]
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "expected_top_level_skills": [
+    "feishu-cli-platform",
+    "feishu-cli-docs",
+    "feishu-cli-storage",
+    "feishu-cli-messaging",
+    "feishu-cli-data",
+    "feishu-cli-visual",
+    "feishu-cli-work",
+    "feishu-cli-mail",
+    "feishu-cli-meetings"
+  ],
+  "excluded_command_prefixes": [
+    ["completion"],
+    ["help"]
+  ],
+  "hidden_commands": [
+    ["apps", "list"]
+  ],
+  "non_command_workflows": [
+    {"skill": "feishu-cli-messaging", "workflow": "card"},
+    {"skill": "feishu-cli-visual", "workflow": "dataviz"}
+  ],
+  "legacy_skill_mappings": [
+    {"legacy_skill": "feishu-cli-api", "skill": "feishu-cli-platform", "workflow": "api"},
+    {"legacy_skill": "feishu-cli-approval", "skill": "feishu-cli-work", "workflow": "approval"},
+    {"legacy_skill": "feishu-cli-apps", "skill": "feishu-cli-visual", "workflow": "apps"},
+    {"legacy_skill": "feishu-cli-attendance", "skill": "feishu-cli-work", "workflow": "attendance"},
+    {"legacy_skill": "feishu-cli-auth", "skill": "feishu-cli-platform", "workflow": "auth"},
+    {"legacy_skill": "feishu-cli-bitable", "skill": "feishu-cli-data", "workflow": "bitable"},
+    {"legacy_skill": "feishu-cli-board", "skill": "feishu-cli-visual", "workflow": "board"},
+    {"legacy_skill": "feishu-cli-calendar", "skill": "feishu-cli-work", "workflow": "calendar"},
+    {"legacy_skill": "feishu-cli-card", "skill": "feishu-cli-messaging", "workflow": "card"},
+    {"legacy_skill": "feishu-cli-chat", "skill": "feishu-cli-messaging", "workflow": "chat"},
+    {"legacy_skill": "feishu-cli-dataviz", "skill": "feishu-cli-visual", "workflow": "dataviz"},
+    {"legacy_skill": "feishu-cli-drive", "skill": "feishu-cli-storage", "workflow": "drive"},
+    {"legacy_skill": "feishu-cli-event", "skill": "feishu-cli-messaging", "workflow": "event"},
+    {"legacy_skill": "feishu-cli-export", "skill": "feishu-cli-docs", "workflow": "export"},
+    {"legacy_skill": "feishu-cli-htmlbox", "skill": "feishu-cli-visual", "workflow": "htmlbox"},
+    {"legacy_skill": "feishu-cli-import", "skill": "feishu-cli-docs", "workflow": "import"},
+    {"legacy_skill": "feishu-cli-mail", "skill": "feishu-cli-mail", "workflow": "mail"},
+    {"legacy_skill": "feishu-cli-markdown", "skill": "feishu-cli-docs", "workflow": "markdown"},
+    {"legacy_skill": "feishu-cli-msg", "skill": "feishu-cli-messaging", "workflow": "msg"},
+    {"legacy_skill": "feishu-cli-okr", "skill": "feishu-cli-work", "workflow": "okr"},
+    {"legacy_skill": "feishu-cli-perm", "skill": "feishu-cli-storage", "workflow": "perm"},
+    {"legacy_skill": "feishu-cli-read", "skill": "feishu-cli-docs", "workflow": "read"},
+    {"legacy_skill": "feishu-cli-schema", "skill": "feishu-cli-platform", "workflow": "schema"},
+    {"legacy_skill": "feishu-cli-search", "skill": "feishu-cli-platform", "workflow": "search"},
+    {"legacy_skill": "feishu-cli-sheet", "skill": "feishu-cli-data", "workflow": "sheet"},
+    {"legacy_skill": "feishu-cli-slides", "skill": "feishu-cli-visual", "workflow": "slides"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-platform", "workflow": "api"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-platform", "workflow": "search"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-platform", "workflow": "directory"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-storage", "workflow": "file-media"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-storage", "workflow": "comment"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-storage", "workflow": "wiki"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-messaging", "workflow": "chat"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-data", "workflow": "sheet"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-visual", "workflow": "board"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-work", "workflow": "calendar"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-work", "workflow": "task"},
+    {"legacy_skill": "feishu-cli-toolkit", "skill": "feishu-cli-work", "workflow": "approval"},
+    {"legacy_skill": "feishu-cli-vc", "skill": "feishu-cli-meetings", "workflow": "vc"},
+    {"legacy_skill": "feishu-cli-write", "skill": "feishu-cli-docs", "workflow": "write"}
+  ],
+  "owners": [
+    {"skill": "feishu-cli-platform", "workflow": "auth", "prefixes": [["auth"], ["config"], ["doctor"], ["profile"]]},
+    {"skill": "feishu-cli-platform", "workflow": "api", "prefixes": [["api"]]},
+    {"skill": "feishu-cli-platform", "workflow": "schema", "prefixes": [["schema"]]},
+    {"skill": "feishu-cli-platform", "workflow": "search", "prefixes": [["search"]]},
+    {"skill": "feishu-cli-platform", "workflow": "directory", "prefixes": [["user"], ["dept"]]},
+
+    {"skill": "feishu-cli-docs", "workflow": "read", "prefixes": [["doc", "get"], ["doc", "blocks"]]},
+    {"skill": "feishu-cli-docs", "workflow": "write", "prefixes": [["doc", "add"], ["doc", "add-board"], ["doc", "add-callout"], ["doc", "batch-update"], ["doc", "content-update"], ["doc", "create"], ["doc", "delete"], ["doc", "media-insert"], ["doc", "table"], ["doc", "update"]]},
+    {"skill": "feishu-cli-docs", "workflow": "import", "prefixes": [["doc", "import"]]},
+    {"skill": "feishu-cli-docs", "workflow": "export", "prefixes": [["doc", "export"], ["doc", "export-file"], ["doc", "media-download"]]},
+    {"skill": "feishu-cli-docs", "workflow": "markdown", "prefixes": [["markdown"]]},
+
+    {"skill": "feishu-cli-storage", "workflow": "drive", "prefixes": [["drive"], ["doc", "import-file"]]},
+    {"skill": "feishu-cli-storage", "workflow": "file-media", "prefixes": [["file"], ["media"]]},
+    {"skill": "feishu-cli-storage", "workflow": "wiki", "prefixes": [["wiki"]]},
+    {"skill": "feishu-cli-storage", "workflow": "comment", "prefixes": [["comment"]]},
+    {"skill": "feishu-cli-storage", "workflow": "perm", "prefixes": [["perm"]]},
+
+    {"skill": "feishu-cli-messaging", "workflow": "msg", "prefixes": [["msg"]]},
+    {"skill": "feishu-cli-messaging", "workflow": "chat", "prefixes": [["chat"], ["msg", "delete"], ["msg", "get"], ["msg", "history"], ["msg", "list"], ["msg", "mget"], ["msg", "pin"], ["msg", "pins"], ["msg", "reaction"], ["msg", "read-users"], ["msg", "search-chats"], ["msg", "thread-messages"], ["msg", "unpin"]]},
+    {"skill": "feishu-cli-messaging", "workflow": "event", "prefixes": [["event"]]},
+
+    {"skill": "feishu-cli-data", "workflow": "bitable", "prefixes": [["bitable"]]},
+    {"skill": "feishu-cli-data", "workflow": "sheet", "prefixes": [["sheet"]]},
+
+    {"skill": "feishu-cli-visual", "workflow": "board", "prefixes": [["board"]]},
+    {"skill": "feishu-cli-visual", "workflow": "slides", "prefixes": [["slides"]]},
+    {"skill": "feishu-cli-visual", "workflow": "htmlbox", "prefixes": [["doc", "htmlbox"]]},
+    {"skill": "feishu-cli-visual", "workflow": "apps", "prefixes": [["apps"]]},
+
+    {"skill": "feishu-cli-work", "workflow": "calendar", "prefixes": [["calendar"]]},
+    {"skill": "feishu-cli-work", "workflow": "task", "prefixes": [["task"], ["tasklist"]]},
+    {"skill": "feishu-cli-work", "workflow": "approval", "prefixes": [["approval"]]},
+    {"skill": "feishu-cli-work", "workflow": "attendance", "prefixes": [["attendance"]]},
+    {"skill": "feishu-cli-work", "workflow": "okr", "prefixes": [["okr"]]},
+
+    {"skill": "feishu-cli-mail", "workflow": "mail", "prefixes": [["mail"]]},
+    {"skill": "feishu-cli-meetings", "workflow": "vc", "prefixes": [["vc"], ["minutes"]]}
+  ]
+}

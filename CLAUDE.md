@@ -39,9 +39,11 @@ go vet ./...                      # 静态检查
    不做未验证的声明。
 4. **可执行文档必须实跑**：README / skills 里给出的命令、脚本、示例，改动后逐条实跑；
    涉及可视化配色的改动，从仓库根运行
-   `node skills/feishu-cli-dataviz/scripts/validate_palette.js` 复验定稿色板、
-   `node skills/feishu-cli-dataviz/scripts/check_docs.js` 核查文档一致性，全绿才算完成。
-5. **隐私扫描**：提交前按下方"开发规范"第 6 条检查敏感信息。
+   `node skills/feishu-cli-visual/references/workflows/dataviz/scripts/validate_palette.js` 复验定稿色板、
+   `node skills/feishu-cli-visual/references/workflows/dataviz/scripts/check_docs.js` 核查文档一致性，全绿才算完成。
+5. **Skill 结构校验**：修改 `skills/`、CLI 命令或源码中的 Skill 路径后运行 `make check-skills`；
+   该目标会先从当前源码重新构建 `bin/feishu-cli`，再检查 Skill 结构、引用和命令唯一归属。
+6. **隐私扫描**：提交前按下方"开发规范"第 6 条检查敏感信息。
 
 发版有更严格的完整清单，见「发布 Release 规范」。
 
@@ -194,7 +196,7 @@ feishu-cli board export-code <id> --merge --output-path design.svg   # 反向导
 feishu-cli board import <id> diagram.mmd --syntax mermaid --engine local  # Mermaid 本地引擎（whiteboard-cli 翻译，节点可编辑）
 feishu-cli board update <id> nodes.json --overwrite --snapshot old.json    # 覆盖+快照
 # AI 自由作图首选：5 步管道（生成 SVG → whiteboard-cli 翻译 → 修 z_index → 修剪 viewBox → 分批上传）
-python3 skills/feishu-cli-board/scripts/svg_to_board.py drawing.svg <whiteboard_id>
+python3 skills/feishu-cli-visual/references/workflows/board/scripts/svg_to_board.py drawing.svg <whiteboard_id>
 
 # 其他模块：doc / msg / sheet / calendar / task / tasklist / chat / wiki / file / perm / search / user / dept / comment / media
 ```
@@ -264,18 +266,38 @@ python3 skills/feishu-cli-board/scripts/svg_to_board.py drawing.svg <whiteboard_
 
 ## Claude Code 技能
 
-位于 `skills/` 目录，当前 29 个。README 的“AI 技能集成”章节是对外安装清单；这里按职责分组，方便 Agent 路由：
+位于 `skills/` 目录，当前 9 个领域 Skill。每个 Skill 在 `references/workflows/` 下按需加载子工作流；README 的“AI 技能集成”章节是对外安装清单。
+
+### 新建与拆分原则
+
+Agent 为本项目增加能力时，默认扩展现有领域 Skill，不新建顶层 Skill。顶层 Skill 会常驻
+Agent 的路由上下文；按功能点持续拆分会增加触发冲突和维护成本，因此应把当前 9 个领域
+作为稳定边界，并控制总量。
+
+1. 新建前先判断能力能否归入现有领域；可以复用时，在对应 Skill 的
+   `references/workflows/<workflow>/` 中增加子工作流，并按需添加 references、scripts 或 assets。
+2. 不要为单个命令、接口或相邻功能单独创建顶层 Skill。优先补充现有工作流，或在同一领域内
+   新建按需加载的子工作流。
+3. 只有当新能力无法合理归入任何现有领域、触发语义独立且长期维护边界清晰时，才考虑新增
+   顶层 Skill。提交说明必须解释为什么不能复用现有领域，并同步更新 `skills/manifest.yaml`、
+   README、评测用例和 `make check-skills` 覆盖。
+4. 每次新增顶层 Skill 前都要复查现有 Skill 是否可以合并；不要让 Skill 数量随功能数量无限增长。
+5. 修改顶层 Skill 的 `description` 时，必须同步维护 `skills/trigger-evals.json`。每个领域保留
+   8 个正例；用 `python3 scripts/build_trigger_eval_set.py <skill-name>` 生成 8 正例 + 8 个
+   同属 feishu-cli 的近邻负例，再按 `skill-creator` 流程实跑。触发评测必须使用
+   `--num-workers 1`：并发 worker 会同时注册多个同描述临时 Skill，造成名称碰撞和错误漏报。
 
 | 技能 | 说明 |
 |------|------|
-| 文档核心 | `feishu-cli-read` / `feishu-cli-write` / `feishu-cli-import` / `feishu-cli-export` |
-| 权限与认证 | `feishu-cli-auth`（OAuth / Token / 健康检查 doctor / 多 App profile）/ `feishu-cli-perm` |
-| 消息协作 | `feishu-cli-msg` / `feishu-cli-card` / `feishu-cli-chat` / `feishu-cli-event` |
-| 数据与表格 | `feishu-cli-bitable` / `feishu-cli-sheet` / `feishu-cli-search` / `feishu-cli-schema` |
-| 云盘与素材 | `feishu-cli-drive` / `feishu-cli-markdown` |
-| 画板与展示 | `feishu-cli-board` / `feishu-cli-slides` / `feishu-cli-htmlbox`（妙笔BOX HTML 小组件，文档里跑动画/图表） / `feishu-cli-apps`（妙搭 Miaoda HTML 应用一键部署，User Token + spark scope） / `feishu-cli-dataviz`（可视化设计系统：统一色板 + 校验器 + 图表形式选择，board/htmlbox/card/import 画图配色的公共规范层） |
-| 业务域 | `feishu-cli-mail` / `feishu-cli-vc` / `feishu-cli-approval` / `feishu-cli-attendance` / `feishu-cli-calendar` / `feishu-cli-okr` |
-| 兜底入口 | `feishu-cli-toolkit`：仅在没有更专用 skill 时使用，覆盖基础 sheet/calendar/task/file/media/comment/wiki/user/dept |
+| 平台基础 | `feishu-cli-platform`：auth/config/profile/doctor/api/schema/search/user/dept |
+| 文档核心 | `feishu-cli-docs`：read/write/import/export/markdown |
+| 云盘与权限 | `feishu-cli-storage`：drive/file/media/wiki/comment/perm |
+| 消息协作 | `feishu-cli-messaging`：msg/chat/card/event |
+| 数据与表格 | `feishu-cli-data`：sheet/bitable |
+| 画板与展示 | `feishu-cli-visual`：dataviz/board/slides/htmlbox/apps |
+| 工作管理 | `feishu-cli-work`：calendar/task/tasklist/approval/attendance/okr |
+| 邮箱 | `feishu-cli-mail` |
+| 会议与妙记 | `feishu-cli-meetings`：vc/minutes |
 
 ### 支持的 URL 格式
 
@@ -323,7 +345,7 @@ feishu-cli auth login                 # OAuth 用户授权
 
 ### 流程要点
 
-1. 发版前验证：`gofmt -l cmd internal`、`go test ./...`、`go vet ./...`、敏感信息扫描
+1. 发版前验证：`gofmt -l cmd internal`、`go test ./...`、`go vet ./...`、`make check-skills`、敏感信息扫描
 2. `VERSION=vX.Y.Z; make build-all VERSION="$VERSION"` 构建所有平台（**不要在打 tag 前直接跑无 `VERSION` 的 `make build-all`**，否则 `git describe` 会注入上一版 tag 的开发版本号）
 3. 按规范打包成 tar.gz（参考现有 release 资产结构）
 4. 本地验证安装包结构和 `install.sh` 资产命名
@@ -361,7 +383,7 @@ FEISHU_APP_ID=cli_对外共享App FEISHU_APP_SECRET=xxx feishu-cli <命令> --as
 ```
 
 `feishu-cli chat member list/add/remove` 已支持 `--as bot|user|auto`，外部群推荐用 `--as bot`。
-完整路径与排错见 `skills/feishu-cli-chat/references/external-chat.md`。
+完整路径与排错见 `skills/feishu-cli-messaging/references/workflows/chat/references/external-chat.md`。
 
 > 不受外部群限制的：`msg history`、`msg search-chats`、`msg send/reply` 等"消息侧"和"列表侧"API 都可以正常调。受限的是"群内信息/成员/配置"侧。
 
@@ -388,9 +410,10 @@ FEISHU_APP_ID=cli_对外共享App FEISHU_APP_SECRET=xxx feishu-cli <命令> --as
 
 ### 飞书 Markdown 兼容检查
 
-生成将导入飞书的 Markdown 前，必须参考 `skills/feishu-cli-import/references/doc-guide.md`。核心检查项：
+生成将导入飞书的 Markdown 前，必须参考 `skills/feishu-cli-docs/references/workflows/import/references/doc-guide.md`。核心检查项：
 
-- **Mermaid**：禁止花括号 `{}`（flowchart 标签）、禁止 `par...and...end`、方括号冒号加双引号、sequenceDiagram 参与者 ≤ 8
+- **Mermaid**：普通标签禁止字面花括号 `{}`；`A{判断}` 条件菱形合法。禁止 `par...and...end`、方括号冒号加双引号、sequenceDiagram 参与者 ≤ 8
+- **SVG**：使用恰好三个反引号的 `svg` fence，导入时转换为画板节点
 - **PlantUML**：无行首缩进、无 `skinparam`、类图无可见性标记（`+ - # ~`）
 - **表格**：超 9 行自动走"9 行初始表 + `insert_table_row` 追加"策略保持单 block 连贯；列 > 9 按列组拆分
 - **图片**：默认 `--upload-images` 上传，关闭时创建占位块

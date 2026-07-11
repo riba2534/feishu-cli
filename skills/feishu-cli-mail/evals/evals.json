@@ -1,0 +1,29 @@
+{
+  "skill_name": "feishu-cli-mail",
+  "evals": [
+    {
+      "id": 1,
+      "workflows": ["mail"],
+      "prompt": "给 user@example.com 写一封周报邮件，先让我看草稿，不要直接发送。",
+      "expected_output": "要求 User Token，默认创建草稿，不使用 --confirm-send。",
+      "expectations": ["说明 mail 必须使用 User Token", "只创建草稿且不使用 --confirm-send"],
+      "files": []
+    },
+    {
+      "id": 2,
+      "workflows": ["mail"],
+      "prompt": "读取某个 mail thread，概括未回复的问题，但不要改变任何邮件状态。",
+      "expected_output": "使用只读 thread/message 命令，不执行回复或发送。",
+      "expectations": ["使用 mail thread 或 message 的读取命令", "不执行 reply、send 或状态修改"],
+      "files": []
+    },
+    {
+      "id": 3,
+      "workflows": ["mail"],
+      "prompt": "我确认现在发送刚才的邮件。发送前列出你必须再次核对的项目。",
+      "expected_output": "复核收件人、主题、正文和附件，再显式使用 --confirm-send。",
+      "expectations": ["发送前复核收件人、主题、正文和附件", "真正发送时显式使用 --confirm-send"],
+      "files": []
+    }
+  ]
+}

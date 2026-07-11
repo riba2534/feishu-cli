@@ -4,6 +4,15 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [Unreleased]
+
+### 重构 — Claude Code Skills 领域化
+
+- 将 29 个顶层 Skill 整合为 9 个领域 Skill，原有细粒度能力下沉到各领域的 `references/workflows/`，降低路由歧义和常驻上下文占用。
+- 新增 `skills/manifest.yaml` 作为能力归属清单，并新增 `scripts/check_skills.py` 校验目录结构、工作流引用、Go 源码中的 Skill 路径和 CLI 命令覆盖；`make check-skills` 会先重新构建，当前 405 个可执行命令（含隐藏命令）均有唯一归属。
+- 为 9 个领域 Skill 补齐 33 个工作流执行评测，并增加每领域 8 个正例 + 8 个近邻负例的触发评测；同时修正认证、审批、消息、云盘、文档导入和可视化等工作流中与实际 CLI 行为不一致的说明。
+- 同步更新 README、CLAUDE.md（及其软链接 AGENTS.md）中的安装清单、能力映射、迁移说明和脚本路径。
+
 ## [v1.35.0] - 2026-07-12
 
 本版新增统一可视化设计系统、HTMLBox 编排动画生成器和多维表格记录搜索便捷模式，并修复 Wiki 导出、评论回复身份和安装脚本的已知问题。

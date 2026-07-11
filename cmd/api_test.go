@@ -207,6 +207,11 @@ func TestDetectFeishuBizError(t *testing.T) {
 			wantHint: "限流",
 		},
 		{
+			name:     "外部群 232033 指向现有排错文档",
+			body:     []byte(`{"code":232033,"msg":"forbidden"}`),
+			wantHint: "skills/feishu-cli-messaging/references/workflows/chat/references/external-chat.md",
+		},
+		{
 			name:     "未知 code 至少打印 code+msg",
 			body:     []byte(`{"code":12345,"msg":"unknown"}`),
 			wantHint: "code=12345",

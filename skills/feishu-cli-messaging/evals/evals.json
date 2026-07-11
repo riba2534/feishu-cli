@@ -1,0 +1,37 @@
+{
+  "skill_name": "feishu-cli-messaging",
+  "evals": [
+    {
+      "id": 1,
+      "workflows": ["msg"],
+      "prompt": "把带三张本地图片的 post JSON 发到群里并开启 --upload-images；如果一张上传失败，告诉我真实失败语义。",
+      "expected_output": "使用 msg send --upload-images，并说明单图失败会 warning 后继续，需检查部分成功。",
+      "expectations": ["命令包含 msg send 和 --upload-images", "说明上传失败会 warning 后继续而非原子退出"],
+      "files": []
+    },
+    {
+      "id": 2,
+      "workflows": ["card", "msg"],
+      "prompt": "做一张 V2 项目告警卡片发到 oc_xxx，然后把原告警消息和复盘消息合并转发给 user@example.com。",
+      "expected_output": "先 card 后 msg send，并使用 msg merge-forward。",
+      "expectations": ["先构造 V2 card JSON 再用 msg send", "使用 msg merge-forward 合并消息 ID"],
+      "files": []
+    },
+    {
+      "id": 3,
+      "workflows": ["chat"],
+      "prompt": "外部群 chat member list 返回 232033。该用 user 还是 bot？顺便说明 chat create 能否切 User Token。",
+      "expected_output": "成员列表推荐 --as bot 且需对外共享 App；chat create 当前固定 Bot。",
+      "expectations": ["外部群 member list 推荐 --as bot 并说明前置条件", "明确 chat create 不能切 User Token"],
+      "files": []
+    },
+    {
+      "id": 4,
+      "workflows": ["event"],
+      "prompt": "我要临时监听一条 im.message.receive_v1 事件并把原始事件落到 ./events，30 秒或收到 1 条后就退出，避免留下后台长连接。开始前如何查 schema，结束时如何确认没有残留 consumer？",
+      "expected_output": "先查 event schema，再用有界 consume 落盘，最后用 event status 检查 consumer。",
+      "expectations": ["先执行 event schema im.message.receive_v1", "consume 命令同时包含 --output-dir ./events、--max-events 1 和 --timeout 30s", "结束后使用 event status 检查活跃 consumer"],
+      "files": []
+    }
+  ]
+}

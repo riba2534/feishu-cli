@@ -1,4 +1,4 @@
-.PHONY: build clean install test lint fmt help update-meta
+.PHONY: build check-skills clean install test lint fmt help update-meta
 
 # Go parameters
 GOCMD=go
@@ -31,6 +31,10 @@ help:
 build:
 	@mkdir -p $(BUILD_DIR)
 	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) .
+
+## check-skills: Build current source and validate Skill structure and command ownership
+check-skills: build
+	python3 scripts/check_skills.py ./$(BUILD_DIR)/$(BINARY_NAME)
 
 ## install: Install the binary to $GOPATH/bin
 install:

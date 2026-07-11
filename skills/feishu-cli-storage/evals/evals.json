@@ -1,0 +1,45 @@
+{
+  "skill_name": "feishu-cli-storage",
+  "evals": [
+    {
+      "id": 1,
+      "workflows": ["wiki"],
+      "prompt": "把某个 wiki 节点下面整棵目录递归备份到 ./backup，并说明 token 类型和删除空间的安全边界。",
+      "expected_output": "使用 wiki export-tree；区分 node token；删除空间需 --yes 且属于高风险。",
+      "expectations": ["使用 wiki export-tree --output-dir ./backup", "说明 delete-space 需要 --yes 并先确认"],
+      "files": []
+    },
+    {
+      "id": 2,
+      "workflows": ["file-media"],
+      "prompt": "我已经用 file upload 得到了 Drive file_token，能不能直接把它作为 msg file_key 发到群里？如果不能给替代方案。",
+      "expected_output": "明确 Drive file_token 不能作为 IM file_key，建议直接 msg --file、小文件压缩或发云盘链接。",
+      "expectations": ["明确 file_token 与 file_key 不可互换", "替代方案不再伪造 file_key"],
+      "files": []
+    },
+    {
+      "id": 3,
+      "workflows": ["perm"],
+      "prompt": "给 doxcn 开头的文档加编辑权限，再给 shtcn 开头的表格查协作者；不要把 doc-type 搞反。",
+      "expected_output": "正确映射 doxcn=docx、shtcn=sheet，并使用 perm 工作流。",
+      "expectations": ["映射 doxcn 为 docx", "映射 shtcn 为 sheet，并给出 perm 命令"],
+      "files": []
+    },
+    {
+      "id": 4,
+      "workflows": ["drive"],
+      "prompt": "把 /tmp/big.zip 上传到飞书文件夹 fldxxx；它超过 20MB。执行前说明身份和 scope 预检，给出命令，并说明 CLI 应采用哪种上传方式。",
+      "expected_output": "使用 User Token 的 drive upload，先预检上传 scope，超过 20MB 自动分块。",
+      "expectations": ["说明 drive upload 必须使用 User Token", "先执行 auth check --scope \"drive:file:upload\"", "上传命令使用 drive upload --file /tmp/big.zip --folder-token fldxxx", "说明超过 20MB 自动走 prepare/part/finish 分块上传"],
+      "files": []
+    },
+    {
+      "id": 5,
+      "workflows": ["comment"],
+      "prompt": "列出 docx doxcnxxx 的评论，把评论 com_xxx 标记为已解决，再删除其中我自己发的回复 rep_xxx。飞书能不能直接删除整条评论？",
+      "expected_output": "使用 comment list、resolve 和 reply delete，并明确不支持删除整条评论。",
+      "expectations": ["使用 comment list doxcnxxx --type docx", "使用 comment resolve doxcnxxx com_xxx --type docx", "使用 comment reply delete doxcnxxx com_xxx rep_xxx --type docx", "明确飞书不支持直接删除整条评论"],
+      "files": []
+    }
+  ]
+}

@@ -486,7 +486,7 @@ func detectFeishuBizError(_ int, body []byte) string {
 		hint = `提示：外部群权限不足。当前 App 未开启「对外共享能力」或 Bot 未加入此群。
   - 切换到对外共享 App 调用：
       FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=xxx feishu-cli api ...
-  - 详见 skills/feishu-cli-chat/references/external-chat.md`
+  - 详见 skills/feishu-cli-messaging/references/workflows/chat/references/external-chat.md`
 	case 232011:
 		hint = "提示：操作者不在群里。让群管理员邀请进群后重试，或用 `feishu-cli chat member add <chat_id> --id-list <id>`。"
 	case 232006:

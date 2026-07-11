@@ -1,0 +1,29 @@
+{
+  "skill_name": "feishu-cli-data",
+  "evals": [
+    {
+      "id": 1,
+      "workflows": ["bitable"],
+      "prompt": "在 Bitable 表里创建一个单选字段“状态”，给我 --config JSON。不要多包一层 field。",
+      "expected_output": "field create 的 JSON 顶层直接是 name/type/property。",
+      "expectations": ["JSON 顶层包含 name、type、property", "JSON 不包含外层 field 对象"],
+      "files": []
+    },
+    {
+      "id": 2,
+      "workflows": ["sheet"],
+      "prompt": "给 Sheet 创建 filter view，不指定自定义 ID；上传图片后创建、查询再删除一个浮动图片。",
+      "expected_output": "create 时 filter-view-id 可选，并覆盖 image media-upload/add/get/delete。",
+      "expectations": ["说明 create 不要求 filter-view-id", "给出 image media-upload、add、get、delete 的完整顺序"],
+      "files": []
+    },
+    {
+      "id": 3,
+      "workflows": ["bitable"],
+      "prompt": "这个链接是 /base/bascnxxx，我想改记录并设筛选条件；应该走 sheet 还是 bitable，身份怎么固定成 bot？",
+      "expected_output": "识别为 Bitable，使用 --base-token 与 --as bot。",
+      "expectations": ["根据 /base/ 路由 Bitable 而非 Sheet", "命令包含 --base-token 和 --as bot"],
+      "files": []
+    }
+  ]
+}

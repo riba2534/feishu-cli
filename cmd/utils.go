@@ -433,7 +433,7 @@ func translateChatError(err error) error {
   feishu-cli profile add ext-bot --app-id cli_xxx --app-secret xxx
   feishu-cli profile use ext-bot
 
-详见 skills/feishu-cli-chat/references/external-chat.md`, err)
+详见 skills/feishu-cli-messaging/references/workflows/chat/references/external-chat.md`, err)
 
 	case strings.Contains(msg, "232011"):
 		return fmt.Errorf(`%w
