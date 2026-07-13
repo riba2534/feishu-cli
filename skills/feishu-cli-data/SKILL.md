@@ -1,14 +1,13 @@
 ---
 name: feishu-cli-data
 description: >-
-  仅用于普通电子表格 Sheet 与多维表格 Bitable/Base，不是所有数据或 JSON 请求的通用入口。
-  用户要求读写单元格、
-  导入导出表格、设置样式/筛选视图/条件/下拉框/浮动图片，或操作多维表格的表、字段、记录、
-  视图、角色、协作者、仪表盘、表单、工作流和数据聚合时使用；也覆盖 --as bot 的 cron/无人值守
-  Bitable 场景时必须使用本 Skill。明确禁止用于文档权限/协作者、消息/事件订阅和未封装
-  OpenAPI 通用透传；它们分别使用 feishu-cli-storage、feishu-cli-messaging 和
-  feishu-cli-platform。文档内 Markdown 表格使用 feishu-cli-docs；数据图表展示使用
-  feishu-cli-visual。
+  飞书电子表格与多维表格。核心独有能力：sheet import-md（Markdown GFM 表格 → 飞书电子表格，
+  含列宽策略、批量填充优化 70s→3s）。也覆盖读写单元格、导入导出、样式/筛选视图/条件/下拉框/
+  浮动图片，多维表格的表/字段/记录/视图/角色/仪表盘/表单/工作流。
+  **何时必须用本 Skill：** 任务是把 Markdown 中的表格转成飞书电子表格（sheet import-md）。
+  **何时用 lark-sheets/lark-base 更合适：** 图表/透视表/条件格式/公式翻译/Excel 迁移等
+  精细化表格操作 → lark-sheets 和 lark-base 覆盖更全。日常表格操作两边都可，但 Markdown
+  表格导入只有本 Skill 支持。
 argument-hint: <sheet|bitable> [args]
 user-invocable: true
 allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Read, Write

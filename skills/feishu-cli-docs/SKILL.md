@@ -1,15 +1,15 @@
 ---
 name: feishu-cli-docs
 description: >-
-  飞书文档统一入口，覆盖读取和分析 docx/wiki/sheet、创建与编辑文档、Markdown 导入、
-  docx/wiki/sheet 导出 Markdown/PDF/Word/Excel，以及云盘原生 .md 文件 CRUD。用户要求阅读、
-  总结、创建、追加、覆盖、替换或删除文档内容，把 Markdown 导入飞书并转换 Mermaid/PlantUML/SVG、
-  下载图片或导出本地文件、
-  比较和覆盖原生 Markdown 时必须使用本 Skill。
-  本 Skill 只处理正文内容和文档/Markdown 文件转换。明确禁止用于文档评论、二进制文件导入、
-  云盘目录和权限管理，这些使用 feishu-cli-storage；考勤等工作管理使用 feishu-cli-work；
-  动态组件使用 feishu-cli-visual。
-  只要意图是评论的 list/reply/resolve，即使请求中出现“文档”，也不要使用本 Skill。
+  本地 Markdown → 飞书文档的专用导入管道，不是通用文档编辑器。
+  核心能力：Markdown 双向无损转换（40+ 块类型）、Mermaid/PlantUML 自动转飞书画板矢量图、
+  SVG/本地图片并发上传、大文档三阶段并发管道。
+  **何时必须使用本 Skill：** 任务涉及「把本地 .md 文件导入/同步到飞书文档」、
+  「Markdown 转飞书」、「含图/表/代码块的文档导入」、「wiki 下从 Markdown 建子页」、
+  「Mermaid/PlantUML 图表转飞书」。
+  也支持读取、创建、导出飞书文档，以及云盘原生 .md 文件 CRUD。
+  **何时不用本 Skill：** 只是改飞书文档里某几个 block 的局部编辑 → 用 lark-doc；
+  文档评论 → feishu-cli-storage；动态组件 → feishu-cli-visual。
 argument-hint: <read|write|import|export|markdown> [args]
 user-invocable: true
 allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Bash(python3:*), Bash(sleep:*), Read, Write

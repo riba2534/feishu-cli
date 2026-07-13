@@ -1,12 +1,12 @@
 ---
 name: feishu-cli-messaging
 description: >-
-  飞书即时消息统一入口，覆盖发送、回复、转发、合并转发、加急和资源下载，读取聊天历史、
-  Reaction、Pin 和群成员管理，构造 V2 交互卡片，以及 WebSocket 事件订阅。用户要求发消息或通知、
-  查看或导出群聊、管理群成员、制作告警/审批/报告/dashboard/带按钮或图表的卡片、监听消息或审批
-  实时事件、处理消息附件时必须使用本 Skill。不要用于邮件读取/回复/草稿，也不要用于会议录制、
-  妙记或逐字稿；这些分别使用 feishu-cli-mail 和 feishu-cli-meetings。全局消息搜索使用
-  feishu-cli-platform。
+  飞书即时消息与 V2 交互卡片。核心独有能力：8 个即用 JSON 卡片模板（告警/审批/数据大屏/
+  成功报告/文章摘要/通知）、LLM 流式卡片（AI 生成内容逐行推送到飞书）、
+  VChart 图表卡片（柱/线/饼/散点/仪表）。也覆盖发送/回复/转发/群聊管理/Reaction/事件订阅。
+  **何时必须用本 Skill：** 任务涉及「发 AI 流式卡片」、「飞书卡片嵌图表」、「用模板快速
+  出卡」。日常收发消息、查群聊 → lark-im 覆盖更全。构造卡片时：如果能用本 Skill 的模板
+  直接改 __PLACEHOLDER__，优先用它而不是从零手写 JSON。
 argument-hint: <msg|chat|card|event> [args]
 user-invocable: true
 allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Bash(python3:*), Read, Write

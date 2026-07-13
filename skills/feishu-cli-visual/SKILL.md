@@ -1,11 +1,16 @@
 ---
 name: feishu-cli-visual
 description: >-
-  飞书可视化与展示统一入口，负责选择合适载体，并覆盖画板、Slides、妙笔BOX 动态组件、
-  妙搭 HTML 应用和统一数据可视化设计规范。用户要求画板/whiteboard、架构图、流程图、飞轮、
-  鱼骨、路线图、海报、插画、SVG/Mermaid、数据图表或 dashboard，创建 Slides/PPT，嵌入会动的
-  ECharts/地图/3D/window.magic 组件，或用妙搭/Miaoda/spark 发布 HTML 应用时必须使用本 Skill。
-  消息卡片由 feishu-cli-messaging 构造和发送；Markdown 图表导入由 feishu-cli-docs 执行。
+  飞书可视化，核心是妙笔BOX——larksuite 完全没有的能力缺口。
+  独有能力：妙笔BOX（飞书文档内嵌 ECharts/Three.js 3D/地图飞线/词云/Canvas 粒子/CSS 动画）、
+  妙搭/Miaoda HTML 应用发布、SVG→画板原生节点转换（svg_to_board.py）、
+  统一数据可视化设计规范（调色板验证、图表形式启发式、反模式清单）。
+  也覆盖画板（架构图/流程图/鱼骨/路线图/海报）、Slides/PPT 创建。
+  **何时必须用本 Skill：** 任务涉及「文档里嵌会动的图表」「3D/地图/词云」「妙笔BOX」、
+  「妙搭发布 HTML」「SVG 转飞书画板节点」。这些 lark-whiteboard 和 lark-slides 做不到。
+  **何时用 lark-whiteboard/lark-slides 更合适：** 画板基础导出/更新、PPT 精细化排版 →
+  lark 侧技能覆盖更全。消息卡片图表用 feishu-cli-messaging；Markdown 图表导入用
+  feishu-cli-docs。
 argument-hint: <dataviz|board|slides|htmlbox|apps> [args]
 user-invocable: true
 allowed-tools: Bash(feishu-cli:*), Bash(python3:*), Bash(node:*), Bash(npm:*), Read, Write
