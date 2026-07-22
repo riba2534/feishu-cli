@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" font-family="'SF Mono','Cascadia Code',Consolas,Menlo,monospace" font-size="14">
+  <!-- 终端窗口 -->
+  <rect x="0" y="0" width="760" height="400" rx="12" fill="#1e2430"/>
+  <rect x="0" y="0" width="760" height="36" rx="12" fill="#2a3140"/>
+  <rect x="0" y="24" width="760" height="12" fill="#2a3140"/>
+  <circle cx="24" cy="18" r="6" fill="#ff5f57"/>
+  <circle cx="46" cy="18" r="6" fill="#febc2e"/>
+  <circle cx="68" cy="18" r="6" fill="#28c840"/>
+  <text x="380" y="23" fill="#8b95a7" text-anchor="middle" font-size="12">feishu-cli — Markdown 一键变飞书文档</text>
+
+  <!-- 命令行（打字机效果） -->
+  <text x="24" y="66" fill="#5ac8fa">$</text>
+  <text x="42" y="66" fill="#e8edf5">
+    feishu-cli doc import 技术方案.md --title "技术方案" --verbose
+    <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.02;0.06" dur="12s" repeatCount="indefinite"/>
+  </text>
+
+  <!-- 输出逐行浮现 -->
+  <g fill="#8b95a7">
+    <text x="24" y="98">解析 Markdown... <tspan fill="#28c840">412 个块</tspan>（标题 / 表格 / 代码 / 公式 / 图片）
+      <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.10;0.14" dur="12s" repeatCount="indefinite"/></text>
+    <text x="24" y="126">创建飞书文档并按序写入块...
+      <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.16;0.20" dur="12s" repeatCount="indefinite"/></text>
+    <text x="24" y="154">Mermaid 图表 → 飞书画板 <tspan fill="#28c840">✔ 6/6</tspan>（节点可二次编辑）
+      <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.24;0.28" dur="12s" repeatCount="indefinite"/></text>
+    <text x="24" y="182">大表格 18 行 → 单表连贯追加 <tspan fill="#28c840">✔</tspan>　本地图片上传 <tspan fill="#28c840">✔ 4/4</tspan>
+      <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.32;0.36" dur="12s" repeatCount="indefinite"/></text>
+    <text x="24" y="210">公式 / Callout / 任务列表 / 嵌套列表 <tspan fill="#28c840">✔</tspan>
+      <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.40;0.44" dur="12s" repeatCount="indefinite"/></text>
+  </g>
+
+  <text x="24" y="246" fill="#28c840" font-weight="bold">✔ 导入完成（3.2s）
+    <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.48;0.52" dur="12s" repeatCount="indefinite"/></text>
+  <text x="24" y="274" fill="#e8edf5">　文档链接: <tspan fill="#5ac8fa" text-decoration="underline">https://feishu.cn/docx/XXXXbCdEfGh…</tspan>
+    <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.52;0.56" dur="12s" repeatCount="indefinite"/></text>
+
+  <!-- 第二条命令 -->
+  <text x="24" y="318" fill="#5ac8fa">$</text>
+  <text x="42" y="318" fill="#e8edf5">
+    feishu-cli msg send --receive-id-type chat_id --receive-id oc_xx --text "方案已发布 ✅"
+    <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.62;0.68" dur="12s" repeatCount="indefinite"/>
+  </text>
+  <text x="24" y="346" fill="#28c840">✔ 消息发送成功
+    <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.72;0.76" dur="12s" repeatCount="indefinite"/></text>
+
+  <!-- 光标 -->
+  <text x="24" y="378" fill="#5ac8fa">$ <tspan fill="#e8edf5">▊<animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/></tspan>
+    <animate attributeName="opacity" values="0;0;1" keyTimes="0;0.80;0.84" dur="12s" repeatCount="indefinite"/></text>
+</svg>
