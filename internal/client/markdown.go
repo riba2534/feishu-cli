@@ -86,7 +86,7 @@ func OverwriteFileWithToken(fileToken, fileName string, content []byte, userAcce
 		return "", err
 	}
 
-	// 参考 lark-cli `shortcuts/markdown/helpers.go:uploadMarkdownFileAll`：
+	// multipart 上传写法：
 	// 覆盖与新建同一 endpoint，区别仅是多带一个 `file_token` 字段；parent_type 仍是 explorer。
 	fd := larkcore.NewFormdata().
 		AddField("file_name", fileName).

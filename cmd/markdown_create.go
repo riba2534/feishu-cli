@@ -23,7 +23,7 @@ var markdownCreateCmd = &cobra.Command{
   --name           远端文件名（必须以 .md 结尾），与 --content 搭配使用
   --content        Markdown 字符串内容（或用 --content-file 指向本地文件）
   --content-file   本地 .md 文件路径（与 --content 二选一）
-  --file           官方 lark-cli 兼容别名，等价于 --content-file
+  --file           兼容别名，等价于 --content-file
 
 可选:
   --folder-token        目标文件夹 token（默认 Drive 根目录）
@@ -139,7 +139,7 @@ func init() {
 	markdownCreateCmd.Flags().String("name", "", "远端文件名（必须 .md 结尾；--content 搭配时必填）")
 	markdownCreateCmd.Flags().String("content", "", "Markdown 字符串内容（与 --content-file 二选一）")
 	markdownCreateCmd.Flags().String("content-file", "", "本地 .md 文件路径（与 --content 二选一）")
-	markdownCreateCmd.Flags().String("file", "", "本地 .md 文件路径，官方 lark-cli 兼容别名（等价于 --content-file）")
+	markdownCreateCmd.Flags().String("file", "", "本地 .md 文件路径，兼容别名（等价于 --content-file）")
 	markdownCreateCmd.Flags().String("folder-token", "", "目标文件夹 token（默认 Drive 根目录）")
 	markdownCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	markdownCreateCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")

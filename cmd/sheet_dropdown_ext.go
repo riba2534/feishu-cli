@@ -161,14 +161,14 @@ func init() {
 
 	// get
 	sheetDropdownGetCmd.Flags().String("token", "", "电子表格 token（必填）")
-	sheetDropdownGetCmd.Flags().String("spreadsheet-token", "", "电子表格 token（lark-cli 兼容别名，与 --token 等价）")
+	sheetDropdownGetCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名，与 --token 等价）")
 	sheetDropdownGetCmd.Flags().String("range", "", "单元格范围，必须带 sheetId 前缀（如 0b1212!A1:A100）（必填）")
 	sheetDropdownGetCmd.Flags().StringP("output", "o", "json", "输出格式: json（默认）")
 	sheetDropdownGetCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 
 	// update
 	sheetDropdownUpdateCmd.Flags().String("token", "", "电子表格 token（必填）")
-	sheetDropdownUpdateCmd.Flags().String("spreadsheet-token", "", "电子表格 token（lark-cli 兼容别名，与 --token 等价）")
+	sheetDropdownUpdateCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名，与 --token 等价）")
 	sheetDropdownUpdateCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	sheetDropdownUpdateCmd.Flags().String("ranges", "", "范围，逗号分隔（每个需带 sheetId 前缀）（必填）")
 	sheetDropdownUpdateCmd.Flags().String("options", "", "下拉选项，逗号分隔（与 --options-json 二选一）")
@@ -180,7 +180,7 @@ func init() {
 
 	// delete
 	sheetDropdownDeleteCmd.Flags().String("token", "", "电子表格 token（必填）")
-	sheetDropdownDeleteCmd.Flags().String("spreadsheet-token", "", "电子表格 token（lark-cli 兼容别名，与 --token 等价）")
+	sheetDropdownDeleteCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名，与 --token 等价）")
 	sheetDropdownDeleteCmd.Flags().String("ranges", "", "范围，逗号分隔（每个需带 sheetId 前缀，最多 100 个）（必填）")
 	sheetDropdownDeleteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

@@ -23,7 +23,7 @@ var calendarRsvpCmd = &cobra.Command{
   --calendar-id        日历 ID（可选，默认主日历）
   --event-id           日程 ID（必填）
   --action             答复动作（必填）: accept / decline / tentative
-  --rsvp-status        官方 lark-cli 兼容别名，等价于 --action
+  --rsvp-status        兼容别名，等价于 --action
 
 权限:
   calendar:calendar.event:reply（推荐 User Token，以本人身份答复）
@@ -104,7 +104,7 @@ func init() {
 	calendarRsvpCmd.Flags().String("calendar-id", "", "日历 ID（可选，默认主日历）")
 	calendarRsvpCmd.Flags().String("event-id", "", "日程 ID（必填）")
 	calendarRsvpCmd.Flags().String("action", "", "答复动作: accept/decline/tentative（必填）")
-	calendarRsvpCmd.Flags().String("rsvp-status", "", "答复动作，官方 lark-cli 兼容别名：accept/decline/tentative")
+	calendarRsvpCmd.Flags().String("rsvp-status", "", "答复动作，兼容别名：accept/decline/tentative")
 	calendarRsvpCmd.Flags().String("user-access-token", "", "User Access Token（推荐，以本人身份答复）")
 
 	mustMarkFlagRequired(calendarRsvpCmd, "event-id")

@@ -164,7 +164,7 @@ func init() {
 
 	// create
 	sheetFilterViewCreateCmd.Flags().String("token", "", "电子表格 token（必填；兼容旧名）")
-	sheetFilterViewCreateCmd.Flags().String("spreadsheet-token", "", "电子表格 token（官方 lark-cli 兼容别名）")
+	sheetFilterViewCreateCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名）")
 	sheetFilterViewCreateCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	sheetFilterViewCreateCmd.Flags().String("range", "", "筛选范围，例如 \"<sheetId>!A1:H14\"（必填）")
 	sheetFilterViewCreateCmd.Flags().String("name", "", "筛选视图名称（≤100 字符，可选）")
@@ -174,14 +174,14 @@ func init() {
 
 	// list
 	sheetFilterViewListCmd.Flags().String("token", "", "电子表格 token（必填；兼容旧名）")
-	sheetFilterViewListCmd.Flags().String("spreadsheet-token", "", "电子表格 token（官方 lark-cli 兼容别名）")
+	sheetFilterViewListCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名）")
 	sheetFilterViewListCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	sheetFilterViewListCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
 	sheetFilterViewListCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 
 	// delete
 	sheetFilterViewDeleteCmd.Flags().String("token", "", "电子表格 token（必填；兼容旧名）")
-	sheetFilterViewDeleteCmd.Flags().String("spreadsheet-token", "", "电子表格 token（官方 lark-cli 兼容别名）")
+	sheetFilterViewDeleteCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名）")
 	sheetFilterViewDeleteCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	sheetFilterViewDeleteCmd.Flags().String("filter-view-id", "", "筛选视图 ID（必填）")
 	sheetFilterViewDeleteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")

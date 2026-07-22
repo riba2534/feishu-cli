@@ -79,7 +79,7 @@ var appsAccessScopeSetCmd = &cobra.Command{
 	},
 }
 
-// validateAppsAccessScopeFlags 按 scope 校验 flag 组合，规则对齐官方 lark-cli。
+// validateAppsAccessScopeFlags 按 scope 校验 flag 组合。
 func validateAppsAccessScopeFlags(cmd *cobra.Command) error {
 	scope := flagString(cmd, "scope")
 	targets := strings.TrimSpace(flagString(cmd, "targets"))

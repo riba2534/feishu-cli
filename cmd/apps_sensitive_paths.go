@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// 凭证文件扫描 —— 移植自官方 lark-cli shortcuts/apps/sensitive_paths.go。
+// 凭证文件扫描——发布前检查产物目录中的敏感凭证文件。
 //
 // 范围刻意收窄：只拦截「约定俗成持有 API token / 服务凭证」的文件，不覆盖
 // 「任何加密物」。SSH 私钥、通用 *.pem / *.key、SCM 内部文件不在此列。

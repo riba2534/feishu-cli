@@ -10,7 +10,7 @@ import (
 )
 
 // EnrichedMessage 是消息搜索结果 enrich 后的扁平结构（gap②护城河）：
-// 在原始消息 ID 基础上补全内容/发送者/群名/时间，对齐 lark-cli +messages-search 输出。
+// 在原始消息 ID 基础上补全内容/发送者/群名/时间。
 type EnrichedMessage struct {
 	MessageID  string `json:"message_id"`
 	MsgType    string `json:"msg_type"`

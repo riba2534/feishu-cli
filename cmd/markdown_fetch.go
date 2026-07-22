@@ -54,7 +54,7 @@ var markdownFetchCmd = &cobra.Command{
 			return fmt.Errorf("--file-token 必填")
 		}
 
-		// 没传 --output → 落临时文件读完打印（保持与 lark-cli 行为一致：直接给字符串）。
+		// 没传 --output → 落临时文件读完打印（直接给字符串）。
 		printToStdout := outputPath == ""
 		finalPath := outputPath
 		var cleanup func()

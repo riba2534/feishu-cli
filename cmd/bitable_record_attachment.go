@@ -13,7 +13,7 @@ import (
 )
 
 // ==================== record 附件上传 / 下载 / 移除 ====================
-// 端点 ground truth（lark-cli base +record-upload/download/remove-attachment --dry-run 印证）：
+// 端点 ground truth（已实测印证）：
 //
 // upload（3 步编排）:
 //   [1] GET  /open-apis/base/v3/bases/{bt}/tables/{tid}/fields/{fid}        校验是附件字段（本实现略过，仅做核心 2 步）
@@ -25,7 +25,7 @@ import (
 //   [2] GET  /open-apis/drive/v1/medias/{file_token}/download?extra=<extra_info>  逐个下载（带上附件元数据里的 extra_info）
 //
 // 注意：Base 附件下载必须带 get_attachments 返回的 extra_info（否则可能 403）。即使指定了 --file-token
-// 也先走 get_attachments 拿元数据，再用 file-token 过滤要下载哪些（与 lark-cli 行为一致）。
+// 也先走 get_attachments 拿元数据，再用 file-token 过滤要下载哪些。
 //
 // remove（单步）:
 //   POST /open-apis/base/v3/bases/{bt}/tables/{tid}/remove_attachments      body {"attachments":{rec:{fld:[{file_token}]}}}

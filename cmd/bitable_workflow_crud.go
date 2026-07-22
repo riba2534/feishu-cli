@@ -9,7 +9,7 @@ import (
 )
 
 // ==================== workflow create / get / update ====================
-// 端点 ground truth（lark-cli base +workflow-create/get/update --dry-run 印证，均走 base/v3）：
+// 端点 ground truth（已实测印证，均走 base/v3）：
 //   POST /open-apis/base/v3/bases/{base_token}/workflows                 body {"title":...,"steps":[...]}
 //   GET  /open-apis/base/v3/bases/{base_token}/workflows/{workflow_id}   ?user_id_type=
 //   PUT  /open-apis/base/v3/bases/{base_token}/workflows/{workflow_id}   body {"title":...,"steps":[...]}
@@ -99,7 +99,7 @@ func init() {
 	bitableWorkflowCreateCmd.Flags().String("config-file", "", "workflow 定义 JSON 文件")
 
 	bitableWorkflowCmd.AddCommand(bitableWorkflowGetCmd)
-	// get 是只读命令，但注册 --dry-run 以便预览请求（与 lark-cli +workflow-get --dry-run 一致）。
+	// get 是只读命令，但注册 --dry-run 以便预览请求。
 	addBitableWriteFlags(bitableWorkflowGetCmd)
 	bitableWorkflowGetCmd.Flags().String("workflow-id", "", "workflow_id（wkf 前缀，必填）")
 	bitableWorkflowGetCmd.Flags().String("user-id-type", "", "用户 ID 类型（open_id/union_id/user_id）")

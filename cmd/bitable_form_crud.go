@@ -12,7 +12,7 @@ import (
 )
 
 // ==================== form create / delete ====================
-// 端点 ground truth（lark-cli base +form-create/delete --dry-run 印证）：
+// 端点 ground truth（已实测印证）：
 //   POST   /open-apis/base/v3/bases/{base_token}/tables/{table_id}/forms
 //   DELETE /open-apis/base/v3/bases/{base_token}/tables/{table_id}/forms/{form_id}
 // form_id 即表单类型视图的 view_id。
@@ -97,7 +97,6 @@ var bitableFormListCmd = &cobra.Command{
 	Long: `GET /open-apis/base/v3/bases/{base_token}/tables/{table_id}/forms
 
 列出指定数据表下的所有表单（form 类型视图），与 form create（POST 同路径）成对。
-对齐 lark-cli base +form-list。
 
 分页:
   --page-size    每页数量（≤100）
@@ -123,7 +122,7 @@ var bitableFormListCmd = &cobra.Command{
 }
 
 // ==================== form detail / submit（按分享 token，不含 base_token） ====================
-// 端点 ground truth（lark-cli base +form-detail/submit --dry-run 印证）：
+// 端点 ground truth（已实测印证）：
 //   POST /open-apis/base/v3/bases/tables/forms/detail   body {"share_token":"shr..."}
 //   POST /open-apis/base/v3/bases/tables/forms/submit   body {"share_token":"shr...","content":{...字段...}}
 // 注意：这两个端点路径不含 base_token / table_id / form_id，仅靠分享 token 定位表单。
@@ -227,7 +226,7 @@ func buildFormSubmitContent(cmd *cobra.Command) (any, error) {
 }
 
 // ==================== form questions create / delete ====================
-// 端点 ground truth（lark-cli base +form-questions-create/delete --dry-run + bundle body 字面量印证）：
+// 端点 ground truth（已实测印证）：
 //   POST   /open-apis/base/v3/bases/{base_token}/tables/{table_id}/forms/{form_id}/questions  body {"questions":[...]}
 //   DELETE /open-apis/base/v3/bases/{base_token}/tables/{table_id}/forms/{form_id}/questions  body {"question_ids":[...]}
 // 注意：均走 collection 端点（.../forms/{form_id}/questions），不是 per-question 路径。

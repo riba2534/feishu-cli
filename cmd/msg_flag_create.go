@@ -28,7 +28,7 @@ var msgFlagCreateCmd = &cobra.Command{
     thread      + feed       topic-style 话题群 feed 层
     msg_thread  + feed       普通群消息线程 feed 层
 
-  --flag-type feed 且未显式传 --item-type 时，会对齐官方 lark-cli 行为：
+  --flag-type feed 且未显式传 --item-type 时，行为如下：
   自动读取消息 chat_id 和群 chat_mode，topic 群使用 thread，普通群使用 msg_thread。
 
 示例:

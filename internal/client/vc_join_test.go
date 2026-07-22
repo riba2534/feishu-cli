@@ -4,7 +4,7 @@ import "testing"
 
 // TestBuildVCBotJoinBody 锁住 B1 修复：机器人入会请求体必须含 join_type(=整数1) 与
 // join_identify(={meeting_no})，password 在顶层而非嵌进 join_identify。
-// 结构对齐 lark-cli 官方实现（shortcuts/vc/vc_meeting_join.go + 单测）——
+// 结构与服务端契约一致（已实测）——
 // 之前只发 {meeting_no,password} 被 server 拒为 99992402 field validation failed。
 func TestBuildVCBotJoinBody(t *testing.T) {
 	t.Run("无密码", func(t *testing.T) {

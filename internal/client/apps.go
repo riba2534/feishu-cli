@@ -100,7 +100,7 @@ const (
 
 // SparkHTMLPublish 把打包好的 tar.gz 以单次 multipart POST 上传并发布，返回 data（含访问 url）。
 //
-// 复用 SDK 的 Formdata 原语 —— 与官方 lark-cli 完全一致的线格式：单个 file part，
+// 复用 SDK 的 Formdata 原语——线格式：单个 file part，
 // field name="file"，part body 即 tar.gz 字节；app_id 走 URL path，不放 body。
 // 不手搓 multipart。
 func SparkHTMLPublish(appID string, tarball []byte, userAccessToken string) (map[string]any, error) {
@@ -133,7 +133,7 @@ func SparkHTMLPublish(appID string, tarball []byte, userAccessToken string) (map
 
 // parseHTMLPublishResponse 解析 html-publish 响应：HTTP 4xx/5xx 透出原始 body（与
 // parseSparkResponse 一致，避免网关级失败被笼统的「解析失败」掩盖真实状态码）；
-// 业务 code!=0 → 带 hint 的 error；成功只白名单提取 data.url（对齐官方 lark-cli，
+// 业务 code!=0 → 带 hint 的 error；成功只白名单提取 data.url（
 // 刻意丢掉 status/release_id 等兄弟字段，后端新增字段不会无意泄漏到输出）。
 func parseHTMLPublishResponse(statusCode int, raw []byte) (map[string]any, error) {
 	if statusCode >= http.StatusBadRequest {

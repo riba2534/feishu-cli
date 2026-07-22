@@ -23,7 +23,7 @@ var markdownOverwriteCmd = &cobra.Command{
   --file-token     目标 .md 文件 token
   --content        新 Markdown 内容（与 --content-file 二选一）
   --content-file   本地 .md 文件路径（与 --content 二选一）
-  --file           官方 lark-cli 兼容别名，等价于 --content-file
+  --file           兼容别名，等价于 --content-file
 
 可选:
   --name           覆盖后文件名（必须 .md 结尾；使用 --content 时必填；--content-file 缺省使用本地 basename）
@@ -142,7 +142,7 @@ func init() {
 	markdownOverwriteCmd.Flags().String("name", "", "覆盖后文件名（必须 .md 结尾；使用 --content 时必填）")
 	markdownOverwriteCmd.Flags().String("content", "", "新 Markdown 内容（与 --content-file 二选一）")
 	markdownOverwriteCmd.Flags().String("content-file", "", "本地 .md 文件路径（与 --content 二选一）")
-	markdownOverwriteCmd.Flags().String("file", "", "本地 .md 文件路径，官方 lark-cli 兼容别名（等价于 --content-file）")
+	markdownOverwriteCmd.Flags().String("file", "", "本地 .md 文件路径，兼容别名（等价于 --content-file）")
 	markdownOverwriteCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	markdownOverwriteCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(markdownOverwriteCmd, "file-token")

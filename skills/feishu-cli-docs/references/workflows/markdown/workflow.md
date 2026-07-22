@@ -59,7 +59,7 @@ feishu-cli markdown create --name plan.md --content-file ./plan.md -o json
 | `--name` | 远端文件名，**必须 `.md` 结尾**。`create`：`--content` 时必填、`--content-file` 时可省取本地 basename。`overwrite`：`--content` 时必填、`--content-file` 时可省取本地 basename；显式传入 = 同时改名 |
 | `--content` | 字符串内容（与 `--content-file` 二选一） |
 | `--content-file` | 本地 `.md` 文件路径 |
-| `--file` | 官方 lark-cli 兼容别名，等价于 `--content-file` |
+| `--file` | 兼容别名，等价于 `--content-file` |
 | `--folder-token` | 目标文件夹（缺省 Drive 根目录） |
 | `-o json` | JSON 输出（含 `file_token` / `file_name` / `size_bytes`） |
 | `--user-access-token` | 覆盖登录态 |
@@ -69,7 +69,7 @@ feishu-cli markdown create --name plan.md --content-file ./plan.md -o json
 ### 2. `markdown fetch` — 下载云盘 .md
 
 ```bash
-# 打印到 stdout（缺省 --output-path 时，行为与 lark-cli markdown +fetch 一致）
+# 打印到 stdout（缺省 --output-path 时）
 feishu-cli markdown fetch --file-token boxcnxxx
 
 # 落盘到本地路径
@@ -189,7 +189,7 @@ feishu-cli markdown diff --file-token boxcnxxx --file ./local.md -o json   # 兼
 
 但官方 API `POST /open-apis/drive/v1/files/upload_all` 是支持 `file_token` 的：**带 `file_token` 时覆盖原文件保留 token、刷新 version/size；不带时按 `parent_type+parent_node` 在指定目录新建**。
 
-为绕开 SDK 限制，`internal/client/markdown.go:OverwriteFileWithToken` 用 `client.Post` + `*larkcore.Formdata` 自己拼 multipart（translator 检测到 `*Formdata` 会自动切到 FileUpload 多部分序列化路径，见 SDK `core/reqtranslator.go:payload`）。endpoint 仍是官方 `upload_all`，参考 lark-cli `shortcuts/markdown/helpers.go:uploadMarkdownFileAll` 的写法。
+为绕开 SDK 限制，`internal/client/markdown.go:OverwriteFileWithToken` 用 `client.Post` + `*larkcore.Formdata` 自己拼 multipart（translator 检测到 `*Formdata` 会自动切到 FileUpload 多部分序列化路径，见 SDK `core/reqtranslator.go:payload`）。endpoint 仍是官方 `upload_all`。
 
 ### 2. 文件大小上限 ≤ 20MB
 

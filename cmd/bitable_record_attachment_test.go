@@ -176,7 +176,7 @@ func TestRecordDownloadAttachmentDryRunSingleToken(t *testing.T) {
 	initTestConfig(t)
 	cmd := newDownloadAttachmentTestCmd()
 
-	// 指定单个 file-token → 仍应先 get_attachments（取 extra_info），与 lark-cli 行为一致
+	// 指定单个 file-token → 仍应先 get_attachments（取 extra_info）
 	out, err := captureRunE(t, cmd, map[string]string{
 		"base-token": "bascn1", "table-id": "tbl1", "record-id": "rec1",
 		"file-token": "boxA", "dry-run": "true",

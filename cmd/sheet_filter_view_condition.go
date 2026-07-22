@@ -210,7 +210,7 @@ func printSheetCondition(c *client.FilterViewConditionSummary) {
 // addSheetConditionCommonFlags 为 condition 子命令注册公共 flag。
 func addSheetConditionCommonFlags(c *cobra.Command, withConditionID, withOutput bool) {
 	c.Flags().String("token", "", "电子表格 token（必填；兼容旧名）")
-	c.Flags().String("spreadsheet-token", "", "电子表格 token（官方 lark-cli 兼容别名）")
+	c.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名）")
 	c.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	c.Flags().String("filter-view-id", "", "筛选视图 ID（必填）")
 	if withConditionID {

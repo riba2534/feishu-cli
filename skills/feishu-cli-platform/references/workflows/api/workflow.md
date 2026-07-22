@@ -1,6 +1,6 @@
 # 飞书 OpenAPI 裸调技能
 
-`feishu-cli api` 直接调用任意飞书 OpenAPI 接口，覆盖尚未封装成专用命令的接口。是单工具栈下替代 `lark-cli api` 的兜底能力。
+`feishu-cli api` 直接调用任意飞书 OpenAPI 接口，覆盖尚未封装成专用命令的接口，是单工具栈下的兜底能力。
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 

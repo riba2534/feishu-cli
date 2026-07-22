@@ -1,4 +1,4 @@
-// Package output 提供与 lark-cli 对齐的统一输出工程化能力：
+// Package output 提供统一输出工程化能力：
 //
 //	--format json|pretty|table|ndjson|csv   输出格式
 //	--jq <expr>                             内置 gojq 过滤（无需外部 jq）

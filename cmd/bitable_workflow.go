@@ -8,7 +8,7 @@ import (
 )
 
 // ==================== workflow enable/disable ====================
-// 启停工作流走 base/v3 动作端点（与 lark-cli base +workflow-enable/disable 一致）：
+// 启停工作流走 base/v3 动作端点：
 //   PATCH /open-apis/base/v3/bases/{base_token}/workflows/{workflow_id}/enable
 //   PATCH /open-apis/base/v3/bases/{base_token}/workflows/{workflow_id}/disable
 // 无请求体；bitable/v1 没有对应的启停端点（早前用 PUT apps/{token}/workflows/{id}+status 是错误路径）。

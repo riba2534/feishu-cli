@@ -11,7 +11,7 @@ import (
 // ==================== dashboard CRUD + arrange ====================
 // 端点全部为 base/v3（useV1:false，带 X-App-Id），与现有 dashboard list 一致；
 // dashboard copy（bitable_dashboard.go）是唯一走 bitable/v1 的特例。
-// 端点 ground truth：lark-cli base +dashboard-* --dry-run 逐个印证（见 PR 报告 spec 表）。
+// 端点 ground truth：已逐个实测印证（见 PR 报告 spec 表）。
 
 // dashboardPath 构造 base/v3 仪表盘路径。
 func dashboardPath(baseToken, dashboardID string, extra ...string) string {
@@ -23,7 +23,7 @@ func dashboardPath(baseToken, dashboardID string, extra ...string) string {
 	return client.BaseV3Path(parts...)
 }
 
-// dashboardBlockType 合法块类型（与 lark-cli base +dashboard-block-create --type 对齐）。
+// dashboardBlockType 合法块类型。
 var dashboardBlockTypes = []string{
 	"column", "bar", "line", "pie", "ring", "area", "combo",
 	"scatter", "funnel", "wordCloud", "radar", "statistics", "text",
@@ -116,7 +116,7 @@ var bitableDashboardArrangeCmd = &cobra.Command{
 	Short: "自动排版仪表盘块（服务端智能布局）",
 	Long: `POST /open-apis/base/v3/bases/{base_token}/dashboards/{dashboard_id}/arrange
 
-服务端智能布局，无请求体（lark-cli 实测 body 为空对象）。`,
+服务端智能布局，无请求体（实测 body 为空对象）。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dashboardID, _ := cmd.Flags().GetString("dashboard-id")
 		if dashboardID == "" {
@@ -130,7 +130,7 @@ var bitableDashboardArrangeCmd = &cobra.Command{
 
 // dashboardBuildCreateOrUpdateBody 构造 dashboard create/update 请求体。
 // 优先 --config/--config-file；否则从便捷 flag 收集（只取显式设置的）。
-// --theme-style 写入嵌套 body.theme.theme_style（lark-cli 实测结构）。
+// --theme-style 写入嵌套 body.theme.theme_style（实测结构）。
 func dashboardBuildCreateOrUpdateBody(cmd *cobra.Command) (map[string]any, error) {
 	configJSON, _ := cmd.Flags().GetString("config")
 	configFile, _ := cmd.Flags().GetString("config-file")

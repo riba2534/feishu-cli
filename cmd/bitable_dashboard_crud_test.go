@@ -71,7 +71,7 @@ func mustNotContain(t *testing.T, out string, sub string) {
 	}
 }
 
-// ---- dry-run path/method/body 断言（端点 ground truth = lark-cli dry-run）----
+// ---- dry-run path/method/body 断言（端点 ground truth 已实测）----
 
 func TestDashboardCreateDryRun(t *testing.T) {
 	out := captureBitableRunDryRun(t, nil, func(bt string) bitableReq {

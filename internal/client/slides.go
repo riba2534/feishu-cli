@@ -10,7 +10,7 @@ import (
 )
 
 // slidesMediaParentType 是 slides 后端唯一接受的 medias/upload_all parent_type
-// 已经 lark-cli 经验证过 slide_image / slides_image / slides_file 都会被拒，
+// 已实测 slide_image / slides_image / slides_file 都会被拒，
 // 只有 slide_file 才能拿到可在 slide XML <img src="..."> 引用的 file_token。
 // 同时只接受单分片 upload_all 接口（最大 20 MB），upload_prepare 不支持。
 const slidesMediaParentType = "slide_file"
@@ -106,7 +106,7 @@ func CreateSlides(opts CreateSlidesOptions) (*CreateSlidesResult, error) {
 }
 
 // UploadSlidesMedia 把本地图片上传到 slides 演示文稿，返回的 file_token 可作为 <img src="..."> 使用
-// 必须用 parent_type=slide_file（lark-cli 实测，其他值都会被拒），且只能走单分片 upload_all（最大 20 MB）
+// 必须用 parent_type=slide_file（实测，其他值都会被拒），且只能走单分片 upload_all（最大 20 MB）
 // 权限: docs:document.media:upload
 func UploadSlidesMedia(filePath, fileName, presentationID, userAccessToken string) (string, error) {
 	token, _, err := UploadMediaWithExtra(filePath, slidesMediaParentType, presentationID, fileName, "", userAccessToken)

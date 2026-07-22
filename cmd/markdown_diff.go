@@ -14,7 +14,7 @@ import (
 // markdownDiffCmd 比对 Drive 上的 Markdown 内容并打印 unified diff。
 //
 // 注意：本命令不是单纯的 API 调用——它先把远端 Markdown 内容下载下来（最新版或指定历史版本），
-// 在本地计算 unified diff 并打印，不会修改远端文件（与 lark-cli `markdown +diff` 语义一致）。
+// 在本地计算 unified diff 并打印，不会修改远端文件。
 //
 // 三种比对模式（互斥）：
 //   - 远端最新 vs 本地文件：--file-token + --file

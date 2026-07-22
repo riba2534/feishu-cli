@@ -24,7 +24,7 @@ var msgFlagCancelCmd = &cobra.Command{
   --user-access-token  显式指定 User Access Token
 
 注意:
-  不传 --item-type/--flag-type 时，对齐官方 lark-cli 行为：先取消消息层书签，
+  不传 --item-type/--flag-type 时：先取消消息层书签，
   再尽量自动判断并取消 feed 层书签。自动判断失败时会跳过 feed 层并打印 warning。
   如果只想取消某一层，可显式传 --item-type 和 --flag-type。
 

@@ -16,7 +16,7 @@ var searchMessagesCmd = &cobra.Command{
 {MessageIDs,HasMore,PageToken}），与历史行为完全一致。
 
 加 --enrich 才在消息 ID 基础上补全内容、发送者、群名、时间
-（对齐 lark-cli +messages-search），此时会多发 BatchGetMessages 等 API 调用。
+（补全消息上下文），此时会多发 BatchGetMessages 等 API 调用。
 
 注意：此功能需要 User Access Token（用户授权令牌），推荐通过 auth login 获取。
 

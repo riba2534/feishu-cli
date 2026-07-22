@@ -10,7 +10,7 @@ import (
 
 // appsListCmd 列出当前用户的妙搭应用（游标分页）。
 //
-// 对标官方 lark-cli，从 --help / 补全里隐藏（Hidden），避免 Agent 把它当成枚举/搜索
+// 从 --help / 补全里隐藏（Hidden），避免 Agent 把它当成枚举/搜索
 // 应用的入口。人类直接调用仍可用。Agent 需要 app_id 时应让用户给妙搭应用链接
 // （从 /app/ 后面的 path 段取 app_id）或直接给 app_xxx 字符串。
 var appsListCmd = &cobra.Command{

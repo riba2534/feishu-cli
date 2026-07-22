@@ -120,7 +120,7 @@ func ReplaceInlineImageSrc(body string, refs []MailInlineImageRef) string {
 	return out
 }
 
-// GenerateMailCID 生成一个 20-hex CID（与 lark-cli 风格一致）
+// GenerateMailCID 生成一个 20-hex CID
 func GenerateMailCID() (string, error) {
 	var b [10]byte
 	if _, err := rand.Read(b[:]); err != nil {

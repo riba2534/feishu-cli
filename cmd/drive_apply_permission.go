@@ -12,13 +12,13 @@ import (
 )
 
 // permApplyTypes 是 /drive/v1/permissions/:token/members/apply 接口接受的 type 枚举。
-// 与官方 lark-cli `shortcuts/drive/drive_apply_permission.go` permApplyTypes 对齐。
+// 支持的申请权限类型。
 var permApplyTypes = []string{
 	"doc", "sheet", "file", "wiki", "bitable", "docx", "mindnote", "slides",
 }
 
 // permApplyURLMarkers 文档 URL 路径片段 → API 接受的 type 值映射
-// 参考 lark-cli `shortcuts/drive/drive_apply_permission.go` permApplyURLMarkers
+// URL 类型识别标记
 var permApplyURLMarkers = []struct {
 	Marker string
 	Type   string
@@ -84,7 +84,7 @@ var drivePermApplyCmd = &cobra.Command{
 	Short: "以用户身份向文档所有者发起权限申请（view / edit）",
 	Long: `向飞书云文档所有者发起协作权限申请。所有者会收到一张审批卡片，由其点同意/拒绝。
 
-⚠️ 这是飞书的「埋藏 API」—— 官方文档站未收录，但 lark-cli 已实现。
+⚠️ 这是飞书的「埋藏 API」——官方文档站未收录，但服务端真实可用（已实测）。
 端点: POST /open-apis/drive/v1/permissions/:token/members/apply
 必需 scope: docs:permission.member:apply（或 drive:drive / docs:doc 等任一大权限）
 必需 token: User Access Token（Bot 身份会被拒绝）

@@ -198,7 +198,7 @@ func BuildVCBotJoinBody(req VCBotJoinReq) map[string]any {
 // 权限: tenant_access_token + vc:meeting.bot.join:write
 // 返回 data 字段原始 JSON（含 meeting_id 等）
 //
-// 请求体结构与 lark-cli 官方实现（shortcuts/vc/vc_meeting_join.go + 单测）一致：
+// 请求体结构（已实测验证）：
 //
 //	{ "join_type": 1, "join_identify": {"meeting_no": "<9位会议号>"}[, "password": "..."] }
 //

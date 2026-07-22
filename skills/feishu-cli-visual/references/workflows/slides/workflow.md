@@ -19,7 +19,7 @@
 | `slides media-upload` | `POST /open-apis/drive/v1/medias/upload_all` (`parent_type=slide_file`) | `file_token` | 可直接放进 slide XML 的 `<img src="...">` |
 
 **关键约束**：
-- `slide_file` 是 slides 后端唯一接受的 `parent_type`（lark-cli 实测：`slide_image` / `slides_image` /
+- `slide_file` 是 slides 后端唯一接受的 `parent_type`（实测：`slide_image` / `slides_image` /
   `slides_file` 都会被拒）
 - `parent_node` 必须传 `xml_presentation_id`（而不是 docx token 或 file_token）
 - 上传走单分片 `upload_all`，**不支持** `upload_prepare` 多分片，所以单文件硬限 20 MB
@@ -173,7 +173,7 @@ done
 
 ## 注意事项
 
-- **`parent_type` 不要乱改**：源码里硬编码 `slide_file`，且经 lark-cli 实测唯一可用值。
+- **`parent_type` 不要乱改**：源码里硬编码 `slide_file`，实测唯一可用值。
   自己改成 `slide_image` / `slides_image` / `slides_file` 都会被服务端拒绝
 - **20 MB 上限不可绕过**：`upload_prepare` 多分片接口**不接受** `parent_type=slide_file`，
   CLI 在 client 侧也做了 20 MB 硬检查，超过会在本地直接报错（不会发请求）

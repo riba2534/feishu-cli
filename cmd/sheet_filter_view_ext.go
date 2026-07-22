@@ -99,7 +99,7 @@ func init() {
 
 	// get
 	sheetFilterViewGetCmd.Flags().String("token", "", "电子表格 token（必填；兼容旧名）")
-	sheetFilterViewGetCmd.Flags().String("spreadsheet-token", "", "电子表格 token（官方 lark-cli 兼容别名）")
+	sheetFilterViewGetCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名）")
 	sheetFilterViewGetCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	sheetFilterViewGetCmd.Flags().String("filter-view-id", "", "筛选视图 ID（必填）")
 	sheetFilterViewGetCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
@@ -107,7 +107,7 @@ func init() {
 
 	// update
 	sheetFilterViewUpdateCmd.Flags().String("token", "", "电子表格 token（必填；兼容旧名）")
-	sheetFilterViewUpdateCmd.Flags().String("spreadsheet-token", "", "电子表格 token（官方 lark-cli 兼容别名）")
+	sheetFilterViewUpdateCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名）")
 	sheetFilterViewUpdateCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	sheetFilterViewUpdateCmd.Flags().String("filter-view-id", "", "筛选视图 ID（必填）")
 	sheetFilterViewUpdateCmd.Flags().String("name", "", "新名称（≤100 字符）")

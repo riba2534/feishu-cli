@@ -10,14 +10,14 @@ import (
 )
 
 // 消息书签 item_type / flag_type 常量
-// 来源：lark-cli/shortcuts/im 中的 ItemType/FlagType 定义，与飞书 OpenAPI 服务端一致。
+// 与飞书 OpenAPI 服务端定义一致。
 //
 // 合法组合（其余组合会被服务端拒绝）：
 //   - (default, message) → 消息层书签（最常见）
 //   - (thread, feed)     → topic-style 话题群的 feed 层书签
 //   - (msg_thread, feed) → 普通群消息线程的 feed 层书签
 //
-// 枚举值与服务端常量对齐（lark-cli shortcuts/im/helpers.go 实测）：
+// 枚举值与服务端常量对齐（已实测）：
 //
 //	ItemType: Default=0, Thread=4, MsgThread=11
 //	FlagType: Feed=1, Message=2
@@ -75,7 +75,7 @@ type FlagListResult struct {
 }
 
 // flagsAPIPath 飞书消息书签 API 路径
-// 飞书 OpenAPI 当前版本为 v1，与 lark-cli 实现保持一致。
+// 飞书 OpenAPI 当前版本为 v1。
 const flagsAPIPath = "/open-apis/im/v1/flags"
 
 func newFlagItem(messageID string, itemType, flagType int) FlagItem {
@@ -110,7 +110,7 @@ func FlagFlagTypeName(flagType int) string {
 	}
 }
 
-// ResolveFlagFeedItemType 对齐官方 lark-cli 的 feed-layer 书签行为：
+// ResolveFlagFeedItemType feed 层书签的默认解析行为：
 // 先读取消息的 chat_id，再读取群聊 chat_mode，topic 群使用 thread，普通群使用 msg_thread。
 func ResolveFlagFeedItemType(messageID, userAccessToken string) (int, string, error) {
 	if strings.TrimSpace(messageID) == "" {
