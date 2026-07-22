@@ -23,12 +23,18 @@ var updateEventCmd = &cobra.Command{
   --end             结束时间，RFC3339 格式
   --description, -d 日程描述
   --location, -l    地点
+  --rrule           重复规则（RFC5545 RRULE），更新为重复日程或修改重复规则
   --output, -o      输出格式（json）
 
 时间格式:
   使用 RFC3339 格式，例如：
   - 2024-01-21T14:00:00+08:00
   - 2024-01-21T06:00:00Z
+
+重复规则（--rrule，RFC5545 RRULE 字符串）:
+  - 每周一：       FREQ=WEEKLY;BYDAY=MO
+  - 每个工作日：   FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
+  注意: COUNT 与 UNTIL 不能同时出现。更新会作用于整个重复序列。
 
 示例:
   # 更新日程标题
@@ -44,6 +50,10 @@ var updateEventCmd = &cobra.Command{
     --summary "更新后的会议" \
     --description "会议内容已更新" \
     --location "会议室 B202"
+
+  # 把日程改为每个工作日重复
+  feishu-cli calendar update-event CAL_ID EVENT_ID \
+    --rrule "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
 
   # JSON 格式输出
   feishu-cli calendar update-event CAL_ID EVENT_ID --summary "新标题" --output json`,
@@ -63,11 +73,12 @@ var updateEventCmd = &cobra.Command{
 		endTime, _ := cmd.Flags().GetString("end")
 		description, _ := cmd.Flags().GetString("description")
 		location, _ := cmd.Flags().GetString("location")
+		rrule, _ := cmd.Flags().GetString("rrule")
 		output, _ := cmd.Flags().GetString("output")
 
 		// 检查是否有任何更新字段
-		if summary == "" && startTime == "" && endTime == "" && description == "" && location == "" {
-			return fmt.Errorf("请至少提供一个要更新的字段（--summary, --start, --end, --description, --location）")
+		if summary == "" && startTime == "" && endTime == "" && description == "" && location == "" && rrule == "" {
+			return fmt.Errorf("请至少提供一个要更新的字段（--summary, --start, --end, --description, --location, --rrule）")
 		}
 
 		params := &client.UpdateEventParams{
@@ -78,6 +89,7 @@ var updateEventCmd = &cobra.Command{
 			EndTime:     endTime,
 			Description: description,
 			Location:    location,
+			Recurrence:  rrule,
 		}
 
 		event, err := client.UpdateEvent(params, token)
@@ -101,6 +113,9 @@ var updateEventCmd = &cobra.Command{
 			if event.Location != "" {
 				fmt.Printf("  地点:      %s\n", event.Location)
 			}
+			if event.Recurrence != "" {
+				fmt.Printf("  重复规则:  %s\n", event.Recurrence)
+			}
 			if event.AppLink != "" {
 				fmt.Printf("  链接:      %s\n", event.AppLink)
 			}
@@ -117,6 +132,7 @@ func init() {
 	updateEventCmd.Flags().String("end", "", "结束时间，RFC3339 格式")
 	updateEventCmd.Flags().StringP("description", "d", "", "日程描述")
 	updateEventCmd.Flags().StringP("location", "l", "", "地点")
+	updateEventCmd.Flags().String("rrule", "", "重复规则（RFC5545 RRULE，如 FREQ=WEEKLY;BYDAY=MO）")
 	updateEventCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	updateEventCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

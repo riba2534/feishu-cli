@@ -272,16 +272,21 @@ feishu-cli doctor --only proxy
 feishu-cli doctor --only user_token,endpoint_open    # 多值，逗号分隔
 ```
 
-`doctor` 共 6 项检查；`--only` 支持单个值或逗号分隔多个值（typo 会被本地校验拒收）：
+`doctor` 共 8 项检查；`--only` 支持单个值或逗号分隔多个值（typo 会被本地校验拒收）：
 
 | 检查名 | 含义 |
 |---|---|
 | `config_file` | 配置文件存在性、字段完整性 |
 | `user_token` | `~/.feishu-cli/token.json` 是否存在 / 过期 / refresh 可用 |
+| `user_identity` | 用户身份就绪度：token.json 存在且 access_token 有效或可自动刷新 |
+| `bot_identity` | 应用身份就绪度：用 app_id/app_secret 在线换取 `tenant_access_token`（需联网；`--offline` 时仅确认凭证已配置并跳过换取） |
 | `endpoint_open` | `open.feishu.cn` 可达性 |
 | `endpoint_larksuite` | `open.larksuite.com` 可达性（海外站） |
 | `proxy` | `HTTPS_PROXY` / `NO_PROXY` 是否会拦截 OpenAPI 域名 |
 | `dependencies` | 当前 Go 版本与编译依赖中的 Lark SDK 版本 |
+
+`user_identity` 与 `bot_identity` 分别回答"用户态命令能否直接跑"和"应用态（`--as bot` / 无人值守）能否直接跑"：
+`bot_identity` 通过说明 app_id/app_secret 正确且应用已启用；`user_identity` 为 `warn`（未登录）或 `fail`（过期）时，按提示 `feishu-cli auth login`。
 
 每项状态为 `pass` / `warn` / `fail` / `skip`。整体退出码：全部 `pass`/`skip` 或仅 `warn` → `0`；任一 `fail` → `1`。
 
@@ -336,7 +341,7 @@ feishu-cli profile migrate --name work
 
 profile 名校验规则 `[A-Za-z0-9_-]{1,64}`（禁止 `.` / `..` / `profiles` / `cache` 等保留名），违反时 CLI 自身会报错。`profile rename` 会自动同步 active 与 previous 指针，不需要手动改文件。
 
-`auth logout` 会清理当前 profile 的 token 和用户 profile 缓存。
+`auth logout` 会先调用飞书吊销端点使服务端 token 失效（优先吊销 refresh_token，失败仅告警不阻断），再清理当前 profile 的 token 和用户 profile 缓存。`--no-revoke` 可跳过服务端吊销、只删本地文件（缺 app_id/app_secret 时也会自动跳过吊销）。
 
 ## Agent 约定
 

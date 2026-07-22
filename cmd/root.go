@@ -99,9 +99,9 @@ var rootCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "⚠️  使用 --config 时，token 仍读自当前 profile（~/.feishu-cli/[profiles/<active>/]token.json）。")
 			fmt.Fprintln(os.Stderr, "    如需完整隔离，请改用 FEISHU_PROFILE=<name>。")
 		}
-		// Skip config initialization for group commands (those with subcommands but no own RunE)
-		// and utility commands that don't need config
-		if cmd.HasSubCommands() && cmd.RunE == nil && cmd.Run == nil {
+		// Skip config initialization for group commands (those with subcommands but no own RunE,
+		// or with the guard-injected RunE) and utility commands that don't need config
+		if cmd.HasSubCommands() && (cmd.RunE == nil && cmd.Run == nil || cmd.Annotations[groupGuardAnnotation] == "1") {
 			return nil
 		}
 		switch cmd.Name() {
@@ -136,6 +136,12 @@ var rootCmd = &cobra.Command{
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
+	// cobra 的 completion 命令组默认在 Execute 内部才懒注册——先显式注册，
+	// 否则它逃逸下面的守卫，成为"未知子命令静默 exit 0"的残留入口。
+	rootCmd.InitDefaultCompletionCmd()
+	// 所有 init() 注册完成后统一安装：嵌套命令组的未知子命令守卫 + flag 拼写建议
+	installUnknownSubcommandGuard(rootCmd)
+	rootCmd.SetFlagErrorFunc(flagSuggestionErrorFunc)
 	if err := rootCmd.Execute(); err != nil {
 		if msg := err.Error(); msg != "" {
 			fmt.Fprintln(os.Stderr, msg)

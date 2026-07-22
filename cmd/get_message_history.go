@@ -203,7 +203,7 @@ var getMessageHistoryCmd = &cobra.Command{
 			result = fallbackResult
 		}
 
-		// 自动展开线程回复（与官方 lark-cli 行为对齐）：对每条带 thread_id 的根消息
+		// 自动展开线程回复：对每条带 thread_id 的根消息
 		// 拉取其线程内回复（ASC 顺序），结果挂在 result.ThreadReplies。
 		// 共享 nameCache，从线程回复的 mentions 里抽到的名字会回填到根消息 sender。
 		if expandThreads {
@@ -342,9 +342,9 @@ func init() {
 	getMessageHistoryCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	getMessageHistoryCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	getMessageHistoryCmd.Flags().String("as", "auto", "身份选择: bot | user | auto（默认 auto = User 优先回退 Bot）。外部群拉群昵称推荐 --as bot + 对外共享 App")
-	// 与官方 lark-cli `+chat-messages-list` 行为对齐：默认对每条带 thread_id 的根消息
+	// 默认对每条带 thread_id 的根消息
 	// 自动展开线程内回复。--expand-threads=false 可关闭，回退到只拉根消息。
-	getMessageHistoryCmd.Flags().Bool("expand-threads", true, "自动展开每个话题的线程回复（默认开启，与 lark-cli 对齐）")
+	getMessageHistoryCmd.Flags().Bool("expand-threads", true, "自动展开每个话题的线程回复（默认开启）")
 	getMessageHistoryCmd.Flags().Int("threads-per-page", 50, "每个话题最多拉多少条回复（OpenAPI 上限 50）")
 	getMessageHistoryCmd.Flags().Int("threads-total-limit", 500, "所有话题累计拉到的回复总数上限（防止极端话题群打爆 QPS）")
 	addCardContentTypeFlag(getMessageHistoryCmd)

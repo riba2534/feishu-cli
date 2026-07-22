@@ -99,18 +99,23 @@ var eventConsumeCmd = &cobra.Command{
 			baseURL = "https://open.feishu.cn"
 		}
 
+		// 需要服务端订阅注册的 EventKey（如审批 v4）依赖 User Token；
+		// 其余 key 拿不到也不影响（best-effort，缺失时 runtime 会给出明确报错）。
+		userToken := resolveOptionalUserTokenWithFallback(cmd)
+
 		runtime := event.NewRuntime(event.ConsumeOptions{
-			AppID:     cfg.AppID,
-			AppSecret: cfg.AppSecret,
-			EventKey:  def.Key,
-			BaseURL:   baseURL,
-			Out:       os.Stdout,
-			ErrOut:    errOut,
-			JQExpr:    jqExpr,
-			OutputDir: outputDir,
-			MaxEvents: maxEvents,
-			Timeout:   timeout,
-			Bus:       bus,
+			AppID:           cfg.AppID,
+			AppSecret:       cfg.AppSecret,
+			EventKey:        def.Key,
+			BaseURL:         baseURL,
+			Out:             os.Stdout,
+			ErrOut:          errOut,
+			JQExpr:          jqExpr,
+			OutputDir:       outputDir,
+			MaxEvents:       maxEvents,
+			Timeout:         timeout,
+			UserAccessToken: userToken,
+			Bus:             bus,
 		})
 
 		// 信号 + stdin EOF 处理
@@ -163,6 +168,7 @@ func init() {
 	eventConsumeCmd.Flags().Int("max-events", 0, "接收到 N 条事件后退出（0=不限制）")
 	eventConsumeCmd.Flags().Duration("timeout", 0, "运行 D 时长后退出（如 30s / 5m，0=不限制）")
 	eventConsumeCmd.Flags().String("jq", "", "极简点路径过滤，如 .event.message（不支持完整 jq 语法）")
+	eventConsumeCmd.Flags().String("user-access-token", "", "User Access Token（审批等需服务端订阅注册的 EventKey 使用）")
 	eventConsumeCmd.Flags().String("output-dir", "", "把每条事件 dump 为 <event_id>.json 到该目录（不影响 stdout）")
 	eventConsumeCmd.Flags().Bool("quiet", false, "静默模式：抑制 stderr 诊断（不影响 stdout 事件流；ready marker 仍会输出，便于父进程判断就绪）")
 }

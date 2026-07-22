@@ -10,6 +10,7 @@ tmpdir=""
 # 避免日志被 version=$(get_latest_version) 之类的命令替换捕获，污染下载 URL）
 info()  { printf "\033[34m[INFO]\033[0m  %s\n" "$*" >&2; }
 ok()    { printf "\033[32m[OK]\033[0m    %s\n" "$*" >&2; }
+warn()  { printf "\033[33m[WARN]\033[0m  %s\n" "$*" >&2; }
 err()   { printf "\033[31m[ERROR]\033[0m %s\n" "$*" >&2; }
 
 # 检测操作系统
@@ -141,6 +142,65 @@ detect_install_dir() {
     echo "$DEFAULT_INSTALL_DIR"
 }
 
+# 计算文件的 sha256（优先 sha256sum，回退 shasum）；无可用工具时返回空
+compute_sha256() {
+    local file="$1"
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$file" | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "$file" | awk '{print $1}'
+    else
+        echo ""
+    fi
+}
+
+# 校验下载的安装包 sha256。
+# release 若提供 checksums.txt 则强制校验，不匹配立即终止安装；
+# 旧 release 无 checksums.txt 时告警但继续（向后兼容）。
+verify_checksum() {
+    local dir="$1" asset="$2" version="$3"
+    local checksums_url="https://github.com/${REPO}/releases/download/${version}/checksums.txt"
+    local checksums_file="${dir}/checksums.txt"
+
+    info "校验安装包完整性..."
+
+    # 下载 checksums.txt（404/网络失败视为该 release 未提供校验文件）
+    local downloaded=0
+    if command -v curl &>/dev/null; then
+        curl -fsSL -o "$checksums_file" "$checksums_url" 2>/dev/null && downloaded=1
+    elif command -v wget &>/dev/null; then
+        wget -qO "$checksums_file" "$checksums_url" 2>/dev/null && downloaded=1
+    fi
+    if [ "$downloaded" -ne 1 ] || [ ! -s "$checksums_file" ]; then
+        warn "该版本未提供 checksums.txt，跳过完整性校验（旧版本兼容）"
+        return 0
+    fi
+
+    # 提取该资产对应的期望值（sha256sum 文本模式输出：<hash>  <filename>）
+    local expected
+    expected=$(awk -v f="$asset" '$NF==f {print $1; exit}' "$checksums_file")
+    if [ -z "$expected" ]; then
+        warn "checksums.txt 中未找到 ${asset} 的校验值，跳过校验"
+        return 0
+    fi
+
+    local actual
+    actual=$(compute_sha256 "${dir}/${asset}")
+    if [ -z "$actual" ]; then
+        warn "系统缺少 sha256sum/shasum，无法校验完整性，跳过"
+        return 0
+    fi
+
+    if [ "$actual" != "$expected" ]; then
+        err "安装包完整性校验失败！sha256 不匹配"
+        err "  期望: ${expected}"
+        err "  实际: ${actual}"
+        err "已终止安装，请重试或从官方 release 页面手动下载"
+        exit 1
+    fi
+    ok "完整性校验通过（sha256 匹配）"
+}
+
 # 下载并安装
 install() {
     local os arch version install_dir asset_name download_url
@@ -179,6 +239,9 @@ install() {
     else
         wget -q --show-progress -O "${tmpdir}/${asset_name}" "$download_url"
     fi
+
+    # 校验完整性（release 提供 checksums.txt 时强制，不匹配则终止）
+    verify_checksum "$tmpdir" "$asset_name" "$version"
 
     info "解压安装包..."
     tar -xzf "${tmpdir}/${asset_name}" -C "$tmpdir"

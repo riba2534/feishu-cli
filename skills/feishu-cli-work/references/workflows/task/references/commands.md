@@ -29,6 +29,28 @@ feishu-cli task list [--completed | --uncompleted] [--page-size 20] [--page-toke
 feishu-cli task get <task_id> [-o json]
 ```
 
+### 搜索任务
+
+```bash
+feishu-cli task search \
+  [--keyword "评审"] \
+  [--creator ou_xxx] [--assignee ou_xxx] [--follower ou_xxx] \
+  [--completed | --uncompleted] \
+  [--due-after "2026-01-01"] [--due-before "2026-12-31"] \
+  [--page-size 20] [--page-token <token>] [--page-all] \
+  [--enrich=false] \
+  [-o json]
+```
+
+- 底层调用任务搜索接口（`POST /open-apis/task/v2/tasks/search`），**需 User Token**（`task:task:read`）。
+- 创建人 / 负责人 / 关注人 / 完成状态 / 截止时间在**服务端**过滤；`--keyword` 是服务端关键词检索（匹配标题等）。
+- `--due-before` 传纯日期（如 `2026-12-31`）自动对齐到当天 23:59:59（含当天全部到期任务）。
+- 搜索接口只返回任务 GUID，默认逐条补全详情（5 并发）；只需要 GUID/链接的脚本场景加 `--enrich=false` 跳过补全，零额外 API 往返。
+- 搜索接口只返回任务 GUID，命中项会自动并发拉取详情以展示标题、截止时间等。
+- `--keyword`、`--creator/--assignee/--follower`、`--completed/--uncompleted`、`--due-after/--due-before` 至少提供一个。
+- `--creator/--assignee/--follower` 传 `open_id`，多个用逗号分隔。`--due-*` 接受 RFC3339 / `2026-01-02 15:04:05` / `2026-01-02`。
+- 服务端限制：`--page-size` 最大 30（超出自动截断为 30）；翻页 offset 上限 150，`--page-all` 越过后会优雅停止并提示缩小范围。
+
 ### 更新任务
 
 ```bash

@@ -204,15 +204,13 @@ func exportSheetToMarkdown(spreadsheetToken, title, userAccessToken string) (str
 	return sb.String(), nil
 }
 
-// colIndexToLetter 将列数转为 Excel 列字母（1→A, 26→Z, 27→AA）
+// colIndexToLetter 将列数转为 Excel 列字母（1→A, 26→Z, 27→AA）。
+// 薄壳：统一复用 client.ColumnIndexToLetter（0-based）这一份 base-26 实现。
 func colIndexToLetter(col int) string {
-	var result string
-	for col > 0 {
-		col-- // 转为 0-based
-		result = string(rune('A'+col%26)) + result
-		col /= 26
+	if col <= 0 {
+		return ""
 	}
-	return result
+	return client.ColumnIndexToLetter(col - 1)
 }
 
 func init() {

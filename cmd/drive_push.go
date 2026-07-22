@@ -5,11 +5,23 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
+
+// driveFolderChildLimitAdvice 是命中飞书 1062507（父目录直接子节点超 1500）时的中文清理建议。
+const driveFolderChildLimitAdvice = "目标父文件夹的直接子节点已达上限（1500，错误码 1062507）。" +
+	"请先在该文件夹下清理/归档部分文件或子文件夹腾出空间，或在本地把文件拆分到更细的子目录以分散到多个父文件夹，再重跑 push。"
+
+// isDriveFolderChildLimitErr 判断上传/建文件夹错误是否为 1062507（父目录直接子节点超 1500）。
+// 该上限是单个父文件夹级的终态错误：对同一父目录重试必然再撞墙，应跳过其下所有条目；
+// 但其余未满目录应继续镜像（见 fullParents 隔离逻辑）。
+func isDriveFolderChildLimitErr(err error) bool {
+	return client.HasAPICode(err, 1062507)
+}
 
 var drivePushCmd = &cobra.Command{
 	Use:   "push",
@@ -116,6 +128,21 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 		var items []item
 		var uploaded, skipped, failed, deletedRemote int
 		uploadFailed := false
+		// fullParents：命中 1062507 的父目录集合。1500 子节点上限是**单个父文件夹**级的，
+		// 只跳过发往已满目录（及其子树）的条目，其余目录继续镜像——整体 break 会无辜
+		// 放弃发往未满兄弟目录/根目录的文件，降低镜像完整度。
+		fullParents := map[string]bool{}
+		markParentFull := func(rel string) { fullParents[pushParentRel(rel)] = true }
+		underFullParent := func(rel string) bool {
+			for p := pushParentRel(rel); ; p = pushParentRel(p) {
+				if fullParents[p] {
+					return true
+				}
+				if p == "" {
+					return false
+				}
+			}
+		}
 
 		// 先按本地目录创建远端文件夹（保证空目录也被镜像）
 		sort.Strings(localDirs)
@@ -123,11 +150,20 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 			if _, ok := folderCache[relDir]; ok {
 				continue
 			}
+			if underFullParent(relDir) {
+				items = append(items, item{RelPath: relDir, Action: "failed", Error: "父目录子节点已满（1062507），跳过"})
+				failed++
+				uploadFailed = true
+				continue
+			}
 			tok, fErr := ensureRemoteFolder(folderToken, relDir, folderCache, userToken)
 			if fErr != nil {
 				items = append(items, item{RelPath: relDir, Action: "failed", Error: fErr.Error()})
 				failed++
 				uploadFailed = true
+				if isDriveFolderChildLimitErr(fErr) {
+					markParentFull(relDir)
+				}
 				continue
 			}
 			items = append(items, item{RelPath: relDir, FileToken: tok, Action: "folder_created"})
@@ -141,6 +177,12 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 		sort.Strings(localPaths)
 
 		for _, rel := range localPaths {
+			if underFullParent(rel) {
+				items = append(items, item{RelPath: rel, Action: "failed", Error: "父目录子节点已满（1062507），跳过"})
+				failed++
+				uploadFailed = true
+				continue
+			}
 			abs := localFiles[rel]
 
 			// 远端同路径已有 file
@@ -158,6 +200,9 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 					items = append(items, item{RelPath: rel, FileToken: existingToken, Action: "failed", Error: ensureErr.Error()})
 					failed++
 					uploadFailed = true
+					if isDriveFolderChildLimitErr(ensureErr) {
+						markParentFull(rel)
+					}
 					continue
 				}
 				if delErr := client.DeleteDriveFileByToken(existingToken, userToken); delErr != nil {
@@ -171,6 +216,9 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 					items = append(items, item{RelPath: rel, Action: "failed", Error: upErr.Error()})
 					failed++
 					uploadFailed = true
+					if isDriveFolderChildLimitErr(upErr) {
+						markParentFull(rel)
+					}
 					continue
 				}
 				items = append(items, item{RelPath: rel, FileToken: newToken, Action: "overwritten"})
@@ -185,6 +233,9 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 				items = append(items, item{RelPath: rel, Action: "failed", Error: ensureErr.Error()})
 				failed++
 				uploadFailed = true
+				if isDriveFolderChildLimitErr(ensureErr) {
+					markParentFull(rel)
+				}
 				continue
 			}
 			newToken, upErr := client.UploadFileWithToken(abs, parentToken, filepath.Base(abs), userToken)
@@ -192,6 +243,9 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 				items = append(items, item{RelPath: rel, Action: "failed", Error: upErr.Error()})
 				failed++
 				uploadFailed = true
+				if isDriveFolderChildLimitErr(upErr) {
+					markParentFull(rel)
+				}
 				continue
 			}
 			items = append(items, item{RelPath: rel, FileToken: newToken, Action: "uploaded"})
@@ -245,6 +299,20 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 			}
 		}
 
+		if len(fullParents) > 0 {
+			dirs := make([]string, 0, len(fullParents))
+			for d := range fullParents {
+				if d == "" {
+					d = "(根目录)"
+				}
+				dirs = append(dirs, d)
+			}
+			sort.Strings(dirs)
+			fmt.Fprintf(cmd.ErrOrStderr(), "\n✖ 以下目录已满，其下条目被跳过（其余目录已继续镜像）: %s\n%s\n",
+				strings.Join(dirs, ", "), driveFolderChildLimitAdvice)
+			return fmt.Errorf("部分目录子节点已满（%s），发往这些目录的 %d 项失败/跳过；其余已完成（上传 %d，跳过 %d）",
+				strings.Join(dirs, ", "), failed, uploaded, skipped)
+		}
 		if failed > 0 {
 			return fmt.Errorf("有 %d 项失败，处于部分同步状态；修复后重跑", failed)
 		}

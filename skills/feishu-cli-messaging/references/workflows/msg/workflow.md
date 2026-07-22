@@ -109,8 +109,23 @@ feishu-cli msg send \
   --receive-id-type <type> \
   --receive-id <id> \
   [--msg-type <msg_type>] \
-  [--text "<text>" | --file <path> | --image <path> | --content '<json>' | --content-file <file.json>]
+  [--text "<text>" | --file <path> | --image <path> | --content '<json>' | --content-file <file.json>] \
+  [--idempotency-key <key>]
 ```
+
+### 幂等键（--idempotency-key，防重发）
+
+`--idempotency-key` 映射到发消息 API 的 `uuid` 字段，服务端按此键去重：**相同键的重复请求返回首次发送的消息**（同一 `message_id`），只会真正发出一条。适用于重试、定时任务、可能重复触发的自动化场景。
+
+```bash
+# 相同 key 调用两次，第二次不会重复发送，返回与第一次相同的 message_id
+feishu-cli msg send --receive-id-type email --receive-id user@example.com \
+  --text "对账通知" --idempotency-key "bill-2026-07-22"
+```
+
+- 长度上限 **50 字符**（按 Unicode 字符 / rune 计数，非字节，中文键不会被误拒），超限本地直接报错，不发请求。
+- 键由调用方自行保证唯一/可复现：同一逻辑消息用固定键（幂等），不同消息用不同键，否则会被误判为重复而丢弃。
+- 不传该 flag 时行为不变（每次都新发）。
 
 ### file 类型（直发文件）
 
@@ -454,7 +469,7 @@ CLI flag 用字符串，底层映射到 OpenAPI 整数枚举：
 | --flag-type | message | 2 | 消息层书签（默认） |
 | --flag-type | feed | 1 | feed 层（侧边栏书签） |
 
-> ⚠️ **反向陷阱**：网上某些第三方教程（含部分 lark-cli 旧版示例）把 `flag_type: 1=message / 2=feed` 写反了。本项目以**飞书 OpenAPI 官方真值**为准（`1=feed / 2=message`，见上表）。`list` 命令输出里也是这套真值，写代码处理 JSON 时认上面这张表。
+> ⚠️ **反向陷阱**：网上某些第三方教程把 `flag_type: 1=message / 2=feed` 写反了。本项目以**飞书 OpenAPI 官方真值**为准（`1=feed / 2=message`，见上表）。`list` 命令输出里也是这套真值，写代码处理 JSON 时认上面这张表。
 >
 > `list` 命令不接受 `--flag-type/--item-type` 作为入参（list 是全量返回），只能在输出 `flag_items[*].flag_type` 字段上过滤。要看自己有哪些书签直接 `feishu-cli msg flag list -o json`。
 
@@ -463,4 +478,4 @@ CLI flag 用字符串，底层映射到 OpenAPI 整数枚举：
 - `thread + feed`：topic-style 话题群 feed 层
 - `msg_thread + feed`：普通群消息线程 feed 层
 
-源码引用：`internal/client/flag.go:23-28`（本仓库权威，对齐 lark-cli `shortcuts/im` 的 ItemType/FlagType 定义）。
+源码引用：`internal/client/flag.go:23-28`（本仓库权威定义）。

@@ -22,7 +22,7 @@ event consume <EventKey>
    └─ 退出时自动 unregister bus.json
 ```
 
-**与 lark-cli event 的差异**：lark-cli 用 Unix domain socket 跑独立 bus 守护进程做事件 fan-out；feishu-cli 简化为「每个 consume 直接连一条 WebSocket」，不做事件分发——足够覆盖 AI Agent 单 EventKey 订阅的主线场景。
+**架构取舍**：不跑独立 bus 守护进程做事件 fan-out；feishu-cli 简化为「每个 consume 直接连一条 WebSocket」，不做事件分发——足够覆盖 AI Agent 单 EventKey 订阅的主线场景。
 
 ### 状态文件与跨进程互斥
 
@@ -160,16 +160,44 @@ feishu-cli event stop --all --force                        # SIGKILL（紧急情
 | im | `im.chat.member.user.added_v1` / `deleted_v1` | 用户进群/离群 |
 | im | `im.chat.member.bot.added_v1` / `deleted_v1` | Bot 被拉入/移出群 |
 | im | `im.chat.disbanded_v1` | 群聊被解散 |
+| im | `card.action.trigger` ⭐ | **卡片交互回调**（按钮点击/表单提交/下拉选择），交互式 Bot 核心事件 |
+| application | `application.bot.menu_v6` | 用户点击 Bot 自定义菜单 |
 | contact | `contact.user.created_v3` / `updated_v3` / `deleted_v3` | 员工入职/变更/离职 |
 | calendar | `calendar.calendar.event.changed_v4` | 日程变更（创建/更新/删除） |
 | calendar | `calendar.calendar.acl.created_v4` | 日历权限变更 |
 | drive | `drive.file.title_updated_v1` | 文档标题修改 |
 | drive | `drive.file.permission_member_added_v1` | 文档协作者添加 |
-| approval | `approval_instance` | 审批实例状态变更 |
-| approval | `approval_task` | 审批任务变更 |
+| approval | `approval.instance.status_changed_v4` | 审批实例状态变更（需服务端订阅注册，见下） |
+| approval | `approval.task.status_changed_v4` | 审批任务状态变更（需服务端订阅注册，见下） |
 | vc | `vc.meeting.meeting_started_v1` / `meeting_ended_v1` | VC 会议开始/结束 |
 
 > **EventKey 与 EventType 通常一致**；接收到的 payload 里 `header.event_type` 等于 `event_type` 字段。
+
+### 卡片交互回调 `card.action.trigger`（交互式 Bot 闭环）
+
+卡片按钮/表单回调走独立的回调帧通道，consume 已自动处理，用法与普通事件一致：
+
+```bash
+feishu-cli event consume card.action.trigger   # 每次卡片交互输出一行 NDJSON
+```
+
+payload 里的关键字段：`event.operator.open_id`（谁点的）、`event.action.value`（按钮自定义值）、
+`event.action.form_value`（表单数据）、`event.token`（卡片更新凭证，可拿去调卡片更新 OpenAPI 回写卡片）、
+`event.context.open_message_id / open_chat_id`（消息与会话定位）。
+开放平台需在「事件与回调 - 回调订阅」勾选 `card.action.trigger` 并发布版本。
+
+### 审批事件的服务端订阅注册（v4，自动完成）
+
+审批 v4 事件**除了后台勾选事件，还必须以 User 身份注册服务端订阅关系**，否则连上 WS 也收不到。
+consume 启动时自动完成注册（对 INVOLVED_APPROVAL 与 MANAGED_APPROVAL 各注册一次）：
+
+```bash
+feishu-cli auth login   # 需 approval:instance:read / approval:task:read scope
+feishu-cli event consume approval.instance.status_changed_v4
+# stderr: [event] 已注册服务端订阅: ... subscription_type=INVOLVED_APPROVAL / MANAGED_APPROVAL
+```
+
+订阅是**持久的用户级关系**，进程退出不注销；重复注册服务端幂等处理。未登录时报错并提示 auth login。
 
 ## 权限与开放平台配置
 

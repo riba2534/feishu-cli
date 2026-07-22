@@ -38,7 +38,7 @@ feishu-cli bitable record upsert --base-token bscnxxxx --table-id tblxxx \
 ```
 
 > **`--as bot` 报 `91403 you don't have permission`**：不是 token 问题，是 **Bot 还不是这张多维表格的协作者**。把 Bot 加为协作者（`feishu-cli perm add <base_token> --doc-type bitable --member-type open_id --member-id <bot_open_id> --perm full_access`）或把文档可见性调到组织可见即可。Bot 自己创建的 base 默认就有权限。
-> **历史背景**：旧版本 bitable 命令在 CLI 侧硬性强制 User Token（未登录直接报错），其实底层 API 一直支持 Tenant Token——现已按官方 `lark-cli` 的 `--as` 模式放开。
+> **历史背景**：旧版本 bitable 命令在 CLI 侧硬性强制 User Token（未登录直接报错），其实底层 API 一直支持 Tenant Token——现已按 `--as bot|user|auto` 身份模式放开。
 
 ## 命令速查
 
@@ -89,6 +89,10 @@ feishu-cli bitable field search-options --base-token xxx --table-id tblxxx --fie
 
 ```bash
 feishu-cli bitable record list        --base-token xxx --table-id tblxxx --view-id viewxxx --limit 100
+# list 支持结构化过滤/排序（无需关键词，纯条件筛选首选；DSL 语法见下方「filter DSL」节）
+feishu-cli bitable record list        --base-token xxx --table-id tblxxx \
+  --filter-json '{"logic":"and","conditions":[["状态","==",["Doing"]],["分数",">=",70]]}' \
+  --sort-json '[{"field":"分数","desc":true}]'
 feishu-cli bitable record get         --base-token xxx --table-id tblxxx --record-id recxxx
 feishu-cli bitable record batch-get   --base-token xxx --table-id tblxxx --record-ids recxxx,recyyy
 # batch-get 可选 flag：返回分享链接 / 自动计算字段 / 指定用户字段 ID 类型
@@ -99,9 +103,10 @@ feishu-cli bitable record search      --base-token xxx --table-id tblxxx --keywo
 # 多个搜索字段重复传 --search-field；字段名含逗号时仍作为一个完整字段名
 feishu-cli bitable record search      --base-token xxx --table-id tblxxx --keyword Alice \
   --search-field 'Last, First' --search-field 邮箱
-# --filter-json 只能叠加在 keyword 搜索上；高级场景用 --config 传完整请求体
+# search 的 --filter-json 叠加在 keyword 搜索上做交集（服务端强制要求 keyword+search_fields）；
+# 纯结构化筛选（不需要关键词）用 record list 的 --filter-json
 feishu-cli bitable record search      --base-token xxx --table-id tblxxx --keyword 测试 \
-  --search-field 名称 --filter-json '{"logic":"and","conditions":[["状态","==","启用"]]}'
+  --search-field 名称 --filter-json '{"logic":"and","conditions":[["状态","==",["启用"]]]}'
 # --config/--config-file 与所有便捷 flag（包括 --offset/--limit）互斥
 
 # upsert：不传 --record-id 则 POST 创建；传 --record-id 则 PATCH 更新（官方无专用 upsert 端点）
@@ -109,6 +114,9 @@ feishu-cli bitable record upsert      --base-token xxx --table-id tblxxx --confi
 feishu-cli bitable record upsert      --base-token xxx --table-id tblxxx --record-id recxxx --config '{"fields":{"状态":"完成"}}'
 
 feishu-cli bitable record batch-create --base-token xxx --table-id tblxxx --config-file records.json
+# batch-update 两种 body 形态（实测均可用）：
+#   统一 patch：      {"record_id_list":["rec1","rec2"],"patch":{"状态":["Done"]}}
+#   逐记录差异化：    {"update_records":{"rec1":{"分数":88},"rec2":{"分数":77,"状态":["Blocked"]}}}
 feishu-cli bitable record batch-update --base-token xxx --table-id tblxxx --config-file records.json
 feishu-cli bitable record delete      --base-token xxx --table-id tblxxx --record-id recxxx
 
@@ -387,6 +395,38 @@ feishu-cli bitable view view-sort-set --base-token $BASE_TOKEN --table-id $TABLE
 | 高级权限 | `base:app_permission` |
 | 工作流 | 读 `base:workflow:readonly` / 写 `base:workflow` |
 | 仪表盘 / 表单 | 读 `base:dashboard:readonly` / `base:form:readonly`，写 `base:dashboard` / `base:form` |
+
+## filter DSL（record list / record search 结构化过滤，实测验证）
+
+`--filter-json` 的语法（tuple DSL），两个入口共用：
+
+```json
+{"logic":"and|or","conditions":[[字段名或字段ID, operator, 值], ...]}
+```
+
+- **operator 全集**：`==` `!=` `>` `>=` `<` `<=` `intersects`（文本包含）`disjoint` `empty` `non_empty`
+- **empty/non_empty** 可省略值写二元组：`["单选","empty"]`
+- **值按字段类型写法**（写错会 0 命中或报错）：
+
+| 字段类型 | 值写法 | 示例 |
+|---|---|---|
+| 文本 / 公式 / 查找引用 | 字符串（包含匹配用 `intersects`） | `["标题","intersects","发布"]` |
+| 数字 | 数字 | `["分数",">=",70]` |
+| 单选 / 多选 | **选项名数组（单选也必须数组）** | `["状态","==",["Doing"]]` |
+| 复选框 | 布尔 | `["完成","==",true]` |
+| 人员 / 群 / 关联记录 | 对象数组 | `["负责人","intersects",[{"id":"ou_xxx"}]]` |
+| 日期 | `"ExactDate(2026-01-01)"` 或 `"Today"`/`"Yesterday"`/`"Tomorrow"` | `["截止","==","Today"]` |
+
+排序 `--sort-json`：`[{"field":"分数","desc":true}]`，数组顺序即优先级，最多 10 条。
+
+**两个入口的差异（重要）**：
+
+| | `record list` | `record search` |
+|---|---|---|
+| 端点 | GET /records（filter/sort 作 query 参数） | POST /records/search（filter 放 body） |
+| keyword | **不需要** | **服务端必填** keyword + search_fields |
+| 适用 | 纯结构化条件筛选（按状态/数值/日期/空值） | 关键词全文搜索，filter 做交集收窄 |
+| 注意 | — | 新写入记录全文索引有 ~20s 延迟 |
 
 ## 注意事项
 

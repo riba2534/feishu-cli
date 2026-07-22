@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -90,26 +89,16 @@ var okrProgressCreateCmd = &cobra.Command{
 			UserIDType:  userIDType,
 		}
 
-		if progressPercent != "" {
-			percent, err := strconv.ParseFloat(progressPercent, 64)
-			if err != nil {
-				return fmt.Errorf("--progress-percent 必须是数字: %w", err)
-			}
-			rate := &client.OKRProgressRateInput{Percent: percent}
-			if progressStatus != "" {
-				status, ok := client.ParseOKRProgressStatus(progressStatus)
-				if !ok {
-					return fmt.Errorf("--progress-status 必须为 normal / risky / overdue")
-				}
-				rate.Status = &status
-			}
-			opts.ProgressRate = rate
-		} else if progressStatus != "" {
-			return fmt.Errorf("--progress-status 必须配合 --progress-percent 一起使用")
+		rate, err := parseOKRProgressRate(progressPercent, progressStatus)
+		if err != nil {
+			return err
 		}
+		opts.ProgressRate = rate
 
-		// OKR API 服务端拒 user access token（99991668 实测），强制 App Token
-		token := ""
+		token, err := resolveIdentityToken(cmd)
+		if err != nil {
+			return err
+		}
 		progress, err := client.CreateOKRProgress(opts, token)
 		if err != nil {
 			return err

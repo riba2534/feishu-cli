@@ -1,6 +1,6 @@
 # 飞书电子表格高级能力
 
-`feishu-cli sheet` 子命令组的高级能力——**筛选视图 CRUD + 筛选条件 CRUD** + **单元格下拉菜单 CRUD** + **浮动图片 / 单元格写图** + **批量样式**。这些此前多是 `lark-cli` 独占的能力，现已补齐到 `feishu-cli`。
+`feishu-cli sheet` 子命令组的高级能力——**筛选视图 CRUD + 筛选条件 CRUD** + **单元格下拉菜单 CRUD** + **浮动图片 / 单元格写图** + **批量样式**。这些高级能力均已在 `feishu-cli` 原生支持。
 
 > **范围划分**：基础读写（`sheet read` / `write` / `style` / `add-rows` / `add-sheet` 等）和 V3 富文本走主命令 `feishu-cli sheet` / `feishu-cli bitable`，本 skill **覆盖 filter-view（含 condition）+ dropdown + image + batch-set-style**。其他子命令查询 `feishu-cli sheet --help`。
 
@@ -65,7 +65,7 @@ feishu-cli sheet filter-view condition list   --token shtcnxxxxxx --sheet-id 0b1
 
 | flag | 必填 | 说明 |
 |---|---|---|
-| `--token` / `--spreadsheet-token` | 是 | 电子表格 token（URL `/sheets/<token>`）；`--spreadsheet-token` 对齐官方 lark-cli |
+| `--token` / `--spreadsheet-token` | 是 | 电子表格 token（URL `/sheets/<token>`）；`--spreadsheet-token` 为兼容别名 |
 | `--sheet-id` | 是 | 工作表 ID（URL `?sheet=<sheet-id>`） |
 | `--range` | create 必填 | `"<sheetId>!A1:H14"`，不带 `!` 前缀自动补 |
 | `--name` | 否 | 视图名称 ≤ 100 字符 |
@@ -106,7 +106,7 @@ feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100,0b
 ```
 
 > `set` 用 `--range`（单个），`update`/`delete` 用 `--ranges`（多范围逗号分隔，`update` 还需 `--sheet-id`）。
-> `get`/`update`/`delete` 均接受 `--spreadsheet-token` 作为 `--token` 的 lark-cli 兼容别名（`set` 仅 `--token`）。
+> `get`/`update`/`delete` 均接受 `--spreadsheet-token` 作为 `--token` 的兼容别名（`set` 仅 `--token`）。
 > `update` 独有 `--highlight`：仅开启选项上色高亮（`highlightValidData=true`），传 `--colors` 时自动开启；`get` 只输出 JSON（无 text 模式）。
 
 ### 浮动图片 image（7 命令）
@@ -215,7 +215,8 @@ feishu-cli sheet filter-view list --token $TOKEN --sheet-id $SHEET -o json | \
 | 创建 / 元信息 | `create` / `get` / `meta` / `list-sheets` |
 | 读取（普通 + 富文本） | `read` / `read-plain` / `read-rich` |
 | 写入 / 追加 / 插入 / 清除 | `write` / `write-rich` / `append` / `append-rich` / `insert` / `clear` |
-| 按列 dtype 类型保真写入（日期写 Excel 序列号+日期 formatter 成真日期、数字保数值、文本 @ 防误判） | `table-put`（对齐官方 +table-put，pandas to_json(orient=split) 形状 JSON；读侧 `table-get` 待后续） |
+| 按列 dtype 类型保真写入（日期写 Excel 序列号+日期 formatter 成真日期、数字保数值、文本 @ 防误判） | `table-put`（pandas to_json(orient=split) 形状 JSON） |
+| 按列类型保真读取（数字/日期/布尔自动推断 dtype，输出与 table-put 输入对称，支持 get→改→put round-trip） | `table-get`（`--range` 指定区域，缺省读整表自动裁空行空列；`--no-header` 首行按数据处理） |
 | 行列管理 | `add-rows` / `add-cols` / `insert-rows` / `delete-rows` / `delete-cols` |
 | 工作表管理 | `add-sheet` / `copy-sheet` / `delete-sheet` |
 | 单范围样式 / 合并 / 保护 | `style` / `merge` / `unmerge` / `protect` / `unprotect`（多范围批量样式走本 skill `batch-set-style`） |

@@ -23,6 +23,10 @@ var mailCmd = &cobra.Command{
   reply         回复邮件（自动带 Re: 前缀和引用块）
   reply-all     全部回复（包含 To 和 CC）
   forward       转发邮件
+  draft-send    发送已有草稿（--confirm-send 保护）
+  message-modify 批量加/删 label、移动文件夹（≤20 封）
+  message-trash 批量软删进废纸篓（--yes 跳过确认，可移回）
+  signature     查看邮箱签名
   template      邮件模板 CRUD（create/list；字节租户 scope 暂未开放）
 
 权限要求（User Access Token）:

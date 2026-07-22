@@ -4,6 +4,15 @@
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
+## 目录
+
+- [前置条件](#前置条件)
+- [命令速查](#命令速查)
+- [使用示例](#使用示例)
+- [典型工作流](#典型工作流)
+- [权限要求](#权限要求)
+- [注意事项](#注意事项)
+
 ## 前置条件
 
 - **认证**：vc 读类（`vc search/notes/recording`、`vc bot meeting-events`）与 minutes 全部命令需要 **User Access Token**（推荐先 `auth check --scope "..."`，再执行 `feishu-cli auth login --scope "..."` 或 `--domain vc --domain minutes --recommend`）；**例外**：`vc bot meeting-join` / `vc bot meeting-leave` 默认走 **Bot/Tenant 身份**，仅靠 App ID + App Secret 即可，无需登录（详见第 6 节与「注意事项」的身份说明）
@@ -67,17 +76,22 @@ feishu-cli vc recording (--meeting-ids | --calendar-event-ids)
 | `--calendar-event-ids` | CSV | 日历事件实例 ID 列表 |
 | `-o, --output` | string | `json` 格式化输出 |
 
-### 4. 获取妙记基础信息（可合并 AI 产物）
+### 4. 获取妙记基础信息（可合并 AI 产物、可等待就绪）
 
 ```bash
-feishu-cli minutes get <minute_token> [--with-artifacts] [-o json]
+feishu-cli minutes get <minute_token> [--with-artifacts] [--wait-ready] [-o json]
 ```
 
 | 参数 | 说明 |
 |------|------|
 | `<minute_token>` | 位置参数，必填 |
 | `--with-artifacts` | 额外调用 artifacts API 合并输出（summary / todos / chapters） |
+| `--wait-ready` | 妙记仍在生成（转写未完成，业务码 `2091003`）时轮询等待，直到就绪或超时；适合刚结束的会议 |
+| `--wait-timeout` | `--wait-ready` 最长等待秒数（默认 300） |
+| `--wait-interval` | `--wait-ready` 轮询间隔秒数（默认 10） |
 | `-o, --output json` | JSON 格式输出 |
+
+> 妙记已就绪时 `--wait-ready` 立即返回，不产生额外等待；只有遇到 `2091003`（仍在生成）才会按 `--wait-interval` 轮询。
 
 ### 5. 下载妙记媒体文件（批量）
 
@@ -115,6 +129,69 @@ feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --start 2026-0
 > `meeting-events` 端点不接受 Tenant Token：已登录会自动用 User Token，未登录会被 `99991663` 拒绝 → 需先 `feishu-cli auth login`。
 > `meeting-events` 的 `--page-size` 取值范围是 **20-100**（与 `vc search` 的 1-30 不同）；传 0 或不传走默认 20，传 1-19 会被拒。
 
+### 7. 聚合会议详情 → note_id + minute_token（vc detail）
+
+```bash
+feishu-cli vc detail <meeting_id 或会议号> [--start ...] [--end ...] [-o json]
+```
+
+一条命令串联 `GET /open-apis/vc/v1/meetings/{meeting_id}`（拿基础信息 + `note_id`）与 `GET .../recording`（提取 `minute_token`），把后续查纪要/妙记所需的所有 ID 一次拿齐，省去逐个调用。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `<meeting_id 或会议号>` | 位置参数 | 会议 ID（长数字串）或 **9 位会议号**；传会议号时先经 `list_by_no` 反查关联会议（周期性会议可能对应多场实例，分别输出） |
+| `--start` | string | 会议号反查时间窗口起点（YYYY-MM-DD 或 RFC3339，默认近 90 天） |
+| `--end` | string | 会议号反查时间窗口终点（默认当前时间） |
+| `-o, --output` | string | `json` 格式化输出 |
+
+输出字段：`meeting_id / meeting_no / topic / start_time / end_time / status / note_id / minute_token / hint`。`status` 为 `ongoing`（进行中，纪要与妙记尚未生成，相关字段留空并在 `hint` 说明）或 `ended`（已结束）。`note_id` 仅在会议关联了智能纪要时存在；未命中的字段会在 `hint` 里标注，不视为错误。
+
+### 8. 搜索妙记（关键词/所有者/时间）
+
+```bash
+feishu-cli minutes search [过滤条件] [-o json]
+```
+
+底层走 `POST /open-apis/minutes/v1/minutes/search`。**至少指定一个过滤条件**。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `--query` | string | 关键词（1-50 字符） |
+| `--owner-id` | string | 所有者 open_id |
+| `--start-time` | string | 创建时间起点（YYYY-MM-DD 或 RFC3339） |
+| `--end-time` | string | 创建时间终点（纯日期自动对齐 23:59:59） |
+| `--page-size` | int | 每页数量（1-30，默认 15） |
+| `--page-token` | string | 分页标记 |
+| `-o, --output` | string | `json` 格式化输出（透传原始 `items/has_more/page_token`） |
+
+文本模式会剥离 `display_info` 的高亮标签并取首行为标题，附 `token / 信息 / 链接`；`has_more` 时提示下一页 `--page-token`。
+
+### 9. 申请妙记权限（view/edit）
+
+```bash
+feishu-cli minutes apply-permission --minute-token <token> --perm view|edit [-o json]
+```
+
+底层走 `POST /open-apis/minutes/v1/minutes/{minute_token}/permissions/apply`。当对某妙记无访问权限（如 `minutes get` 返回 `2091005` 无权限）时，用本命令发起申请。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `--minute-token` | string | **必填**，妙记 Token |
+| `--perm` | string | **必填**，`view`（查看）或 `edit`（编辑） |
+| `-o, --output` | string | `json` 格式化输出 |
+
+### 10. 智能纪要（vc note，按 note_id 直接操作）
+
+```bash
+feishu-cli vc note detail <note_id> [-o json]         # 纪要详情（展示类型、关联文档 token）
+feishu-cli vc note transcript <note_id> \
+  [--format markdown|text] [--output transcript.md]   # 统一逐字稿导出（自动翻页拉全量）
+```
+
+`note_id` 来自 `vc detail` / `vc notes` 结果（仅关联智能纪要的会议才有）。与 `vc notes` 的区别：
+`vc notes` 按会议/妙记批量查产物，`vc note` 按 note_id 直接操作单篇纪要。
+权限：`vc:note:read`（User Token）。
+
 ## 使用示例
 
 ```bash
@@ -148,6 +225,21 @@ feishu-cli minutes download --minute-tokens obcnxxxx --url-only
 
 # 获取妙记信息并展示 AI 摘要
 feishu-cli minutes get obcnxxxx --with-artifacts
+
+# 刚结束的会议，等待妙记转写完成再取（最长 10 分钟）
+feishu-cli minutes get obcnxxxx --wait-ready --wait-timeout 600
+
+# 用会议 ID 一次拿齐 note_id + minute_token
+feishu-cli vc detail 6911188411932033028 -o json
+
+# 用 9 位会议号聚合查询（自动反查关联会议）
+feishu-cli vc detail 543343946 --start 2026-06-01 --end 2026-07-22
+
+# 搜索我拥有的、含关键词的妙记
+feishu-cli minutes search --query "预算复盘" --owner-id ou_xxx -o json
+
+# 对无权限的妙记申请查看权限
+feishu-cli minutes apply-permission --minute-token obcnxxxx --perm view
 
 # 机器人按会议号入会（默认 Bot/Tenant 身份，无需登录）
 feishu-cli vc bot meeting-join --meeting-number 123456789 --password 1234
@@ -206,7 +298,11 @@ feishu-cli minutes download --minute-tokens <minute_token> --output ./media
 | `vc bot meeting-join` | `vc:meeting.bot.join:write` |
 | `vc bot meeting-leave` | `vc:meeting.bot.leave:write` |
 | `vc bot meeting-events` | `vc:meeting.meetingevent:read`（必须 User Token；未登录会被 `99991663` 拒绝） |
+| `vc detail`（meeting_id 路径） | `vc:meeting.meetingevent:read`、`vc:record:readonly` |
+| `vc detail`（会议号路径） | + `vc:meeting:readonly` 或 `vc:meeting.meetingid:read`（`list_by_no` 反查所需） |
 | `minutes get` | `minutes:minutes:readonly`（`--with-artifacts` 额外需 `minutes:minutes.artifacts:read`） |
+| `minutes search` | `minutes:minutes.search:read` |
+| `minutes apply-permission` | `minutes:permission:apply` |
 | `minutes download` | `minutes:minutes.media:export` |
 
 权限在飞书开放平台的应用权限管理页面开通；开通后执行 `feishu-cli auth login --scope "所需 scope..."` 或 `feishu-cli auth login --domain vc --domain minutes --recommend` 重新授权即可。
@@ -214,7 +310,7 @@ feishu-cli minutes download --minute-tokens <minute_token> --output ./media
 ## 注意事项
 
 - **Token 身份分三档**：
-  - **必须 User Token**：`vc search/notes/recording`、`vc bot meeting-events`、`minutes get/download`。未登录会中文报错并引导 `feishu-cli auth login`；`meeting-events` 端点不接受 Tenant Token，未登录直接被 `99991663` 拒绝。
+  - **必须 User Token**：`vc search/notes/recording/detail`、`vc bot meeting-events`、`minutes get/search/apply-permission/download`。未登录会中文报错并引导 `feishu-cli auth login`；`meeting-events` 端点不接受 Tenant Token，未登录直接被 `99991663` 拒绝。
   - **默认 Bot/Tenant**：`vc bot meeting-join` / `vc bot meeting-leave`，仅需 App ID + App Secret，无需登录；只有显式传 `--user-access-token` flag 才切到 User 身份（用 `resolveFlagUserToken`，**不读** `FEISHU_USER_ACCESS_TOKEN` 环境变量）。
   - 覆盖登录态：除 `meeting-join`/`meeting-leave`（仅认 `--user-access-token` flag）外，其余命令也可用 `FEISHU_USER_ACCESS_TOKEN` 环境变量。
 - **时间格式**：`vc search --start/--end` 接受 `YYYY-MM-DD` / `YYYY-MM-DD HH:MM:SS` / RFC3339，均按本地时区解析；纯日期的 `--end` 自动对齐到 23:59:59。

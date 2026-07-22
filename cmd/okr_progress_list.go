@@ -49,8 +49,10 @@ var okrProgressListCmd = &cobra.Command{
 			return err
 		}
 
-		// OKR API 服务端拒 user access token（99991668 实测），强制 App Token
-		token := ""
+		token, err := resolveIdentityToken(cmd)
+		if err != nil {
+			return err
+		}
 		progresses, err := client.ListOKRProgresses(client.ListOKRProgressesOptions{
 			TargetID:   targetID,
 			TargetType: targetType,

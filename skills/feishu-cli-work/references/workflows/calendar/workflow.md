@@ -7,6 +7,17 @@
 `calendar agenda --end-date` 按当天 `23:59:59` 处理，是包含端。只查“明天”时 start-date 和
 end-date 都传明天日期；传“明天到后天”会同时包含后天。
 
+## 目录
+
+- [核心概念](#核心概念)
+- [子命令速查](#子命令速查)
+- [典型工作流](#典型工作流)
+- [重复日程（RRULE）操作指引](#重复日程rrule操作指引)
+- [关键 flag 速记](#关键-flag-速记)
+- [踩坑（必读）](#踩坑必读)
+- [何时转其他技能](#何时转其他技能)
+- [权限速查](#权限速查)
+
 ## 核心概念
 
 ### 三件套定位
@@ -35,7 +46,7 @@ end-date 都传明天日期；传“明天到后天”会同时包含后天。
 
 权限：`calendar:calendar.free_busy:read`（suggestion / room-find）、`calendar:calendar.event:reply`（rsvp）。
 
-`calendar rsvp` 支持 `--action`，也支持官方 lark-cli 兼容别名 `--rsvp-status`，二者等价且不能同时指定不同值。
+`calendar rsvp` 支持 `--action`，也支持兼容别名 `--rsvp-status`，二者等价且不能同时指定不同值。
 
 ## 子命令速查
 
@@ -186,6 +197,64 @@ feishu-cli calendar agenda --start-date 2024-01-22 --end-date 2024-01-23 -o json
       feishu-cli calendar rsvp --event-id "$eid" --action accept --user-access-token <TOKEN>
     done
 ```
+
+## 重复日程（RRULE）操作指引
+
+`create-event` / `update-event` 支持 `--rrule`，传 RFC5545 RRULE 字符串把日程变成重复日程。
+`recurrence` 字段就是这个 RRULE 串，`create-event` / `update-event` / `get-event` 的 `-o json`
+输出和文本输出都会带「重复规则」。
+
+### 创建重复日程
+
+```bash
+# 每周一 10:00-11:00 的周会（--start/--end 决定首个实例）
+feishu-cli calendar create-event \
+  --calendar-id <id> \
+  --summary "周会" \
+  --start "2026-07-27T10:00:00+08:00" \
+  --end   "2026-07-27T11:00:00+08:00" \
+  --rrule "FREQ=WEEKLY;BYDAY=MO"
+```
+
+### 修改重复规则
+
+```bash
+# 把日程改成每个工作日重复（作用于整个序列）
+feishu-cli calendar update-event <calendar_id> <event_id> \
+  --rrule "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+```
+
+`update-event` 至少要提供一个可更新字段，`--rrule` 也算。改 `--rrule` 会覆盖整个重复序列的规则。
+
+### 删除整个重复序列
+
+```bash
+# 用现有 delete-event 即可删除整个重复日程序列
+feishu-cli calendar delete-event <calendar_id> <event_id>
+```
+
+删除后服务端保留一个 `status=cancelled` 的 tombstone：`get-event` 仍能查到该 event_id，但它已不是活动日程，
+`agenda` / `list-events` 里不再作为有效实例出现。**没有单独的“删除某一次实例”命令**，`delete-event` 删的是整条序列。
+
+### 常用 RRULE 速查
+
+| 需求 | RRULE |
+|------|-------|
+| 每天 | `FREQ=DAILY` |
+| 每天，共 10 次 | `FREQ=DAILY;COUNT=10` |
+| 每周一 | `FREQ=WEEKLY;BYDAY=MO` |
+| 每个工作日 | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR` |
+| 每两周一次 | `FREQ=WEEKLY;INTERVAL=2` |
+| 每月 1 号 | `FREQ=MONTHLY;BYMONTHDAY=1` |
+| 每月 1 号，到指定日期结束 | `FREQ=MONTHLY;BYMONTHDAY=1;UNTIL=20261231T000000Z` |
+
+注意：`COUNT` 与 `UNTIL` 不能同时出现；预定会议室的重复日程长度不得超过两年。
+
+### 身份提示
+
+`create-event` / `update-event` / `delete-event` 属**写类**命令，默认 Bot（App Token）身份。
+若 App 未开通 tenant 级 `calendar:calendar.event:create/update/delete`，会报 99991672，
+需显式传 `--user-access-token` 或设 `FEISHU_USER_ACCESS_TOKEN` 切到 User 身份。
 
 ## 关键 flag 速记
 

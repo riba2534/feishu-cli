@@ -33,20 +33,26 @@ const (
 
 const messageResourceFileSizeExceedsLimitCode = 234037
 
-// SendMessage sends a message to a user or chat
-func SendMessage(receiveIDType string, receiveID string, msgType string, content string, userAccessToken string) (string, error) {
+// SendMessage sends a message to a user or chat.
+// uuid 为幂等键（对应 OAPI body 的 uuid 字段），非空时服务端按此键去重，
+// 相同 uuid 的重复请求返回首次发送的消息；传空字符串表示不启用幂等。
+func SendMessage(receiveIDType string, receiveID string, msgType string, content string, userAccessToken string, uuid string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
 	}
 
+	bodyBuilder := larkim.NewCreateMessageReqBodyBuilder().
+		ReceiveId(receiveID).
+		MsgType(msgType).
+		Content(content)
+	if uuid != "" {
+		bodyBuilder.Uuid(uuid)
+	}
+
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(receiveIDType).
-		Body(larkim.NewCreateMessageReqBodyBuilder().
-			ReceiveId(receiveID).
-			MsgType(msgType).
-			Content(content).
-			Build()).
+		Body(bodyBuilder.Build()).
 		Build()
 
 	resp, err := client.Im.Message.Create(Context(), req, UserTokenOption(userAccessToken)...)
@@ -233,57 +239,16 @@ func ListMessages(containerID string, opts ListMessagesOptions, userAccessToken 
 		return listMessagesWithUserToken(containerID, opts, userAccessToken)
 	}
 
-	// 当 SDK builder 不支持的参数（card_msg_content_type）需要传时，走 SDK raw request。
-	if opts.CardContentType != "" {
-		return listMessagesViaRawRequest(containerID, opts, "")
-	}
-
-	client, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
-	reqBuilder := larkim.NewListMessageReqBuilder().
-		ContainerIdType(opts.ContainerIDType).
-		ContainerId(containerID)
-
-	if opts.StartTime != "" {
-		reqBuilder.StartTime(opts.StartTime)
-	}
-	if opts.EndTime != "" {
-		reqBuilder.EndTime(opts.EndTime)
-	}
-	if opts.SortType != "" {
-		reqBuilder.SortType(opts.SortType)
-	}
-	if opts.PageSize > 0 {
-		reqBuilder.PageSize(opts.PageSize)
-	}
-	if opts.PageToken != "" {
-		reqBuilder.PageToken(opts.PageToken)
-	}
-
-	resp, err := client.Im.Message.List(Context(), reqBuilder.Build())
-	if err != nil {
-		return nil, fmt.Errorf("获取消息列表失败: %w", err)
-	}
-
-	if !resp.Success() {
-		return nil, fmt.Errorf("获取消息列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
-	}
-
-	return &ListMessagesResult{
-		Items:     resp.Data.Items,
-		PageToken: StringVal(resp.Data.PageToken),
-		HasMore:   BoolVal(resp.Data.HasMore),
-	}, nil
+	// tenant 模式统一走 SDK raw request：typed builder 不支持 with_sender_name /
+	// card_msg_content_type 等 query 参数，raw 路径能力是 typed 的超集。
+	return listMessagesViaRawRequest(containerID, opts)
 }
 
 // listMessagesViaRawRequest calls /im/v1/messages via SDK raw request so that
 // query params (e.g. card_msg_content_type) unsupported by the typed SDK builder
-// can still be sent. tenant_access_token is auto-managed by the SDK; pass an
-// empty userAccessToken for tenant mode.
-func listMessagesViaRawRequest(containerID string, opts ListMessagesOptions, userAccessToken string) (*ListMessagesResult, error) {
+// can still be sent. 仅服务 tenant 模式（tenant_access_token 由 SDK 自动管理）；
+// user token 路径走 listMessagesWithUserToken。
+func listMessagesViaRawRequest(containerID string, opts ListMessagesOptions) (*ListMessagesResult, error) {
 	cli, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -320,8 +285,10 @@ func listMessagesViaRawRequest(containerID string, opts ListMessagesOptions, use
 	if opts.CardContentType != "" {
 		req.QueryParams.Set("card_msg_content_type", opts.CardContentType)
 	}
+	// 让服务端直接回填发送者显示名（含 Bot / 外部租户用户），侧路采集见 harvestSenderNames
+	req.QueryParams.Set("with_sender_name", "true")
 
-	apiResp, err := cli.Do(Context(), req, UserTokenOption(userAccessToken)...)
+	apiResp, err := cli.Do(Context(), req)
 	if err != nil {
 		return nil, fmt.Errorf("获取消息列表失败: %w", err)
 	}
@@ -336,6 +303,7 @@ func listMessagesViaRawRequest(containerID string, opts ListMessagesOptions, use
 	if resp.Code != 0 {
 		return nil, fmt.Errorf("获取消息列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
+	harvestSenderNames(apiResp.RawBody)
 
 	return &ListMessagesResult{
 		Items:     resp.Data.Items,
@@ -365,7 +333,9 @@ func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, use
 	}
 
 	params := url.Values{}
-	params.Set("container_id_type", opts.ContainerIDType)
+	if opts.ContainerIDType != "" {
+		params.Set("container_id_type", opts.ContainerIDType)
+	}
 	params.Set("container_id", containerID)
 	if opts.StartTime != "" {
 		params.Set("start_time", opts.StartTime)
@@ -385,6 +355,7 @@ func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, use
 	if opts.CardContentType != "" {
 		params.Set("card_msg_content_type", opts.CardContentType)
 	}
+	params.Set("with_sender_name", "true")
 
 	reqURL := fmt.Sprintf("%s/open-apis/im/v1/messages?%s", baseURL, params.Encode())
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
@@ -413,6 +384,7 @@ func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, use
 	if resp.Code != 0 {
 		return nil, fmt.Errorf("获取消息列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
+	harvestSenderNames(body)
 
 	return &ListMessagesResult{
 		Items:     resp.Data.Items,
@@ -455,20 +427,22 @@ func LoadAllChatMembers(chatID, userAccessToken string) ([]*ChatMemberInfo, erro
 	return all, nil
 }
 
-// ResolveSenderNames 为消息列表补齐每个 user 发送者的显示名字，返回 open_id → name 的映射。
-// 两步解析（对齐官方 lark-cli 的 ResolveSenderNames）：
+// ResolveSenderNames 为消息列表补齐每个发送者的显示名字，返回 sender.id → name 的映射。
+// 三步解析：
+//  0. 服务端回填的 sender_name（读消息请求统一带 with_sender_name=true，进程内注册表
+//     采集，见 sender_names.go）——权威来源，覆盖 Bot 和外部租户用户，无需通讯录权限
 //  1. 从每条消息的 mentions 里抽已有的 {id, name}（免费，无需 API 调用）
 //  2. 剩余未解的 user 发送者 open_id 走 POST /open-apis/contact/v3/users/basic_batch 批量补齐。
 //
 // 该函数对网络错误是容错的：任一步失败只返回当前累积的映射，调用方仍可得到部分结果。
-// App sender（id_type=app_id / sender_type=app）跳过，不会发起查询。
 //
 // 群聊场景额外想拿"群完整成员名单（含群昵称）"用 LoadAllChatMembers 单独取，结果应独立于
 // sender_names 字段使用——外部群下 member_id 和 sender_id 是不同 namespace，不能互查。
 func ResolveSenderNames(messages []*larkim.Message, userAccessToken string) map[string]string {
-	nameMap := make(map[string]string)
+	// Step 0: 服务端回填的名字优先（含 Bot / 外部用户）
+	nameMap := HarvestedSenderNames()
 
-	// Step 1: 从 mentions 抽映射
+	// Step 1: 从 mentions 抽映射（不覆盖服务端名字）
 	for _, msg := range messages {
 		if msg == nil {
 			continue
@@ -479,7 +453,7 @@ func ResolveSenderNames(messages []*larkim.Message, userAccessToken string) map[
 			}
 			id := StringVal(mention.Id)
 			name := StringVal(mention.Name)
-			if id != "" && name != "" && strings.HasPrefix(id, "ou_") {
+			if id != "" && name != "" && strings.HasPrefix(id, "ou_") && nameMap[id] == "" {
 				nameMap[id] = name
 			}
 		}
@@ -617,35 +591,9 @@ func GetMessage(messageID, userAccessToken, cardContentType string) (result *Get
 		return getMessageWithUserToken(messageID, userAccessToken, cardContentType)
 	}
 
-	if cardContentType != "" {
-		return getMessageViaRawRequest(messageID, cardContentType, "")
-	}
-
-	client, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
-	req := larkim.NewGetMessageReqBuilder().
-		MessageId(messageID).
-		Build()
-
-	resp, err := client.Im.Message.Get(Context(), req)
-	if err != nil {
-		return nil, fmt.Errorf("获取消息详情失败: %w", err)
-	}
-
-	if !resp.Success() {
-		return nil, fmt.Errorf("获取消息详情失败: code=%d, msg=%s", resp.Code, resp.Msg)
-	}
-
-	if len(resp.Data.Items) == 0 {
-		return nil, fmt.Errorf("消息不存在")
-	}
-
-	return &GetMessageResult{
-		Message: resp.Data.Items[0],
-	}, nil
+	// tenant 模式统一走 SDK raw request：typed builder 不支持 with_sender_name /
+	// card_msg_content_type 等 query 参数，raw 路径能力是 typed 的超集。
+	return getMessageViaRawRequest(messageID, cardContentType, "")
 }
 
 // getMessageWithUserToken calls the Get Message API via raw HTTP,
@@ -659,12 +607,12 @@ func getMessageWithUserToken(messageID, userAccessToken, cardContentType string)
 		baseURL = "https://open.feishu.cn"
 	}
 
-	reqURL := fmt.Sprintf("%s/open-apis/im/v1/messages/%s", baseURL, messageID)
+	params := url.Values{}
+	params.Set("with_sender_name", "true")
 	if cardContentType != "" {
-		params := url.Values{}
 		params.Set("card_msg_content_type", cardContentType)
-		reqURL = reqURL + "?" + params.Encode()
 	}
+	reqURL := fmt.Sprintf("%s/open-apis/im/v1/messages/%s?%s", baseURL, messageID, params.Encode())
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("获取消息详情失败: %w", err)
@@ -691,6 +639,7 @@ func getMessageWithUserToken(messageID, userAccessToken, cardContentType string)
 	if resp.Code != 0 {
 		return nil, fmt.Errorf("获取消息详情失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
+	harvestSenderNames(body)
 
 	if len(resp.Data.Items) == 0 {
 		return nil, fmt.Errorf("消息不存在")
@@ -723,6 +672,7 @@ func getMessageViaRawRequest(messageID, cardContentType, userAccessToken string)
 	if cardContentType != "" {
 		req.QueryParams.Set("card_msg_content_type", cardContentType)
 	}
+	req.QueryParams.Set("with_sender_name", "true")
 
 	apiResp, err := cli.Do(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
@@ -739,6 +689,7 @@ func getMessageViaRawRequest(messageID, cardContentType, userAccessToken string)
 	if resp.Code != 0 {
 		return nil, fmt.Errorf("获取消息详情失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
+	harvestSenderNames(apiResp.RawBody)
 	if len(resp.Data.Items) == 0 {
 		return nil, fmt.Errorf("消息不存在")
 	}
@@ -1439,7 +1390,7 @@ func ListThreadMessages(threadID string, opts ListMessagesOptions, userAccessTok
 	return ListMessages(threadID, opts, userAccessToken)
 }
 
-// 自动展开线程回复的默认上限。与官方 lark-cli 保持一致：
+// 自动展开线程回复的默认上限：
 //   - perThread 默认 50：单 thread 最多拉 50 条回复（也是 OpenAPI 单页上限）
 //   - totalLimit 默认 500：所有 thread 累计拉到的回复总数上限，防止极端话题群打爆 QPS
 const (
@@ -1451,7 +1402,7 @@ const (
 // 结果存入 result.ThreadReplies / result.ThreadHasMore。重复 thread_id 只拉一次。
 // 任一 thread 拉失败时静默跳过（不中断整体流程），由调用方决定是否提示。
 //
-// 与 lark-cli `shortcuts/im/convert_lib/thread.go` 行为对齐：按 ByCreateTimeAsc 拉取，
+// 按 ByCreateTimeAsc 拉取，
 // 累计达到 totalLimit 时提前停止。回复列表**不含**根消息本身（根消息已在 Items 里）。
 //
 // 设计要点：

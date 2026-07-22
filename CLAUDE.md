@@ -83,7 +83,7 @@ export FEISHU_APP_SECRET=xxx
 - **读类 · User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`，约 85 个命令）：`msg history/list/get/mget/thread-messages/resource-download`、`task get/list/subtask list/comment list/tasklist get/list/tasks`、`calendar get/list/primary/agenda/freebusy/suggestion/room-find/event get/list/search/attendee list`、`file meta/stats/list/version list/get/download`、`board image/nodes/export-code/lint`、`user read`、`wiki get/nodes/spaces/export/member list`、`drive pull/push/status`、`vc bot meeting-events`（端点拒收 Tenant Token，User 优先）、**sheet 全家桶**（所有 sheet 子命令含写）等。优先级链：`--user-access-token` → `FEISHU_USER_ACCESS_TOKEN` → `~/.feishu-cli/token.json`（过期自动刷新）→ `config.yaml` 的 `user_access_token` → App Token 兜底。
 - **写类 · 默认 Bot 身份**（`resolveOptionalUserToken`）：所有 `add/create/update/delete/move/copy/import/upload/send/reply/forward/merge-forward` 类命令、`comment reply`、`doc content-update / table 写`、`msg delete`（Bot 自撤回）等。**不会自动加载 token.json**，仅当显式传 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到 User Token。`vc bot meeting-join/leave` 同属默认 Bot 身份，但用更严格的 `resolveFlagUserToken`：**只认 `--user-access-token` flag，连 `FEISHU_USER_ACCESS_TOKEN` 环境变量都不读**。
 - **必须 User Token**（`resolveRequiredUserToken` / `requireUserToken`）：`search docs/messages/apps`、`approval task query/approve/reject/transfer`、`approval instance get/cancel/cc`、`task my`（`my_tasks`）、`msg pin/reaction/search-chats/flag`、`chat get/update/delete/member`、`vc search/notes/recording`、`minutes/mail` 全部、`drive upload/download/export/import/move/add-comment/task-result/search`、`calendar rsvp`、`markdown create/fetch/overwrite/diff` 等。失败直接报错。
-- **身份可选 · `--as` 显式切换**（`resolveIdentityToken`）：`bitable` 全家桶（所有子命令含读写）。命令组 persistent flag `--as bot|user|auto`，默认 `auto`（User 优先、Tenant 兜底，未登录自动用 App Token）；`--as bot` 强制 App Token（cron/无人值守，永不过期，无需 `auth login`）；`--as user` 强制 User Token（缺失报错）。底层 `base/v3` 与 `bitable/v1` API 本身同时支持 User/Tenant 身份，故 CLI 不再硬性强制 User Token（对齐官方 `lark-cli` 的 `--as` 模式）。
+- **身份可选 · `--as` 显式切换**（`resolveIdentityToken`）：`bitable` 全家桶（所有子命令含读写）。命令组 persistent flag `--as bot|user|auto`，默认 `auto`（User 优先、Tenant 兜底，未登录自动用 App Token）；`--as bot` 强制 App Token（cron/无人值守，永不过期，无需 `auth login`）；`--as user` 强制 User Token（缺失报错）。底层 `base/v3` 与 `bitable/v1` API 本身同时支持 User/Tenant 身份，故 CLI 不再硬性强制 User Token。
 - **审批任务查询**：`approval task query` 会调用 `/authen/v1/user_info` 推断 `open_id`，缓存到 `~/.feishu-cli/user_profile.json`，`auth logout` 时自动清理
 
 **登录命令四种模式**：
@@ -132,11 +132,11 @@ export FEISHU_APP_SECRET=xxx
 
 ### msg history 自动展开线程（v1.27.1+）
 
-`msg history` 对话题群（chat_mode=thread）默认自动展开每条根消息的线程回复，与官方 lark-cli `+chat-messages-list` 行为对齐：
+`msg history` 对话题群（chat_mode=thread）默认自动展开每条根消息的线程回复：
 
 - 默认 `--expand-threads=true`，单话题最多 50 回复，所有话题累计上限 500
 - JSON 输出顶层新增 `thread_replies` / `thread_has_more` / `thread_replies_card_texts`
-- 共享 sender_names 缓存：合并主消息 + merge_forward + thread_replies 三处来源一起调 contact basic_batch，外部用户名字解析率从 ~8% 提升到 ~42%
+- **发送者名字解析（v1.36+）**：所有读消息请求带 `with_sender_name=true`，服务端直接回填显示名（含 **Bot** 与**外部租户用户**，无需通讯录权限，实测内部群解析率 ~100%）；mentions 与 contact basic_batch 仍作兜底（`internal/client/sender_names.go` 进程级注册表 + `ResolveSenderNames` 三步解析）
 - 关闭：`--expand-threads=false`；调规模：`--threads-per-page` / `--threads-total-limit`
 
 ## 命令速查
@@ -152,6 +152,7 @@ feishu-cli auth status                                   # 查看授权状态
 # 文档导入/导出（核心功能）
 feishu-cli doc import input.md --title "..." --upload-images --verbose
 feishu-cli doc export <doc_id> -o output.md
+feishu-cli doc read <doc_id> {--outline | --heading "标题" | --keyword "正则" [--context N]}  # 大文档选择性读取
 feishu-cli doc content-update <doc_id> --mode <mode> --markdown "..."
 #   mode: append / overwrite / replace_range / delete_range / insert_after
 feishu-cli doc htmlbox {create|update|get|delete} <doc_id> [block_id] --html-file x.html  # 妙笔BOX HTML 小组件（文档里跑动画/ECharts/可交互图表，唯一能"动"的载体）
@@ -160,6 +161,7 @@ feishu-cli doc htmlbox {create|update|get|delete} <doc_id> [block_id] --html-fil
 feishu-cli bitable {create|get|copy|update} ...              # update=重命名/高级权限
 feishu-cli bitable {table|field|record|view|role} <action> ...
 feishu-cli bitable record batch-get --record-ids ...
+feishu-cli bitable record list --filter-json '{"logic":"and","conditions":[["状态","==",["Doing"]]]}' --sort-json '[{"field":"分数","desc":true}]'  # 结构化过滤（tuple DSL，无需关键词；语法见 feishu-cli-data skill）
 feishu-cli bitable view view-{filter|sort|group|visible-fields|timebar|card}-{get|set} ...
 feishu-cli bitable dashboard {list|copy} ...
 feishu-cli bitable form {get|patch} ... ; feishu-cli bitable form field {list|patch} ...
@@ -183,6 +185,7 @@ feishu-cli drive {upload|download|export|import|move|add-comment|task-result} ..
 
 # 视频会议与妙记
 feishu-cli vc {search|notes|recording} ...                       # 需 User Token
+feishu-cli vc note {detail|transcript} <note_id> ...             # 智能纪要详情/统一逐字稿（需 User Token）
 feishu-cli vc bot {meeting-join|meeting-leave} ...               # 默认 Bot/Tenant 身份
 feishu-cli vc bot meeting-events --meeting-id ...                # 需 User Token（端点拒收 Tenant）
 feishu-cli minutes {get|download} --minute-tokens ...           # 需 User Token
@@ -197,6 +200,13 @@ feishu-cli board import <id> diagram.mmd --syntax mermaid --engine local  # Merm
 feishu-cli board update <id> nodes.json --overwrite --snapshot old.json    # 覆盖+快照
 # AI 自由作图首选：5 步管道（生成 SVG → whiteboard-cli 翻译 → 修 z_index → 修剪 viewBox → 分批上传）
 python3 skills/feishu-cli-visual/references/workflows/board/scripts/svg_to_board.py drawing.svg <whiteboard_id>
+
+# 电子表格类型保真 round-trip（读侧 table-get 与写侧 table-put 形状对称）
+feishu-cli sheet table-get <token> <sheet_id> [--range A1:D50] > t.json   # dtype 自动推断
+feishu-cli sheet table-put <token> <sheet_id> --sheets-file t.json
+
+# OKR（--as bot 默认；cycle detail / progress get·update·delete / upload-image 均已就绪）
+feishu-cli okr cycle {list|detail} ... ; feishu-cli okr progress {list|get|create|update|delete} ...
 
 # 其他模块：doc / msg / sheet / calendar / task / tasklist / chat / wiki / file / perm / search / user / dept / comment / media
 ```
@@ -340,17 +350,19 @@ feishu-cli auth login                 # OAuth 用户授权
 | 命名格式 | `feishu-cli_{version}_{platform}.tar.gz` |
 | 内部结构 | 同名目录，二进制统一命名为 `feishu-cli`（Windows 为 `feishu-cli.exe`） |
 | 平台名称 | `linux-amd64`、`linux-arm64`、`darwin-amd64`、`darwin-arm64`、`windows-amd64` |
+| 校验文件 | 打完所有 tar.gz 后在同目录生成 `checksums.txt`：`sha256sum *.tar.gz > checksums.txt`（macOS 用 `shasum -a 256 *.tar.gz > checksums.txt`），随 release 一起上传 |
 
-**原因**：`install.sh` 一键安装脚本依赖此命名规范，`find "$tmpdir" -name "feishu-cli"` 按固定名查找。
+**原因**：`install.sh` 一键安装脚本依赖此命名规范，`find "$tmpdir" -name "feishu-cli"` 按固定名查找；
+并在下载后按 `checksums.txt` 校验 tar.gz 的 sha256（缺失该文件时告警但继续，兼容旧 release）。
 
 ### 流程要点
 
 1. 发版前验证：`gofmt -l cmd internal`、`go test ./...`、`go vet ./...`、`make check-skills`、敏感信息扫描
 2. `VERSION=vX.Y.Z; make build-all VERSION="$VERSION"` 构建所有平台（**不要在打 tag 前直接跑无 `VERSION` 的 `make build-all`**，否则 `git describe` 会注入上一版 tag 的开发版本号）
-3. 按规范打包成 tar.gz（参考现有 release 资产结构）
+3. 按规范打包成 tar.gz（参考现有 release 资产结构），再生成 `checksums.txt`：`sha256sum *.tar.gz > checksums.txt`
 4. 本地验证安装包结构和 `install.sh` 资产命名
 5. 在 main 分支打 tag 并 push：`VERSION=vX.Y.Z; git tag $VERSION && git push origin $VERSION`
-6. `gh release create $VERSION <所有 .tar.gz> --title "$VERSION" --notes "..." --latest`
+6. `gh release create $VERSION <所有 .tar.gz> checksums.txt --title "$VERSION" --notes "..." --latest`
 7. 验证：`curl -fsSL https://raw.githubusercontent.com/riba2534/feishu-cli/main/install.sh | bash`
 
 ### 版本号规则

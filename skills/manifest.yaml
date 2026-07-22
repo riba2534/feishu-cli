@@ -71,7 +71,7 @@
     {"skill": "feishu-cli-platform", "workflow": "search", "prefixes": [["search"]]},
     {"skill": "feishu-cli-platform", "workflow": "directory", "prefixes": [["user"], ["dept"]]},
 
-    {"skill": "feishu-cli-docs", "workflow": "read", "prefixes": [["doc", "get"], ["doc", "blocks"]]},
+    {"skill": "feishu-cli-docs", "workflow": "read", "prefixes": [["doc"], ["doc", "get"], ["doc", "blocks"], ["doc", "read"]]},
     {"skill": "feishu-cli-docs", "workflow": "write", "prefixes": [["doc", "add"], ["doc", "add-board"], ["doc", "add-callout"], ["doc", "batch-update"], ["doc", "content-update"], ["doc", "create"], ["doc", "delete"], ["doc", "media-insert"], ["doc", "table"], ["doc", "update"]]},
     {"skill": "feishu-cli-docs", "workflow": "import", "prefixes": [["doc", "import"]]},
     {"skill": "feishu-cli-docs", "workflow": "export", "prefixes": [["doc", "export"], ["doc", "export-file"], ["doc", "media-download"]]},

@@ -24,12 +24,34 @@ func bitableRecordPath(baseToken, tableID string, extra ...string) string {
 
 var bitableRecordListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "列出记录",
+	Short: "列出记录（支持 --filter-json/--sort-json 结构化过滤排序，无需关键词）",
+	Long: `GET /records，列出数据表记录。与 search 不同，list 不要求 keyword，
+适合纯结构化条件筛选（按状态/数值/日期/空值过滤）。
+
+filter DSL（--filter-json，实测验证）:
+  {"logic":"and|or","conditions":[[字段名或ID, operator, 值], ...]}
+  operator: == != > >= < <= intersects disjoint empty non_empty
+  值按字段类型: 文本→字符串（intersects 做包含匹配）；数字→数字；
+    单选/多选→选项名数组（单选也必须写数组，如 ["P0"]）；复选框→true/false；
+    人员/群/关联→对象数组 [{"id":"ou_xxx"}]；
+    日期→"ExactDate(2026-01-01)" 或 "Today"/"Yesterday"/"Tomorrow"；
+    empty/non_empty 可省略值写二元组 [字段, "empty"]
+
+示例:
+  # 状态为 Doing 且分数 >= 70
+  feishu-cli bitable record list --base-token <bt> --table-id <tid> \
+    --filter-json '{"logic":"and","conditions":[["状态","==",["Doing"]],["分数",">=",70]]}'
+
+  # 按分数降序
+  feishu-cli bitable record list --base-token <bt> --table-id <tid> \
+    --sort-json '[{"field":"分数","desc":true}]'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		viewID, _ := cmd.Flags().GetString("view-id")
 		offset, _ := cmd.Flags().GetInt("offset")
 		limit, _ := cmd.Flags().GetInt("limit")
+		filterJSON, _ := cmd.Flags().GetString("filter-json")
+		sortJSON, _ := cmd.Flags().GetString("sort-json")
 		params := map[string]any{}
 		if viewID != "" {
 			params["view_id"] = viewID
@@ -40,10 +62,32 @@ var bitableRecordListCmd = &cobra.Command{
 		if limit > 0 {
 			params["limit"] = limit
 		}
+		// filter/sort 在 GET 端点作为 JSON 串 query 参数下发（服务端解析字符串）
+		if filterJSON != "" {
+			if err := validateCompactJSON(filterJSON, "--filter-json"); err != nil {
+				return err
+			}
+			params["filter"] = filterJSON
+		}
+		if sortJSON != "" {
+			if err := validateCompactJSON(sortJSON, "--sort-json"); err != nil {
+				return err
+			}
+			params["sort"] = sortJSON
+		}
 		return runBaseV3Simple(cmd, "GET", func(baseToken string) string {
 			return bitableRecordPath(baseToken, tableID)
 		}, params)
 	},
+}
+
+// validateCompactJSON 校验 flag 值是合法 JSON，尽早给出可读错误。
+func validateCompactJSON(s, flagName string) error {
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return fmt.Errorf("解析 %s 失败（需为合法 JSON）: %w", flagName, err)
+	}
+	return nil
 }
 
 var bitableRecordGetCmd = &cobra.Command{
@@ -259,7 +303,23 @@ var bitableRecordBatchCreateCmd = &cobra.Command{
 
 var bitableRecordBatchUpdateCmd = &cobra.Command{
 	Use:   "batch-update",
-	Short: "批量更新记录（v3 格式：{\"record_id_list\":[\"rec1\"],\"patch\":{\"字段\":\"值\"}}）",
+	Short: "批量更新记录（支持统一 patch 与逐记录差异化两种形态）",
+	Long: `POST /records/batch_update，批量更新记录。两种 body 形态（实测均可用）：
+
+形态一 · 统一 patch —— 一组记录打同一份修改:
+  {"record_id_list":["rec1","rec2"],"patch":{"状态":["Done"]}}
+
+形态二 · 逐记录差异化 —— 每条记录各改各的字段和值:
+  {"update_records":{
+     "rec1":{"分数":88},
+     "rec2":{"分数":77,"状态":["Blocked"]}
+  }}
+
+示例:
+  feishu-cli bitable record batch-update --base-token <bt> --table-id <tid> \
+    --config '{"update_records":{"recXXX":{"分数":88},"recYYY":{"状态":["Done"]}}}'
+
+注意: 单次建议 ≤200 条；select 字段值必须写选项名数组（单选也是数组）。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		return runBaseV3WithJSON(cmd, "POST", func(baseToken string) string {
@@ -440,6 +500,8 @@ func init() {
 	bitableRecordListCmd.Flags().String("view-id", "", "视图 ID 过滤")
 	bitableRecordListCmd.Flags().Int("offset", 0, "offset")
 	bitableRecordListCmd.Flags().Int("limit", 0, "limit")
+	bitableRecordListCmd.Flags().String("filter-json", "", `结构化过滤 JSON（tuple DSL，见 --help）`)
+	bitableRecordListCmd.Flags().String("sort-json", "", `排序 JSON 数组，如 [{"field":"分数","desc":true}]`)
 
 	// get 需要 record-id
 	bitableRecordGetCmd.Flags().String("record-id", "", "record_id（必填）")

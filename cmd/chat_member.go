@@ -2,12 +2,20 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
+
+// chatMemberPageDelay 是 --page-all 翻页时的页间隔，避免拉大群成员时触发频控。
+const chatMemberPageDelay = 200 * time.Millisecond
+
+// chatMemberMaxPages 是 --page-all 的安全上限，防止服务端异常时无限翻页。
+const chatMemberMaxPages = 1000
 
 var chatMemberCmd = &cobra.Command{
 	Use:   "member",
@@ -64,14 +72,17 @@ var chatMemberListCmd = &cobra.Command{
   --member-id-type    成员 ID 类型（open_id/user_id/union_id，默认 open_id）
   --page-size         每页数量
   --page-token        分页标记
+  --page-all          自动翻页拉取全部成员（忽略 --page-token）
   --as                身份选择（auto/user/bot，默认 auto）
 
 示例:
   feishu-cli chat member list oc_xxx                # 默认 auto
   feishu-cli chat member list oc_xxx --as bot       # 外部群推荐：用 App Token
   feishu-cli chat member list oc_xxx --member-id-type user_id --page-size 50
+  feishu-cli chat member list oc_xxx --page-all     # 拉全量成员
 
-外部群拉成员推荐用 --as bot（需 App 开了"对外共享能力" + Bot 已加群）。`,
+外部群拉成员推荐用 --as bot（需 App 开了"对外共享能力" + Bot 已加群）。
+若群配置限制了成员可见性，--page-all 会在 stderr 打印截断告警，提示名单不完整。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -88,6 +99,20 @@ var chatMemberListCmd = &cobra.Command{
 		memberIDType, _ := cmd.Flags().GetString("member-id-type")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
+		pageAll, _ := cmd.Flags().GetBool("page-all")
+
+		if pageAll {
+			// 自动翻页时若未显式指定每页大小，用最大值 100 减少往返。
+			effectiveSize := pageSize
+			if !cmd.Flags().Changed("page-size") {
+				effectiveSize = 100
+			}
+			result, err := listAllChatMembers(chatID, memberIDType, effectiveSize, token)
+			if err != nil {
+				return translateChatError(err)
+			}
+			return printJSON(result)
+		}
 
 		result, err := client.ListChatMembers(chatID, memberIDType, pageSize, pageToken, token)
 		if err != nil {
@@ -96,6 +121,43 @@ var chatMemberListCmd = &cobra.Command{
 
 		return printJSON(result)
 	},
+}
+
+// listAllChatMembers 自动翻页拉取全部群成员，并在服务端因安全设置截断时打印中文告警。
+// 带非递增 token 保护与安全页数上限，防止服务端异常时无限循环。
+func listAllChatMembers(chatID, memberIDType string, pageSize int, token string) (*client.ListChatMembersResult, error) {
+	all := &client.ListChatMembersResult{}
+	pageToken := ""
+	memberTotal := 0
+	for page := 0; page < chatMemberMaxPages; page++ {
+		p, err := client.ListChatMembersPage(chatID, memberIDType, pageSize, pageToken, token)
+		if err != nil {
+			return nil, err
+		}
+		all.Items = append(all.Items, p.Items...)
+		memberTotal = p.MemberTotal
+
+		if !p.HasMore || p.PageToken == "" {
+			break
+		}
+		if p.PageToken == pageToken {
+			// 服务端异常回显相同 token 却仍标记 has_more，停止翻页避免死循环。
+			fmt.Fprintln(os.Stderr, "警告: 服务端返回了不推进的分页标记，停止翻页，成员名单可能不完整")
+			break
+		}
+		pageToken = p.PageToken
+		time.Sleep(chatMemberPageDelay)
+	}
+
+	// 安全设置截断：翻页结束后服务端声称的成员总数仍大于已取回条数，
+	// 说明该群配置限制了成员可见性，返回的名单不完整。
+	if memberTotal > len(all.Items) {
+		fmt.Fprintf(os.Stderr,
+			"警告: 该群成员总数为 %d，但仅能取回 %d 条，服务端因群安全设置截断了成员名单，数据可能不完整\n",
+			memberTotal, len(all.Items))
+	}
+
+	return all, nil
 }
 
 var chatMemberAddCmd = &cobra.Command{
@@ -200,6 +262,7 @@ func init() {
 	chatMemberListCmd.Flags().String("member-id-type", "open_id", "成员 ID 类型（open_id/user_id/union_id）")
 	chatMemberListCmd.Flags().Int("page-size", 0, "每页数量")
 	chatMemberListCmd.Flags().String("page-token", "", "分页标记")
+	chatMemberListCmd.Flags().Bool("page-all", false, "自动翻页拉取全部成员（忽略 --page-token）")
 	chatMemberListCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	chatMemberListCmd.Flags().String("as", "auto", "身份选择: bot | user | auto（默认 auto = User 优先，回退 Bot）")
 

@@ -7,8 +7,8 @@
 //   - 文件锁：bus.json 读写走 flock，避免多进程同时写入损坏
 //   - 进程探活：status / stop 通过 PID 信号 0 检测进程是否存活
 //
-// 与 lark-cli 的差异：
-//   - lark-cli 用 Unix domain socket 跑独立 bus 守护进程做事件 fan-out；feishu-cli 简化为
+// 设计取舍：
+//   - 不跑独立 bus 守护进程做事件 fan-out；feishu-cli 简化为
 //     每个 consume 直接连 WebSocket（一个 EventKey 一个连接），不做事件分发——足够覆盖
 //     AI Agent 单 EventKey 订阅的主线场景
 //   - 重连策略复用 oapi-sdk-go v3 ws.Client.WithAutoReconnect（默认开启，无限重试）
@@ -34,6 +34,16 @@ type KeyDefinition struct {
 	AuthTypes             []string `json:"auth_types,omitempty"`
 	RequiredConsoleEvents []string `json:"required_console_events,omitempty"`
 	PayloadSchema         string   `json:"payload_schema,omitempty"`
+
+	// CardCallback 为 true 时该 Key 走卡片回调帧（callback 分发通道），
+	// 由 OnP2CardActionTrigger 处理而非 OnCustomizedEvent（两者是不同的 WS 帧类型）。
+	CardCallback bool `json:"card_callback,omitempty"`
+
+	// SubscribePath 非空时，consume 启动前需以 User 身份 POST 该端点完成服务端订阅注册
+	// （否则连上 WS 也收不到事件）。对 SubscribeTypes 中每个类型各调一次，
+	// body 形如 {"subscription_type": "<type>"}。订阅是持久的用户级关系，进程退出不注销。
+	SubscribePath  string   `json:"subscribe_path,omitempty"`
+	SubscribeTypes []string `json:"subscribe_types,omitempty"`
 }
 
 // keyRegistry 是手工维护的常用 EventKey 列表。
@@ -233,20 +243,82 @@ var keyRegistry = []KeyDefinition{
 		Scopes:      []string{"drive:drive"},
 	},
 
-	// ---------- 审批 ----------
+	// ---------- 交互回调 ----------
 	{
-		Key:         "approval_instance",
-		EventType:   "approval_instance",
-		Description: "审批实例状态变更",
-		Domain:      "approval",
-		Scopes:      []string{"approval:approval"},
+		Key:         "card.action.trigger",
+		EventType:   "card.action.trigger",
+		Description: "卡片交互回调（按钮点击/表单提交/下拉选择等），交互式 Bot 的核心事件",
+		Domain:      "im",
+		Scopes:      []string{"im:message"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"card.action.trigger",
+		},
+		CardCallback: true,
+		PayloadSchema: `{
+  "schema": "2.0",
+  "header": {"event_id": "...", "event_type": "card.action.trigger", "token": "..."},
+  "event": {
+    "operator": {"open_id": "ou_xxx"},
+    "token": "卡片更新凭证（可用于回写卡片）",
+    "action": {
+      "tag": "button|input|select_static|...",
+      "value": {"自定义键": "值"},
+      "form_value": {"表单字段": "值"}
+    },
+    "context": {"open_message_id": "om_xxx", "open_chat_id": "oc_xxx"}
+  }
+}`,
 	},
 	{
-		Key:         "approval_task",
-		EventType:   "approval_task",
-		Description: "审批任务变更",
+		Key:         "application.bot.menu_v6",
+		EventType:   "application.bot.menu_v6",
+		Description: "用户点击 Bot 自定义菜单",
+		Domain:      "application",
+		Scopes:      []string{"im:message"},
+		AuthTypes:   []string{"bot"},
+		RequiredConsoleEvents: []string{
+			"application.bot.menu_v6",
+		},
+		PayloadSchema: `{
+  "schema": "2.0",
+  "header": {"event_id": "...", "event_type": "application.bot.menu_v6"},
+  "event": {
+    "operator": {"operator_id": {"open_id": "ou_xxx"}},
+    "event_key": "自定义菜单的 event_key",
+    "timestamp": 1700000000
+  }
+}`,
+	},
+
+	// ---------- 审批 ----------
+	// 注意：审批事件除后台勾选事件外，还需以 User 身份注册服务端订阅关系
+	// （consume 会自动完成，需已 auth login）；订阅是持久用户级关系，进程退出不注销。
+	{
+		Key:         "approval.instance.status_changed_v4",
+		EventType:   "approval.instance.status_changed_v4",
+		Description: "审批实例状态变更（对发起人/审批参与人可见时触发）",
 		Domain:      "approval",
-		Scopes:      []string{"approval:approval"},
+		Scopes:      []string{"approval:instance:read"},
+		AuthTypes:   []string{"user"},
+		RequiredConsoleEvents: []string{
+			"approval.instance.status_changed_v4",
+		},
+		SubscribePath:  "/open-apis/approval/v4/instances/subscription",
+		SubscribeTypes: []string{"INVOLVED_APPROVAL", "MANAGED_APPROVAL"},
+	},
+	{
+		Key:         "approval.task.status_changed_v4",
+		EventType:   "approval.task.status_changed_v4",
+		Description: "审批任务状态变更（对发起人/任务审批人可见时触发）",
+		Domain:      "approval",
+		Scopes:      []string{"approval:task:read"},
+		AuthTypes:   []string{"user"},
+		RequiredConsoleEvents: []string{
+			"approval.task.status_changed_v4",
+		},
+		SubscribePath:  "/open-apis/approval/v4/tasks/subscription",
+		SubscribeTypes: []string{"INVOLVED_APPROVAL", "MANAGED_APPROVAL"},
 	},
 
 	// ---------- 视频会议 ----------

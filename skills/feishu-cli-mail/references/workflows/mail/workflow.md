@@ -62,6 +62,9 @@ feishu-cli mail signature --detail 7012345678901234567
 | `mail reply` | 回复邮件（自动 Re: 前缀 + 引用块 + In-Reply-To） |
 | `mail reply-all` | 全部回复（包含原邮件 To 和 CC 的所有人，**自动排除自己**） |
 | `mail forward` | 转发邮件（自动 Fwd: 前缀 + 原文；正文 text-only） |
+| `mail draft-send` | 发送一封已存在的草稿（不可撤销，需 `--confirm-send` 确认） |
+| `mail message-modify` | 批量给邮件加/删标签、移动文件夹（单次 ≤20 封，标签操作可逆） |
+| `mail message-trash` | 批量软删除邮件（移入废纸篓，可恢复；单次 ≤20 封，需 `--yes` 或交互确认） |
 
 ```bash
 # 发邮件（默认保存为草稿，安全兜底）
@@ -90,6 +93,30 @@ feishu-cli mail reply-all --message-id msg_xxx --body "+1"
 # 转发
 feishu-cli mail forward --message-id msg_xxx --to user@example.com --body "请关注此邮件"
 ```
+
+### 邮件管理（标签 / 文件夹 / 删除 / 发送草稿）
+
+```bash
+# 批量给邮件加标签（系统标签需大写：FLAGGED/IMPORTANT/UNREAD）
+feishu-cli mail message-modify --message-ids m1,m2 --add-label-ids FLAGGED
+
+# 加一个标签同时去掉另一个（例如标记重要并置为已读）
+feishu-cli mail message-modify --message-ids m1 --add-label-ids IMPORTANT --remove-label-ids UNREAD
+
+# 移动到文件夹（--folder-id 对应 add_folder；系统文件夹 INBOX/ARCHIVED；删除请用 message-trash）
+feishu-cli mail message-modify --message-ids m1,m2,m3 --folder-id ARCHIVED
+
+# 批量软删除（移入废纸篓，可在飞书邮箱恢复）
+feishu-cli mail message-trash --message-ids m1,m2         # 交互式确认
+feishu-cli mail message-trash --message-ids m1,m2 --yes   # 跳过确认
+
+# 发送一封已存在的草稿（不可撤销，默认只提示，加 --confirm-send 才真正发送）
+DRAFT_ID=$(feishu-cli mail draft-create --to user@example.com --subject "合同" --body "初稿" -o json | jq -r .draft_id)
+feishu-cli mail draft-send --draft-id $DRAFT_ID                 # 仅提示，不发送
+feishu-cli mail draft-send --draft-id $DRAFT_ID --confirm-send  # 确认发送
+```
+
+> **可逆性提示**：`message-modify` 的标签操作可逆（反向再执行一次即可还原）；`message-trash` 是软删除，邮件进入废纸篓后可用 `message-modify --folder-id INBOX` 移回；`draft-send` 一旦确认发送不可撤销。
 
 ## 典型工作流
 
@@ -140,6 +167,9 @@ feishu-cli mail draft-edit --draft-id $DRAFT_ID --to user@example.com --subject 
 | `mail send` | 上述只读权限 + `mail:user_mailbox.message:send`、`mail:user_mailbox.message:modify`（草稿创建走 `:modify`，`--confirm-send` 触发 `:send`）；`--inline-images-auto-scan` 额外需要 `drive:drive`、`drive:file:upload` 和 `auth:user.id:read`（用于获取上传 `parent_node` 所需的 open_id） |
 | `mail draft-create` / `mail draft-edit` | 上述只读权限 + `mail:user_mailbox.message:modify`（仅写草稿，不发送，不需 `:send`） |
 | `mail reply` / `mail reply-all` / `mail forward` | 上述只读权限 + `mail:user_mailbox.message:send`、`mail:user_mailbox.message:modify`（先建草稿后发送，与 `mail send --confirm-send` 同） |
+| `mail draft-send` | `mail:user_mailbox.message:send`（发送已存在草稿；未加 `--confirm-send` 时仅提示、不调接口，不消耗权限） |
+| `mail message-modify` | `mail:user_mailbox.message:modify`（加/删标签、移动文件夹） |
+| `mail message-trash` | `mail:user_mailbox.message:modify`（软删除同属 modify 权限） |
 | `mail template create` | `mail:user_mailbox:readonly` + `mail:user_mailbox.message:modify` |
 | `mail template list` | `mail:user_mailbox:readonly` |
 

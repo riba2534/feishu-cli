@@ -33,6 +33,24 @@ feishu-cli wiki export <node_token_or_url> --output /tmp/feishu_wiki.md --downlo
 feishu-cli sheet export <spreadsheet_token_or_url> --format markdown --output /tmp/feishu_sheet.md
 ```
 
+## 大文档选择性读取（doc read）⭐
+
+**大文档不要整篇 export**——先看结构再取所需部分，节省上下文：
+
+```bash
+# 第一步：看标题大纲（层级缩进 + block_id）
+feishu-cli doc read <document_id> --outline
+
+# 第二步：只取目标章节（按标题子串匹配，输出到下一个同级/更高级标题前的 Markdown）
+feishu-cli doc read <document_id> --heading "性能优化"
+
+# 或直接按内容定位（正则，多词用 | 连接；--context 控制上下文行数，默认 3）
+feishu-cli doc read <document_id> --keyword "QPS|限流" --context 5
+```
+
+三种模式互斥（三选一）。`--heading` 命中多个标题时输出第一个并在 stderr 提示其余候选；
+代码块围栏内的 `#` 行不会被误判为标题。block 级精确分页仍用 `doc blocks`。
+
 ## 获取文档元信息（doc get）
 
 读取文档基本信息（document_id、revision_id、title），用于在 export 之前确认目标、或拿 revision_id 作为后续 API 调用参数。同样走"User 优先 + Tenant 兜底"。

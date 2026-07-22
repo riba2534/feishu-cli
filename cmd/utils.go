@@ -412,10 +412,8 @@ func translateChatError(err error) error {
 	if err == nil {
 		return nil
 	}
-	msg := err.Error()
-
 	switch {
-	case strings.Contains(msg, "232033"):
+	case client.HasAPICode(err, 232033):
 		return fmt.Errorf(`%w
 
 📌 这是飞书外部群权限错误（232033）。
@@ -435,14 +433,14 @@ func translateChatError(err error) error {
 
 详见 skills/feishu-cli-messaging/references/workflows/chat/references/external-chat.md`, err)
 
-	case strings.Contains(msg, "232011"):
+	case client.HasAPICode(err, 232011):
 		return fmt.Errorf(`%w
 
 📌 操作者不在群里（232011）。当前 Bot/用户没加入这个群:
   - 让群管理员邀请进群: feishu-cli chat member add <chat_id> --id-list <id>
   - 或者主动入群（需邀请链接）: feishu-cli chat link <chat_id>`, err)
 
-	case strings.Contains(msg, "232006"):
+	case client.HasAPICode(err, 232006):
 		return fmt.Errorf(`%w
 
 📌 chat_id 无效（232006）。请检查 ID 是否正确，可通过以下方式重新获取:

@@ -37,6 +37,7 @@ type CalendarEvent struct {
 	Visibility  string `json:"visibility,omitempty"`
 	CreateTime  string `json:"create_time,omitempty"`
 	RecurringID string `json:"recurring_event_id,omitempty"`
+	Recurrence  string `json:"recurrence,omitempty"` // 重复日程规则（RFC5545 RRULE）
 	IsException bool   `json:"is_exception,omitempty"`
 	AppLink     string `json:"app_link,omitempty"`
 	Color       int    `json:"color,omitempty"`
@@ -103,6 +104,7 @@ type CreateEventParams struct {
 	EndTime     string // RFC3339 格式
 	TimeZone    string
 	Location    string
+	Recurrence  string // 重复日程规则（RFC5545 RRULE），如 FREQ=WEEKLY;BYDAY=MO
 }
 
 // CreateEvent 创建日程
@@ -142,6 +144,10 @@ func CreateEvent(params *CreateEventParams, userAccessToken string) (*CalendarEv
 			Name(params.Location).
 			Build()
 		eventBuilder.Location(location)
+	}
+
+	if params.Recurrence != "" {
+		eventBuilder.Recurrence(params.Recurrence)
 	}
 
 	req := larkcalendar.NewCreateCalendarEventReqBuilder().
@@ -271,6 +277,7 @@ type UpdateEventParams struct {
 	StartTime   string // RFC3339 格式
 	EndTime     string // RFC3339 格式
 	Location    string
+	Recurrence  string // 重复日程规则（RFC5545 RRULE），如 FREQ=WEEKLY;BYDAY=MO
 }
 
 // UpdateEvent 更新日程（使用 Patch 方式）
@@ -317,6 +324,10 @@ func UpdateEvent(params *UpdateEventParams, userAccessToken string) (*CalendarEv
 			Name(params.Location).
 			Build()
 		eventBuilder.Location(location)
+	}
+
+	if params.Recurrence != "" {
+		eventBuilder.Recurrence(params.Recurrence)
 	}
 
 	req := larkcalendar.NewPatchCalendarEventReqBuilder().
@@ -952,6 +963,7 @@ func convertEvent(event *larkcalendar.CalendarEvent) *CalendarEvent {
 		Status:      StringVal(event.Status),
 		Visibility:  StringVal(event.Visibility),
 		RecurringID: StringVal(event.RecurringEventId),
+		Recurrence:  StringVal(event.Recurrence),
 		IsException: BoolVal(event.IsException),
 		AppLink:     StringVal(event.AppLink),
 		Color:       IntVal(event.Color),

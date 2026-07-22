@@ -35,10 +35,13 @@ feishu-cli calendar create-event \
   --start "2024-01-21T14:00:00+08:00" \
   --end "2024-01-21T15:00:00+08:00" \
   [--description "会议描述"] \
-  [--location "会议室名称"]
+  [--location "会议室名称"] \
+  [--rrule "FREQ=WEEKLY;BYDAY=MO"]
 ```
 
 必填参数：`--calendar-id`、`--summary`、`--start`、`--end`
+
+`--rrule` 传 RFC5545 RRULE 字符串创建重复日程，`--start`/`--end` 为首个实例时间。详见「重复日程（RRULE）操作指引」。
 
 ### 列出日程
 
@@ -67,14 +70,19 @@ feishu-cli calendar update-event \
   [--start "2024-01-21T15:00:00+08:00"] \
   [--end "2024-01-21T16:00:00+08:00"] \
   [--description "新描述"] \
-  [--location "新地点"]
+  [--location "新地点"] \
+  [--rrule "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"]
 ```
+
+至少提供一个可更新字段（含 `--rrule`）。`--rrule` 会作用于整个重复序列。详见「重复日程（RRULE）操作指引」。
 
 ### 删除日程
 
 ```bash
 feishu-cli calendar delete-event <calendar_id> <event_id>
 ```
+
+删除重复日程会删除整个序列（服务端保留 `status=cancelled` 的 tombstone，`get-event` 仍可查到但已非活动日程）。
 
 ## 搜索日程
 

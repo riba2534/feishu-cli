@@ -18,8 +18,7 @@ import (
 // 通过给 GET /open-apis/im/v1/messages/{id} 加 query 参数
 // card_msg_content_type=raw_card_content，API 会改在 data.items[] 里返回
 // 容器自身 + 全部子消息（每条子消息带 upper_message_id 重建父子关系）。
-// 该行为飞书未文档化，参考官方 lark cli 实现：
-// https://github.com/larksuite/cli shortcuts/im/convert_lib/merge.go
+// 该行为飞书未文档化，已实测验证。
 const (
 	// mergeForwardMaxDepth 限制 merge_forward 递归展开层数（防呆，正常 1-2 层）。
 	mergeForwardMaxDepth = 10
@@ -56,6 +55,7 @@ func getMessageItemsRaw(messageID, cardContentType, userAccessToken string) ([]*
 	if cardContentType != "" {
 		req.QueryParams.Set("card_msg_content_type", cardContentType)
 	}
+	req.QueryParams.Set("with_sender_name", "true")
 
 	apiResp, err := cli.Do(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
@@ -72,6 +72,7 @@ func getMessageItemsRaw(messageID, cardContentType, userAccessToken string) ([]*
 	if resp.Code != 0 {
 		return nil, fmt.Errorf("获取消息详情失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
+	harvestSenderNames(apiResp.RawBody)
 	return resp.Data.Items, nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -335,20 +336,50 @@ func GetOKRCycleDetail(cycleID string, userAccessToken string) ([]*OKRObjective,
 		return nil, err
 	}
 
-	out := make([]*OKRObjective, 0, len(rawObjectives))
+	objs := make([]*OKRObjective, 0, len(rawObjectives))
 	for _, ro := range rawObjectives {
-		obj := ro.toObjective()
-		if obj == nil {
-			continue
+		if obj := ro.toObjective(); obj != nil {
+			objs = append(objs, obj)
 		}
-		krs, err := listOKRObjectiveKeyResults(client, tokenType, reqOpts, obj.ID)
-		if err != nil {
-			return nil, fmt.Errorf("查询目标 %s 的关键结果失败: %w", obj.ID, err)
-		}
-		obj.KeyResults = krs
-		out = append(out, obj)
 	}
-	return out, nil
+
+	// 每个目标的 KR 独立分页拉取：worker 池并发（保持输入顺序），
+	// M 个目标从 M 次串行往返降为 ~M/5。
+	const krWorkers = 5
+	workers := krWorkers
+	if len(objs) < workers {
+		workers = len(objs)
+	}
+	errs := make([]error, len(objs))
+	if workers > 0 {
+		indexCh := make(chan int)
+		var wg sync.WaitGroup
+		for w := 0; w < workers; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := range indexCh {
+					krs, err := listOKRObjectiveKeyResults(client, tokenType, reqOpts, objs[i].ID)
+					if err != nil {
+						errs[i] = fmt.Errorf("查询目标 %s 的关键结果失败: %w", objs[i].ID, err)
+						continue
+					}
+					objs[i].KeyResults = krs
+				}
+			}()
+		}
+		for i := range objs {
+			indexCh <- i
+		}
+		close(indexCh)
+		wg.Wait()
+	}
+	for _, err := range errs {
+		if err != nil {
+			return nil, err
+		}
+	}
+	return objs, nil
 }
 
 func listOKRCycleObjectives(client okrHTTPDoer, tokenType larkcore.AccessTokenType, reqOpts []larkcore.RequestOptionFunc, cycleID string) ([]*okrRawObjective, error) {
@@ -544,7 +575,7 @@ type OKRProgressRateInput struct {
 // CreateOKRProgress 创建一条 OKR 进展记录。
 // 走 v3 SDK 的 ProgressRecord.Create，内容字段使用 SDK 的 ContentBlock 结构；
 // 但 SDK 的 ContentBlock JSON tag 用的是 v1 字段名（type/textRun/elements/...），
-// 与 lark-cli 的 v1 形态一致，因此外部传入的 JSON 串以 v1 格式为准。
+// 外部传入的 JSON 串以 v1 格式为准。
 func CreateOKRProgress(opts CreateOKRProgressOptions, userAccessToken string) (*OKRProgress, error) {
 	client, err := GetClient()
 	if err != nil {

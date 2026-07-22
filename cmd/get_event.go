@@ -84,6 +84,9 @@ var getEventCmd = &cobra.Command{
 			if event.RecurringID != "" {
 				fmt.Printf("  重复日程 ID: %s\n", event.RecurringID)
 			}
+			if event.Recurrence != "" {
+				fmt.Printf("  重复规则:    %s\n", event.Recurrence)
+			}
 			if event.IsException {
 				fmt.Printf("  是否例外:    是\n")
 			}

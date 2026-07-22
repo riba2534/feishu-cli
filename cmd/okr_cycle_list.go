@@ -34,8 +34,10 @@ var okrCycleListCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 
-		// OKR API 服务端拒 user access token（99991668 实测），强制 App Token
-		token := ""
+		token, err := resolveIdentityToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		cycles, err := client.ListOKRCycles(client.ListOKRCyclesOptions{}, token)
 		if err != nil {

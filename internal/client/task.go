@@ -1141,8 +1141,9 @@ func taskToInfo(task *larktask.Task) *TaskInfo {
 		}
 	}
 
-	if completedAt := StringVal(task.CompletedAt); completedAt != "" {
-		if ts, err := strconv.ParseInt(completedAt, 10, 64); err == nil {
+	// completed_at 为 "0" 表示未完成（reopen 任务时即写回 "0"），不应格式化为 1970 日期
+	if completedAt := StringVal(task.CompletedAt); completedAt != "" && completedAt != "0" {
+		if ts, err := strconv.ParseInt(completedAt, 10, 64); err == nil && ts > 0 {
 			info.CompletedAt = time.UnixMilli(ts).Format("2006-01-02 15:04:05")
 		}
 	}

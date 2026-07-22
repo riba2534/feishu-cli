@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -29,6 +30,7 @@ var sendMessageCmd = &cobra.Command{
   --file, -f          发送本地文件（自动上传并发送，快捷方式）
   --image             发送本地图片（自动上传并发送，快捷方式）
   --upload-images     自动解析并上传 post/interactive 消息中的本地图片
+  --idempotency-key   幂等键（≤50 字符），服务端按此键去重，防止重发
   --output, -o        输出格式（json）
 
 接收者类型:
@@ -94,7 +96,14 @@ var sendMessageCmd = &cobra.Command{
   # 在已有话题内追加消息
   feishu-cli msg send \
     --thread-id omt_xxx \
-    --text "话题内继续聊"`,
+    --text "话题内继续聊"
+
+  # 使用幂等键防止重发（相同 key 重复调用只会发出一条消息）
+  feishu-cli msg send \
+    --receive-id-type email \
+    --receive-id user@example.com \
+    --text "对账通知" \
+    --idempotency-key "bill-2026-07-22"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
 		receiveID, _ := cmd.Flags().GetString("receive-id")
@@ -114,6 +123,11 @@ var sendMessageCmd = &cobra.Command{
 			return err
 		}
 		if err := validateSendMessageType(msgType); err != nil {
+			return err
+		}
+
+		idempotencyKey, _ := cmd.Flags().GetString("idempotency-key")
+		if err := validateIdempotencyKey(idempotencyKey); err != nil {
 			return err
 		}
 
@@ -228,7 +242,7 @@ var sendMessageCmd = &cobra.Command{
 			msgContent = processedContent
 		}
 
-		messageID, err := client.SendMessage(receiveIDType, receiveID, msgType, msgContent, token)
+		messageID, err := client.SendMessage(receiveIDType, receiveID, msgType, msgContent, token, idempotencyKey)
 		if err != nil {
 			return err
 		}
@@ -267,6 +281,18 @@ func validateSendMessageType(msgType string) error {
 	}
 }
 
+// validateIdempotencyKey 校验幂等键长度：飞书发消息 API 的 uuid 字段上限 50 **字符**
+// （官方数据校验规则按字符计，非字节），用 rune 数校验以免中文键被误拒。
+func validateIdempotencyKey(key string) error {
+	if key == "" {
+		return nil
+	}
+	if n := utf8.RuneCountInString(key); n > 50 {
+		return fmt.Errorf("--idempotency-key 过长：%d 字符，上限 50 字符", n)
+	}
+	return nil
+}
+
 func init() {
 	msgCmd.AddCommand(sendMessageCmd)
 	sendMessageCmd.Flags().String("receive-id-type", "", "接收者类型（email/open_id/user_id/union_id/chat_id/thread_id）")
@@ -279,6 +305,7 @@ func init() {
 	sendMessageCmd.Flags().StringP("file", "f", "", "发送本地文件（自动上传并发送）")
 	sendMessageCmd.Flags().String("image", "", "发送本地图片（自动上传并发送）")
 	sendMessageCmd.Flags().Bool("upload-images", false, "自动解析并上传 post/interactive 消息中的本地图片")
+	sendMessageCmd.Flags().String("idempotency-key", "", "幂等键（≤50 字符），服务端按此键去重；相同键重复发送返回首次消息，防止重发")
 	sendMessageCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	sendMessageCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 }

@@ -1,10 +1,12 @@
 package event
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkevent "github.com/larksuite/oapi-sdk-go/v3/event"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
+	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 )
 
@@ -36,6 +39,10 @@ type ConsumeOptions struct {
 	// 退出条件（whichever fires first）
 	MaxEvents int           // 0 = 不限制
 	Timeout   time.Duration // 0 = 不限制
+
+	// UserAccessToken 供需要服务端订阅注册的 EventKey（KeyDefinition.SubscribePath 非空，
+	// 如审批 v4 事件）在 consume 启动前以 User 身份注册订阅关系。其余 EventKey 不需要。
+	UserAccessToken string
 
 	// 守护进程协议
 	Bus *Bus // 已构造好的 bus 句柄；nil 时不注册到 bus.json（test 模式）
@@ -88,6 +95,14 @@ func (r *Runtime) Run(ctx context.Context) (reason string, err error) {
 		return "error", err
 	}
 
+	// 需要服务端订阅注册的 EventKey（如审批 v4）：连 WS 前先以 User 身份注册订阅关系，
+	// 否则连上也收不到事件。订阅是持久用户级关系，进程退出不注销。
+	if def.SubscribePath != "" {
+		if err := r.registerSubscriptions(ctx, def); err != nil {
+			return "error", err
+		}
+	}
+
 	// Register 到 bus.json
 	if r.opts.Bus != nil {
 		entry := ConsumerEntry{
@@ -133,11 +148,22 @@ func (r *Runtime) Run(ctx context.Context) (reason string, err error) {
 		}()
 	}
 
-	// 构造 dispatcher
+	// 构造 dispatcher：卡片回调走 callback 分发通道（与普通事件是不同的 WS 帧类型），
+	// 其余走 OnCustomizedEvent 原样透传。
 	dis := dispatcher.NewEventDispatcher("", "")
-	dis.OnCustomizedEvent(def.EventType, func(ctx context.Context, ev *larkevent.EventReq) error {
-		return r.emit(ev)
-	})
+	if def.CardCallback {
+		dis.OnP2CardActionTrigger(func(ctx context.Context, ev *callback.CardActionTriggerEvent) (*callback.CardActionTriggerResponse, error) {
+			if ev != nil && ev.EventReq != nil {
+				_ = r.emit(ev.EventReq)
+			}
+			// 返回空响应 = ACK 且不更新卡片；卡片回写由消费方用 event.token 调 OpenAPI 完成
+			return &callback.CardActionTriggerResponse{}, nil
+		})
+	} else {
+		dis.OnCustomizedEvent(def.EventType, func(ctx context.Context, ev *larkevent.EventReq) error {
+			return r.emit(ev)
+		})
+	}
 
 	// 安装 panic recover 包装的 logger，避免 SDK 日志炸 stderr
 	cli := larkws.NewClient(
@@ -181,6 +207,69 @@ func (r *Runtime) Run(ctx context.Context) (reason string, err error) {
 		}
 		return "signal", nil
 	}
+}
+
+// subscribeHTTPTimeout 订阅注册请求的超时上限：注册是 consume 启动的前置步骤，
+// 不能因端点挂起阻塞整个启动流程。
+const subscribeHTTPTimeout = 15 * time.Second
+
+// registerSubscriptions 对 def.SubscribeTypes 逐个 POST def.SubscribePath 注册服务端订阅。
+// 需要 User Access Token；任一类型注册失败即报错（已注册的类型服务端幂等处理）。
+// fail-closed：HTTP 非 2xx、响应体不可解析都视为注册失败——订阅没建立时连上 WS 也收不到
+// 事件，静默继续只会制造"看似在跑却永远无事件"的假象。
+func (r *Runtime) registerSubscriptions(ctx context.Context, def KeyDefinition) error {
+	if r.opts.UserAccessToken == "" {
+		return fmt.Errorf("EventKey %s 需要以 User 身份注册服务端订阅，请先 `feishu-cli auth login`（scope: %s）",
+			def.Key, strings.Join(def.Scopes, " "))
+	}
+	httpClient := &http.Client{Timeout: subscribeHTTPTimeout}
+	types := def.SubscribeTypes
+	if len(types) == 0 {
+		types = []string{""}
+	}
+	for _, st := range types {
+		body := map[string]string{}
+		if st != "" {
+			body["subscription_type"] = st
+		}
+		payload, _ := json.Marshal(body)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.opts.BaseURL+def.SubscribePath, bytes.NewReader(payload))
+		if err != nil {
+			return fmt.Errorf("构造订阅请求失败: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+r.opts.UserAccessToken)
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("注册订阅（%s）失败: %w", st, err)
+		}
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_ = resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("注册订阅（%s %s）失败: HTTP %d, body: %s", def.SubscribePath, st, resp.StatusCode, truncateForErr(respBody))
+		}
+		var apiResp struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+		}
+		if err := json.Unmarshal(respBody, &apiResp); err != nil {
+			return fmt.Errorf("注册订阅（%s %s）失败: 响应不可解析（%v），body: %s", def.SubscribePath, st, err, truncateForErr(respBody))
+		}
+		if apiResp.Code != 0 {
+			return fmt.Errorf("注册订阅（%s %s）失败: code=%d, msg=%s", def.SubscribePath, st, apiResp.Code, apiResp.Msg)
+		}
+		fmt.Fprintf(r.opts.ErrOut, "[event] 已注册服务端订阅: %s subscription_type=%s\n", def.Key, st)
+	}
+	return nil
+}
+
+// truncateForErr 把响应体截断到 512 字节内用于错误信息，避免超长 HTML 刷屏。
+func truncateForErr(b []byte) string {
+	const maxLen = 512
+	if len(b) > maxLen {
+		return string(b[:maxLen]) + "...(截断)"
+	}
+	return string(b)
 }
 
 // setReason 串行写入 reason 字段。

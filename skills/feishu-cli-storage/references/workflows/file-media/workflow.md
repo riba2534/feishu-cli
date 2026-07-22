@@ -14,12 +14,25 @@ feishu-cli file move <file_token> --target fldxxx --type file
 feishu-cli file copy <file_token> --target fldxxx --type file
 feishu-cli file delete <file_token> --type file
 feishu-cli file version list <file_token> --obj-type docx
+feishu-cli file version revert <file_token> <version>
 feishu-cli file meta <token> --doc-type docx
 feishu-cli file stats <file_token> --doc-type docx
 ```
 
+`file version revert` 把文件回滚到指定历史版本（底层 `POST /open-apis/drive/v1/files/{file_token}/revert`，
+请求体 `{"version": version}`）：
+
+```bash
+# version 为 drive 版本历史里的长数字版本号（不是 tag）
+feishu-cli file version revert boxcnXXXX 7633658129540910621
+```
+
+- 回滚后文件当前内容变为该历史版本，且会新增一条 revert 版本记录（原历史版本仍保留）
+- `version` 取自文件的版本历史（可用 `feishu-cli api GET /open-apis/drive/v1/files/{file_token}/history` 查询 `data.items[].version`）
+- 回滚是写操作，默认 Bot 身份；如需用户身份传 `--user-access-token`。需 `drive:file:upload` scope
+
 `file download` 属于读类：已登录时优先 User Token，缺失时可回落 App Token。上传、移动、复制、
-删除等写类默认 Bot 身份，只有显式传 User Token 才切换用户身份。
+删除、版本回滚等写类默认 Bot 身份，只有显式传 User Token 才切换用户身份。
 
 ## Media
 

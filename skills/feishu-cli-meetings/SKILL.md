@@ -18,7 +18,7 @@ allowed-tools: Bash(feishu-cli:*), Read, Write
 
 ## 身份边界
 
-- `vc search/notes/recording` 和 minutes 命令必须使用 User Token。
+- `vc search/notes/recording/detail` 和 minutes 命令必须使用 User Token。
 - `vc bot meeting-join/meeting-leave` 默认 Bot 身份，而且只在显式 flag 时切换 User Token。
 - `vc bot meeting-events` 端点拒收 Tenant Token，应使用 User Token，并预检
   `vc:meeting.meetingevent:read`。

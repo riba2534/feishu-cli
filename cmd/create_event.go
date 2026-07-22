@@ -20,12 +20,20 @@ var createEventCmd = &cobra.Command{
   --end               结束时间，RFC3339 格式（必填）
   --description, -d   日程描述（可选）
   --location, -l      地点（可选）
+  --rrule             重复规则（RFC5545 RRULE，可选），创建重复日程
   --output, -o        输出格式，可选 json
 
 时间格式:
   使用 RFC3339 格式，例如：
   - 2024-01-21T14:00:00+08:00
   - 2024-01-21T06:00:00Z
+
+重复规则（--rrule，RFC5545 RRULE 字符串）:
+  - 每周一：            FREQ=WEEKLY;BYDAY=MO
+  - 每个工作日：        FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
+  - 每天，共 10 次：    FREQ=DAILY;COUNT=10
+  - 每月 1 号至某日结束：FREQ=MONTHLY;BYMONTHDAY=1;UNTIL=20261231T000000Z
+  注意: COUNT 与 UNTIL 不能同时出现。--start/--end 决定首个实例的时间。
 
 示例:
   # 创建基本日程
@@ -50,7 +58,15 @@ var createEventCmd = &cobra.Command{
     --summary "会议" \
     --start 2024-01-21T14:00:00+08:00 \
     --end 2024-01-21T15:00:00+08:00 \
-    --output json`,
+    --output json
+
+  # 创建每周一重复的日程
+  feishu-cli calendar create-event \
+    --calendar-id CAL_ID \
+    --summary "周会" \
+    --start 2024-01-22T10:00:00+08:00 \
+    --end 2024-01-22T11:00:00+08:00 \
+    --rrule "FREQ=WEEKLY;BYDAY=MO"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
@@ -64,6 +80,7 @@ var createEventCmd = &cobra.Command{
 		endTime, _ := cmd.Flags().GetString("end")
 		description, _ := cmd.Flags().GetString("description")
 		location, _ := cmd.Flags().GetString("location")
+		rrule, _ := cmd.Flags().GetString("rrule")
 		output, _ := cmd.Flags().GetString("output")
 
 		params := &client.CreateEventParams{
@@ -73,6 +90,7 @@ var createEventCmd = &cobra.Command{
 			EndTime:     endTime,
 			Description: description,
 			Location:    location,
+			Recurrence:  rrule,
 		}
 
 		event, err := client.CreateEvent(params, token)
@@ -96,6 +114,9 @@ var createEventCmd = &cobra.Command{
 			if event.Location != "" {
 				fmt.Printf("  地点:      %s\n", event.Location)
 			}
+			if event.Recurrence != "" {
+				fmt.Printf("  重复规则:  %s\n", event.Recurrence)
+			}
 			if event.AppLink != "" {
 				fmt.Printf("  链接:      %s\n", event.AppLink)
 			}
@@ -113,6 +134,7 @@ func init() {
 	createEventCmd.Flags().String("end", "", "结束时间，RFC3339 格式（必填）")
 	createEventCmd.Flags().StringP("description", "d", "", "日程描述")
 	createEventCmd.Flags().StringP("location", "l", "", "地点")
+	createEventCmd.Flags().String("rrule", "", "重复规则（RFC5545 RRULE，如 FREQ=WEEKLY;BYDAY=MO）")
 	createEventCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	createEventCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 

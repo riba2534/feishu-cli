@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"runtime"
@@ -54,6 +56,8 @@ var doctorCmd = &cobra.Command{
 检查项：
   config_file          配置文件存在 + app_id/app_secret 非空
   user_token           token.json 存在 + 未过期
+  user_identity        用户身份就绪度（token.json 存在且可刷新/未过期）
+  bot_identity         应用身份就绪度（App ID/Secret 可换取 tenant_access_token，需联网）
   endpoint_open        open.feishu.cn HTTPS 可达
   endpoint_larksuite   open.larksuite.com HTTPS 可达
   proxy                HTTP(S)_PROXY 与 NO_PROXY 配置合理
@@ -85,6 +89,20 @@ var doctorCmd = &cobra.Command{
 		// 2. user_token
 		if shouldRun("user_token", only) {
 			results = append(results, checkUserToken())
+		}
+
+		// 2b. user_identity（用户身份就绪度：token.json 存在且可刷新/未过期）
+		if shouldRun("user_identity", only) {
+			results = append(results, checkUserIdentity())
+		}
+
+		// 2c. bot_identity（应用身份就绪度：App ID/Secret 可换取 tenant_access_token，需联网）
+		if shouldRun("bot_identity", only) {
+			if doctorOffline {
+				results = append(results, checkBotIdentityOffline())
+			} else {
+				results = append(results, checkBotIdentity(ctx))
+			}
 		}
 
 		// 3 & 4. endpoints
@@ -132,6 +150,8 @@ func init() {
 var validOnlyNames = map[string]bool{
 	"config_file":        true,
 	"user_token":         true,
+	"user_identity":      true,
+	"bot_identity":       true,
 	"endpoint_open":      true,
 	"endpoint_larksuite": true,
 	"proxy":              true,
@@ -217,6 +237,98 @@ func checkUserToken() checkResult {
 	default:
 		return checkWarn("user_token", "token 状态未知: "+status, "")
 	}
+}
+
+// checkUserIdentity 诊断用户身份就绪度：token.json 是否存在、access_token 是否有效、
+// 过期时 refresh_token 能否兜底。与 user_token 检查同源，但结论聚焦"用户态命令能否直接跑"。
+func checkUserIdentity() checkResult {
+	token, err := auth.LoadToken()
+	if err != nil {
+		return checkFail("user_identity", "用户身份不可用：读取 token.json 失败: "+err.Error(),
+			"删除 ~/.feishu-cli/token.json 后重新 feishu-cli auth login")
+	}
+	if token == nil {
+		return checkWarn("user_identity", "用户身份未就绪：未登录（token.json 不存在）",
+			"如需 search/vc/minutes/mail/drive 等用户态命令，运行 feishu-cli auth login")
+	}
+	switch token.TokenStatus() {
+	case "valid":
+		return checkPass("user_identity", "用户身份就绪：access_token 有效")
+	case "needs_refresh":
+		return checkPass("user_identity", "用户身份就绪：access_token 已过期但 refresh_token 有效（下次调用自动刷新）")
+	case "expired":
+		return checkFail("user_identity", "用户身份未就绪：access_token 与 refresh_token 均已过期",
+			"运行 feishu-cli auth login 重新授权")
+	default:
+		return checkWarn("user_identity", "用户身份状态未知", "运行 feishu-cli auth status 查看详情")
+	}
+}
+
+// checkBotIdentityOffline 在 --offline 模式下只确认 app_id/app_secret 已配置，
+// 不发起 tenant_access_token 换取请求。
+func checkBotIdentityOffline() checkResult {
+	cfg := config.Get()
+	if cfg == nil || cfg.AppID == "" || cfg.AppSecret == "" {
+		return checkFail("bot_identity", "应用身份未就绪：缺少 app_id/app_secret",
+			"配置 FEISHU_APP_ID/FEISHU_APP_SECRET 或运行 feishu-cli config init")
+	}
+	return checkSkip("bot_identity", "已跳过在线换取 (--offline)；app_id/app_secret 已配置")
+}
+
+// checkBotIdentity 诊断应用身份就绪度：用 app_id/app_secret 在线换取 tenant_access_token。
+// 换取成功说明凭证有效、应用身份可直接用于无人值守命令（--as bot / Bot 身份）。
+func checkBotIdentity(ctx context.Context) checkResult {
+	cfg := config.Get()
+	if cfg == nil || cfg.AppID == "" || cfg.AppSecret == "" {
+		return checkFail("bot_identity", "应用身份未就绪：缺少 app_id/app_secret",
+			"配置 FEISHU_APP_ID/FEISHU_APP_SECRET 或运行 feishu-cli config init")
+	}
+	code, msg, err := probeTenantAccessToken(ctx, cfg.BaseURL, cfg.AppID, cfg.AppSecret)
+	if err != nil {
+		return checkFail("bot_identity", "应用身份换取 tenant_access_token 失败: "+err.Error(),
+			"检查网络 / 代理设置后重试")
+	}
+	if code != 0 {
+		return checkFail("bot_identity", fmt.Sprintf("应用身份未就绪：换取 tenant_access_token 失败（code=%d, msg=%s）", code, msg),
+			"核对 app_id/app_secret 是否正确、应用是否已启用")
+	}
+	return checkPass("bot_identity", "应用身份就绪：App ID/Secret 可换取 tenant_access_token")
+}
+
+// probeTenantAccessToken 调用 tenant_access_token/internal 端点验证应用凭证。
+// 返回业务 code（0 表示成功）、msg 与传输层 error；不返回 token 本体，避免泄露。
+func probeTenantAccessToken(ctx context.Context, baseURL, appID, appSecret string) (int, string, error) {
+	if baseURL == "" {
+		baseURL = "https://open.feishu.cn"
+	}
+	endpoint := strings.TrimRight(baseURL, "/") + "/open-apis/auth/v3/tenant_access_token/internal"
+	payload, _ := json.Marshal(map[string]string{"app_id": appID, "app_secret": appSecret})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return 0, "", err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return 0, "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var parsed struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return 0, "", fmt.Errorf("解析响应失败: %w", err)
+	}
+	return parsed.Code, parsed.Msg, nil
 }
 
 func checkEndpoints(ctx context.Context, only map[string]bool) []checkResult {
