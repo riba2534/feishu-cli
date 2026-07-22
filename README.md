@@ -1668,13 +1668,15 @@ go vet ./...
 
 ## Star History
 
-<a href="https://star-history.com/#riba2534/feishu-cli&Date">
+<a href="https://www.star-history.com/#riba2534/feishu-cli&Date">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=riba2534/feishu-cli&type=Date&theme=dark" />
    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=riba2534/feishu-cli&type=Date" />
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=riba2534/feishu-cli&type=Date" />
  </picture>
 </a>
+
+> 图表由 star-history.com 生成，若上方未加载出来（该服务偶发超时），可直接[查看交互式 Star 增长曲线](https://www.star-history.com/#riba2534/feishu-cli&Date)。
 
 ## License
 
