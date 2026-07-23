@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,11 +15,22 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 )
 
-// GetBoardImage downloads whiteboard image and saves to file
-func GetBoardImage(whiteboardID string, outputPath string, userAccessToken ...string) error {
+// boardImageContentTypeExt 画板缩略图响应 Content-Type → 文件扩展名。
+// download_as_image 端点实际返回 JPEG（服务端不保证 PNG），扩展名必须跟随实际格式。
+var boardImageContentTypeExt = map[string]string{
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+}
+
+// GetBoardImage 下载画板缩略图并保存，返回实际保存路径。
+// 扩展名按响应 Content-Type（缺失时按文件头嗅探）决定：
+//   - outputPath 为目录：保存为 <whiteboard_id><实际扩展名>
+//   - outputPath 无扩展名：自动补实际扩展名（推荐用法）
+//   - outputPath 带 .png/.jpg/.jpeg：与实际格式不符时报错，避免写出扩展名与内容不符的文件
+func GetBoardImage(whiteboardID string, outputPath string, userAccessToken ...string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// 使用通用 HTTP 请求方式
@@ -33,33 +45,80 @@ func GetBoardImage(whiteboardID string, outputPath string, userAccessToken ...st
 
 	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
 	if err != nil {
-		return fmt.Errorf("获取画板图片失败: %w", err)
+		return "", fmt.Errorf("获取画板图片失败: %w", err)
 	}
 
 	// Check response
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("获取画板图片失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+		return "", fmt.Errorf("获取画板图片失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
 	}
 
-	// Check if outputPath is a directory
-	fileInfo, err := os.Stat(outputPath)
-	if err == nil && fileInfo.IsDir() {
-		// Use whiteboard ID as filename
-		outputPath = filepath.Join(outputPath, whiteboardID+".png")
+	ext, err := boardImageExt(resp.Header.Get("Content-Type"), resp.RawBody)
+	if err != nil {
+		return "", err
+	}
+	savePath, err := resolveBoardImagePath(outputPath, whiteboardID, ext)
+	if err != nil {
+		return "", err
 	}
 
 	// Ensure directory exists
-	dir := filepath.Dir(outputPath)
+	dir := filepath.Dir(savePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("创建目录失败: %w", err)
+		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
 
 	// Write to file
-	if err := os.WriteFile(outputPath, resp.RawBody, 0644); err != nil {
-		return fmt.Errorf("写入文件失败: %w", err)
+	if err := os.WriteFile(savePath, resp.RawBody, 0644); err != nil {
+		return "", fmt.Errorf("写入文件失败: %w", err)
 	}
 
-	return nil
+	return savePath, nil
+}
+
+// boardImageExt 由响应 Content-Type 决定扩展名；header 缺失或不认识时按文件头嗅探兜底。
+func boardImageExt(contentType string, body []byte) (string, error) {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		mediaType = strings.TrimSpace(strings.Split(contentType, ";")[0])
+	}
+	if ext, ok := boardImageContentTypeExt[strings.ToLower(mediaType)]; ok {
+		return ext, nil
+	}
+	if ext, ok := boardImageContentTypeExt[http.DetectContentType(body)]; ok {
+		return ext, nil
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "<空>"
+	}
+	return "", fmt.Errorf("获取画板图片失败: 响应不是 PNG/JPEG 图片（Content-Type: %s）", contentType)
+}
+
+// resolveBoardImagePath 按输出路径形态与实际图片格式决定最终落盘路径。
+func resolveBoardImagePath(outputPath, whiteboardID, ext string) (string, error) {
+	if info, err := os.Stat(outputPath); err == nil && info.IsDir() {
+		return filepath.Join(outputPath, whiteboardID+ext), nil
+	}
+	// 尾斜杠视为目录意图（目录可能尚不存在，后续 MkdirAll 会创建）
+	if strings.HasSuffix(outputPath, "/") || strings.HasSuffix(outputPath, string(os.PathSeparator)) {
+		return filepath.Join(outputPath, whiteboardID+ext), nil
+	}
+	current := strings.ToLower(filepath.Ext(outputPath))
+	switch current {
+	case "", ".":
+		return strings.TrimSuffix(outputPath, ".") + ext, nil
+	case ".png", ".jpg", ".jpeg":
+		actual := current
+		if actual == ".jpeg" {
+			actual = ".jpg"
+		}
+		if actual != ext {
+			return "", fmt.Errorf("服务端返回 %s 格式图片，但输出路径扩展名是 %s；请改用 %s 或省略扩展名（自动按实际格式命名）", ext, current, ext)
+		}
+		return outputPath, nil
+	default:
+		return "", fmt.Errorf("输出扩展名 %q 不受支持；请用 .png/.jpg/.jpeg、目录或不带扩展名的路径", current)
+	}
 }
 
 // ExportWhiteboardSVGResult 是导出画板 SVG 的结果。

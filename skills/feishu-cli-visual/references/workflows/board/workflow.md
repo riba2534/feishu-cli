@@ -244,7 +244,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 |------|------|---------|
 | `feishu-cli doc add-board <doc_id>` | 在文档加画板块 | `--parent-id`（父块 ID，默认根级别）`--index`（插入位置，-1=末尾）`-o json` |
 | `feishu-cli board nodes <board_id>` | 拉所有节点 | 无 |
-| `feishu-cli board image <board_id> out.png` | 下载画板缩略图 | 无 |
+| `feishu-cli board image <board_id> out` | 下载画板缩略图（自动按实际格式补扩展名，通常 JPEG） | 无 |
 | `feishu-cli board create-notes <board_id> nodes.json` | 批量创建节点 | `--source-type` `--client-token` |
 | `feishu-cli board import <board_id> diagram.mmd --syntax mermaid` | 路径 A：服务端渲染 | `--engine [server\|local]` `--diagram-type` `--style` `--dry-run` |
 | `feishu-cli board svg-import <board_id> drawing.svg` | 路径 D：单 svg 节点 | `--x` `--y` `--width` `--height` `--source-type` `--dry-run` |
@@ -326,7 +326,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 
 落板后逐项检查：
 
-- [ ] 缩略图主元素都在：`feishu-cli board image <id> /tmp/check.png`
+- [ ] 缩略图主元素都在：`feishu-cli board image <id> /tmp/check`（自动补实际扩展名）
 - [ ] 节点数对：`feishu-cli board nodes <id> | jq '.data.nodes | length'`
 - [ ] z_index 最小是大背景：见 `references/pitfalls.md` 通用诊断 Step 2
 - [ ] viewBox 无溢出：`max(x+w) ≤ viewBox_w`

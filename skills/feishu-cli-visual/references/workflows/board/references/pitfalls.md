@@ -231,7 +231,7 @@ def parse_json_loose(stdout):
 ### Step 5：拉缩略图人工目检
 
 ```bash
-./feishu-cli board image <board_id> /tmp/check.png
+./feishu-cli board image <board_id> /tmp/check   # 自动按实际格式补扩展名（通常 JPEG）
 ```
 
 注意：**缩略图也有渲染上限**。如果上面 1-4 都正常但缩略图缺东西，可能是飞书缩略图服务的限制——直接进飞书画板编辑器看真实渲染。

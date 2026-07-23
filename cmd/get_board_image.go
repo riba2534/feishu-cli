@@ -19,17 +19,20 @@ var getBoardImageCmd = &cobra.Command{
   --output, -o     输出格式 (json)
 
 说明:
-  如果 output_path 是目录，则使用画板 ID 作为文件名。
+  扩展名按服务端实际返回的图片格式决定（download_as_image 实际返回 JPEG，不保证 PNG）：
+  - output_path 是目录: 保存为 <画板ID>.jpg 或 .png
+  - output_path 无扩展名: 自动补实际扩展名（推荐）
+  - output_path 带 .png/.jpg/.jpeg: 与实际格式不符时报错
 
 示例:
-  # 下载画板图片到指定文件
-  feishu-cli board image <whiteboard_id> board.png
+  # 下载画板图片（自动按实际格式补扩展名，推荐）
+  feishu-cli board image <whiteboard_id> board
 
   # 下载到目录（使用画板 ID 作为文件名）
   feishu-cli board image <whiteboard_id> ./images/
 
   # JSON 格式输出
-  feishu-cli board image <whiteboard_id> board.png -o json`,
+  feishu-cli board image <whiteboard_id> board -o json`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -41,7 +44,7 @@ var getBoardImageCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
-		err := client.GetBoardImage(whiteboardID, outputPath, userAccessToken)
+		savedPath, err := client.GetBoardImage(whiteboardID, outputPath, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -49,7 +52,7 @@ var getBoardImageCmd = &cobra.Command{
 		if output == "json" {
 			result := map[string]string{
 				"whiteboard_id": whiteboardID,
-				"output_path":   outputPath,
+				"output_path":   savedPath,
 				"status":        "success",
 			}
 			if err := printJSON(result); err != nil {
@@ -58,7 +61,7 @@ var getBoardImageCmd = &cobra.Command{
 		} else {
 			fmt.Printf("画板图片下载成功！\n")
 			fmt.Printf("  画板 ID: %s\n", whiteboardID)
-			fmt.Printf("  保存路径: %s\n", outputPath)
+			fmt.Printf("  保存路径: %s\n", savedPath)
 		}
 
 		return nil

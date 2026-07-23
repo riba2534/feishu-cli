@@ -1298,7 +1298,8 @@ func (c *BlockToMarkdown) convertBoard(block *larkdocx.Block) (string, error) {
 
 	if token != "" && c.options.DownloadImages {
 		c.imageCount++
-		filename := fmt.Sprintf("board_%d.png", c.imageCount)
+		// 不带扩展名，由 GetBoardImage 按服务端实际图片格式补齐
+		filename := fmt.Sprintf("board_%d", c.imageCount)
 
 		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
 			return "", fmt.Errorf("创建资源目录失败: %w", err)
@@ -1306,8 +1307,8 @@ func (c *BlockToMarkdown) convertBoard(block *larkdocx.Block) (string, error) {
 
 		localPath := filepath.Join(c.options.AssetsDir, filename)
 
-		if err := client.GetBoardImage(token, localPath, c.options.UserAccessToken); err == nil {
-			return fmt.Sprintf("![画板](%s)\n", localPath), nil
+		if savedPath, err := client.GetBoardImage(token, localPath, c.options.UserAccessToken); err == nil {
+			return fmt.Sprintf("![画板](%s)\n", savedPath), nil
 		} else if c.options.Debug {
 			fmt.Fprintf(os.Stderr, "[Debug] 画板下载失败: %v\n", err)
 		}

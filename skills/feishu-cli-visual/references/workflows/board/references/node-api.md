@@ -60,10 +60,10 @@ feishu-cli board nodes <whiteboard_id>
 
 ### board image
 
-下载画板为 PNG 图片。
+下载画板缩略图（服务端实际返回 JPEG，不保证 PNG；扩展名按实际格式自动补齐）。
 
 ```bash
-feishu-cli board image <whiteboard_id> output.png
+feishu-cli board image <whiteboard_id> output   # 保存为 output.jpg 或 output.png，以实际格式为准
 ```
 
 ### doc add-board
@@ -202,8 +202,8 @@ feishu-cli board create-notes <whiteboard_id> shapes.json -o json
 # 步骤 4: 创建连接线
 feishu-cli board create-notes <whiteboard_id> connectors.json -o json
 
-# 步骤 5: 截图验证
-feishu-cli board image <whiteboard_id> output.png
+# 步骤 5: 截图验证（自动按实际格式补扩展名，通常得到 output.jpg）
+feishu-cli board image <whiteboard_id> output
 ```
 
 ### 复制/修改画板（Redraw 模式）

@@ -143,7 +143,7 @@ feishu-cli board create-notes <whiteboard_id> nodes.json -o json
 # 返回 node_ids
 
 # 步骤 4: 截图验证
-feishu-cli board image <whiteboard_id> output.png
+feishu-cli board image <whiteboard_id> output   # 自动按实际格式补扩展名（通常 JPEG）
 ```
 
 ### 2. 复制/修改画板（Redraw 模式）

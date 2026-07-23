@@ -72,10 +72,13 @@ var docMediaDownloadCmd = &cobra.Command{
 
 		switch mediaType {
 		case "whiteboard":
-			// 下载画板缩略图
-			if err := client.GetBoardImage(token, output, userAccessToken); err != nil {
-				return fmt.Errorf("下载画板缩略图失��: %w", err)
+			// 下载画板缩略图（扩展名按服务端实际格式决定）
+			savedPath, err := client.GetBoardImage(token, output, userAccessToken)
+			if err != nil {
+				return fmt.Errorf("下载画板缩略图失败: %w", err)
 			}
+			fmt.Printf("已下载到 %s\n", savedPath)
+			return nil
 
 		default:
 			// 下载媒体文件（图片/附件）

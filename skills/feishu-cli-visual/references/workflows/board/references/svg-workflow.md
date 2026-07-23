@@ -314,7 +314,7 @@ whiteboard-cli 的翻译规则（实测整理）：
 - [ ] **节点数对**：`board nodes <id> | jq '.data.nodes | length'` 接近 nodes.json
 - [ ] **z_index 最小是大背景**：参考 `pitfalls.md` Step 2
 - [ ] **无 viewBox 溢出**：`max(x+w) ≤ viewBox_w`
-- [ ] **缩略图主要元素都在**：`board image <id> /tmp/check.png` 后看
+- [ ] **缩略图主要元素都在**：`board image <id> /tmp/check`（自动补实际扩展名，通常 .jpg）后看
 - [ ] **lint 质量分 ≥ 0.85**：`board lint <id>`
 
 如其中任何一项不通过，回到 `pitfalls.md` 排障。

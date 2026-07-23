@@ -5,7 +5,7 @@
 将画板导出为 PNG 图片：
 
 ```bash
-feishu-cli board image <whiteboard_id> output.png
+feishu-cli board image <whiteboard_id> output   # 自动按实际格式补扩展名（服务端实际返回 JPEG）
 ```
 
 ## 导入图表到画板

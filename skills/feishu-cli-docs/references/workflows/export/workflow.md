@@ -148,7 +148,7 @@ feishu-cli doc media-download <token> -o image.png
 feishu-cli doc media-download <token> --doc-token <docx_token> --doc-type docx -o image.png
 
 # 画板缩略图
-feishu-cli doc media-download <board_id> --type whiteboard -o board.png
+feishu-cli doc media-download <board_id> --type whiteboard -o board   # 自动按实际格式补扩展名（通常 JPEG）
 
 # 大文件，把超时拉到 30 分钟
 feishu-cli doc media-download <token> -o large.bin --timeout 30m
