@@ -123,28 +123,35 @@ func BaseV3Call(method, path string, params map[string]any, body any, userAccess
 }
 
 // apiErrorDetail 从飞书响应里提取最有信息量的错误文案。
-// base/v3 业务错误（HTTP 200 + code!=0）的顶层 msg 常为空，真正的原因藏在
-// data.error.{hint,message}（如缺 name / 缺 role_type 的 field validation）。
-// 优先级：顶层 msg → data.error.hint → data.error.message；都没有返回空串。
+// base/v3 业务错误（HTTP 200 + code!=0）的顶层 msg 要么为空、要么只是错误类型的重复
+// （如 "not_found"），真正的原因藏在 data.error.{hint,path,message}
+// （如 select 未知选项时 hint 会列出可用选项、path 指出出错字段）。
+// msg 与 hint 同时存在时拼接输出，避免丢掉 hint。
 func apiErrorDetail(result map[string]any) string {
-	if msg, _ := result["msg"].(string); msg != "" {
+	msg, _ := result["msg"].(string)
+	var hint, message, path string
+	if data, ok := result["data"].(map[string]any); ok {
+		if errObj, ok := data["error"].(map[string]any); ok {
+			hint, _ = errObj["hint"].(string)
+			message, _ = errObj["message"].(string)
+			path, _ = errObj["path"].(string)
+		}
+	}
+	detail := hint
+	if detail == "" {
+		detail = message
+	}
+	if path != "" && detail != "" {
+		detail = detail + "（字段路径: " + path + "）"
+	}
+	switch {
+	case msg != "" && detail != "" && detail != msg:
+		return msg + ": " + detail
+	case msg != "":
 		return msg
+	default:
+		return detail
 	}
-	data, ok := result["data"].(map[string]any)
-	if !ok {
-		return ""
-	}
-	errObj, ok := data["error"].(map[string]any)
-	if !ok {
-		return ""
-	}
-	if hint, _ := errObj["hint"].(string); hint != "" {
-		return hint
-	}
-	if m, _ := errObj["message"].(string); m != "" {
-		return m
-	}
-	return ""
 }
 
 // toInt 安全地把任意数字（json.Number/float64/int）转成 int

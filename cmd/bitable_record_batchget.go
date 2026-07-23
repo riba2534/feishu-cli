@@ -18,6 +18,7 @@ base/v3 批量获取记录，body 字段为 record_id_list。
   --table-id     目标数据表
   --record-ids   逗号分隔的 record_id 列表
 可选:
+  --field-id           仅返回指定字段（投影，可重复，最多 100 个；对应 body select_fields）
   --with-shared-url    返回记录分享链接
   --automatic-fields   返回自动计算字段
   --user-id-type       用户字段 ID 类型（open_id/union_id/user_id）`,
@@ -33,6 +34,13 @@ base/v3 批量获取记录，body 字段为 record_id_list。
 		}
 
 		body := map[string]any{"record_id_list": ids}
+		selectFields, err := recordSelectFields(cmd, 100)
+		if err != nil {
+			return err
+		}
+		if len(selectFields) > 0 {
+			body["select_fields"] = selectFields
+		}
 		if cmd.Flags().Changed("with-shared-url") {
 			v, _ := cmd.Flags().GetBool("with-shared-url")
 			body["with_shared_url"] = v
@@ -56,6 +64,7 @@ func init() {
 	addBitableCommonFlags(bitableRecordBatchGetCmd)
 	bitableRecordBatchGetCmd.Flags().String("table-id", "", "table_id（必填）")
 	bitableRecordBatchGetCmd.Flags().String("record-ids", "", "record_id 列表（逗号分隔，必填）")
+	bitableRecordBatchGetCmd.Flags().StringArray("field-id", nil, "仅返回指定字段（字段名或字段 ID，可重复，最多 100 个）")
 	bitableRecordBatchGetCmd.Flags().Bool("with-shared-url", false, "返回记录分享链接")
 	bitableRecordBatchGetCmd.Flags().Bool("automatic-fields", false, "返回自动计算字段")
 	bitableRecordBatchGetCmd.Flags().String("user-id-type", "", "用户字段 ID 类型（open_id/union_id/user_id）")

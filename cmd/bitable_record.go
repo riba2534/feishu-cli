@@ -44,7 +44,11 @@ filter DSL（--filter-json，实测验证）:
 
   # 按分数降序
   feishu-cli bitable record list --base-token <bt> --table-id <tid> \
-    --sort-json '[{"field":"分数","desc":true}]'`,
+    --sort-json '[{"field":"分数","desc":true}]'
+
+  # 字段投影：只返回指定字段（大表控制输出体积，可重复，最多 100 个）
+  feishu-cli bitable record list --base-token <bt> --table-id <tid> \
+    --field-id 名称 --field-id 状态`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		viewID, _ := cmd.Flags().GetString("view-id")
@@ -52,9 +56,17 @@ filter DSL（--filter-json，实测验证）:
 		limit, _ := cmd.Flags().GetInt("limit")
 		filterJSON, _ := cmd.Flags().GetString("filter-json")
 		sortJSON, _ := cmd.Flags().GetString("sort-json")
+		selectFields, err := recordSelectFields(cmd, 100)
+		if err != nil {
+			return err
+		}
 		params := map[string]any{}
 		if viewID != "" {
 			params["view_id"] = viewID
+		}
+		// 字段投影：field_id 作为重复 query 参数下发（?field_id=A&field_id=B）
+		if len(selectFields) > 0 {
+			params["field_id"] = selectFields
 		}
 		if offset > 0 {
 			params["offset"] = offset
@@ -79,6 +91,22 @@ filter DSL（--filter-json，实测验证）:
 			return bitableRecordPath(baseToken, tableID)
 		}, params)
 	},
+}
+
+// recordSelectFields 读取 --field-id 投影 flag（可重复，值为字段名或字段 ID）并做数量上限校验。
+// 服务端上限：list/batch_get 100 个，search 50 个。
+func recordSelectFields(cmd *cobra.Command, max int) ([]string, error) {
+	raw, _ := cmd.Flags().GetStringArray("field-id")
+	fields := make([]string, 0, len(raw))
+	for _, f := range raw {
+		if s := strings.TrimSpace(f); s != "" {
+			fields = append(fields, s)
+		}
+	}
+	if len(fields) > max {
+		return nil, fmt.Errorf("--field-id 最多 %d 个，当前 %d 个", max, len(fields))
+	}
+	return fields, nil
 }
 
 // validateCompactJSON 校验 flag 值是合法 JSON，尽早给出可读错误。
@@ -113,6 +141,7 @@ var bitableRecordSearchCmd = &cobra.Command{
 便捷 flag（推荐）:
   --keyword           搜索关键词
   --search-field      搜索字段名/ID（可重复；便捷模式必填）
+  --field-id          仅返回指定字段（投影，可重复，最多 50 个；对应 body select_fields）
   --filter-json       结构化过滤 JSON，需叠加在 keyword 搜索上
   --sort-json         排序 JSON 数组，如 [{"field":"名称","desc":true}]
   --view-id           限定视图
@@ -156,7 +185,17 @@ var bitableRecordUpsertCmd = &cobra.Command{
 
 v3 API 说明:
   base/v3 的单条 POST/PATCH 端点要求字段映射放在 body 顶层（不带 "fields" 包装）。
-  本命令兼容 v1 格式：如果传入 {"fields":{...}}，会自动解包为 {...}。`,
+  本命令兼容 v1 格式：如果传入 {"fields":{...}}，会自动解包为 {...}。
+
+select 字段写法（实测）:
+  单选写字符串 "Todo" 或数组 ["Todo"] 均可（服务端归一化）；多选写数组。
+  单条端点（本命令的 POST/PATCH）会静默自动创建未知选项；批量端点
+  （batch_create/batch_update）则拒绝未知选项报 not_found——
+  写前先 field list 确认选项存在，防止拼写错误静默产生脏选项。
+
+层级关系（子记录）:
+  通过 link 字段写父记录引用数组实现，如 {"父任务":[{"id":"rec_xxx"}]}；
+  不存在 parent_record_id 参数或独立的子记录 API。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		recordID, _ := cmd.Flags().GetString("record-id")
@@ -215,16 +254,20 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 
 	keyword, _ := cmd.Flags().GetString("keyword")
 	searchFields, _ := cmd.Flags().GetStringArray("search-field")
+	selectFields, err := recordSelectFields(cmd, 50)
+	if err != nil {
+		return nil, err
+	}
 	filterJSON, _ := cmd.Flags().GetString("filter-json")
 	sortJSON, _ := cmd.Flags().GetString("sort-json")
 	viewID, _ := cmd.Flags().GetString("view-id")
-	usedConvenience := strings.TrimSpace(keyword) != "" || len(searchFields) > 0 ||
+	usedConvenience := strings.TrimSpace(keyword) != "" || len(searchFields) > 0 || len(selectFields) > 0 ||
 		strings.TrimSpace(filterJSON) != "" || strings.TrimSpace(sortJSON) != "" || strings.TrimSpace(viewID) != "" ||
 		cmd.Flags().Changed("offset") || cmd.Flags().Changed("limit")
 
 	if configProvided {
 		if usedConvenience {
-			return nil, fmt.Errorf("--config/--config-file 与 --keyword/--search-field/--filter-json/--sort-json/--view-id/--offset/--limit 互斥，请二选一")
+			return nil, fmt.Errorf("--config/--config-file 与 --keyword/--search-field/--field-id/--filter-json/--sort-json/--view-id/--offset/--limit 互斥，请二选一")
 		}
 		raw, err := loadJSONInput(configJSON, configFile, "config", "config-file", "搜索请求体")
 		if err != nil {
@@ -270,6 +313,9 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 	if len(searchFields) > 0 {
 		body["search_fields"] = searchFields
 	}
+	if len(selectFields) > 0 {
+		body["select_fields"] = selectFields
+	}
 	if v := strings.TrimSpace(viewID); v != "" {
 		body["view_id"] = v
 	}
@@ -292,7 +338,17 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 
 var bitableRecordBatchCreateCmd = &cobra.Command{
 	Use:   "batch-create",
-	Short: "批量创建记录（v3 格式：{\"fields\":[\"fld1\"],\"rows\":[[\"val1\"]]}）",
+	Short: "批量创建记录（推荐行式：{\"create_records\":[{\"字段\":\"值\"}]}）",
+	Long: `POST /records/batch_create，批量创建记录。两种 body 形态（实测均可用）：
+
+推荐 · create_records 行式 —— 每条记录独立字段 map，可各带不同字段、无需 null 占位:
+  {"create_records":[{"名称":"Task A","状态":"Todo"},{"名称":"Task B"}]}
+  返回 record_id_list（+ 可选 ignored_fields）
+
+备选 · fields+rows 列式 —— 所有行共享同一字段顺序:
+  {"fields":["名称","状态"],"rows":[["Task A","Todo"],["Task B",null]]}
+
+单次最多 200 条记录。select 字段写法见 record upsert --help。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		return runBaseV3WithJSON(cmd, "POST", func(baseToken string) string {
@@ -319,7 +375,12 @@ var bitableRecordBatchUpdateCmd = &cobra.Command{
   feishu-cli bitable record batch-update --base-token <bt> --table-id <tid> \
     --config '{"update_records":{"recXXX":{"分数":88},"recYYY":{"状态":["Done"]}}}'
 
-注意: 单次建议 ≤200 条；select 字段值必须写选项名数组（单选也是数组）。`,
+select 字段（实测）: 单选写字符串 "Done" 或数组 ["Done"] 均可（服务端归一化）；多选写数组。
+批量端点（batch_create/batch_update）只接受字段中已有的选项，未知选项报 not_found
+（hint 会列出可用选项）；单条 upsert 端点才会静默自动创建未知选项——
+写前先 field list 确认选项存在，防拼错产生脏选项。
+
+注意: 单次建议 ≤200 条；响应不校验 record_id 是否存在，需要确认时读回记录。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		return runBaseV3WithJSON(cmd, "POST", func(baseToken string) string {
@@ -502,6 +563,7 @@ func init() {
 	bitableRecordListCmd.Flags().Int("limit", 0, "limit")
 	bitableRecordListCmd.Flags().String("filter-json", "", `结构化过滤 JSON（tuple DSL，见 --help）`)
 	bitableRecordListCmd.Flags().String("sort-json", "", `排序 JSON 数组，如 [{"field":"分数","desc":true}]`)
+	bitableRecordListCmd.Flags().StringArray("field-id", nil, "仅返回指定字段（字段名或字段 ID，可重复，最多 100 个）")
 
 	// get 需要 record-id
 	bitableRecordGetCmd.Flags().String("record-id", "", "record_id（必填）")
@@ -538,6 +600,7 @@ func init() {
 	bitableRecordSearchCmd.Flags().String("config-file", "", "完整搜索请求体 JSON 文件")
 	bitableRecordSearchCmd.Flags().String("keyword", "", "搜索关键词")
 	bitableRecordSearchCmd.Flags().StringArray("search-field", nil, "搜索字段名/ID（可重复；便捷模式必填）")
+	bitableRecordSearchCmd.Flags().StringArray("field-id", nil, "仅返回指定字段（投影，可重复，最多 50 个）")
 	bitableRecordSearchCmd.Flags().String("filter-json", "", "结构化过滤条件 JSON（logic/conditions，需配合 --keyword/--search-field），见命令 Long 示例")
 	bitableRecordSearchCmd.Flags().String("sort-json", "", "排序 JSON 数组（field/desc），见命令 Long 示例")
 	bitableRecordSearchCmd.Flags().String("view-id", "", "限定视图 ID")

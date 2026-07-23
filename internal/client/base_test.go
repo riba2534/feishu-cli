@@ -16,9 +16,19 @@ func TestApiErrorDetail(t *testing.T) {
 		want string
 	}{
 		{
-			name: "top-level msg wins",
+			name: "msg and hint are joined",
 			in:   map[string]any{"msg": "bad", "data": map[string]any{"error": map[string]any{"hint": "h"}}},
-			want: "bad",
+			want: "bad: h",
+		},
+		{
+			name: "msg equal to detail not duplicated",
+			in:   map[string]any{"msg": "not_found", "data": map[string]any{"error": map[string]any{"message": "not_found"}}},
+			want: "not_found",
+		},
+		{
+			name: "path appended to detail",
+			in:   map[string]any{"msg": "not_found", "data": map[string]any{"error": map[string]any{"hint": "用已有选项", "path": "update_records.recX.单选"}}},
+			want: "not_found: 用已有选项（字段路径: update_records.recX.单选）",
 		},
 		{
 			name: "empty msg falls back to hint",
