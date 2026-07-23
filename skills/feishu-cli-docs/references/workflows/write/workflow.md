@@ -175,6 +175,7 @@ Markdown 表格导入 docx 时：
 
 - 行数 > 9：CLI 创建 9 行初始表，再用 `insert_table_row` 追加到同一 block。
 - 列数 > 9：按列组拆分，保留首列作为标识。
+- 单元格填充走 `batch_update` 批量写入（每批 ≤30 个，含追加行的新 cell；`content-update` 全部 mode 与 `doc add` 均生效），大表填充为秒级；主要耗时来自行 > 9 时 `insert_table_row` 逐行串行追加（受单文档 3 QPS 节流）。
 - 行数极多（200+）时更适合用 Sheet：`feishu-cli sheet import-md report.md --title "报表"`。
 
 文档内已有表格结构操作：

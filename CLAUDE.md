@@ -113,7 +113,7 @@ export FEISHU_APP_SECRET=xxx
 ### 表格智能处理
 
 - **大表格保持单表连贯**：飞书 `create_block` 限制单表最多 9 行 × 9 列。行数超限时创建 9 行初始表，剩余行通过 `insert_table_row` API 追加到同一个 block，视觉上为一张连贯的表；列数超限仍按列组拆分（保留首列做标识）。⚠ 单文档写入受飞书 3 QPS 节流（v1.29+ 内置 docWriteLimiter，避免触发 99991400），追加 1 行 ≈ 333ms（100 行 ≈ 33s，单文档串行）；追加行数 ≥ 5 时 verbose 模式会打印进度
-- **批量填充加速（v1.29+）**：单元格填充改用 `batch_update` API，single-group cell 每批 ≤30 个一次写入；典型 4×6×8 表场景从 ~70s 降到 ~3s（25-30x，issue #159）
+- **批量填充加速（v1.29+ import，#159；#172 起覆盖全部写入路径）**：单元格填充改用 `batch_update` API，single-group cell 每批 ≤30 个一次写入；典型 4×6×8 表场景从 ~70s 降到 ~3s（25-30x）。`doc content-update` 全部 mode 与 `doc add` 由 `fillTableWithExtraRows` 内部按表格局部补建 cellMap（`GetAllBlockChildren` 一次读）同样走 batch（实测 88 cell 62s→6s）；追加行（`insert_table_row`）产生的新 cell 也进 batch
 - **列宽自定义**（v1.29+，issue #156）：默认按内容启发式（中文 14px / 英文 8px，最小 80 / 最大 400）。可通过两种方式覆盖：
   - 紧邻表格上方注释 `<!-- feishu-colwidth: 80,200,*,30% -->`：单位 px / 百分比 / `*`(走 auto)
   - CLI flag `--table-column-width=auto|fixed|N1,N2,...`（覆盖整篇文档；注释优先级高于 flag）
