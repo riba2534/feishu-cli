@@ -1028,21 +1028,7 @@ func buildCellTextBlockMap(documentID, userAccessToken string) (map[string]strin
 	if err != nil {
 		return nil, err
 	}
-	cellMap := make(map[string]string, len(blocks)/4) // cell 占比经验值
-	for _, b := range blocks {
-		if b == nil || b.BlockType == nil || *b.BlockType != int(converter.BlockTypeTableCell) {
-			continue
-		}
-		if len(b.Children) == 0 {
-			continue
-		}
-		cellID := client.StringVal(b.BlockId)
-		if cellID == "" {
-			continue
-		}
-		cellMap[cellID] = b.Children[0]
-	}
-	return cellMap, nil
+	return cellTextBlockMapFromBlocks(blocks), nil
 }
 
 // processTableTask 处理单个表格填充任务（带重试）

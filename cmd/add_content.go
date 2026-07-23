@@ -373,6 +373,8 @@ func addContentMarkdownWithOptions(documentID, blockID, contentData, basePath st
 // 委托给共享的 fillTableWithExtraRows，保证：
 //   - 行数超过 9 行时通过 insert_table_row 追加到同一个 block（视觉连贯）
 //   - 重试幂等，不会因 retry 而重复追加行
+//   - cellMap 传 nil 即可：下层在重试闭包内按本表格局部补建映射，
+//     使 batch_update 批量填充在本路径生效（issue #172）
 func fillTableWithRetry(documentID, tableBlockID string, td *converter.TableData, userAccessToken string) bool {
 	// 追加行数 ≥ 5 时每 5 行打一次进度
 	onProgress := tableAppendProgress(len(td.ExtraRowContents), 5, 5, func(appended, total int) {

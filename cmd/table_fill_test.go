@@ -146,3 +146,52 @@ func TestTableAppendProgress_InvalidStep(t *testing.T) {
 
 // 确保类型兼容 client.InsertRowProgressFunc
 var _ client.InsertRowProgressFunc = tableAppendProgress(10, 5, 5, func(int, int) {})
+
+func strPtr(s string) *string { return &s }
+
+func intPtr(i int) *int { return &i }
+
+func TestCellTextBlockMapFromBlocks(t *testing.T) {
+	cellType := int(converter.BlockTypeTableCell)
+	textType := int(converter.BlockTypeText)
+	blocks := []*larkdocx.Block{
+		nil, // nil 块跳过
+		{BlockId: strPtr("cell1"), BlockType: intPtr(cellType), Children: []string{"text1", "extra"}},
+		{BlockId: strPtr("cell2"), BlockType: intPtr(cellType), Children: []string{"text2"}},
+		{BlockId: strPtr("cell3"), BlockType: intPtr(cellType)},                         // 无子块跳过
+		{BlockId: strPtr(""), BlockType: intPtr(cellType), Children: []string{"textX"}}, // 空 ID 跳过
+		{BlockId: strPtr("txt1"), BlockType: intPtr(textType), Children: []string{"c"}}, // 非 cell 跳过
+		{BlockId: strPtr("noType"), Children: []string{"c"}},                            // 无类型跳过
+	}
+	m := cellTextBlockMapFromBlocks(blocks)
+	if len(m) != 2 {
+		t.Fatalf("期望 2 项，得到 %d: %v", len(m), m)
+	}
+	if m["cell1"] != "text1" || m["cell2"] != "text2" {
+		t.Fatalf("映射不符: %v", m)
+	}
+}
+
+func TestMergeCellMaps(t *testing.T) {
+	shared := map[string]string{"a": "1", "b": "2"}
+	local := map[string]string{"b": "20", "c": "3"}
+	merged := mergeCellMaps(shared, local)
+
+	// 局部优先
+	if merged["a"] != "1" || merged["b"] != "20" || merged["c"] != "3" || len(merged) != 3 {
+		t.Fatalf("合并结果不符: %v", merged)
+	}
+	// 输入不被改写（import 多 worker 共享 shared，改写即 data race）
+	if shared["b"] != "2" || len(shared) != 2 {
+		t.Fatalf("shared 被改写: %v", shared)
+	}
+	if local["b"] != "20" || len(local) != 2 {
+		t.Fatalf("local 被改写: %v", local)
+	}
+
+	// shared 为 nil（content-update 路径）
+	m2 := mergeCellMaps(nil, local)
+	if len(m2) != 2 || m2["c"] != "3" {
+		t.Fatalf("nil shared 合并不符: %v", m2)
+	}
+}
