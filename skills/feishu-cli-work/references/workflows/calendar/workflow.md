@@ -256,6 +256,16 @@ feishu-cli calendar delete-event <calendar_id> <event_id>
 若 App 未开通 tenant 级 `calendar:calendar.event:create/update/delete`，会报 99991672，
 需显式传 `--user-access-token` 或设 `FEISHU_USER_ACCESS_TOKEN` 切到 User 身份。
 
+Bot 身份建的日程 **Bot 自己不在参会人列表里**（用户身份建则自动入会）。如需 Bot 出现在
+参会人列表（例如后续要以 Bot 身份收会议事件），先取 Bot 自身 open_id 再随 attendee add 加入：
+
+```bash
+BOT_ID=$(feishu-cli api GET /open-apis/bot/v3/info --as bot --jq '.bot.open_id' | tr -d '"')
+feishu-cli calendar attendee add --calendar-id <cal_id> --event-id <event_id> --user-ids "$BOT_ID,ou_其他人"
+```
+
+另注：搜索用户接口（`user read --query`）不支持 Bot 身份，需 User Token。
+
 ## 关键 flag 速记
 
 | 场景 | 关键 flag | 备注 |

@@ -87,7 +87,7 @@
   "text_align": "left",             // left | center | right
   "icon": {
     "tag": "standard_icon",
-    "token": "chat-forbidden_outlined",
+    "token": "chat-forbidden_outlined",   // 彩色 _colorful token 必须照 design.md §4.1 枚举表整串照抄，禁止按名称规律拼接
     "color": "blue"
   },
   "margin": "0"

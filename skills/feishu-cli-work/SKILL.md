@@ -25,7 +25,7 @@ allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Read, Write
 | 任务、子任务、成员、提醒、评论、附件、任务清单 | `references/workflows/task/workflow.md` |
 | 审批定义、实例、任务、抄送和审批动作 | `references/workflows/approval/workflow.md` |
 | 打卡任务和考勤统计 | `references/workflows/attendance/workflow.md` |
-| OKR 周期和进展记录 | `references/workflows/okr/workflow.md` |
+| OKR 周期、进展记录、创建 O/KR 与量化指标（api 透传） | `references/workflows/okr/workflow.md` |
 
 ## 执行规则
 

@@ -70,13 +70,14 @@
 
 输入也支持 `--html '<...>'` 或 `--html-file -`（stdin）。四个命令都支持 `--format` / `--jq`；写类 create/update/delete 另有 `--dry-run` 预览和 `-o` 写文件，get 用 `--raw` 出纯 HTML（get 无 `--dry-run`/`-o`）。默认 **Bot 身份**（操作 feishu-cli 自建文档无需登录）；改他人/手建文档传 `--user-access-token`。
 
-## 画图必避的 5 个坑（详见 `references/pitfalls.md`）
+## 画图必避的 6 个坑（详见 `references/pitfalls.md`）
 
 1. **白屏不报错** → 落库前本地浏览器必验（见工作流第 2 步）。这是最高频的坑。
 2. **CDN `<script>` 是异步的** → 用前轮询等库就绪（`if(typeof echarts==='undefined') return setTimeout(boot,150)`），每个 `<script src>` 加 `onerror` 兜底。飞书沙箱实测能联 jsdelivr。
 3. **真实地图** → ECharts 5 不带地图数据，直接 `type:'map'` 空白；先 `fetch` GeoJSON（借 `echarts@4.9.0/map/json/china.json`）再 `registerMap`。
 4. **极坐标 polar bar 不按值上色** → `visualMap` 对它无效，给每个 data 项显式 `itemStyle.color`。
 5. **批量画多张** → 每次 `create` 之间 `sleep 0.5s`，否则触发飞书写限流 `99991400`；多图配标题用 `doc content-update --mode append --markdown "## 标题"` 与 create 交替追加。
+6. **HTML 总长上限约 500KB** → 不要内联大图/Base64/字体/大段 mock 数据；文档正文可用宽度约 820px，`html-box-height-mode` 合法值仅 `auto`/`viewport` 两个。
 
 ## 创建后交付（按需）
 

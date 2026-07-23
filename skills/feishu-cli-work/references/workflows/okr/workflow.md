@@ -4,6 +4,20 @@
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
+## 目录
+
+1. [核心概念](#核心概念)
+2. [命令速查](#命令速查)
+3. [cycle list — 查租户 OKR 周期](#cycle-list--查租户-okr-周期)
+4. [progress list — 查进展记录列表](#progress-list--查进展记录列表)
+5. [progress create — 创建进展记录](#progress-create--创建进展记录)
+6. [关键踩坑](#-关键踩坑)
+7. [权限要求](#权限要求应用-token--tenant-scope)
+8. [典型工作流](#典型工作流)
+9. [未封装的能力：api 透传（含创建 O/KR、量化指标 indicators）](#未封装的能力用-feishu-cli-api-透传)
+10. [错误处理](#错误处理)
+11. [相关技能](#相关技能)
+
 ## 核心概念
 
 ### OKR 数据模型
@@ -23,12 +37,13 @@
 - **Objective ID 和 Key Result ID 二选一**（不是同时）：每条进展记录只能挂在一个目标 *或* 一个关键结果上。
 - **进展记录可以独立于周期**：API 不需要传 period_id，但通常一个 O/KR 都属于一个 period。
 
-### 身份：应用 Token / Tenant Token
+### 身份：默认 Bot（`--as` 可切换）
 
-OKR 模块当前强制使用 **应用 Token / Tenant Token**。实测 OKR 服务端拒绝 User Token（`99991668 user access token not support`），因此命令不读取 `--user-access-token`，也不需要 `auth login`。
+OKR 命令组默认 **`--as bot`**（App/Tenant Token，无需 `auth login`，cron/无人值守友好）。
+身份墙**按端点分化**（实测）：仅 `cycle list`（v1 periods）只收 Tenant Token；其余端点 user/tenant 双支持，
+用 `--as user|auto` 可切换（详见下方「身份选择」表）。
 
-- 需要在飞书开放平台为应用开通 OKR tenant scopes
-- 本地只需配置 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 或 `config.yaml`
+- Tenant 路线：在飞书开放平台为应用开通 OKR tenant scopes，本地配置 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`
 - 如服务端返回 `99991672`，按错误里的开放平台链接申请对应应用权限
 
 ## 命令速查
@@ -247,21 +262,50 @@ for kr_id in 7xxx 7yyy 7zzz; do
 done
 ```
 
-## 未实现的能力（按需后续补 CLI）
+## 未封装的能力（用 `feishu-cli api` 透传）
 
-以下 OKR API 飞书都支持，但本 PR 的 MVP 范围只覆盖 3 个最高频动词。`internal/client` 层已经部分实现，CLI 子命令暂未暴露：
+`cycle list/detail`、`progress list/get/create/update/delete`、`upload-image` 均已是一等命令（见命令速查）。
+以下能力未做专用命令，属季度级低频操作，用 `feishu-cli api` 透传即可（先 `feishu-cli schema okr.<resource>.<method>` 查参数）：
 
-| 能力 | 状态 |
-|------|------|
-| `okr progress get <progress-id>` | ❌ 未实现 |
-| `okr progress update <progress-id>` | ❌ 未实现 |
-| `okr progress delete <progress-id>` | ❌ 未实现 |
-| `okr progress image upload` | ❌ 未实现（图片素材上传） |
-| `okr objective list/get` | ❌ 未实现 |
-| `okr key-result list/get` | ❌ 未实现 |
-| `okr review list/query`（评审/复盘） | ❌ 未实现 |
+### 创建 Objective / Key Result（api 透传配方）
 
-如有需要，提 issue 或 PR 时参考 `cmd/okr_progress_create.go` 的模式扩展。
+scope `okr:okr.content:writeonly`；写端点建议 `--as user`（官方对写端点均以 user 身份验证；tenant 身份未实测）。
+
+```bash
+# 创建 Objective（cycle_id 从 okr cycle list 拿）
+feishu-cli api POST /open-apis/okr/v2/cycles/<cycle_id>/objectives --as user --data '{
+  "content": {"blocks":[{"type":"paragraph","paragraph":{"elements":[{"type":"textRun","textRun":{"text":"目标内容","style":{}}}]}}]}
+}'
+
+# 在 Objective 下创建 Key Result
+feishu-cli api POST /open-apis/okr/v2/objectives/<objective_id>/key_results --as user --data '{
+  "content": {"blocks":[{"type":"paragraph","paragraph":{"elements":[{"type":"textRun","textRun":{"text":"KR 内容","style":{}}}]}}]}
+}'
+```
+
+租户强制 OKR 分类时创建 Objective 需带 `category_id`（先 `feishu-cli api GET /open-apis/okr/v2/categories --as user` 查，
+该端点需 user scope `okr:okr.setting:read`，缺失报 99991679——实测确认）。
+
+> 验证状态：上述端点路径与请求形状来自官方 OpenAPI（okr/v2）；本地租户未开通 okr 写 scope，
+> 仅实测了鉴权关卡（99991672/99991679 及所需 scope 名），未做真实创建。首次使用前先
+> `feishu-cli auth check --scope "okr:okr.content:writeonly"` 预检。
+
+### 量化指标 indicators（api 透传）
+
+```bash
+feishu-cli api GET /open-apis/okr/v2/objectives/<id>/indicators --as user     # O 的指标
+feishu-cli api GET /open-apis/okr/v2/key_results/<id>/indicators --as user    # KR 的指标
+feishu-cli api PATCH /open-apis/okr/v2/indicators/<indicator_id> --as user --data '{"current_value":8}'
+```
+
+字段语义（汇报进度时的防错口径）：
+- `current_value_calculate_type`：0=手动 / 2=按 KR 汇总 / 3=按拆解汇总；**仅 0 允许 PATCH 当前值**
+- `entity_type`：2=Objective / 3=Key Result；`indicator_status`：-1/0/1/2
+- **默认初始指标不带 start/current/target/unit**——此时汇报必须说「未设置进度」，不能说 0%
+
+### 其他未封装端点
+
+`objective list/get`、`key-result list/get`、`review list/query`（评审/复盘）同样走 `feishu-cli api` 透传。
 
 ## 错误处理
 
@@ -275,7 +319,7 @@ done
 | `--content-json 不是合法 JSON` | JSON 语法错误 | 用 `jq .` 校验后再传 |
 | `source_url is required` 或类似 | 飞书 API 强制必填 | CLI 已默认填占位，理论上不会触发；如出现请显式传 `--source-url` |
 | `99991672` / `scope not authorized` | 应用缺少 OKR tenant scope | 到开放平台应用权限管理开通 `okr:okr*` 相关权限 |
-| `99991668 user access token not support` | 使用了 User Token | 不传用户 token，使用应用身份运行 |
+| `99991668 user access token not support` | 该端点只收 Tenant Token（如 `cycle list`） | 用默认 `--as bot`（应用身份）运行 |
 
 ## 相关技能
 

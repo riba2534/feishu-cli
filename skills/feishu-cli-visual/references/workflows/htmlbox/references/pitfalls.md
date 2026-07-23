@@ -15,6 +15,7 @@
 8. [批量追加多图 + 文档标题层级](#8-批量追加多图--文档标题层级)
 9. [落库前本地验证流程（标准动作）](#9-落库前本地验证流程)
 10. [状态持久化禁区：别用 localStorage](#10-状态持久化禁区别用-localstorage)
+11. [HTML 总长上限约 500KB](#11-html-总长上限约-500kb)
 
 ---
 
@@ -176,3 +177,12 @@ else { n = 0; /* 本地预览兜底，绝不退回 localStorage */ }
 ```
 
 `window.magic` 只在飞书文档端注入，本地 `file://` 没有——所以**带状态的配方必须判存兜底**（本地走 mock）。完整能力与配方见 `references/window-magic.md`。
+
+---
+
+## 11. HTML 总长上限约 500KB
+
+单个妙笔BOX 块的 HTML 总长上限约 **500KB**（`doc htmlbox` 输出里的 `html_len` 可自查）。
+不要往 HTML 里内联大图 / Base64 资源 / 字体文件 / 大段 mock JSON——超限会创建失败，
+逼近上限也会拖慢渲染。大数据集改为运行时 fetch CDN 资源或精简采样后内联。
+另：文档正文可用宽度约 **820px**；`html-box-height-mode` 合法值仅 `auto` / `viewport` 两个。

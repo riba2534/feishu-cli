@@ -39,7 +39,7 @@
 
 ### ECharts 骨架（数据/分布/构成/关系/流程类都用它）
 
-把任一 ECharts 配方的 `OPT` 粘到 `★` 处即可。已含异步等待、`onerror` 兜底、`resize` 自适应、状态提示，以及妙笔BOX 高度协议 `<meta name="html-box-height-mode" content="auto">`（`auto`=宿主块高度跟内容，适合固定高度图表；全屏 Dashboard 才用 `viewport`）。异步变高（延迟加载、动态追加）后调 `window.magic&&window.magic.updateHeight()` 刷新宿主块高度。
+把任一 ECharts 配方的 `OPT` 粘到 `★` 处即可。已含异步等待、`onerror` 兜底、`resize` 自适应、状态提示，以及妙笔BOX 高度协议 `<meta name="html-box-height-mode" content="auto">`（合法值**仅 `auto`/`viewport` 两个**，禁止臆造 fixed/像素值；`auto`=宿主块高度跟内容，适合固定高度图表；全屏 Dashboard 才用 `viewport`）。文档正文可用宽度约 **820px**，布局按此设计。异步变高（延迟加载、动态追加）后调 `window.magic&&window.magic.updateHeight()` 刷新宿主块高度。
 
 ```html
 <!doctype html><html lang="zh"><head><meta charset="utf-8">

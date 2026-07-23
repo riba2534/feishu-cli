@@ -3,6 +3,16 @@
 > 构造 v2 卡片的**美观守则**：配色、布局、节奏。
 > 目标：让 Claude 装配出来的卡片视觉上就像专业设计师做的一样，而不是"能看"的程度。
 
+## 目录
+
+1. [一、配色：主色 + 强调色 + 压平色](#一配色主色--强调色--压平色)
+2. [二、布局：Z 字视线 + 节奏感](#二布局z-字视线--节奏感)
+3. [三、节奏：用 hr + collapsible_panel 组织信息](#三节奏用-hr--collapsible_panel-组织信息)
+4. [四、图标策略（含彩色 `_colorful` token 枚举）](#四图标策略)
+5. [五、场景 → 模板映射一览](#五场景--模板映射一览)
+6. [六、反模式（常见踩坑）](#六反模式常见踩坑)
+7. [七、一页速查](#七一页速查)
+
 ## 一、配色：主色 + 强调色 + 压平色
 
 ### 1.1 header.template 颜色矩阵
@@ -215,6 +225,23 @@ header (template=purple)
   - 成功类 → `check-circle_filled`
   - 警告类 → `warning_filled`
   - 数据类 → `chart_outlined`
+
+**彩色图标（`_colorful` 后缀）**：token 必须从下表按**完整字符串**照抄，**禁止按名称规律自行拼接**
+（拼出来的 token 不渲染且不报错，如 `mail_colorful`/`notice_colorful` 都是无效 token）；
+没有合适的就省略 icon 或用单色 token。彩色 token 自带颜色，不要再配 `color` 字段。
+
+| 含义 | token | 含义 | token |
+|---|---|---|---|
+| 日历 | `calendar_colorful` | 待办 | `todo_colorful` |
+| 投票 | `vote_colorful` | 飞书妙记 | `file-lark-minutes_colorful` |
+| 多维表格 | `wiki-bitable_colorful` | 表单 | `file-form_colorful` |
+| 飞书社区 | `larkcommunity_colorful` | 招聘 | `hirelogo_colorful` |
+| 飞书品牌 | `lark-logo_colorful` | Meego | `meego_colorful` |
+| AI | `myai_colorful` | aPaaS | `apaas_colorful` |
+| 审批 | `approval_colorful` | 通用 AI | `ai-common_colorful` |
+
+全量图标枚举（数百个）以官方图标库为准：
+https://open.larkoffice.com/document/feishu-cards/enumerations-for-icons
 
 ### 4.2 markdown 里的 emoji
 
