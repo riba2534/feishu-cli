@@ -1,0 +1,367 @@
+{
+  "schema_version": "1.0",
+  "source": "https://github.com/zarazhangrui/beautiful-feishu-whiteboard",
+  "license_note": "Palette/mood inspired by beautiful-feishu-whiteboard templates; translated to Feishu Card JSON 2.0 constraints.",
+  "component_constraints": {
+    "root_shell": "body.padding must be 0; body.elements[0] must be an interactive_container carrying the whole-card background and padding. This body-replacement layer must not add border or corner radius, otherwise it overlaps the Feishu message bubble.",
+    "nested_backgrounds": [
+      "root interactive_container background_style",
+      "top highlight column background_style",
+      "border_color",
+      "markdown font colors",
+      "mock button interactive_container background_style"
+    ],
+    "contrast": "Every background token should have a matching on_* foreground token. Dark or mid-dark accent/button surfaces must use white or cream foreground text instead of muted/ink text.",
+    "theme_button": "Theme Button must be a clickable interactive_container using the theme button/background token and fixed padding \"8px 12px 8px 12px\". Do not rely on parent spacing to create button tap area.",
+    "unsupported": [
+      "CSS gradients",
+      "free shadows",
+      "arbitrary style/class fields",
+      "background image URLs"
+    ]
+  },
+  "styles": [
+    {
+      "style_id": "lime-slab",
+      "name": "Lime Slab",
+      "level": "balanced",
+      "formality": "medium",
+      "vibe": "electric, bold, modern SaaS, neobrutalist landing-page",
+      "colors": {
+        "canvas": "#EEFA79",
+        "body": "#FFFFF2",
+        "panel": "#FFFFFF",
+        "ink": "#0A0A05",
+        "muted": "#2F2E25",
+        "accent": "#0A0A05",
+        "accent_2": "#FFFFF2",
+        "button": "#0A0A05",
+        "button_text": "#FFFFFF"
+      },
+      "usage": [
+        "product_explainer",
+        "feature_breakdown",
+        "comparison_grid",
+        "system_map"
+      ],
+      "rules": [
+        "Use electric lime as the canvas or one broad ambient field, not as every highlight block.",
+        "Use ink-black for primary highlight columns; pair with white text for strong slab contrast.",
+        "Flat blocks, charcoal borders, no shadows.",
+        "Mock buttons should be ink-black with white text."
+      ]
+    },
+    {
+      "style_id": "editorial-forest",
+      "name": "Editorial Forest",
+      "level": "balanced",
+      "formality": "high",
+      "vibe": "literary, bookish, forest green and dusty rose, paper-like",
+      "colors": {
+        "canvas": "#EFE7D4",
+        "body": "#EFE7D4",
+        "panel": "#E6DCC4",
+        "ink": "#1A1A17",
+        "muted": "#2E4A2A",
+        "accent": "#2E4A2A",
+        "accent_2": "#E89CB1",
+        "button": "#2E4A2A",
+        "button_text": "#EFE7D4"
+      },
+      "usage": [
+        "editorial_summary",
+        "annual_report",
+        "strategy_note",
+        "bookish_explainer"
+      ],
+      "rules": [
+        "Keep vocabulary small: cream, forest, rose.",
+        "Use forest for primary heading/border, rose for one accent surface.",
+        "Squared editorial surfaces, low radius."
+      ]
+    },
+    {
+      "style_id": "monochrome",
+      "name": "Monochrome",
+      "level": "restrained",
+      "formality": "high",
+      "vibe": "quiet, minimal, text-first, no accent",
+      "colors": {
+        "canvas": "#FAFADF",
+        "body": "#FAFADF",
+        "panel": "#F2F2D2",
+        "ink": "#1A1A16",
+        "muted": "#5E5E54",
+        "accent": "#1A1A16",
+        "accent_2": "#F0F0D4",
+        "button": "#1A1A16",
+        "button_text": "#FAFADF"
+      },
+      "usage": [
+        "serious_memo",
+        "executive_summary",
+        "policy_note",
+        "minimal_report"
+      ],
+      "rules": [
+        "No accent color; hierarchy comes from scale, border, spacing.",
+        "Use cream siblings only for subtle inset surfaces.",
+        "Use squared low-radius panels."
+      ]
+    },
+    {
+      "style_id": "macchiato",
+      "name": "Macchiato",
+      "level": "restrained",
+      "formality": "high",
+      "vibe": "warm monochrome, almond and espresso, cozy quiet",
+      "colors": {
+        "canvas": "#EDE7DD",
+        "body": "#EDE7DD",
+        "panel": "#E5DECF",
+        "ink": "#25211B",
+        "muted": "#6E6558",
+        "accent": "#25211B",
+        "accent_2": "#9A917F",
+        "button": "#25211B",
+        "button_text": "#EDE7DD"
+      },
+      "usage": [
+        "calm_explainer",
+        "knowledge_note",
+        "review_doc",
+        "soft_summary"
+      ],
+      "rules": [
+        "No bright accent; almond surface plus espresso ink.",
+        "Warm taupe for secondary text.",
+        "Quiet radius 0-14px."
+      ]
+    },
+    {
+      "style_id": "neo-grid-bold",
+      "name": "Neo-Grid Bold",
+      "level": "bold",
+      "formality": "medium",
+      "vibe": "editorial grid, bold, structured, brutalist annual report",
+      "colors": {
+        "canvas": "#F5F4EF",
+        "body": "#ECECE8",
+        "panel": "#F5F4EF",
+        "ink": "#0A0A0A",
+        "muted": "#8A8A85",
+        "accent": "#E6FF3D",
+        "accent_2": "#0A0A0A",
+        "button": "#0A0A0A",
+        "button_text": "#E6FF3D"
+      },
+      "usage": [
+        "metric_grid",
+        "launch_brief",
+        "structured_report",
+        "bold_status_board"
+      ],
+      "rules": [
+        "Strict block grid; no rounded corners.",
+        "Exactly one neon lemon accent.",
+        "Use thick ink borders for frame and panel separation."
+      ]
+    },
+    {
+      "style_id": "court-press",
+      "name": "Court Press",
+      "level": "bold",
+      "formality": "low",
+      "vibe": "sporty, athletic, energetic, pink and green clash",
+      "colors": {
+        "canvas": "#F2EFE6",
+        "body": "#F2EFE6",
+        "panel": "#FFFFFF",
+        "ink": "#2F4224",
+        "muted": "#66914C",
+        "accent": "#66914C",
+        "accent_2": "#DA9EB7",
+        "button": "#66914C",
+        "button_text": "#F2EFE6"
+      },
+      "usage": [
+        "playful_process",
+        "team_update",
+        "step_by_step",
+        "event_recap"
+      ],
+      "rules": [
+        "Green leads, pink punches.",
+        "White panels need thin green borders.",
+        "Squared cards; energy comes from scale and color blocks."
+      ]
+    },
+    {
+      "style_id": "soft-editorial",
+      "name": "Soft Editorial",
+      "level": "balanced",
+      "formality": "medium",
+      "vibe": "warm magazine, soft pastels, gentle editorial page",
+      "colors": {
+        "canvas": "#ECE9DC",
+        "body": "#ECE9DC",
+        "panel": "#E7C6AD",
+        "ink": "#1C1A17",
+        "muted": "#6E6558",
+        "accent": "#E2A8CE",
+        "accent_2": "#C9DA4F",
+        "button": "#1C1A17",
+        "button_text": "#ECE9DC"
+      },
+      "usage": [
+        "calm_overview",
+        "research_summary",
+        "gentle_explainer",
+        "editorial_digest"
+      ],
+      "rules": [
+        "Cream page with pastel cards.",
+        "Pastels are paints, not semantic status colors.",
+        "Rounded cards 16-28px, generous space."
+      ]
+    },
+    {
+      "style_id": "handdrawn-vibes",
+      "name": "Handdrawn Vibes",
+      "level": "balanced",
+      "formality": "low",
+      "vibe": "cream paper, hand-drawn black icons, pastel blue and warm yellow highlight blocks",
+      "colors": {
+        "canvas": "#FFFAEE",
+        "body": "#FFFAEE",
+        "panel": "#FFFFF6",
+        "ink": "#0F0F0E",
+        "muted": "#5F5E5A",
+        "secondary": "#DDD6C8",
+        "accent": "#ADDEFF",
+        "accent_2": "#FEC554",
+        "button": "#0F0F0E",
+        "button_text": "#FFFAEE",
+        "button_secondary": "#FFFFF6",
+        "button_secondary_text": "#0F0F0E"
+      },
+      "usage": [
+        "playful_status",
+        "mood_summary",
+        "creator_update",
+        "lightweight_product_intro"
+      ],
+      "rules": [
+        "Use cream canvas and black ink as the base; color belongs in a few large rounded highlight blocks.",
+        "Pair pastel blue and warm yellow blocks side by side, with hand-drawn doodle icons centered above short labels.",
+        "Use thin separators and one bold ink underline for tab-like hierarchy; avoid gradients and photo backgrounds."
+      ]
+    },
+    {
+      "style_id": "handdrawn-dark",
+      "name": "Handdrawn Dark",
+      "level": "balanced",
+      "formality": "low",
+      "vibe": "black sketchbook canvas, near-white typography, neutral white borders, neon green, hot orange and soft purple highlights",
+      "colors": {
+        "canvas": "#05060A",
+        "body": "#090B12",
+        "panel": "#141722",
+        "ink": "#F8F8F8",
+        "muted": "#DADADA",
+        "secondary": "rgba(255,255,255,0.42)",
+        "accent": "#A192F9",
+        "accent_2": "#FC753D",
+        "highlight_orange": "#FC753D",
+        "highlight_yellow": "#FFEB80",
+        "button": "#F8F8F8",
+        "button_text": "#000000",
+        "button_secondary": "#000000",
+        "button_secondary_text": "#F8F8F8",
+        "icon_surface": "#F8F8F8"
+      },
+      "usage": [
+        "dark_status",
+        "night_shift_summary",
+        "creator_update",
+        "playful_dark_product_intro"
+      ],
+      "rules": [
+        "Use near-black as the canvas, not pure black. Body and panel must step up in luminance so containers remain visible against the card background.",
+        "Do not simulate gradients with unsupported CSS. Use discrete tonal steps: near-black canvas, deep ink panel, and saturated highlight columns.",
+        "Use neutral white borders for panels and media-list surfaces; reserve neon green, hot orange and soft purple for highlights and chart accents.",
+        "Black safe16 doodle icons must sit on wb_handdrawn_dark_icon_surface or another dedicated neutral light icon shell; do not use panel, column, accent, translucent black, or border-only dark shells for icon backgrounds."
+      ]
+    },
+    {
+      "style_id": "wellness-planner",
+      "name": "Wellness Planner",
+      "level": "balanced",
+      "formality": "low",
+      "vibe": "warm cream lifestyle planner, rounded cards, olive buttons, terracotta, sage, blush and soft yellow blocks",
+      "colors": {
+        "canvas": "#F7F1E3",
+        "body": "#FBF6E9",
+        "panel": "#FFF8EE",
+        "ink": "#27301E",
+        "muted": "#746C5B",
+        "secondary": "#E7DCC9",
+        "accent": "#F3D95F",
+        "accent_2": "#E77C53",
+        "sage": "#667242",
+        "blush": "#EAB4CA",
+        "highlight_orange": "#FC753D",
+        "highlight_yellow": "#FFEB80",
+        "button": "#25351F",
+        "button_text": "#FFF8EE",
+        "button_secondary": "#FFF8EE",
+        "button_secondary_text": "#25351F"
+      },
+      "usage": [
+        "habit_plan",
+        "meal_plan",
+        "health_routine",
+        "wellness_summary",
+        "daily_schedule"
+      ],
+      "rules": [
+        "Use warm cream as the app-like canvas and rounded paper panels; avoid pure white and default blue.",
+        "Use terracotta, sage, blush and soft yellow as structured plan blocks, not random decorative colors.",
+        "Prefer input-like pills, day chips, segmented plan rows, and bottom pill buttons for lifestyle planner tasks."
+      ]
+    },
+    {
+      "style_id": "claude-chrome",
+      "name": "Claude Chrome",
+      "level": "restrained",
+      "formality": "high",
+      "vibe": "airy product page, off-white canvas, deep cream panels, and mint accents",
+      "description": "Inspired by claude.com/claude-for-chrome and translated to supported Card JSON 2.0 surfaces without CSS gradients.",
+      "colors": {
+        "canvas": "#FAF9F5",
+        "body": "#FAF9F5",
+        "panel": "#F5F4ED",
+        "ink": "#141413",
+        "secondary": "#E8E6DC",
+        "muted": "#737373",
+        "accent": "#D1DED3",
+        "accent_2": "#D97757",
+        "button": "#141413",
+        "button_text": "#FFFFFF",
+        "button_secondary": "#E8E6DC",
+        "button_secondary_text": "#141413"
+      },
+      "usage": [
+        "product_showcase",
+        "tool_explainer",
+        "workflow_summary",
+        "website_style_card"
+      ],
+      "rules": [
+        "Keep the composition airy, quiet and productized.",
+        "Use deep cream panels and mint accents as discrete surfaces; do not simulate gradients.",
+        "Use semantic doodle icons selected for the current content, not template image keys."
+      ]
+    }
+  ]
+}

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -45,8 +46,9 @@ func TestIsLocalPath(t *testing.T) {
 		{"相对路径反斜杠", "images\\logo.png", true},
 		{"上级目录", "../assets/icon.png", true},
 		{"当前目录", "./screenshot.png", true},
+		{"业务 key 含斜杠但无图片扩展名", "tenant/image/key", false},
 
-		// 非图片扩展名不应该被识别为本地图片路径（但仍会被 isLocalPath 返回 true 因为有分隔符）
+		// 非图片扩展名不应该被识别为本地图片路径
 		{"txt 文件（无分隔符）", "readme.txt", false},
 		{"md 文件（无分隔符）", "document.md", false},
 		{"空字符串", "", false},
@@ -64,7 +66,7 @@ func TestIsLocalPath(t *testing.T) {
 
 // -------------------------------------------------------------------
 // processJSONLocalImages 测试 - 纯逻辑，不触发实际上传
-// 仅测试跳过远程/已上传图片、不存在的文件等不上传的场景
+// 覆盖跳过远程/已上传图片，以及本地图片失败时阻断发送。
 // -------------------------------------------------------------------
 
 func TestProcessJSONLocalImages_SkipRemoteImages(t *testing.T) {
@@ -115,7 +117,10 @@ func TestProcessJSONLocalImages_SkipRemoteImages(t *testing.T) {
 				t.Fatalf("JSON 解析失败: %v", err)
 			}
 
-			changed, newData, count := processJSONLocalImages(data, "/tmp/nonexistent")
+			changed, newData, count, processErr := processJSONLocalImages(data, "/tmp/nonexistent")
+			if processErr != nil {
+				t.Fatalf("远程/已上传图片不应触发错误: %v", processErr)
+			}
 
 			// 远程图片和已上传图片不应该被修改
 			if changed {
@@ -137,8 +142,8 @@ func TestProcessJSONLocalImages_SkipRemoteImages(t *testing.T) {
 	}
 }
 
-func TestProcessJSONLocalImages_SkipNonExistentFiles(t *testing.T) {
-	// 测试不存在的本地文件应该被跳过（不会尝试上传）
+func TestProcessJSONLocalImages_RejectsNonExistentFiles(t *testing.T) {
+	// 显式要求上传时，本地图片缺失必须阻止后续发送。
 	jsonContent := `{
 		"tag": "img",
 		"image_key": "/nonexistent/path/to/image.png"
@@ -149,7 +154,7 @@ func TestProcessJSONLocalImages_SkipNonExistentFiles(t *testing.T) {
 		t.Fatalf("JSON 解析失败: %v", err)
 	}
 
-	changed, newData, count := processJSONLocalImages(data, "/tmp")
+	changed, _, count, err := processJSONLocalImages(data, "/tmp")
 
 	// 不存在的文件不应该被修改
 	if changed {
@@ -159,10 +164,8 @@ func TestProcessJSONLocalImages_SkipNonExistentFiles(t *testing.T) {
 		t.Errorf("上传计数应该为 0，实际 %d", count)
 	}
 
-	// 验证结果保留原值
-	resultBytes, _ := json.Marshal(newData)
-	if !strings.Contains(string(resultBytes), "/nonexistent/path/to/image.png") {
-		t.Errorf("结果应该保留原路径，结果: %s", string(resultBytes))
+	if err == nil || !strings.Contains(err.Error(), "本地图片不可用") {
+		t.Fatalf("期望本地图片缺失错误，实际: %v", err)
 	}
 }
 
@@ -178,7 +181,10 @@ func TestProcessJSONLocalImages_NonImageTag(t *testing.T) {
 		t.Fatalf("JSON 解析失败: %v", err)
 	}
 
-	changed, newData, count := processJSONLocalImages(data, "/tmp")
+	changed, newData, count, err := processJSONLocalImages(data, "/tmp")
+	if err != nil {
+		t.Fatalf("非 img 标签不应触发错误: %v", err)
+	}
 
 	if changed {
 		t.Errorf("非 img 标签不应该被修改")
@@ -195,7 +201,10 @@ func TestProcessJSONLocalImages_NonImageTag(t *testing.T) {
 
 func TestProcessJSONLocalImages_InvalidJSON(t *testing.T) {
 	// 非 JSON 字符串应该原样返回
-	changed, result, count := processJSONLocalImages("not json", "/tmp")
+	changed, result, count, err := processJSONLocalImages("not json", "/tmp")
+	if err != nil {
+		t.Fatalf("标量值不应触发错误: %v", err)
+	}
 	if changed {
 		t.Errorf("非 JSON 字符串不应该被修改")
 	}
@@ -225,7 +234,10 @@ func TestProcessJSONLocalImages_NestedStructure(t *testing.T) {
 		t.Fatalf("JSON 解析失败: %v", err)
 	}
 
-	changed, _, count := processJSONLocalImages(data, "/tmp")
+	changed, _, count, err := processJSONLocalImages(data, "/tmp")
+	if err != nil {
+		t.Fatalf("远程图片不应触发错误: %v", err)
+	}
 
 	// 远程图片不应该被处理
 	if changed {
@@ -249,7 +261,10 @@ func TestProcessJSONLocalImages_ArrayStructure(t *testing.T) {
 		t.Fatalf("JSON 解析失败: %v", err)
 	}
 
-	changed, _, count := processJSONLocalImages(data, "/tmp")
+	changed, _, count, err := processJSONLocalImages(data, "/tmp")
+	if err != nil {
+		t.Fatalf("远程/已上传图片不应触发错误: %v", err)
+	}
 
 	// 所有都是远程/已上传图片，不应该被处理
 	if changed {
@@ -257,6 +272,115 @@ func TestProcessJSONLocalImages_ArrayStructure(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("计数应该为 0")
+	}
+}
+
+func TestProcessJSONLocalImages_UploadsCardV2LocalAssets(t *testing.T) {
+	tempDir := t.TempDir()
+	for _, name := range []string{"cover.png", "icon.png"} {
+		if err := os.WriteFile(
+			filepath.Join(tempDir, name),
+			[]byte("\x89PNG\r\n\x1a\n"),
+			0o600,
+		); err != nil {
+			t.Fatalf("创建测试图片失败: %v", err)
+		}
+	}
+
+	originalUpload := uploadIMImage
+	uploadIMImage = func(path, _ string) (string, error) {
+		return "img_v2_uploaded_" + filepath.Base(path), nil
+	}
+	defer func() { uploadIMImage = originalUpload }()
+
+	jsonContent := `{
+		"body": {
+			"elements": [
+				{"tag": "img", "img_key": "cover.png"},
+				{
+					"tag": "img_combination",
+					"img_list": [
+						{"img_key": "icon.png"},
+						{"img_key": "img_v2_existing"}
+					]
+				}
+			]
+		}
+	}`
+	var data interface{}
+	if err := json.Unmarshal([]byte(jsonContent), &data); err != nil {
+		t.Fatalf("JSON 解析失败: %v", err)
+	}
+
+	changed, result, count, err := processJSONLocalImages(data, tempDir)
+	if err != nil {
+		t.Fatalf("上传本地素材失败: %v", err)
+	}
+	if !changed {
+		t.Fatal("Card V2 本地图片应该被替换")
+	}
+	if count != 2 {
+		t.Fatalf("上传计数 = %d，期望 2", count)
+	}
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("JSON 序列化失败: %v", err)
+	}
+	resultJSON := string(resultBytes)
+	for _, expected := range []string{
+		`"img_key":"img_v2_uploaded_cover.png"`,
+		`"img_key":"img_v2_uploaded_icon.png"`,
+		`"img_key":"img_v2_existing"`,
+	} {
+		if !strings.Contains(resultJSON, expected) {
+			t.Errorf("结果缺少 %s：%s", expected, resultJSON)
+		}
+	}
+}
+
+func TestProcessJSONLocalImages_RejectsInvalidImageContent(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tempDir, "secret.png"), []byte("not an image"), 0o600); err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	var data interface{}
+	if err := json.Unmarshal([]byte(`{"tag":"img","img_key":"secret.png"}`), &data); err != nil {
+		t.Fatalf("JSON 解析失败: %v", err)
+	}
+	changed, _, count, err := processJSONLocalImages(data, tempDir)
+	if changed || count != 0 {
+		t.Fatalf("非法图片不应被上传：changed=%v count=%d", changed, count)
+	}
+	if err == nil || !strings.Contains(err.Error(), "文件内容不是支持的图片格式") {
+		t.Fatalf("期望图片内容错误，实际: %v", err)
+	}
+}
+
+func TestProcessJSONLocalImages_StopsWhenUploadFails(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(tempDir, "icon.png"),
+		[]byte("\x89PNG\r\n\x1a\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("创建测试图片失败: %v", err)
+	}
+	originalUpload := uploadIMImage
+	uploadIMImage = func(_, _ string) (string, error) {
+		return "", os.ErrPermission
+	}
+	defer func() { uploadIMImage = originalUpload }()
+
+	var data interface{}
+	if err := json.Unmarshal([]byte(`{"tag":"img","img_key":"icon.png"}`), &data); err != nil {
+		t.Fatalf("JSON 解析失败: %v", err)
+	}
+	changed, _, count, err := processJSONLocalImages(data, tempDir)
+	if changed || count != 0 {
+		t.Fatalf("上传失败不应产生替换：changed=%v count=%d", changed, count)
+	}
+	if err == nil || !strings.Contains(err.Error(), "上传图片") {
+		t.Fatalf("期望上传错误，实际: %v", err)
 	}
 }
 
@@ -290,11 +414,6 @@ func TestProcessAndUploadLocalImages_SkipRemoteMarkdownImages(t *testing.T) {
 			content:        "![](file_v2_abc123)",
 			expectContains: "file_v2_abc123",
 		},
-		{
-			name:           "不存在的本地文件跳过",
-			content:        "![](nonexistent.png)",
-			expectContains: "![](nonexistent.png)", // 原样保留
-		},
 	}
 
 	for _, tt := range tests {
@@ -310,6 +429,16 @@ func TestProcessAndUploadLocalImages_SkipRemoteMarkdownImages(t *testing.T) {
 				t.Errorf("结果不包含期望字符串 %q，结果: %s", tt.expectContains, result)
 			}
 		})
+	}
+}
+
+func TestProcessAndUploadLocalImages_RejectsMissingMarkdownImage(t *testing.T) {
+	_, count, err := processAndUploadLocalImages("![](nonexistent.png)", "/tmp/nonexistent")
+	if count != 0 {
+		t.Fatalf("上传计数 = %d，期望 0", count)
+	}
+	if err == nil || !strings.Contains(err.Error(), "本地图片不可用") {
+		t.Fatalf("期望本地图片缺失错误，实际: %v", err)
 	}
 }
 
@@ -329,19 +458,14 @@ func TestProcessAndUploadLocalImages_TextContent(t *testing.T) {
 }
 
 func TestProcessAndUploadLocalImages_MixedContent(t *testing.T) {
-	// 测试混合内容：既有远程图片又有本地图片引用
+	// 混合内容只要有一张本地图片失败，就必须终止，不能带本地路径继续发送。
 	content := "Remote: ![](https://example.com/remote.png) and local: ![](local.png)"
-	result, count, err := processAndUploadLocalImages(content, "/tmp/nonexistent")
-	if err != nil {
-		t.Fatalf("不应该返回错误: %v", err)
-	}
-	// local.png 不存在，所以 count=0
+	_, count, err := processAndUploadLocalImages(content, "/tmp/nonexistent")
 	if count != 0 {
-		t.Errorf("不存在的本地文件不应该被上传，count=%d", count)
+		t.Errorf("失败前不应该记录上传，count=%d", count)
 	}
-	// 远程图片应该保留
-	if !strings.Contains(result, "https://example.com/remote.png") {
-		t.Errorf("远程图片 URL 应该保留，结果: %s", result)
+	if err == nil || !strings.Contains(err.Error(), "本地图片不可用") {
+		t.Fatalf("期望本地图片缺失错误，实际: %v", err)
 	}
 }
 
@@ -388,6 +512,10 @@ func TestMarkdownImageRegex(t *testing.T) {
 // -------------------------------------------------------------------
 
 func TestResolveLocalPath(t *testing.T) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("获取用户主目录失败: %v", err)
+	}
 	tests := []struct {
 		name     string
 		path     string
@@ -396,6 +524,7 @@ func TestResolveLocalPath(t *testing.T) {
 	}{
 		{"相对路径", "test.png", "/tmp/dir", filepath.Join("/tmp/dir", "test.png")},
 		{"绝对路径不变", "/abs/path/img.png", "/tmp/dir", "/abs/path/img.png"},
+		{"用户主目录路径", "~/images/logo.png", "/tmp/dir", filepath.Join(homeDir, "images/logo.png")},
 		{"子目录相对路径", "images/logo.png", "/tmp/dir", filepath.Join("/tmp/dir", "images/logo.png")},
 		{"上级目录", "../assets/icon.png", "/tmp/dir", filepath.Join("/tmp/dir", "../assets/icon.png")},
 		{"当前目录", "./screenshot.png", "/tmp/dir", filepath.Join("/tmp/dir", "./screenshot.png")},
@@ -403,7 +532,10 @@ func TestResolveLocalPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := resolveLocalPath(tt.path, tt.basePath)
+			result, err := resolveLocalPath(tt.path, tt.basePath)
+			if err != nil {
+				t.Fatalf("resolveLocalPath(%q, %q) 返回错误: %v", tt.path, tt.basePath, err)
+			}
 			if result != tt.expected {
 				t.Errorf("resolveLocalPath(%q, %q) = %q, 期望 %q", tt.path, tt.basePath, result, tt.expected)
 			}

@@ -354,7 +354,9 @@ feishu-cli msg send \
 
 ### CLI 示例
 
-> ⚠️ **CLI 当前不直接支持 `--msg-type system`**：`feishu-cli msg send` 的校验白名单（`cmd/send_message.go:261-266`）仅接受 `text/post/image/file/audio/media/sticker/interactive/share_chat/share_user`。如需发送系统消息（如 divider），请直接通过 OpenAPI 或飞书 SDK 调用 `/im/v1/messages` 端点。
+> ⚠️ **CLI 当前不直接支持 `--msg-type system`**：`feishu-cli msg send` 的校验白名单仅接受
+> `text/post/image/file/audio/media/sticker/interactive/share_chat/share_user`。如需发送系统消息
+> （如 divider），请直接通过 OpenAPI 或飞书 SDK 调用 `/im/v1/messages` 端点。
 
 ```bash
 # 协议层示例（需自行通过 OpenAPI 调用）：

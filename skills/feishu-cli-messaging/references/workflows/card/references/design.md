@@ -2,6 +2,8 @@
 
 > 构造 v2 卡片的**美观守则**：配色、布局、节奏。
 > 目标：让 Claude 装配出来的卡片视觉上就像专业设计师做的一样，而不是"能看"的程度。
+> 先按 `styles.md` 选择视觉路线，再按 `content-quality.md` 确认事实、行动与发送条件；
+> 不要为了套用设计模式编造内容。
 
 ## 目录
 
@@ -179,6 +181,15 @@ small       (4px)  — 紧密排列的行（如多个 text_tag、连续短行）
 - 默认展开（`true`）：核心内容，不展开就失去意义
 - 默认折叠（`false`）：次要详情、超长清单、技术细节
 
+**标题条配色策略**：
+
+- 标题条是次级导航，不是第二个主视觉。背景固定使用 `white`、`default`、`grey-50`
+  或同等级的浅色 surface。
+- `blue`、`purple`、`red`、`green`、`orange` 等饱和语义色不要作为整条
+  `header.background_color`，否则横条会压过正文和主 header。
+- 需要呼应主色时，把颜色放到标题 markdown 的 `<font color='...'>`、折叠图标
+  `icon.color` 或 1px 细边框；正文背景仍保持白色/浅色。
+
 ### 3.3 一张"重卡片"的组件搭配
 
 ```
@@ -198,16 +209,14 @@ header (template=purple)
 ├─ hr
 ├─ collapsible_panel (expanded=true) "🎯 核心能力"
 │   └─ markdown (项目列表)
-├─ collapsible_panel (expanded=false) "📋 详细清单"
-│   └─ table 或 长 markdown
+├─ table "📋 详细清单"（只能直接放 body；需要折叠时改用 markdown 表格）
 ├─ collapsible_panel (expanded=false) "⚙️ 技术细节"
 │   └─ markdown (配 <raw> 包裹代码)
 │
 ├─ hr
-├─ column_set (flex_mode=none, 3 列 weight=1 等分)
+├─ column_set（仅在真实行动存在时）
 │   ├─ column: button (primary) "查看"
-│   ├─ column: button (default) "忽略"
-│   └─ column: button (default) "归档"
+│   └─ column: button (default) "处理"
 │
 └─ markdown (text_size=notation, <font color='grey'>) "来源 · 时间戳"
 ```
@@ -268,9 +277,9 @@ collapsible_panel.header.icon 用 `down-small-ccm_outlined`（展开时 icon_exp
 |--------|------|---------|------------|---------|
 | "发个通知" | 通用通知 | notification.json | blue | header + markdown + div.fields |
 | "发版成功了" | 成功报告 | success-report.json | green | header + 指标 div + chart + collapsible 详情 |
-| "服务 500 告警" | 告警 | alert.json | red | header(red) + div.fields(服务/级别/时间/影响) + 2 button(查看/忽略) |
-| "求审批" | 审批 | approval.json | orange | header(orange) + person 申请人 + markdown 详情 + 3 button(同意/拒绝/查看)+ confirm |
-| "给我做个 dashboard" | 数据大屏 | data-dashboard.json | purple | header(purple) + 2 并排 chart + 折叠面板表格 + 4 button |
+| "服务 500 告警" | 告警 | alert.json | red | header(red) + div.fields(服务/级别/时间/影响) + 已存在的真实行动 |
+| "求审批" | 审批 | approval.json | orange | header(orange) + person 申请人 + markdown 详情 + 已接通回调的审批行动 |
+| "给我做个 dashboard" | 数据大屏 | data-dashboard.json | purple | header(purple) + KPI + 必要的 chart/table + 数据来源 |
 | "把文章做成卡片" | 文章摘要 | article-summary.json | blue | header + markdown 摘要 + 多个 collapsible_panel 分章节 |
 | "AI 生成中的消息" | 流式输出 | llm-streaming.json | violet | config.streaming_mode=true + summary + element_id 定位更新点 |
 
@@ -304,12 +313,27 @@ red header + orange text_tag + green font + blue link + purple button
 
 header 不设 template，默认黑色，看起来像未装修的卡片。→ 任何卡片都要有 template。
 
+### ❌ 反模式 6：假交互
+
+为了显得完整，添加指向示例 URL 的“查看详情”，或添加没有消费端的“忽略/同意”回调。
+→ 没有真实能力就删除按钮，改成明确的下一步文字；发送候选禁止示例 URL 和示例 ID。
+
+### ❌ 反模式 7：饱和色折叠标题条
+
+```
+collapsible_panel.header.background_color = "blue" / "purple" / "red"
+```
+
+整条高饱和背景会把次要详情误做成主视觉。→ 标题条改用 `white` / `default` /
+`grey-50`，语义色放到标题文字、图标或细边框。
+
 ---
 
 ## 七、一页速查
 
 ```
 配色：1 主色（template）+ ≤2 强调色 + grey 压平
+折叠：标题条用白色/浅色 surface，主色只用于标题字、图标或细边框
 布局：body.vertical_spacing="medium" + hr 切章节 + column_set 破单调
 密度：顶部 3 屏 = 核心，3 屏以下折叠
 按钮：≤ 3 个，主 primary，次 default，更多用 overflow

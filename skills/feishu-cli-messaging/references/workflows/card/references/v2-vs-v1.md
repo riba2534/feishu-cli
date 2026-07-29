@@ -52,14 +52,15 @@
 | `note` 备注 | `{"tag":"note","elements":[...]}` | `{"tag":"markdown","text_size":"notation","content":"<font color='grey'>...</font>"}` |
 | `action` 交互模块 | `{"tag":"action","actions":[btn,btn]}` | 按钮直接放 `body.elements`（水平排列用 column_set） |
 | `fallback` 全局降级 | `"fallback": { ... }` | 暂不支持自定义全局降级 |
-| `i18n_elements` 全局多语言 | `"i18n_elements": {"zh_cn":[...]}` | 用 `i18n_content` 做组件级多语言 |
+| `i18n_elements` 全局多语言 | `"i18n_elements": {"zh_cn":[...]}` | 文本对象用 `i18n` 做组件级多语言 |
 
 ### 4. 属性校验严格性
 
 - **v1**：未知属性静默忽略 → 写错不会报错，但也不生效
 - **v2**：未知属性**报错** → 写错会直接拒收
 
-新增的 bug 来源：沿用 v1 写法误传 `wide_screen_mode` / `compact_width` / v1 独有的 `note` 等字段。
+新增的 bug 来源：沿用 v1 写法误传 `wide_screen_mode` / `compact_width` / v1 独有的
+`note` 等字段。当前 V2 宽度统一使用 `width_mode`。
 
 ### 5. 废弃属性
 
@@ -144,5 +145,7 @@ v1 的 column.width 可以直接写数字；v2 必须用 `"width": "weighted"` +
 - [ ] header.icon 按新结构组织
 - [ ] markdown 里 `[text]($urlVal)` → `<link>` 标签
 - [ ] large spacing：如果是 16px 语义，改 `extra_large`
-- [ ] 跑一次 `python -m json.tool` 确认 JSON 合法
+- [ ] 从仓库根跑
+      `python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py --strict <card.json>`
+      做发送候选检查
 - [ ] 发到飞书 7.20+ 客户端验证渲染

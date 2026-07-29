@@ -65,6 +65,7 @@
           "type": "bar",
           "color": ["#2ea121"],
           "title": { "text": "__CHART_TITLE__" },
+          "__REPLACE_WITH_REAL_CHART_DATA__": true,
           "data": {
             "values": [
               { "项目": "__ITEM_1__", "数量": 0 },
@@ -81,13 +82,14 @@
         "tag": "collapsible_panel",
         "expanded": false,
         "header": {
-          "title": { "tag": "markdown", "content": "**📋 详细变更清单（点击展开）**" },
-          "background_color": "grey",
+          "title": { "tag": "markdown", "content": "<font color='green'>**📋 详细变更清单（点击展开）**</font>" },
+          "background_color": "white",
           "padding": "4px 8px 4px 8px",
           "icon": {
             "tag": "standard_icon",
             "token": "down-small-ccm_outlined",
-            "size": "16px 16px"
+            "size": "16px 16px",
+            "color": "green"
           },
           "icon_position": "right",
           "icon_expanded_angle": -180
@@ -104,6 +106,7 @@
       },
       {
         "tag": "column_set",
+        "background_style": "default",
         "flex_mode": "none",
         "horizontal_spacing": "8px",
         "columns": [

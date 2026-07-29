@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "style_id": "modern-minimal",
+  "description": "Modern Minimal 可直接注入 config.style.color 的语义 token。",
+  "colors": {
+    "bottom_bg": {
+      "light_mode": "rgba(246, 248, 255, 1)",
+      "dark_mode": "rgba(10, 17, 41, 1)"
+    },
+    "footer_text": {
+      "light_mode": "rgba(95, 102, 117, 1)",
+      "dark_mode": "rgba(170, 180, 204, 1)"
+    },
+    "mm_media_item_surface": {
+      "light_mode": "rgba(247, 247, 245, 1)",
+      "dark_mode": "rgba(41, 41, 39, 1)"
+    },
+    "mm_media_icon_surface": {
+      "light_mode": "rgba(255, 255, 255, 1)",
+      "dark_mode": "rgba(55, 55, 52, 1)"
+    },
+    "mm_media_icon_border": {
+      "light_mode": "rgba(31, 35, 41, 0.10)",
+      "dark_mode": "rgba(255, 255, 255, 0.14)"
+    },
+    "mm_key_point_blue_surface": {
+      "light_mode": "rgba(236, 249, 254, 1)",
+      "dark_mode": "rgba(236, 249, 254, 1)"
+    },
+    "mm_key_point_lime_surface": {
+      "light_mode": "rgba(244, 248, 223, 1)",
+      "dark_mode": "rgba(244, 248, 223, 1)"
+    },
+    "mm_key_point_lavender_surface": {
+      "light_mode": "rgba(245, 245, 253, 1)",
+      "dark_mode": "rgba(245, 245, 253, 1)"
+    },
+    "mm_key_point_icon_surface": {
+      "light_mode": "rgba(255, 255, 255, 1)",
+      "dark_mode": "rgba(255, 255, 255, 1)"
+    },
+    "mm_key_point_icon_border": {
+      "light_mode": "rgba(31, 35, 41, 0.10)",
+      "dark_mode": "rgba(31, 35, 41, 0.10)"
+    },
+    "mm_key_point_ink": {
+      "light_mode": "rgba(31, 35, 41, 1)",
+      "dark_mode": "rgba(31, 35, 41, 1)"
+    },
+    "mm_key_point_muted": {
+      "light_mode": "rgba(100, 106, 116, 1)",
+      "dark_mode": "rgba(100, 106, 116, 1)"
+    }
+  }
+}

@@ -1,280 +1,273 @@
-# 飞书 V2 卡片构造技能
+# 飞书 Card JSON 2.0 构造工作流
 
-> **职责**：把用户的意图 → 构造出视觉丰富的 **v2** 卡片 JSON，写入 `/tmp/<name>-card.json`，
-> 再交给 `feishu-cli msg send --msg-type interactive --content-file` 发送。
->
-> **只做 v2**：所有输出必须以 `"schema": "2.0"` 开头，用 `body` 包裹 elements。
-> v1 相关迁移见 `references/v2-vs-v1.md`。
+把用户意图转换为真实、可读、可校验的 Card JSON 2.0。默认产物是卡片 JSON；只有用户明确
+要求发送、并确认接收者后，才衔接 `msg send`。本工作流不负责实现按钮回调服务。
 
-## 1. 决策树（30 秒选模板）
+所有相对路径均相对本文件所在目录解析。
 
-```
-用户意图 → 推荐模板 → header.template
-├─ 通知 / 公告 / 信息同步      → notification.json      → blue
-├─ 操作完成 / 构建成功 / 交付   → success-report.json    → green
-├─ 告警 / 故障 / 错误           → alert.json             → red / carmine
-├─ 审批请求 / 待办 / 确认       → approval.json          → orange
-├─ 数据展示 / 报表 / 指标       → data-dashboard.json    → purple / indigo
-├─ 长文摘要 / 文章总结 / 多章节 → article-summary.json   → blue / wathet
-└─ AI 流式输出 / 生成中         → llm-streaming.json     → blue + streaming_mode
-```
+## 不可跳过的原则
 
-**不确定时用 `notification.json` 兜底**（蓝色、结构通用、覆盖度最广）。
+1. 只生成 Card JSON 2.0：顶层 `"schema": "2.0"`，组件位于 `body.elements`。
+2. 不编造数字、人员、ID、URL、图片 token、数据源或行动能力。
+3. 场景模板和视觉风格分别选择；模板是骨架，不是必须填满的表单。
+4. 草稿可以有显式 TODO，但发送候选不允许占位符、示例 ID 或 `example.com`。
+5. 没有真实动作就不放按钮；没有回调处理器就不生成 callback 交互。
+6. 发送前必须先跑项目自带离线 linter，再按风险预览 PC 与移动端。
 
-用户没说具体是什么场景但内容有结构（多字段/多链接/图表/状态指标）——也优先选卡片而不是纯文本。
+内容事实与审查规则见 `references/content-quality.md`，视觉风格路由见
+`references/styles.md`。
 
-## 2. v2 最小可运行骨架
+## 1. 先选场景骨架
+
+| 用户意图 | 起始模板 | 默认 header.template |
+|---|---|---|
+| 通知、公告、信息同步 | `templates/notification.json` | `blue` |
+| 操作完成、构建成功、交付 | `templates/success-report.json` | `green` |
+| 告警、故障、错误 | `templates/alert.json` | `red` |
+| 审批请求、待办、确认 | `templates/approval.json` | `orange` |
+| 报表、指标、复盘 | `templates/data-dashboard.json` | `purple` |
+| 长文或文章摘要 | `templates/article-summary.json` | `blue` |
+| AI 流式输出 | `templates/llm-streaming.json` | `blue` |
+
+场景不匹配时使用最小骨架从零构造，不要硬套 `notification.json`。用户只给了一段短通知时，
+`header + 一段 markdown` 往往已经足够。
+
+然后独立选择视觉风格：
+
+- 未明确指定：`default-semantic`；
+- 明确要求 dashboard：从 6 个 `dashboard-*` 子风格中选择；
+- 明确要求现代、极简、克制：`modern-minimal`；
+- 提供品牌、参考图、专题方向或点名主题：从 11 个 Custom Visual `style_id` 中选择。
+
+可运行 `python3 scripts/style_assets.py styles` 查看全部 19 个预设；素材库包含 5 张语义头图、
+153 个 doodle 和 48 个 phosphor 图标。
+
+## 2. 最小骨架
 
 ```json
 {
   "schema": "2.0",
-  "config": {
-    "update_multi": true,
-    "enable_forward": true,
-    "width_mode": "fill"
-  },
   "header": {
     "template": "blue",
-    "title": { "tag": "plain_text", "content": "标题" },
-    "subtitle": { "tag": "plain_text", "content": "可选副标题" }
+    "title": {
+      "tag": "plain_text",
+      "content": "标题"
+    }
   },
   "body": {
     "direction": "vertical",
     "vertical_spacing": "medium",
     "elements": [
-      { "tag": "markdown", "content": "**正文**\n\n支持完整 CommonMark + `<font>`/`<at>`/`<link>` 等 HTML 标签" }
+      {
+        "tag": "markdown",
+        "content": "正文"
+      }
     ]
   }
 }
 ```
 
-**四大必备块**：
-1. `schema: "2.0"` — 顶层声明，v2 必须
-2. `config` — 全局行为：`update_multi` v2 只支持 `true`；`width_mode` 用 `fill`/`compact`/省略（默认 600px）
-3. `header` — 标题区：`template` 定主题色，`title` 必填，`subtitle` 可选
-4. `body.elements` — 组件数组，按顺序从上到下渲染
+`config`、`subtitle`、图表、表格和按钮都按需添加。V2 的 `update_multi` 只能为 `true`；
+不需要改变默认行为时直接省略。`width_mode` 可用 `default`、`compact`、`fill`。
 
-## 3. 工作流（6 步）
+## 3. 八步工作流
 
-1. **选模板**：按决策树确定 `templates/<name>.json`，Read 进来作为起点
-2. **填内容**：替换所有 `__PLACEHOLDER__` 标记位（标题、字段值、URL、数据、人员 ID）
-3. **选配色**：`header.template` 按场景挑（参见 `references/design.md` 配色矩阵），markdown 内 `<font>` 强调色不超过 3 种
-4. **校验**：
-   - `python -m json.tool /tmp/xxx-card.json` 过 JSON 解析
-   - 检查无 v2 禁用字段（见第 6 节禁区）
-5. **落盘**：Write 到 `/tmp/<name>-card.json`（复用已有路径避免污染）
-6. **发送**：
-   ```bash
-   feishu-cli msg send \
-     --receive-id-type email \
-     --receive-id user@example.com \
-     --msg-type interactive \
-     --content-file /tmp/<name>-card.json
-   ```
-   文本模式成功时打印“消息发送成功”和“消息 ID”；JSON 模式从对应字段读取 message ID。
+### 步骤一：建立事实账本
 
-## 4. 组件速查矩阵
+区分用户事实、已授权数据源事实、安全推断和缺失信息。先列 TODO，再开始写 JSON。任何会改变
+结论或行动的缺失信息都不能静默猜测。
 
-**展示类**（只看、不交互）：
+### 步骤二：选模板和风格
 
-| tag | 用途 | 典型属性 |
-|-----|------|---------|
-| `markdown` | 富文本正文 | `content` + `text_size` + `text_align` + `icon` |
-| `div` | 带 fields 的多列键值 | `fields: [{is_short, text}]` |
-| `hr` | 分割线 | 无其它属性 |
-| `img` | 单图 | `img_key` + `alt` |
-| `img_combination` | 多图混排（双/三/四/六/九图） | `combination_mode` + `img_list` |
-| `chart` | VChart 图表 | `chart_spec` + `aspect_ratio` + `color_theme` |
-| `person` | 单人员 | `user_id` + `show_name` + `show_avatar` |
-| `person_list` | 人员列表 | `persons: [{user_id}]` |
-| `table` | 表格 | `rows` + `columns` + `row_height` |
+读取一个最接近的 `templates/*.json` 作为结构参考；再按 `references/styles.md` 调整信息层级。
+删除没有事实支撑的模块，不为保留模板结构而制造内容。
 
-**容器类**（装其他组件）：
-
-| tag | 用途 | 关键属性 |
-|-----|------|---------|
-| `column_set` | 横向分栏 | `flex_mode` + `horizontal_spacing` + `columns` |
-| `collapsible_panel` | 折叠面板 | `expanded` + `header.{title,icon,background_color}` + `elements` |
-| `form` | 表单容器 | `name` + `elements`（收集一批 input 后一次提交） |
-| `interactive_container` | 交互容器 | 统一样式和点击交互，包多个组件 |
-
-**交互类**（可点/可输入）：
-
-| tag | 用途 | 关键属性 |
-|-----|------|---------|
-| `button` | 按钮 | `type` + `text` + `behaviors: [{type: "open_url"|"callback"}]` |
-| `input` | 单行输入 | `name` + `placeholder` + `default_value` |
-| `textarea` | 多行输入 | 同 input，多 `rows` |
-| `select_static` | 下拉单选 | `options: [{text, value}]` |
-| `multi_select_static` | 下拉多选 | 同上，`selected_values` 数组 |
-| `date_picker` | 日期 | `initial_date` + `placeholder` |
-| `picker_time` | 时间 | 同上 |
-| `picker_datetime` | 日期时间 | 同上 |
-| `overflow` | 折叠菜单（⋯按钮）| `options: [{text, value, url}]` |
-
-**完整字段、嵌套规则、坑点** → 读 `references/components.md`。
-
-## 5. 美观三板斧（总纲）
-
-### 5.1 配色
-
-- `header.template` 从 13 种里选一种定主色（见 `design.md` 颜色矩阵）：
-  - blue = 通知 / 信息 | green = 成功 | orange = 警告 | red = 错误 | grey = 归档 | purple = 品牌/数据
-- markdown 内嵌色只用 `<font color='...'>` 点关键数字，**一张卡片主色不超过 3 种**
-- 用 `grey` 压副文本视觉权重
-
-### 5.2 布局节奏
-
-- `body.vertical_spacing` 设 `medium`（8px）作默认节奏
-- 重要信息 → `large` (12px) 拉大
-- 紧凑行（如状态胶囊）→ `small` (4px)
-- 场景切换 → 插 `hr` 做硬分割
-
-### 5.3 元素密度（Z 字视线）
-
-```
-顶部  │ header（标题 + 副标题 + 最多 3 个 text_tag）
-中上  │ markdown 摘要（核心结论，带 1-2 处 <font> 强调）
-中部  │ div.fields（2×2 关键指标） 或 column_set（左图右文）
-中下  │ chart / table（数据可视化）
-底部  │ collapsible_panel（折叠次要信息）
-操作区│ column_set 里放 2-3 个 button（primary 放中间）
-```
-
-细节展开见 `references/design.md`。
-
-## 6. 禁区（v2 严格校验，未知属性会报错！）
-
-| ❌ 禁止 | ✅ 替代 | 原因 |
-|--------|--------|------|
-| 顶层 `elements` 直接放 | 放进 `body.elements` | v2 必须 body 包裹 |
-| `"tag": "action"` 交互模块 | 按钮直接放 `body.elements`，间距用 spacing | v2 废弃 action 模块 |
-| `"tag": "note"` 备注组件 | `markdown` + `<font color='grey'>` + `text_size: "notation"` | v2 废弃 note |
-| `config.wide_screen_mode` | `config.width_mode: "fill"` | v1 旧属性 |
-| `config.update_multi: false` | `update_multi: true`（或不写） | v2 只支持 true |
-| `i18n_elements` | `i18n_content`（局部多语言） | v2 不支持全局多语言 |
-| hex 颜色 `#FF0000` | 颜色枚举 `red` 或 `rgba(255,0,0,1)` | v2 不认 hex |
-| `[text]($urlVal)` 差异化跳转 | `<link icon='' url='' pc_url='' ...>` 标签 | v2 已删 |
-| `stretch_without_padding` 图片通栏 | `margin: "0 -12px"` 负边距 | v2 已删 |
-| `flex_mode: "fixed"` | `flex_mode: "none"` 或 `"bisect"/"trisect"` | 枚举不包含 fixed |
-| `column.width: 1/2/3` 数字 | `width: "weighted"` + `weight: 1~5` | 列宽语法变了 |
-| `collapsible_panel.header.padding: "4px 8px"` 两值 | 写成 `"4px 8px 4px 8px"` 四值 | 服务端对 header padding 严格校验，只接受单值或四值 |
-
-**兜底检查**：写完 JSON 后搜一下 `note|action|wide_screen_mode`，有任何一个都改掉。
-
-## 7. 完整范例（可直接复制）
-
-```json
-{
-  "schema": "2.0",
-  "config": { "update_multi": true, "enable_forward": true, "width_mode": "fill" },
-  "header": {
-    "template": "blue",
-    "title": { "tag": "plain_text", "content": "🚀 本周迭代完成" },
-    "subtitle": { "tag": "plain_text", "content": "2026-04-17 发版报告" }
-  },
-  "body": {
-    "direction": "vertical",
-    "vertical_spacing": "medium",
-    "elements": [
-      { "tag": "markdown", "content": "共交付 **12 个功能** / **修复 8 个 Bug**，<font color='green'>全部测试通过</font>。" },
-      { "tag": "hr" },
-      {
-        "tag": "div",
-        "fields": [
-          { "is_short": true, "text": { "tag": "lark_md", "content": "**📦 版本**\n`v2.3.0`" } },
-          { "is_short": true, "text": { "tag": "lark_md", "content": "**⏱ 耗时**\n5 天" } },
-          { "is_short": true, "text": { "tag": "lark_md", "content": "**👥 参与**\n7 人" } },
-          { "is_short": true, "text": { "tag": "lark_md", "content": "**✅ 状态**\n<font color='green'>已上线</font>" } }
-        ]
-      },
-      {
-        "tag": "collapsible_panel",
-        "expanded": false,
-        "header": {
-          "title": { "tag": "markdown", "content": "**📋 详细变更清单（点击展开）**" },
-          "background_color": "grey",
-          "padding": "4px 8px 4px 8px",
-          "icon": { "tag": "standard_icon", "token": "down-small-ccm_outlined", "size": "16px 16px" },
-          "icon_position": "right",
-          "icon_expanded_angle": -180
-        },
-        "elements": [
-          { "tag": "markdown", "content": "- 新增卡片 V2 构造能力\n- 支持流式更新\n- 修复图表渲染问题" }
-        ]
-      },
-      {
-        "tag": "column_set",
-        "flex_mode": "none",
-        "horizontal_spacing": "8px",
-        "columns": [
-          {
-            "tag": "column", "width": "weighted", "weight": 1, "vertical_align": "center",
-            "elements": [{
-              "tag": "button",
-              "text": { "tag": "plain_text", "content": "📖 发版文档" },
-              "type": "primary", "width": "fill",
-              "behaviors": [{ "type": "open_url", "default_url": "https://example.com/release" }]
-            }]
-          },
-          {
-            "tag": "column", "width": "weighted", "weight": 1, "vertical_align": "center",
-            "elements": [{
-              "tag": "button",
-              "text": { "tag": "plain_text", "content": "📊 监控大盘" },
-              "type": "default", "width": "fill",
-              "behaviors": [{ "type": "open_url", "default_url": "https://example.com/monitor" }]
-            }]
-          }
-        ]
-      },
-      { "tag": "markdown", "content": "<font color='grey'>📡 由 feishu-cli-messaging 技能生成 · v2 schema 2.0</font>" }
-    ]
-  }
-}
-```
-
-## 8. 发送衔接
+用户点名视觉风格时，先查看预设并按需生成起稿：
 
 ```bash
-# 方式 1：直接发给默认接收人（env FEISHU_OWNER_EMAIL 或 user@example.com）
-feishu-cli msg send \
-  --receive-id-type email \
-  --receive-id user@example.com \
-  --msg-type interactive \
-  --content-file /tmp/my-card.json
-
-# 方式 2：发群
-feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
-  --msg-type interactive --content-file /tmp/my-card.json
-
-# 方式 3：带本地图片（--upload-images 自动上传 markdown 里的 ./img.png）
-feishu-cli msg send --receive-id-type email --receive-id ... \
-  --msg-type interactive --content-file /tmp/my-card.json --upload-images
+python3 scripts/style_assets.py show handdrawn-dark
+python3 scripts/style_assets.py starter handdrawn-dark \
+  --title "真实标题" \
+  --summary "真实结论" \
+  --detail "真实补充" \
+  --output /tmp/card.json
 ```
 
-**发送成功标志**：返回 `消息 ID: om_xxxxx`。如果报 `content format error` 或 `invalid element`，
-回到第 6 节禁区表逐项检查。
+Dashboard、Modern Minimal 和 Custom Visual 的完整选择边界、组件配方及素材命令统一见
+`references/styles.md`，再按其中路由渐进读取对应子文件。
 
----
+### 步骤三：组织信息
 
-## 深度资源
+推荐顺序：
 
-按需 Read：
+```text
+header → 首屏结论 → 关键证据 → 必要详情 → 真实行动 → 来源/时间
+```
 
-| 文件 | 什么时候读 | 规模 |
-|------|----------|------|
-| `references/components.md` | 要用某个组件但不记得字段 / 要查嵌套规则 / 要查颜色枚举 | ~700 行，带 TOC |
-| `references/design.md` | 要判断配色 / 布局节奏 / 场景 → 模板映射 | ~300 行 |
-| `references/v2-vs-v1.md` | 有 v1 历史代码要迁移 / 要解释用户的 v1 示例为什么跑不通 | ~120 行 |
-| `references/vchart-quickref.md` | 要画 chart（bar/pie/line/radar/gauge 等） | ~300 行 |
-| `templates/<name>.json` | 7 个开箱即用骨架，每次都先选一个而不是从零写 | 各 80-150 行 |
+把次要细节移入折叠面板。每张卡片只保留一个主要视觉焦点和至多一个 primary 行动。
+折叠面板的标题条属于导航 surface，不是第二个 header：背景保持 `white`、`default` 或
+`*-50/*-100` 浅色，语义色放在标题文字、图标或细边框。不要使用 `blue`、`purple`、
+`red` 等饱和色铺满整条标题栏。
 
----
+### 步骤四：构造组件
 
-## 和 feishu-cli-messaging 的边界
+常用选择：
 
-- **feishu-cli-messaging（本技能）**：**构造** v2 卡片 JSON。职责是"写得漂亮"。
-- **feishu-cli-messaging**：**发送** 消息（各种类型，含 interactive）。职责是"送得出去"。
+| 目标 | 组件 | 关键约束 |
+|---|---|---|
+| 富文本结论 | `markdown` | `text_align` 可省略，默认左对齐 |
+| 2×2 关键字段 | `div.fields` | 避免超过 6 项 |
+| 分栏 | `column_set` | 移动端阅读顺序必须成立 |
+| 图表 | `chart` | 字段必须存在于 `chart_spec.data.values` |
+| 表格 | `table` | 只能直接放在 `body.elements` |
+| 单人 / 人员列表 | `person` / `person_list` | 前者用 `user_id`；后者每项用 `id` |
+| 单行 / 多行输入 | `input` | 多行仍是 `input`，设 `input_type: "multiline_text"` |
+| 表单 | `form` | 只能直接放 body，且必须有 submit 按钮 |
+| 跳转 / 回调 | `button` | 目标或回调处理器必须真实存在 |
 
-构造完成 → 调 msg 发送。两者解耦，不要混在一起写。
+完整字段见 `references/components.md`；VChart 见 `references/vchart-quickref.md`；迁移历史 V1
+卡片时再读 `references/v2-vs-v1.md`。
+
+### 步骤五：处理图片
+
+- `img` 必须提供有意义的 `alt`；`img_key` 可使用当前 App 已上传的 key，或配合
+  `--upload-images` 使用存在的本地图片路径。
+- Markdown 中需要发送的本地图片可写本地路径，发送时加 `--upload-images`。
+- `img_combination.img_list[].img_key` 同样支持本地路径，数量仍需严格匹配布局模式。
+- 不得复制模板、其他租户或外部 Skill 中的 `img_key`。
+- URL 图片不能直接充当 `img_key`。
+- `media upload` 返回的是文档素材 `file_token`，不可混用。
+- 内置素材从 `assets/` 选择；运行 `python3 scripts/style_assets.py assets ...` 检索，
+  `copy <asset_id> --output ...` 可原样复制到业务目录。
+
+### 步骤六：离线校验
+
+先将 JSON 写到临时文件，例如 `/tmp/alert-card.json`。
+以下命令以仓库根目录为工作目录；Skill 安装到其它位置时，用本文件已解析出的实际目录替换
+`skills/feishu-cli-messaging/references/workflows/card` 前缀。
+
+草稿允许明确占位符：
+
+```bash
+python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+  --allow-placeholders /tmp/alert-card.json
+```
+
+准备发送时必须使用严格的发送候选检查：
+
+```bash
+python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+  --strict /tmp/alert-card.json
+```
+
+需要机器可读报告：
+
+```bash
+python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+  --strict --json /tmp/alert-card.json
+```
+
+发送候选包含任意本地图片时（Markdown、`img.img_key` 或 `img_combination`）：
+
+```bash
+python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+  --strict --upload-images /tmp/alert-card.json
+```
+
+该脚本是项目的保守离线检查器，不冒充飞书服务端完整 Schema。它会检查 JSON 2.0 根结构、
+30 KB / 200 组件等常见限制、V1 残留、非法嵌套、重复 `element_id`、占位符、人员字段、
+表单提交、图表字段、无动作按钮、深色/饱和折叠标题条和本地图片上传提示；对 `audio`、
+`video`、`avatar`、静态/人员/图片选择器及日期时间选择器额外检查高置信度必填字段、枚举、
+默认值引用与格式。它还会确认声明的本地素材真实存在。
+警告也必须人工处理；只有确知可接受时才保留。
+
+### 步骤七：内容与视觉验收
+
+按 `references/content-quality.md` 的双清单检查：
+
+- 首屏能否回答“发生了什么、是否需要我处理”；
+- 每个数字、ID、链接和人名是否有来源；
+- 按钮是否真的能兑现；
+- 去掉颜色后层级是否仍清楚；
+- 折叠标题条是否为白色/浅色，并通过文字或图标颜色表达语义；
+- 窄屏折行后阅读顺序是否合理；
+- 图表、表格或图片是否确实提升理解。
+
+复杂卡片在测试会话或官方卡片搭建工具中预览 PC、移动端、浅色和深色模式。离线 linter
+无法证明客户端渲染效果或回调链路可用。
+
+### 步骤八：按用户授权发送
+
+发送前确认 `receive-id-type` 与 ID 类型匹配，并重新运行 `--strict` 且不带
+`--allow-placeholders` 的检查。
+
+```bash
+feishu-cli msg send \
+  --receive-id-type chat_id \
+  --receive-id oc_xxx \
+  --msg-type interactive \
+  --content-file /tmp/alert-card.json
+```
+
+卡片中含本地图片路径时追加：
+
+```bash
+feishu-cli msg send \
+  --receive-id-type chat_id \
+  --receive-id oc_xxx \
+  --msg-type interactive \
+  --content-file /tmp/alert-card.json \
+  --upload-images
+```
+
+图片逐张上传；任一文件缺失、格式非法或上传失败都会中止，不会把本地路径继续发送给飞书。
+修复素材后使用同一幂等键重试。
+成功标志以 CLI 返回的消息 ID 为准。
+
+## 4. V2 禁区
+
+| 禁止 | 替代 |
+|---|---|
+| 顶层 `elements` | `body.elements` |
+| `tag: "note"` | notation 字号的灰色 `markdown` |
+| `tag: "action"` | 直接使用 `button`；并排时放入 `column_set` |
+| `tag: "textarea"` | `input_type: "multiline_text"` 的 `input` |
+| `config.wide_screen_mode` | `config.width_mode: "fill"` |
+| `config.update_multi: false` | 删除或设为 `true` |
+| table 嵌在任何容器中 | table 直接放 `body.elements` |
+| form 嵌在其它容器中 | form 直接放 `body.elements` |
+| form 内再放 form / table / chart | 重组为根级组件 |
+| `person.user_id_type` | 删除；只传 `person.user_id` |
+| `person_list.persons[].user_id` | 改为 `persons[].id` |
+| hex 颜色 | 官方颜色枚举或组件允许的 `rgba(...)` |
+| 图片 URL 写入 `img_key` | 上传后使用真实 `img_key` |
+
+## 5. 资源索引
+
+| 文件 | 何时读取 |
+|---|---|
+| `references/content-quality.md` | 事实、TODO、来源、行动真实性与发送前审查 |
+| `references/styles.md` | 19 个预设的总路由与素材操作 |
+| `references/styles/dashboard.md` | 6 个 Dashboard 子风格 |
+| `references/styles/modern-minimal/` | token、原子组件、蓝图与 5 张头图 |
+| `references/styles/custom-visual/` | 11 个命名主题与 4 个结构原型 |
+| `references/components.md` | 组件字段、嵌套与颜色枚举 |
+| `references/design.md` | 配色、间距、图标和详细布局 |
+| `references/vchart-quickref.md` | 构造图表 |
+| `references/v2-vs-v1.md` | 迁移 V1 历史卡片 |
+| `templates/*.json` | 七种场景骨架 |
+| `scripts/lint_card.py` | 离线发送闸门 |
+| `scripts/style_assets.py` | 列出预设、检索/复制素材、生成 token 和起稿 |
+| `assets/` | 5 张头图、201 个图标与主题 manifest |
+
+规范发生冲突时，以当前飞书官方文档和服务端响应为准，随后修正本项目文档与 linter：
+
+- Card JSON 2.0 结构：`https://open.feishu.cn/document/feishu-cards/card-json-v2-structure`
+- V2 组件总览：`https://open.feishu.cn/document/feishu-cards/card-json-v2-components`
+- 飞书卡片搭建工具说明：`https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/feishu-card-cardkit/feishu-cardkit-overview`
+
+## 与消息工作流的边界
+
+本工作流负责构造、审查和校验卡片。用户要求发送时，再读取
+`../msg/workflow.md`，由消息工作流负责接收者、身份、上传与实际发送。只要求设计或生成 JSON
+时，不应产生外部消息。

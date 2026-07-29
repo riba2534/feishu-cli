@@ -5,16 +5,16 @@
       "id": 1,
       "workflows": ["msg"],
       "prompt": "把带三张本地图片的 post JSON 发到群里并开启 --upload-images；如果一张上传失败，告诉我真实失败语义。",
-      "expected_output": "使用 msg send --upload-images，并说明单图失败会 warning 后继续，需检查部分成功。",
-      "expectations": ["命令包含 msg send 和 --upload-images", "说明上传失败会 warning 后继续而非原子退出"],
+      "expected_output": "使用 msg send --upload-images，并说明任一图片校验或上传失败都会中止，不调用发消息 API。",
+      "expectations": ["命令包含 msg send 和 --upload-images", "说明上传失败会返回错误并阻止发送本地路径"],
       "files": []
     },
     {
       "id": 2,
       "workflows": ["card", "msg"],
       "prompt": "做一张 V2 项目告警卡片发到 oc_xxx，然后把原告警消息和复盘消息合并转发给 user@example.com。",
-      "expected_output": "先 card 后 msg send，并使用 msg merge-forward。",
-      "expectations": ["先构造 V2 card JSON 再用 msg send", "使用 msg merge-forward 合并消息 ID"],
+      "expected_output": "先构造并以草稿模式 lint；识别 oc_xxx、示例邮箱和缺失消息 ID 都是占位信息，列出 TODO，不实际发送。",
+      "expectations": ["使用 card workflow 构造 V2 JSON 并运行 lint_card.py --allow-placeholders", "明确要求真实 chat_id、接收人和待合并消息 ID", "不把占位信息当真实目标执行 msg send 或 merge-forward"],
       "files": []
     },
     {
@@ -31,6 +31,46 @@
       "prompt": "我要临时监听一条 im.message.receive_v1 事件并把原始事件落到 ./events，30 秒或收到 1 条后就退出，避免留下后台长连接。开始前如何查 schema，结束时如何确认没有残留 consumer？",
       "expected_output": "先查 event schema，再用有界 consume 落盘，最后用 event status 检查 consumer。",
       "expectations": ["先执行 event schema im.message.receive_v1", "consume 命令同时包含 --output-dir ./events、--max-events 1 和 --timeout 30s", "结束后使用 event status 检查活跃 consumer"],
+      "files": []
+    },
+    {
+      "id": 5,
+      "workflows": ["card"],
+      "prompt": "给我做一张现代极简的项目告警卡片草稿。我只提供了状态“错误率升高”和影响“部分登录请求失败”，没有负责人、精确指标、监控链接或回调服务。先审查，不要发送。",
+      "expected_output": "把场景模板与现代极简风格分别选择，不编造缺失事实，不生成假按钮，以草稿模式 lint 并列出发送前 TODO。",
+      "expectations": ["读取 styles.md 和 content-quality.md，区分告警场景与现代极简风格", "不编造负责人、数值、URL 或回调能力，缺失项列为 TODO", "运行 lint_card.py --allow-placeholders 且不发送"],
+      "files": []
+    },
+    {
+      "id": 6,
+      "workflows": ["card"],
+      "prompt": "用 handdrawn-dark 做一张夜间构建状态卡。标题“支付链路夜间构建”，结论“主链路已恢复”，补充“剩余两项非阻断任务继续观察”。从 Skill 预置素材里选一个合适的手绘图标，生成 JSON 并严格校验，不要发送。",
+      "expected_output": "按 handdrawn-dark palette 和 Handdrawn Status 原型生成卡片，使用素材库里的 doodle 本地图片路径，并以 --strict --upload-images 校验通过。",
+      "expectations": ["使用 style_assets.py 查看 handdrawn-dark 并按语义选择 doodle 素材", "Card JSON 使用 handdrawn-dark 的 rgba token 和本地 img_key，不固化跨租户 token", "运行 lint_card.py --strict --upload-images 且不发送"],
+      "files": []
+    },
+    {
+      "id": 7,
+      "workflows": ["card"],
+      "prompt": "列出这个卡片 Skill 可选的所有视觉预设，再把 phosphor 的 warning 图标原样复制到 /tmp/card-warning.png。不要生成或发送消息。",
+      "expected_output": "通过 style_assets.py 列出 19 个预设并检索、复制预置 phosphor warning PNG，不触发外部 API。",
+      "expectations": ["运行 style_assets.py styles 并覆盖 1+6+1+11 个预设", "使用带 family 的 phosphor asset_id 复制素材到指定路径", "不调用 msg send 或任何外部写 API"],
+      "files": []
+    },
+    {
+      "id": 8,
+      "workflows": ["card"],
+      "prompt": "做一张蓝色文章摘要卡，包含“核心观点”和“深度解读”两个折叠区。折叠标题不要做成整条深蓝色背景，要保持浅色或白色，只给标题文字和箭头上蓝色。生成 JSON 并严格校验，不要发送。",
+      "expected_output": "折叠标题条使用 white/default/浅色 surface，语义蓝放在 markdown 标题字体或折叠图标上，严格 lint 不报告 collapsible_header_surface。",
+      "expectations": ["collapsible_panel.header.background_color 不使用 blue、purple、red 等饱和色", "标题文字或 icon 使用蓝色表达语义", "运行 lint_card.py --strict 且不发送"],
+      "files": []
+    },
+    {
+      "id": 9,
+      "workflows": ["card"],
+      "prompt": "检查一张含 audio、video、select_person 和 select_img 的飞书 V2 卡片草稿：音频没有 background_style，视频没有 cover，图片选项缺 value。不要猜字段或发送，给出可定位的校验错误并说明如何修。",
+      "expected_output": "使用项目 linter 识别媒体和选择器的核心字段错误，按 JSON 路径说明缺失项；不依赖内部 Schema 工具，也不实际发送。",
+      "expectations": ["运行 lint_card.py 并报告 audio.background_style、video.cover 和 select_img.options[].value", "说明音视频必须使用真实 file_key，video/select_img 图片位置不能依赖 --upload-images 替换本地路径", "不调用 msg send"],
       "files": []
     }
   ]

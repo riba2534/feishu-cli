@@ -72,13 +72,14 @@
         "expanded": false,
         "element_id": "thinking_panel",
         "header": {
-          "title": { "tag": "markdown", "content": "🧠 **思考过程（点击展开）**" },
-          "background_color": "grey",
+          "title": { "tag": "markdown", "content": "<font color='violet'>🧠 **思考过程（点击展开）**</font>" },
+          "background_color": "white",
           "padding": "4px 8px 4px 8px",
           "icon": {
             "tag": "standard_icon",
             "token": "down-small-ccm_outlined",
-            "size": "16px 16px"
+            "size": "16px 16px",
+            "color": "violet"
           },
           "icon_position": "right",
           "icon_expanded_angle": -180
@@ -97,6 +98,7 @@
       },
       {
         "tag": "column_set",
+        "background_style": "default",
         "flex_mode": "none",
         "horizontal_spacing": "8px",
         "columns": [

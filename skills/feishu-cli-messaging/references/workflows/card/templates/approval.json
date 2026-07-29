@@ -63,13 +63,14 @@
         "tag": "collapsible_panel",
         "expanded": false,
         "header": {
-          "title": { "tag": "markdown", "content": "**📎 附件 / 详细信息**" },
-          "background_color": "grey",
+          "title": { "tag": "markdown", "content": "<font color='orange'>**📎 附件 / 详细信息**</font>" },
+          "background_color": "white",
           "padding": "4px 8px 4px 8px",
           "icon": {
             "tag": "standard_icon",
             "token": "down-small-ccm_outlined",
-            "size": "16px 16px"
+            "size": "16px 16px",
+            "color": "orange"
           },
           "icon_position": "right",
           "icon_expanded_angle": -180
@@ -86,6 +87,7 @@
       },
       {
         "tag": "column_set",
+        "background_style": "default",
         "flex_mode": "none",
         "horizontal_spacing": "8px",
         "columns": [

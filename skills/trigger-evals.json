@@ -280,7 +280,7 @@
     "expected_workflow": "msg"
   },
   {
-    "query": "生成一张包含审批按钮和趋势图的飞书 V2 交互卡片。",
+    "query": "新品发布要在飞书群里发一张有品牌感的宣传卡：深色手绘风，带产品亮点、主视觉和预约按钮，先生成并预览 JSON，不要真的发送。",
     "expected_skill": "feishu-cli-messaging",
     "expected_workflow": "card"
   },

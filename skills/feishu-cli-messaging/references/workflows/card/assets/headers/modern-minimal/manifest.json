@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "scope": "modern-minimal.components.01-header",
+  "description": "Modern Minimal semantic header mock background assets. local_file is relative to this manifest. feishu-cli msg send --upload-images uploads local img_key paths for the current app; never hard-code a token from another tenant.",
+  "assets": [
+    {
+      "id": "modern-minimal-header-info",
+      "state": "info",
+      "description": "blue-violet calm informational header background",
+      "local_file": "header-background-info.png",
+      "recommended_header_template": "blue",
+      "preview": false,
+      "img_key": "",
+      "override_key": "modern_minimal.header_background.info"
+    },
+    {
+      "id": "modern-minimal-header-success",
+      "state": "success",
+      "description": "green positive/success header background",
+      "local_file": "header-background-success.png",
+      "recommended_header_template": "green",
+      "preview": false,
+      "img_key": "",
+      "override_key": "modern_minimal.header_background.success"
+    },
+    {
+      "id": "modern-minimal-header-warning",
+      "state": "warning",
+      "description": "orange warning/attention header background",
+      "local_file": "header-background-warning.png",
+      "recommended_header_template": "orange",
+      "preview": false,
+      "img_key": "",
+      "override_key": "modern_minimal.header_background.warning"
+    },
+    {
+      "id": "modern-minimal-header-danger",
+      "state": "danger",
+      "description": "pink-red danger/risk header background",
+      "local_file": "header-background-danger.png",
+      "recommended_header_template": "red",
+      "preview": false,
+      "img_key": "",
+      "override_key": "modern_minimal.header_background.danger"
+    },
+    {
+      "id": "modern-minimal-header-neutral",
+      "state": "neutral",
+      "description": "light grey neutral/default header background",
+      "local_file": "header-background-neutral.png",
+      "recommended_header_template": "default",
+      "preview": false,
+      "img_key": "",
+      "override_key": "modern_minimal.header_background.neutral"
+    }
+  ]
+}

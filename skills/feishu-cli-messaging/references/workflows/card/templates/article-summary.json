@@ -55,13 +55,14 @@
         "tag": "collapsible_panel",
         "expanded": true,
         "header": {
-          "title": { "tag": "markdown", "content": "🎯 **核心观点**" },
-          "background_color": "grey",
+          "title": { "tag": "markdown", "content": "<font color='blue'>🎯 **核心观点**</font>" },
+          "background_color": "white",
           "padding": "4px 8px 4px 8px",
           "icon": {
             "tag": "standard_icon",
             "token": "down-small-ccm_outlined",
-            "size": "16px 16px"
+            "size": "16px 16px",
+            "color": "blue"
           },
           "icon_position": "right",
           "icon_expanded_angle": -180
@@ -77,13 +78,14 @@
         "tag": "collapsible_panel",
         "expanded": true,
         "header": {
-          "title": { "tag": "markdown", "content": "📊 **关键数据**" },
-          "background_color": "grey",
+          "title": { "tag": "markdown", "content": "<font color='blue'>📊 **关键数据**</font>" },
+          "background_color": "white",
           "padding": "4px 8px 4px 8px",
           "icon": {
             "tag": "standard_icon",
             "token": "down-small-ccm_outlined",
-            "size": "16px 16px"
+            "size": "16px 16px",
+            "color": "blue"
           },
           "icon_position": "right",
           "icon_expanded_angle": -180
@@ -99,13 +101,14 @@
         "tag": "collapsible_panel",
         "expanded": false,
         "header": {
-          "title": { "tag": "markdown", "content": "💡 **深度解读（点击展开）**" },
-          "background_color": "grey",
+          "title": { "tag": "markdown", "content": "<font color='blue'>💡 **深度解读（点击展开）**</font>" },
+          "background_color": "white",
           "padding": "4px 8px 4px 8px",
           "icon": {
             "tag": "standard_icon",
             "token": "down-small-ccm_outlined",
-            "size": "16px 16px"
+            "size": "16px 16px",
+            "color": "blue"
           },
           "icon_position": "right",
           "icon_expanded_angle": -180
@@ -121,13 +124,14 @@
         "tag": "collapsible_panel",
         "expanded": false,
         "header": {
-          "title": { "tag": "markdown", "content": "🌟 **精彩引用（点击展开）**" },
-          "background_color": "grey",
+          "title": { "tag": "markdown", "content": "<font color='blue'>🌟 **精彩引用（点击展开）**</font>" },
+          "background_color": "white",
           "padding": "4px 8px 4px 8px",
           "icon": {
             "tag": "standard_icon",
             "token": "down-small-ccm_outlined",
-            "size": "16px 16px"
+            "size": "16px 16px",
+            "color": "blue"
           },
           "icon_position": "right",
           "icon_expanded_angle": -180

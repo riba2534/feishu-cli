@@ -6,9 +6,9 @@
 ## 目录
 
 - [卡片级](#卡片级) — schema / config / card_link / header / body
-- [展示组件](#展示组件) — markdown / div / hr / img / img_combination / chart / table / person / person_list
+- [展示组件](#展示组件) — markdown / div / hr / img / img_combination / chart / table / person / person_list / audio / video / avatar
 - [容器组件](#容器组件) — column_set / collapsible_panel / form / interactive_container
-- [交互组件](#交互组件) — button / input / textarea / select_static / multi_select / date_picker / overflow / checker
+- [交互组件](#交互组件) — button / input（含多行）/ 静态与人员选择 / 图片选择 / date_picker / overflow / checker
 - [通用布局属性](#通用布局属性-v2-新增) — margin / padding / spacing / align / element_id
 - [颜色枚举](#颜色枚举)
 - [标题组件 header](#标题组件-header)
@@ -35,10 +35,7 @@
     "print_step": { "default": 2 },
     "print_strategy": "fast"          // fast | delay
   },
-  "summary": {                       // 聊天列表预览文案
-    "content": "AI 生成中...",
-    "i18n_content": { "zh_cn": "", "en_us": "" }
-  },
+  "summary": { "content": "AI 生成中..." }, // 聊天列表预览文案；这里只支持 content
   "locales": ["en_us", "ja_jp"],     // 生效的多语言白名单
   "style": {                         // 自定义字号和颜色
     "text_size": { "cus-0": { "default": "medium", "pc": "medium", "mobile": "large" } },
@@ -186,7 +183,10 @@
 
 **坑点**：
 - `img_list` 长度必须与 `combination_mode` 严格匹配，多/少都会渲染失败
-- 每张图需先通过 `feishu-cli media upload` 上传得到 `img_key`
+- 每张图必须使用已经取得的卡片 `img_key`，或配合 `--upload-images` 使用存在的本地路径
+- `feishu-cli media upload` 返回文档素材 `file_token`，**不能**当作卡片 `img_key`
+- `msg send --upload-images` 会上传并替换 `img.img_key` 与
+  `img_combination.img_list[].img_key` 中的本地路径
 - 客户端 7.4+ 才支持；老版本会回退为单图列表
 
 ### chart（图表）
@@ -239,11 +239,10 @@
 }
 ```
 
-**data_type 枚举**：`lark_md` / `plain_text` / `options`（彩色标签）/ `number` / `person` / `person_list` / `date` / `markdown`
+**data_type 枚举**：`text` / `lark_md` / `options`（彩色标签）/ `number` / `persons` / `date` / `markdown`
 
 **坑点**：
-- table **不能**嵌在 `column_set` / `collapsible_panel` / `form` 里（实测报错：`type of element is not supported tag: table`）
-- table 只能放 `body.elements` 直接层，或 `interactive_container.elements` 里
+- table **不能嵌套在任何组件里**，只能直接放在 `body.elements`
 - 要在折叠面板/分栏里展示表格 → 用 `markdown` 表格语法（`| 列1 | 列2 |\n|---|---|`）替代
 - `rows` 里的 key 必须和 `columns.name` 完全一致
 
@@ -253,13 +252,13 @@
 {
   "tag": "person",
   "user_id": "ou_xxx",
-  "user_id_type": "open_id",        // open_id | user_id | union_id
   "style": "normal",                // normal | capsule
   "show_name": true,
   "show_avatar": true,
   "size": "medium"                  // extra_small | small | medium | large
 }
 ```
+`user_id` 的值可以是 `open_id`、`user_id` 或 `union_id`；组件没有 `user_id_type` 字段。
 也可以用 markdown 里的 `<person>` 标签内嵌。
 
 ### person_list（人员列表）
@@ -267,14 +266,57 @@
 {
   "tag": "person_list",
   "persons": [
-    { "user_id": "ou_1" },
-    { "user_id": "ou_2" }
+    { "id": "ou_1" },
+    { "id": "ou_2" }
   ],
   "show_name": true,
   "show_avatar": true,
   "size": "medium"
 }
 ```
+
+### audio / video / avatar / fallback_text
+
+这些组件不常用，但媒体 key 或兼容字段写错会导致整张卡片发送失败：
+
+```json
+{
+  "tag": "audio",
+  "background_style": "default",
+  "file_key": "file_v2_real_audio"
+}
+```
+
+```json
+{
+  "tag": "video",
+  "file_key": "file_v2_real_video",
+  "cover": { "img_key": "img_v2_real_cover" }
+}
+```
+
+```json
+{
+  "tag": "avatar",
+  "user_id": "ou_real",
+  "size": "medium"
+}
+```
+
+```json
+{
+  "tag": "fallback_text",
+  "text": { "tag": "plain_text", "content": "当前客户端暂不支持该内容" }
+}
+```
+
+关键约束：
+
+- `audio` 必须同时提供 `background_style` 与真实 `file_key`。
+- `video` 必须提供真实 `file_key` 和 `cover.img_key`。
+- `avatar.size` 使用 `tiny / small / medium / large / huge / custom`；选择 `custom` 时补充大于 0 的 `custom_size` 或兼容字段 `custom_size2`。
+- `fallback_text.text` 必须是有内容的 `plain_text` 或 `lark_md`。
+- `--upload-images` 不上传音视频文件，也不替换 `video.cover`、`custom_icon` 或 `select_img` 里的本地路径；这些位置先上传素材，再填写真实 key。
 
 ---
 
@@ -340,7 +382,7 @@
   "direction": "vertical",
   "vertical_spacing": "8px",
   "padding": "8px",
-  "background_color": "grey",        // 整体背景色（颜色枚举或 rgba）
+  "background_color": "default",     // 整体保持白色/浅色
   "border": {                        // 可选边框
     "color": "grey",
     "corner_radius": "5px"
@@ -348,9 +390,9 @@
   "header": {
     "title": {                       // 支持 plain_text 或 markdown（含 lark_md）
       "tag": "markdown",
-      "content": "**面板标题**"
+      "content": "<font color='blue'>**面板标题**</font>"
     },
-    "background_color": "grey",
+    "background_color": "white",     // 标题条不铺饱和语义色
     "vertical_align": "center",
     "padding": "4px 8px",
     "position": "top",               // top | bottom（标题位置）
@@ -358,7 +400,7 @@
     "icon": {
       "tag": "standard_icon",
       "token": "down-small-ccm_outlined",
-      "color": "white",
+      "color": "blue",
       "size": "16px 16px"
     },
     "icon_position": "right",        // left | right | follow_text
@@ -371,12 +413,15 @@
 ```
 
 **嵌套规则**：
-- 不能嵌 `form`
-- 其它所有组件都可以嵌入
+- 不能嵌 `form` 或 `table`
+- 其它受支持的组件可以嵌入
 
 **坑点**：
 - 折叠面板 **不支持搭建工具**，必须手写 JSON
-- `header.title.tag` 必须是 `plain_text` 或 `markdown`，**不是** `lark_md`
+- 标题条是次级导航，背景使用 `white`、`default`、`grey-50` 或同等级浅色 surface；
+  不要用 `blue`、`purple`、`red` 等饱和色铺满横条。语义色改放标题 `<font>`、
+  `icon.color` 或细边框。
+- `collapsible_panel.header.title.tag` 必须是 `plain_text` 或 `markdown`，**不是** `lark_md`
 - `header.width: auto_when_fold` 需要客户端 7.32+
 - `header.padding` **不接受两值格式** `"4px 8px"`，必须写单值 `"8px"` 或四值 `"4px 8px 4px 8px"`。
   服务端报错：`invalid panel header padding`
@@ -403,7 +448,8 @@
 }
 ```
 
-**嵌套规则**：不能嵌 `form`、`table`、`chart`；form 内 button 需设 `form_action_type`。
+**嵌套规则**：form 本身只能直接放在 `body.elements`；内部不能嵌 `form`、`table`、
+`chart`，且必须有一个 `form_action_type: "submit"` 的 button。
 
 ### interactive_container（交互容器）
 
@@ -470,7 +516,7 @@
 - 仅回传 → 一个 `callback`
 - 跳转 + 埋点 → `open_url` + `callback` 两个都写
 
-### input（单行输入）
+### input（单行或多行输入）
 
 ```json
 {
@@ -479,9 +525,9 @@
   "name": "field_name",              // form 内使用
   "placeholder": { "tag": "plain_text", "content": "请输入" },
   "default_value": "",
-  "width": "fill",                   // default | fill | [0,999]px
-  "max_length": 100,
-  "input_type": "text",              // text | password
+  "width": "fill",                   // default | fill | [100,∞)px
+  "max_length": 1000,                // 1~1000
+  "input_type": "text",              // text | password | multiline_text
   "required": false,
   "label": { "tag": "plain_text", "content": "标签" },
   "label_position": "top",           // top | left
@@ -489,8 +535,19 @@
 }
 ```
 
-### textarea（多行）
-同 input，额外 `rows`（默认 3）。
+多行输入**不是**独立的 `textarea` tag，仍使用 `input`：
+
+```json
+{
+  "tag": "input",
+  "name": "description",
+  "input_type": "multiline_text",
+  "rows": 3,
+  "auto_resize": true,
+  "max_rows": 6,
+  "placeholder": { "tag": "plain_text", "content": "请输入说明" }
+}
+```
 
 ### select_static / multi_select_static
 
@@ -500,7 +557,7 @@
   "element_id": "sel_1",
   "name": "city",
   "placeholder": { "tag": "plain_text", "content": "选择城市" },
-  "initial_option": "bj",            // 默认选中 value（multi 用 initial_options 数组）
+  "initial_option": "bj",            // 单选默认值；多选使用 selected_values 数组
   "width": "fill",
   "options": [
     { "text": { "tag": "plain_text", "content": "北京" }, "value": "bj", "icon": { /* ... */ } },
@@ -509,6 +566,45 @@
   "behaviors": [{ "type": "callback", "value": { "key": "city" } }]
 }
 ```
+
+静态选择器必须提供非空 `options`；每项都要有非空且唯一的 `value` 和可见
+`plain_text` 文案。`initial_option` / `selected_values` 必须引用已经声明的 value。
+
+### select_person / multi_select_person
+
+```json
+{
+  "tag": "select_person",
+  "name": "owner",
+  "placeholder": { "tag": "plain_text", "content": "选择负责人" },
+  "initial_user": "ou_real",
+  "behaviors": [{ "type": "callback", "value": { "field": "owner" } }]
+}
+```
+
+人员选择器默认可搜索人员，不必伪造静态 `options`。如果要限定候选人，再提供与静态选择器
+同形的 `options`；多选默认值使用 `selected_values`。表单内使用时设置唯一 `name`。
+
+### select_img
+
+```json
+{
+  "tag": "select_img",
+  "name": "cover",
+  "style": "default",
+  "layout": "bisect",
+  "aspect_ratio": "16:9",
+  "multi_select": false,
+  "options": [
+    { "img_key": "img_v2_real_a", "value": "cover_a" },
+    { "img_key": "img_v2_real_b", "value": "cover_b" }
+  ],
+  "selected_values": ["cover_a"]
+}
+```
+
+每个图片选项必须有真实 `img_key` 和唯一 `value`。这里的本地路径不会被
+`msg send --upload-images` 自动替换；先上传图片再生成发送候选。
 
 ### date_picker / picker_time / picker_datetime
 
@@ -657,6 +753,8 @@ Content-Type: application/json
 }
 ```
 
+`header.title.tag` 只支持 `plain_text` 或 `lark_md`；不要使用完整 `markdown`。
+
 **template 枚举（13 种）**：
 `blue` / `wathet` / `turquoise` / `green` / `yellow` / `orange` / `red` / `carmine` / `violet` / `purple` / `indigo` / `grey` / `default`
 
@@ -679,13 +777,13 @@ Content-Type: application/json
 
 | 容器 | 可嵌入 | 不可嵌入 |
 |------|--------|---------|
-| `body` | 所有组件 | — |
+| `body` | 所有根级组件 | — |
 | `column_set > column` | 其它所有（含子 column_set） | form, table |
 | `collapsible_panel` | 其它所有 | form, **table**（实测） |
-| `form` | input / textarea / select / date_picker / button / markdown / div / column_set | form, table, chart |
-| `interactive_container` | 所有组件 | form（建议）|
+| `form` | input / select / date_picker / button / markdown / div / column_set | form, table, chart |
+| `interactive_container` | 常规展示和交互组件 | form, table |
 
-> **table 组件的特殊限制**：**只能**放在 `body.elements` 直接层或 `interactive_container` 里。
+> **根级组件限制**：`table` 与 `form` 都只能直接放在 `body.elements`。
 > 要在折叠面板/分栏里展示表格数据，用 markdown 的 `| 列 | 列 |` 表格语法替代。
 
 **通用上限**：容器嵌套不超过 5 层；单卡 ≤ 200 组件；JSON ≤ 30KB。
@@ -695,4 +793,4 @@ Content-Type: application/json
 ## 进阶：自定义样式 与 多语言
 
 - **自定义字号/颜色**：在 `config.style.text_size.cus-N` / `config.style.color.cus-N` 定义后，组件 `text_size`、`color` 字段引用 `cus-N` 即可全卡复用。颜色项支持 `light_mode` / `dark_mode` 双值，自动适配深色模式。
-- **多语言**：v2 已废弃 v1 的 `i18n_elements`（全局多语言），改用**局部多语言**：单组件文本字段写成 `i18n_content: { "zh_cn": "...", "en_us": "...", "ja_jp": "..." }`；header 的 text_tag_list 对应 `i18n_text_tag_list`；可在 `config.locales` 数组里声明白名单语种。客户端按用户语言自动选取。
+- **多语言**：v2 已废弃 v1 的 `i18n_elements`（全局多语言），改用**局部多语言**：文本对象使用 `i18n: { "zh_cn": "...", "en_us": "...", "ja_jp": "..." }` 代替 `content`；header 的 text_tag_list 对应 `i18n_text_tag_list`；可在 `config.locales` 数组里声明白名单语种。客户端按用户语言自动选取。`config.summary` 只写 `content`，不要添加 `i18n_content`。

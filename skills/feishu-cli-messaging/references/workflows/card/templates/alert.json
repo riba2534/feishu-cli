@@ -68,13 +68,14 @@
         "tag": "collapsible_panel",
         "expanded": true,
         "header": {
-          "title": { "tag": "markdown", "content": "**📊 错误指标**" },
-          "background_color": "grey",
+          "title": { "tag": "markdown", "content": "<font color='red'>**📊 错误指标**</font>" },
+          "background_color": "white",
           "padding": "4px 8px 4px 8px",
           "icon": {
             "tag": "standard_icon",
             "token": "down-small-ccm_outlined",
-            "size": "16px 16px"
+            "size": "16px 16px",
+            "color": "red"
           },
           "icon_position": "right",
           "icon_expanded_angle": -180
@@ -87,6 +88,7 @@
               "type": "line",
               "color": ["#f54a45"],
               "title": { "text": "错误率趋势（最近 1 小时）" },
+              "__REPLACE_WITH_REAL_CHART_DATA__": true,
               "data": {
                 "values": [
                   { "时间": "T-60m", "错误率": 0.5 },
@@ -111,6 +113,7 @@
       },
       {
         "tag": "column_set",
+        "background_style": "default",
         "flex_mode": "none",
         "horizontal_spacing": "8px",
         "columns": [

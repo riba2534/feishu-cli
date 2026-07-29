@@ -90,7 +90,8 @@
 | share_chat | 群名片 | `{"chat_id":"oc_xxx"}` | — |
 | share_user | 个人名片 | `{"user_id":"ou_xxx"}` | — |
 
-> `system` 系统分割线（仅 p2p）CLI `--msg-type` 白名单暂未收录（见 `cmd/send_message.go:261-266`），需要时用 `feishu-cli api POST /open-apis/im/v1/messages` 直接透传。
+> `system` 系统分割线（仅 p2p）CLI `--msg-type` 白名单暂未收录，需要时用
+> `feishu-cli api POST /open-apis/im/v1/messages` 直接透传。
 
 ## 身份说明
 
@@ -227,14 +228,15 @@ post 支持的 tag 类型：
 
 ### 图片自动上传（--upload-images）
 
-`msg send` 支持 `--upload-images`，扫描 **post / interactive** 消息中的 Markdown 图片语法 `![alt](path)`，把 `path` 指向的**本地图片**自动上传到飞书 IM 图床、替换为 `image_key`，再发送。
+`msg send` 支持 `--upload-images`，扫描 **post / interactive** 消息中的本地图片引用，
+上传到飞书 IM 图床并替换为当前 App 可用的 key 后再发送。
 
 | 维度 | 行为 |
 | --- | --- |
-| 触发条件 | 仅当 `--msg-type post` 或 `--msg-type interactive` 时生效（其他类型即使传也忽略，见 `cmd/send_message.go:212`） |
-| 适用语法 | 内容里的 `![alt](path)` 标记；URL（http/https）和已有 `image_key` 不会被改写 |
-| 路径解析 | 相对路径：以 `--content-file` 所在目录为 basePath；用 `--content` 内联 JSON 时以**当前工作目录**为 basePath（见 `cmd/send_message.go:213-220`） |
-| 失败回落 | 单张上传失败会写 warning 并保留原始图片引用，随后继续发送；因此可能部分成功，必须检查 stderr 和最终 message_id |
+| 触发条件 | 仅当 `--msg-type post` 或 `--msg-type interactive` 时生效，其他类型即使传也忽略 |
+| 适用语法 | `![alt](path)`、post 的 `img.image_key`、Card V2 的 `img.img_key` 和 `img_combination.img_list[].img_key`；URL 和已有 key 不改写 |
+| 路径解析 | `~/` 相对于当前用户主目录；普通相对路径以 `--content-file` 所在目录为 basePath；用 `--content` 内联 JSON 时以**当前工作目录**为 basePath |
+| 失败处理 | 任一文件缺失、内容不是受支持图片或上传失败时立即返回错误，不调用发消息 API；修复后使用同一幂等键重试 |
 | 进度提示 | 上传 > 0 张时 stderr 打印 `已自动上传 N 张本地图片` |
 
 ```bash
@@ -242,12 +244,14 @@ post 支持的 tag 类型：
 feishu-cli msg send --receive-id-type email --receive-id user@example.com \
   --msg-type post --content-file /path/to/post.json --upload-images
 
-# interactive 卡片内嵌本地图同理
+# interactive 卡片可直接在 img_key 写本地素材路径
 feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
   --msg-type interactive --content-file /tmp/card.json --upload-images
 ```
 
-> 不需要预先调 `feishu-cli media upload`：本标志已包装了"上传 + 替换 + 发送"的全流程。需要把图片当作独立 `image` 消息发送，请直接用 `--image <path>` 快捷方式。
+> 不需要预先调 `feishu-cli media upload`：该命令返回文档 `file_token`，不是卡片图片 key。
+> `--upload-images` 已包装“上传 + 替换 + 发送”的全流程。需要把图片当作独立 `image` 消息
+> 发送时，直接用 `--image <path>`。
 
 ### interactive 类型（卡片消息）
 

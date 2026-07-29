@@ -60,6 +60,7 @@
       },
       {
         "tag": "column_set",
+        "background_style": "default",
         "flex_mode": "bisect",
         "horizontal_spacing": "8px",
         "columns": [
@@ -78,6 +79,7 @@
                 "chart_spec": {
                   "type": "bar",
                   "color": ["#7f3bf5"],
+                  "__REPLACE_WITH_REAL_CHART_DATA__": true,
                   "data": {
                     "values": [
                       { "类别": "__CAT_1__", "值": 0 },
@@ -107,6 +109,7 @@
                 "chart_spec": {
                   "type": "pie",
                   "color": ["#3370ff", "#d99904", "#04b49c", "#ed6d0c", "#7f3bf5", "#f54a45", "#f14ba9", "#2ea121"],
+                  "__REPLACE_WITH_REAL_CHART_DATA__": true,
                   "data": {
                     "values": [
                       { "分类": "__SEG_1__", "占比": 0 },
@@ -127,13 +130,14 @@
         "tag": "collapsible_panel",
         "expanded": false,
         "header": {
-          "title": { "tag": "markdown", "content": "**📋 明细数据（点击展开）**" },
-          "background_color": "grey",
+          "title": { "tag": "markdown", "content": "<font color='purple'>**📋 明细数据（点击展开）**</font>" },
+          "background_color": "white",
           "padding": "4px 8px 4px 8px",
           "icon": {
             "tag": "standard_icon",
             "token": "down-small-ccm_outlined",
-            "size": "16px 16px"
+            "size": "16px 16px",
+            "color": "purple"
           },
           "icon_position": "right",
           "icon_expanded_angle": -180
@@ -150,6 +154,7 @@
       },
       {
         "tag": "column_set",
+        "background_style": "default",
         "flex_mode": "none",
         "horizontal_spacing": "8px",
         "columns": [
