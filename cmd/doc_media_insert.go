@@ -166,10 +166,16 @@ var docMediaInsertCmd = &cobra.Command{
 				return fmt.Errorf("步骤 3 失败 - 上传文件: %w（已回滚空块）", err)
 			}
 
-			// 步骤 4：绑定文件 token 到图片块
+			// 步骤 4：绑定文件 token 到图片块。
+			// 显式带上真实像素宽高：只传 token 时显示尺寸依赖服务端推断，
+			// 实测会偶发绑定到缩放变体导致渲染成极小缩略图。解码失败则省略宽高退回旧行为。
 			replaceReq := map[string]any{
 				"token": fileToken,
 				"align": align,
+			}
+			if pxW, pxH := decodeImagePixelSize(filePath); pxW > 0 && pxH > 0 {
+				replaceReq["width"] = pxW
+				replaceReq["height"] = pxH
 			}
 			if caption != "" {
 				replaceReq["caption"] = map[string]string{"content": caption}

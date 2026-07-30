@@ -273,11 +273,27 @@ func UpdateBlock(documentID string, blockID string, updateContent any, userAcces
 
 // ReplaceImage replaces the image token of an Image block.
 // 用于图片三步法上传的第三步：将上传后的 fileToken 设置到 Image Block。
+//
+// 不传宽高时，显示尺寸完全依赖飞书服务端从媒体推断，实测不可靠：同一批 15 张图里
+// 有 2 张被服务端绑定到 1600px 宽的缩放变体，块的 width/height 随之变小，
+// 客户端渲染成极小的缩略图（issue: 导入后部分图片变得很小无法查看）。
+// 因此三步法应显式传入真实像素宽高，见 ReplaceImageWithSize。
 func ReplaceImage(documentID, imageBlockID, fileToken string, userAccessToken ...string) (http.Header, error) {
+	return ReplaceImageWithSize(documentID, imageBlockID, fileToken, 0, 0, userAccessToken...)
+}
+
+// ReplaceImageWithSize 在绑定 fileToken 的同时显式指定图片显示宽高（单位 px）。
+// width/height 任一为 0 时省略该字段，退回服务端推断，行为与旧版一致。
+func ReplaceImageWithSize(documentID, imageBlockID, fileToken string, width, height int, userAccessToken ...string) (http.Header, error) {
+	replace := map[string]any{
+		"token": fileToken,
+	}
+	if width > 0 && height > 0 {
+		replace["width"] = width
+		replace["height"] = height
+	}
 	return UpdateBlock(documentID, imageBlockID, map[string]any{
-		"replace_image": map[string]any{
-			"token": fileToken,
-		},
+		"replace_image": replace,
 	}, userAccessToken...)
 }
 

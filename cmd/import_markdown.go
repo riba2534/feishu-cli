@@ -2,6 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -1130,9 +1134,15 @@ func processImageTask(documentID string, task imageTask, verbose bool, userAcces
 
 	fileToken := uploadResult.Value
 
-	// 步骤 3: 替换 Image Block 的 token
+	// 步骤 3: 替换 Image Block 的 token，并显式带上真实像素宽高。
+	// 不带宽高时显示尺寸由服务端从媒体推断，实测会偶发绑定到缩放变体（1600px 宽），
+	// 导致块的 width/height 变小、客户端渲染成极小缩略图。解码失败时传 0 退回旧行为。
+	pxW, pxH := decodeImagePixelSize(localPath)
+	if pxW == 0 || pxH == 0 {
+		syncPrintf("  ⚠ 图片 %d 无法解析像素尺寸，显示尺寸交由服务端推断 (%s)\n", task.index, task.source)
+	}
 	replaceResult := client.DoVoidWithRetry(func() (http.Header, error) {
-		return client.ReplaceImage(documentID, task.imageBlockID, fileToken, userAccessToken)
+		return client.ReplaceImageWithSize(documentID, task.imageBlockID, fileToken, pxW, pxH, userAccessToken)
 	}, retryCfg)
 
 	if replaceResult.Err != nil {
@@ -1454,6 +1464,23 @@ func validateMarkdownEncoding(content []byte) error {
 // 返回本地路径、上传文件名和清理函数（外部 URL 下载的临时文件需要清理）。
 func resolveImageSource(source, basePath string) (string, string, func(), error) {
 	return resolveMediaSource(source, basePath, ".png")
+}
+
+// decodeImagePixelSize 读取图片真实像素尺寸，用于显式指定飞书图片块的显示宽高。
+// 只读文件头（image.DecodeConfig），不解整张图，避免大图占用内存。
+// 任何失败都返回 (0, 0)，调用方据此退回服务端推断，不影响导入成功。
+func decodeImagePixelSize(path string) (int, int) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0
+	}
+	defer f.Close()
+
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return 0, 0
+	}
+	return cfg.Width, cfg.Height
 }
 
 func resolveMediaSource(source, basePath, defaultExt string) (string, string, func(), error) {
