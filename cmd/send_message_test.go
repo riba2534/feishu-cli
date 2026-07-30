@@ -56,11 +56,25 @@ func TestIsLocalPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isLocalPath(tt.path)
+			result := isLocalPath(tt.path, ".")
 			if result != tt.expected {
 				t.Errorf("isLocalPath(%q) = %v, 期望 %v", tt.path, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestIsLocalPathPrefersExistingPrefixedFile(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "img_logo.png")
+	if err := os.WriteFile(path, []byte("\x89PNG\r\n\x1a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !isLocalPath("img_logo.png", tempDir) {
+		t.Fatal("存在的 img_ 前缀相对文件应优先识别为本地路径")
+	}
+	if isLocalPath("img_missing.png", tempDir) {
+		t.Fatal("不存在的 img_ 前缀值应继续识别为飞书资源 key")
 	}
 }
 

@@ -217,13 +217,29 @@ var supportedIMImageExtensions = map[string]struct{}{
 }
 
 // isLocalPath 检测字符串是否为本地文件路径
-func isLocalPath(s string) bool {
+func localPathExists(path, basePath string) bool {
+	resolvedPath, err := resolveLocalPath(path, basePath)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(resolvedPath)
+	return err == nil
+}
+
+func isLocalPath(s, basePath string) bool {
 	if s == "" {
 		return false
 	}
-	// 如果是 URL 或已上传的 image_key（img_ 开头），不是本地路径
-	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") ||
-		strings.HasPrefix(s, "img_") || strings.HasPrefix(s, "file_") {
+	// URL 永远不是本地路径。
+	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+		return false
+	}
+	// 本地已有文件优先于资源 key 前缀，避免 img_logo.png / file_report.png
+	// 这类相对文件名被误判为已上传的飞书 key。
+	if localPathExists(s, basePath) {
+		return true
+	}
+	if strings.HasPrefix(s, "img_") || strings.HasPrefix(s, "file_") {
 		return false
 	}
 	// 只接受显式绝对/相对路径，或受支持的图片扩展名。
@@ -330,7 +346,7 @@ func processAndUploadLocalImages(content string, basePath string) (string, int, 
 		fullMatch := match[0] // 完整匹配如 ![alt](local/path.png)
 		imagePath := match[2] // 图片路径
 
-		if !isLocalPath(imagePath) {
+		if !isLocalPath(imagePath, basePath) {
 			continue
 		}
 
@@ -377,7 +393,7 @@ func processJSONLocalImages(data interface{}, basePath string) (bool, interface{
 		for key, val := range v {
 			// post 富文本使用 image_key；Card JSON 2.0 的 img 与 img_combination 使用 img_key。
 			if tag == "img" && (key == "image_key" || key == "img_key") {
-				if localPath, ok := val.(string); ok && isLocalPath(localPath) {
+				if localPath, ok := val.(string); ok && isLocalPath(localPath, basePath) {
 					imageKey, err := uploadLocalImageForIM(localPath, basePath)
 					if err != nil {
 						return false, v, 0, err
@@ -457,7 +473,7 @@ func processImageListLocalImages(data interface{}, basePath string) (bool, inter
 			continue
 		}
 		localPath, ok := image["img_key"].(string)
-		if !ok || !isLocalPath(localPath) {
+		if !ok || !isLocalPath(localPath, basePath) {
 			result[index] = item
 			continue
 		}

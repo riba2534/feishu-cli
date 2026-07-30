@@ -188,6 +188,10 @@ feishu-cli msg reply om_xxx \
 附件发送。视频快捷参数只接受 MP4。图片/文件/音视频也可直接传当前 App 可用的
 `img_xxx` / `file_xxx`，此时跳过上传。
 
+本地路径优先于资源 key 前缀：如果当前相对路径基准下确实存在 `img_logo.png`、
+`file_report.pdf` 等文件，即使文件名以 `img_` / `file_` 开头，CLI 仍会先上传本地文件；
+只有不存在同名本地路径时，才按飞书资源 key 解释。
+
 ### text 类型
 
 ```bash
