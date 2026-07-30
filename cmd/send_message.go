@@ -217,13 +217,13 @@ var supportedIMImageExtensions = map[string]struct{}{
 }
 
 // isLocalPath 检测字符串是否为本地文件路径
-func localPathExists(path, basePath string) bool {
+func localRegularFileExists(path, basePath string) bool {
 	resolvedPath, err := resolveLocalPath(path, basePath)
 	if err != nil {
 		return false
 	}
-	_, err = os.Stat(resolvedPath)
-	return err == nil
+	info, err := os.Stat(resolvedPath)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func isLocalPath(s, basePath string) bool {
@@ -236,7 +236,7 @@ func isLocalPath(s, basePath string) bool {
 	}
 	// 本地已有文件优先于资源 key 前缀，避免 img_logo.png / file_report.png
 	// 这类相对文件名被误判为已上传的飞书 key。
-	if localPathExists(s, basePath) {
+	if localRegularFileExists(s, basePath) {
 		return true
 	}
 	if strings.HasPrefix(s, "img_") || strings.HasPrefix(s, "file_") {

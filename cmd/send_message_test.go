@@ -76,6 +76,12 @@ func TestIsLocalPathPrefersExistingPrefixedFile(t *testing.T) {
 	if isLocalPath("img_missing.png", tempDir) {
 		t.Fatal("不存在的 img_ 前缀值应继续识别为飞书资源 key")
 	}
+	if err := os.Mkdir(filepath.Join(tempDir, "img_existing_directory"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if isLocalPath("img_existing_directory", tempDir) {
+		t.Fatal("img_ 前缀目录不是本地媒体文件，应继续识别为飞书资源 key")
+	}
 }
 
 // -------------------------------------------------------------------
