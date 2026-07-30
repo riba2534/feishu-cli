@@ -168,11 +168,11 @@ func (input messageContentInput) inferredMessageType() string {
 }
 
 func isIMImageKey(value string) bool {
-	return strings.HasPrefix(value, "img_") && !localPathExists(value, ".")
+	return strings.HasPrefix(value, "img_") && !localRegularFileExists(value, ".")
 }
 
 func isIMFileKey(value string) bool {
-	return strings.HasPrefix(value, "file_") && !localPathExists(value, ".")
+	return strings.HasPrefix(value, "file_") && !localRegularFileExists(value, ".")
 }
 
 func rejectRemoteMediaURL(flagName, value string) error {
