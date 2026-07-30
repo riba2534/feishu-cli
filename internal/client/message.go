@@ -64,7 +64,7 @@ func SendMessage(receiveIDType string, receiveID string, msgType string, content
 		return "", fmt.Errorf("发送消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	if resp.Data.MessageId == nil {
+	if resp.Data == nil || resp.Data.MessageId == nil || *resp.Data.MessageId == "" {
 		return "", fmt.Errorf("消息已发送但未返回消息 ID")
 	}
 
@@ -73,8 +73,9 @@ func SendMessage(receiveIDType string, receiveID string, msgType string, content
 
 // ReplyMessage replies to a message.
 // 当 replyInThread 为 true 时，以话题（thread）形式回复；
-// 若目标群聊本身就是话题模式，该参数会自动回复到消息所在话题。
-func ReplyMessage(messageID string, msgType string, content string, replyInThread bool, userAccessToken string) (string, error) {
+// 若目标消息已经属于话题，则服务端默认将回复放入同一话题。
+// uuid 非空时用于服务端回复去重；相同 uuid 在一小时内至多成功回复一条消息。
+func ReplyMessage(messageID string, msgType string, content string, replyInThread bool, userAccessToken string, uuid string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -85,6 +86,9 @@ func ReplyMessage(messageID string, msgType string, content string, replyInThrea
 		Content(content)
 	if replyInThread {
 		bodyBuilder.ReplyInThread(true)
+	}
+	if uuid != "" {
+		bodyBuilder.Uuid(uuid)
 	}
 
 	req := larkim.NewReplyMessageReqBuilder().
@@ -101,7 +105,7 @@ func ReplyMessage(messageID string, msgType string, content string, replyInThrea
 		return "", fmt.Errorf("回复消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	if resp.Data.MessageId == nil {
+	if resp.Data == nil || resp.Data.MessageId == nil || *resp.Data.MessageId == "" {
 		return "", fmt.Errorf("回复已发送但未返回消息 ID")
 	}
 

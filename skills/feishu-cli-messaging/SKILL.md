@@ -35,9 +35,14 @@ allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Bash(python3:*), Read, Write
 
 1. 发送前确认接收者类型和 ID；不要把 email、open_id、chat_id 混用。
 2. 群发、加急和删除消息有外部影响，先展示目标和数量。
-3. 使用 `--upload-images` 时，任一文件缺失、格式非法或上传失败都会阻止发送；修复后用同一幂等键重试。
-4. 外部群 232033 的排错读取 `references/workflows/chat/references/external-chat.md`。
-5. 卡片草稿与发送候选分开校验；发送前必须运行 card workflow 的
+3. `msg send` 与 `msg reply` 共用内容快捷参数；本地图片、文件、Opus 音频、MP4 视频会先上传，
+   任一文件缺失、格式非法或上传失败都会阻止提交消息。`--upload-images` 同时适用于两条命令。
+4. 进入既有话题必须使用 `msg reply <om_xxx>`；`omt_xxx` 仅用于话题查询/转发，不能作为
+   `msg send` 的接收者。普通消息群开启新话题时才加 `--reply-in-thread`。
+5. 发送与回复重试都使用同一 `--idempotency-key`；媒体上传可能重做，但服务端幂等键防止
+   可见消息重复。只有命令返回非空 `message_id` 才判定成功。
+6. 外部群 232033 的排错读取 `references/workflows/chat/references/external-chat.md`。
+7. 卡片草稿与发送候选分开校验；发送前必须运行 card workflow 的
    `lint_card.py --strict`，不得发送含占位符、示例 ID、假链接或未接通回调按钮的卡片。
-6. 用户点名卡片风格时使用 card workflow 内置的 19 个预设；使用本地头图或图标素材时，
-   lint 与 `msg send` 都传 `--upload-images`，不要固化跨租户 `img_key`。
+8. 用户点名卡片风格时使用 card workflow 内置的 19 个预设；使用本地头图或图标素材时，
+   lint 与实际的 `msg send` / `msg reply` 都传 `--upload-images`，不要固化跨租户 `img_key`。

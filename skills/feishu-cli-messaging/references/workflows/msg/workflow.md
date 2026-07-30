@@ -35,17 +35,23 @@
 
 ### 消息架构
 
-飞书消息 API 的 `content` 字段是一个 **JSON 字符串**（不是 JSON 对象）。CLI 提供三种输入方式：
+飞书消息 API 的 `content` 字段是一个 **JSON 字符串**（不是 JSON 对象）。`msg send` 和
+`msg reply` 共用以下输入方式：
 
 | 输入方式 | 参数 | 适用场景 |
 |---------|------|---------|
 | 快捷文本 | `--text "内容"` | 纯文本消息，最简单 |
-| 发送文件 | `--file <路径>` 或 `-f` | 本地文件自动上传并发送（限 30MB） |
-| 发送图片 | `--image <路径>` | 本地图片自动上传并发送（限 10MB） |
+| Markdown | `--markdown "..."` | 自动包装为 post |
+| 发送文件 | `--file <路径或 file_key>` 或 `-f` | 本地文件自动上传并作为附件发送（限 30MB） |
+| 发送图片 | `--image <路径或 image_key>` | 本地图片自动上传并发送（限 10MB） |
+| 发送语音 | `--audio <路径或 file_key>` | 本地 Opus/Ogg Opus 自动上传 |
+| 发送视频 | `--video <路径或 file_key> --video-cover <路径或 image_key>` | MP4 + 必填封面 |
 | 内联 JSON | `--content '{"key":"val"}'` 或 `-c` | 简单 JSON，一行搞定 |
 | JSON 文件 | `--content-file file.json` | 复杂消息（卡片、富文本等） |
 
-**互斥**：以上 5 种输入方式**只能指定一个**，同时指定会报错。
+**互斥**：`content/content-file/text/markdown/file/image/audio/video` 只能指定一个；
+`video-cover` 只能且必须与 `video` 同时使用。快捷参数会推断消息类型，若显式
+`--msg-type` 与推断结果冲突，会在上传和发送前报错。
 
 ### 接收者类型
 
@@ -110,13 +116,17 @@ feishu-cli msg send \
   --receive-id-type <type> \
   --receive-id <id> \
   [--msg-type <msg_type>] \
-  [--text "<text>" | --file <path> | --image <path> | --content '<json>' | --content-file <file.json>] \
+  [--text "<text>" | --markdown "<markdown>" | --file <path-or-key> | --image <path-or-key> | \
+   --audio <path-or-key> | --video <path-or-key> --video-cover <path-or-key> | \
+   --content '<json>' | --content-file <file.json>] \
   [--idempotency-key <key>]
 ```
 
 ### 幂等键（--idempotency-key，防重发）
 
-`--idempotency-key` 映射到发消息 API 的 `uuid` 字段，服务端按此键去重：**相同键的重复请求返回首次发送的消息**（同一 `message_id`），只会真正发出一条。适用于重试、定时任务、可能重复触发的自动化场景。
+`--idempotency-key` 在 `msg send` 和 `msg reply` 中都映射到 API 的 `uuid`。发送接口对同一
+key 去重；回复接口保证同一 key 的请求在 1 小时内至多成功回复一条。它适用于重试、定时任务
+和可能重复触发的自动化场景。
 
 ```bash
 # 相同 key 调用两次，第二次不会重复发送，返回与第一次相同的 message_id
@@ -127,6 +137,8 @@ feishu-cli msg send --receive-id-type email --receive-id user@example.com \
 - 长度上限 **50 字符**（按 Unicode 字符 / rune 计数，非字节，中文键不会被误拒），超限本地直接报错，不发请求。
 - 键由调用方自行保证唯一/可复现：同一逻辑消息用固定键（幂等），不同消息用不同键，否则会被误判为重复而丢弃。
 - 不传该 flag 时行为不变（每次都新发）。
+- 本地媒体在提交消息前上传，因此进程级重试可能再次上传并取得新 key；幂等键保证的是
+  **可见消息不重复**，不是上传请求只执行一次。
 
 ### file 类型（直发文件）
 
@@ -142,6 +154,10 @@ feishu-cli msg send \
 file_token 不是同一种 token，不能先用 `file upload` 再把返回值当作 file_key。超过 30MB 时应压缩、
 拆分、改发云盘链接，或让用户从飞书客户端发送。
 
+若 `.mp4` / `.opus` 明确通过 `--file` 发送，CLI 会按普通 `stream` 附件上传，避免飞书因
+上传类型与 `msg_type=file` 不匹配而返回 230055。要让它呈现为视频或语音，使用 `--video`
+或 `--audio`。
+
 ### image 类型（直发图片）
 
 ```bash
@@ -153,6 +169,24 @@ feishu-cli msg send \
 ```
 
 支持 JPEG、PNG、BMP、GIF、TIFF、WebP 格式。
+
+### audio / media 类型
+
+```bash
+# 语音消息：飞书仅接受 Opus
+feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
+  --audio /path/to/voice.opus
+
+# 视频消息：MP4 与封面缺一不可
+feishu-cli msg reply om_xxx \
+  --video /path/to/demo.mp4 \
+  --video-cover /path/to/cover.png \
+  --idempotency-key "demo-video-reply-001"
+```
+
+音频支持 `.opus` 与 Ogg Opus `.ogg`；MP3/WAV 需要先转换为 Opus，或者使用 `--file` 作为普通
+附件发送。视频快捷参数只接受 MP4。图片/文件/音视频也可直接传当前 App 可用的
+`img_xxx` / `file_xxx`，此时跳过上传。
 
 ### text 类型
 
@@ -228,7 +262,7 @@ post 支持的 tag 类型：
 
 ### 图片自动上传（--upload-images）
 
-`msg send` 支持 `--upload-images`，扫描 **post / interactive** 消息中的本地图片引用，
+`msg send` 与 `msg reply` 都支持 `--upload-images`，扫描 **post / interactive** 消息中的本地图片引用，
 上传到飞书 IM 图床并替换为当前 App 可用的 key 后再发送。
 
 | 维度 | 行为 |
@@ -326,7 +360,9 @@ feishu-cli msg send \
 ### 回复、转发、合并转发与加急
 
 ```bash
-feishu-cli msg reply om_xxx --text "收到"
+feishu-cli msg reply om_xxx --text "收到" --idempotency-key "ack-001"
+feishu-cli msg reply om_xxx --image /path/to/photo.png --idempotency-key "photo-001"
+feishu-cli msg reply om_xxx --file /path/to/report.pdf
 feishu-cli msg forward om_xxx --receive-id user@example.com --receive-id-type email
 feishu-cli msg merge-forward --receive-id oc_xxx --receive-id-type chat_id --message-ids om_xxx,om_yyy
 feishu-cli msg urgent om_xxx --user-id-type open_id --user-ids ou_xxx,ou_yyy
@@ -342,8 +378,9 @@ feishu-cli msg urgent om_xxx --user-id-type open_id --user-ids ou_xxx,ou_yyy
    - 用户明确指定类型 → 使用指定类型
    - 结构化或美观通知 → 先用 `feishu-cli-messaging` 构造 JSON，再用 `interactive` 发送
    - 用户明确要求纯文本/富文本，或内容很短 → 使用 `text` / `post`
-3. **准备内容**：纯文本直接传 `--text`；卡片 JSON 使用 `--content-file`；文件/图片使用 `--file` / `--image`
-4. **发送并检查结果**：执行命令，确认返回 message_id
+3. **准备内容**：纯文本用 `--text`；Markdown 用 `--markdown`；卡片 JSON 用 `--content-file`；
+   图片/附件/语音/视频分别用 `--image` / `--file` / `--audio` / `--video + --video-cover`
+4. **发送并检查结果**：确认命令退出码为 0 且返回非空 `message_id`；不要仅凭上传成功判定消息成功
 
 ## 权限要求
 
@@ -414,19 +451,20 @@ feishu-cli msg resource-download <message_id> <file_key> --type file --user-acce
 
 ### 发送到已有话题
 
-`msg send` 支持 `--thread-id`（等价于 `--receive-id-type thread_id --receive-id <thread_id>`）：
+飞书 create message 的 `receive_id_type` 不支持 `thread_id`。要在已有话题内追加消息，必须
+回复话题内的 `om_xxx` 消息 ID；不能把 `omt_xxx` 传给 `msg send`。
 
 ```bash
-# 在已有话题内追加一条消息
-feishu-cli msg send --thread-id omt_xxx --text "话题内继续聊"
+# 目标消息已在话题中时，默认进入同一话题
+feishu-cli msg reply om_xxx --text "话题内继续聊"
 
-# 卡片消息也支持
-feishu-cli msg send --thread-id omt_xxx \
-  --msg-type interactive \
-  --content "$(cat card.json)"
+# 图片/文件/卡片沿用同一 reply 内容模型
+feishu-cli msg reply om_xxx --image /path/to/photo.png --idempotency-key "topic-photo-001"
+feishu-cli msg reply om_xxx --msg-type interactive --content-file card.json --upload-images
 ```
 
-> `--thread-id` 与 `--receive-id-type/--receive-id` **互斥**，只能指定一组。
+旧 `msg send --thread-id omt_xxx ...` 会在上传媒体和调用飞书 API 前直接报错，并提示迁移到
+`msg reply <om_xxx>`。
 
 ### 回复时开启话题
 
@@ -436,12 +474,13 @@ feishu-cli msg send --thread-id omt_xxx \
 # 在非话题群聊中，以话题形式回复某条消息（会开启一个新话题）
 feishu-cli msg reply om_xxx --text "这里开个话题" --reply-in-thread
 
-# 若群聊已是话题模式，--reply-in-thread 会自动回复到消息所在话题
+# 目标消息已经属于话题时，通常不需要 --reply-in-thread
 ```
 
 ### 话题回复列表
 
-获取话题回复属于读取消息，请使用 **feishu-cli-messaging** 技能。发送话题内消息仍使用本技能的 `msg send --thread-id`。
+获取话题回复属于读取消息，请使用 **feishu-cli-messaging** 技能。`omt_xxx` 可用于
+`msg thread-messages` 等读取/转发能力；话题内发送使用 `msg reply <om_xxx>`。
 
 ## 参考文档
 
