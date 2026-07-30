@@ -8,10 +8,13 @@ import (
 )
 
 func TestValidateSendReceiveIDType(t *testing.T) {
-	for _, valid := range []string{"email", "open_id", "user_id", "union_id", "chat_id", "thread_id"} {
+	for _, valid := range []string{"email", "open_id", "user_id", "union_id", "chat_id"} {
 		if err := validateSendReceiveIDType(valid); err != nil {
 			t.Fatalf("validateSendReceiveIDType(%q) unexpected error: %v", valid, err)
 		}
+	}
+	if err := validateSendReceiveIDType("thread_id"); err == nil || !strings.Contains(err.Error(), "msg reply") {
+		t.Fatalf("thread_id 应返回迁移提示，实际: %v", err)
 	}
 	if err := validateSendReceiveIDType("bad"); err == nil || !strings.Contains(err.Error(), "--receive-id-type") {
 		t.Fatalf("expected receive-id-type error, got %v", err)

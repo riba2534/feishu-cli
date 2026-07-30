@@ -136,7 +136,7 @@ feishu-cli doc import large-doc.md --title "大文档" \
 | **知识库** | 空间列表、节点增删改查、导出（含整树递归镜像）、**移出知识库到云盘（move-to-drive）**、空间详情、成员管理 |
 | **电子表格** | V2 基础读写 + V3 富文本 API，行列操作、样式、批量样式、合并、查找替换、导出 XLSX/CSV、浮动图片读写、素材上传、单元格写图、筛选视图与筛选条件 CRUD、下拉菜单数据验证、**类型保真整表读写 table-get/table-put（数字/日期/布尔 dtype 保真，支持 get→改→put round-trip）** |
 | **多维表格** | base/v3 + bitable/v1 全覆盖：数据表/字段/记录 CRUD（含批量获取）、记录附件上传/下载/移除、视图配置（filter/sort/group/visible-fields/timebar/card）、仪表盘 CRUD 与智能排版、仪表盘块 CRUD、表单 CRUD 与分享详情/提交、表单问题 CRUD、角色 CRUD 与协作者管理、高级权限、数据聚合、工作流 CRUD、多维表格重命名与权限设置 |
-| **消息** | 发送（text/post/image/file/card 等 11 种类型）、转发、合并转发、回复、Pin、表情回复、消息书签（flag create/list/cancel）、搜索群聊（Bot/User 双身份）、历史记录（群聊 / P2P 私聊，支持 `--user-email` / `--user-id` 自动反查 p2p chat_id）、批量获取、资源下载、话题回复、**发送者名字自动解析**（输出顶层 `sender_names` 映射，覆盖退群成员） |
+| **消息** | 发送与回复共用 text/Markdown/post/image/file/audio/video/card 内容模型（本地媒体自动上传、幂等键）、转发、合并转发、Pin、表情回复、消息书签（flag create/list/cancel）、搜索群聊（Bot/User 双身份）、历史记录（群聊 / P2P 私聊，支持 `--user-email` / `--user-id` 自动反查 p2p chat_id）、批量获取、资源下载、话题回复、**发送者名字自动解析**（输出顶层 `sender_names` 映射，覆盖退群成员） |
 | **群聊** | 创建、获取、更新、删除、分享链接、成员管理、**群列表（chat list，--page-all 全量拉取 + 安全截断告警）** |
 | **邮箱** | 收件箱分类/搜索、邮件详情（单条/批量/线程）、发送（默认草稿，支持 CID 内联图片自动扫描）、草稿管理（创建/编辑/**发送已有草稿**）、回复/全部回复/转发、**批量改 label/移动文件夹、批量软删进废纸篓**、邮件模板 create/list、邮箱签名查看（需 User Token） |
 | **日历** | 日历列表、主日历、日程增删改查、搜索、回复邀请、参与者管理、忙闲查询、日程视图（agenda）、智能时段建议、会议室查找、RSVP |
@@ -439,6 +439,10 @@ feishu-cli msg forward <message_id> --receive-id <id> --receive-id-type email
 
 # 回复消息
 feishu-cli msg reply <message_id> --text "回复内容"
+feishu-cli msg reply <message_id> --image /path/to/photo.png --idempotency-key "photo-reply-001"
+
+# 回复到既有话题：传话题内 om_xxx 消息 ID，不要把 omt_xxx 传给 msg send
+feishu-cli msg reply om_xxx --file /path/to/report.pdf
 
 # 合并转发
 feishu-cli msg merge-forward --receive-id user@example.com --receive-id-type email --message-ids id1,id2

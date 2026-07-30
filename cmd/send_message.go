@@ -21,15 +21,18 @@ var sendMessageCmd = &cobra.Command{
 	Long: `向飞书用户或群组发送消息。
 
 参数:
-  --receive-id-type   接收者类型（与 --thread-id 二选一）
-  --receive-id        接收者标识（与 --thread-id 二选一）
-  --thread-id         话题 ID（omt_xxx），在已有话题内追加一条消息（等价于 receive_id_type=thread_id）
+  --receive-id-type   接收者类型
+  --receive-id        接收者标识
   --msg-type          消息类型（默认: text）
   --content, -c       消息内容 JSON
   --content-file      消息内容 JSON 文件
   --text, -t          简单文本消息（快捷方式）
-  --file, -f          发送本地文件（自动上传并发送，快捷方式）
-  --image             发送本地图片（自动上传并发送，快捷方式）
+  --markdown          Markdown 消息（自动包装为 post）
+  --file, -f          本地文件或 file_key（作为附件发送）
+  --image             本地图片或 image_key
+  --audio             本地 Opus/Ogg Opus 或 file_key
+  --video             本地 MP4 或 file_key（需同时指定 --video-cover）
+  --video-cover       视频封面本地图片或 image_key
   --upload-images     自动上传 Markdown、post image_key 与 Card V2 img_key 中的本地图片
   --idempotency-key   幂等键（≤50 字符），服务端按此键去重，防止重发
   --output, -o        输出格式（json）
@@ -40,7 +43,6 @@ var sendMessageCmd = &cobra.Command{
   user_id     用户 ID
   union_id    Union ID
   chat_id     群组 ID
-  thread_id   话题 ID（在话题内追加消息，通常用 --thread-id 代替）
 
 消息类型:
   text         文本消息
@@ -94,10 +96,9 @@ var sendMessageCmd = &cobra.Command{
     --content-file card.json \
     --upload-images
 
-  # 在已有话题内追加消息
-  feishu-cli msg send \
-    --thread-id omt_xxx \
-    --text "话题内继续聊"
+  # 回复图片并进入既有话题（目标必须是话题内的 om_xxx 消息 ID）
+  feishu-cli msg reply om_xxx \
+    --image /path/to/screenshot.png
 
   # 使用幂等键防止重发（相同 key 重复调用只会发出一条消息）
   feishu-cli msg send \
@@ -109,26 +110,23 @@ var sendMessageCmd = &cobra.Command{
 		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
 		receiveID, _ := cmd.Flags().GetString("receive-id")
 		threadID, _ := cmd.Flags().GetString("thread-id")
-		msgType, _ := cmd.Flags().GetString("msg-type")
 
 		if threadID != "" {
-			if receiveIDType != "" || receiveID != "" {
-				return fmt.Errorf("--thread-id 与 --receive-id-type/--receive-id 互斥，只能指定一组")
-			}
-			receiveIDType = "thread_id"
-			receiveID = threadID
-		} else if receiveIDType == "" || receiveID == "" {
-			return fmt.Errorf("必须指定 --thread-id，或同时指定 --receive-id-type 和 --receive-id")
+			return fmt.Errorf("--thread-id 不可用于 msg send：飞书 create message 接口不支持 thread_id；请改用 msg reply <om_xxx>（回复既有话题可省略 --reply-in-thread，开启新话题时加 --reply-in-thread）")
+		}
+		if receiveIDType == "" || receiveID == "" {
+			return fmt.Errorf("必须同时指定 --receive-id-type 和 --receive-id")
 		}
 		if err := validateSendReceiveIDType(receiveIDType); err != nil {
-			return err
-		}
-		if err := validateSendMessageType(msgType); err != nil {
 			return err
 		}
 
 		idempotencyKey, _ := cmd.Flags().GetString("idempotency-key")
 		if err := validateIdempotencyKey(idempotencyKey); err != nil {
+			return err
+		}
+		contentInput := readMessageContentInput(cmd)
+		if err := contentInput.validate(); err != nil {
 			return err
 		}
 
@@ -138,109 +136,9 @@ var sendMessageCmd = &cobra.Command{
 
 		token := resolveOptionalUserToken(cmd)
 
-		content, _ := cmd.Flags().GetString("content")
-		contentFile, _ := cmd.Flags().GetString("content-file")
-		text, _ := cmd.Flags().GetString("text")
-		filePath, _ := cmd.Flags().GetString("file")
-		imagePath, _ := cmd.Flags().GetString("image")
-		uploadImages, _ := cmd.Flags().GetBool("upload-images")
-
-		// 互斥校验：5 个内容标志只能指定一个
-		var specifiedFlags []string
-		if filePath != "" {
-			specifiedFlags = append(specifiedFlags, "--file")
-		}
-		if imagePath != "" {
-			specifiedFlags = append(specifiedFlags, "--image")
-		}
-		if contentFile != "" {
-			specifiedFlags = append(specifiedFlags, "--content-file")
-		}
-		if content != "" {
-			specifiedFlags = append(specifiedFlags, "--content")
-		}
-		if text != "" {
-			specifiedFlags = append(specifiedFlags, "--text")
-		}
-		if len(specifiedFlags) > 1 {
-			return fmt.Errorf("以下标志互斥，只能指定其中一个: %s", fmt.Sprintf("%v", specifiedFlags))
-		}
-
-		// 文件/图片路径预检查
-		if filePath != "" {
-			if _, err := os.Stat(filePath); err != nil {
-				return fmt.Errorf("无法访问文件: %w", err)
-			}
-		}
-		if imagePath != "" {
-			if _, err := os.Stat(imagePath); err != nil {
-				return fmt.Errorf("无法访问图片文件: %w", err)
-			}
-		}
-
-		var msgContent string
-		switch {
-		case filePath != "":
-			// Upload file via IM API, then send as file message
-			fmt.Fprintf(os.Stderr, "正在上传文件: %s\n", filepath.Base(filePath))
-			fileKey, err := client.UploadIMFile(filePath, "")
-			if err != nil {
-				return err
-			}
-			msgType = "file"
-			contentJSON, _ := json.Marshal(map[string]string{"file_key": fileKey})
-			msgContent = string(contentJSON)
-
-		case imagePath != "":
-			// Upload image via IM API, then send as image message
-			fmt.Fprintf(os.Stderr, "正在上传图片: %s\n", filepath.Base(imagePath))
-			imageKey, err := client.UploadIMImage(imagePath, "")
-			if err != nil {
-				return err
-			}
-			msgType = "image"
-			contentJSON, _ := json.Marshal(map[string]string{"image_key": imageKey})
-			msgContent = string(contentJSON)
-
-		case contentFile != "":
-			data, err := os.ReadFile(contentFile)
-			if err != nil {
-				return fmt.Errorf("读取内容文件失败: %w", err)
-			}
-			msgContent = string(data)
-
-		case content != "":
-			msgContent = content
-
-		case text != "":
-			msgType = "text"
-			// 在 marshal 前规范化 @ 标签（修复 <at id=...> / <at open_id=...> 等 AI 易错格式），
-			// 让 json.Marshal 自动转义产生的双引号，避免破坏 JSON 结构。
-			text = client.NormalizeAtMentions(text)
-			msgContent = client.CreateTextMessageContent(text)
-
-		default:
-			return fmt.Errorf("必须指定 --content、--content-file、--text、--file 或 --image")
-		}
-
-		// 自动上传本地图片（仅对 post 和 interactive 消息有效）
-		if uploadImages && (msgType == "post" || msgType == "interactive") {
-			// 确定 basePath：如果使用 --content-file，以其目录为 basePath；否则用当前目录
-			basePath := "."
-			if contentFile != "" {
-				basePath = filepath.Dir(contentFile)
-				if basePath == "" || basePath == "." {
-					basePath = "."
-				}
-			}
-			processedContent, uploadCount, err := processAndUploadLocalImages(msgContent, basePath)
-			if err != nil {
-				return err
-			}
-			if uploadCount > 0 {
-				fmt.Fprintf(os.Stderr, "已自动上传 %d 张本地图片\n", uploadCount)
-			}
-			msgContent = processedContent
+		msgType, msgContent, err := contentInput.resolve()
+		if err != nil {
+			return err
 		}
 
 		messageID, err := client.SendMessage(receiveIDType, receiveID, msgType, msgContent, token, idempotencyKey)
@@ -266,10 +164,12 @@ var sendMessageCmd = &cobra.Command{
 
 func validateSendReceiveIDType(receiveIDType string) error {
 	switch receiveIDType {
-	case "email", "open_id", "user_id", "union_id", "chat_id", "thread_id":
+	case "email", "open_id", "user_id", "union_id", "chat_id":
 		return nil
+	case "thread_id":
+		return fmt.Errorf("--receive-id-type thread_id 不受飞书 create message 接口支持；请改用 msg reply <om_xxx>")
 	default:
-		return fmt.Errorf("无效的 --receive-id-type: %s，有效值: email/open_id/user_id/union_id/chat_id/thread_id", receiveIDType)
+		return fmt.Errorf("无效的 --receive-id-type: %s，有效值: email/open_id/user_id/union_id/chat_id", receiveIDType)
 	}
 }
 
@@ -296,16 +196,11 @@ func validateIdempotencyKey(key string) error {
 
 func init() {
 	msgCmd.AddCommand(sendMessageCmd)
-	sendMessageCmd.Flags().String("receive-id-type", "", "接收者类型（email/open_id/user_id/union_id/chat_id/thread_id）")
+	sendMessageCmd.Flags().String("receive-id-type", "", "接收者类型（email/open_id/user_id/union_id/chat_id）")
 	sendMessageCmd.Flags().String("receive-id", "", "接收者标识")
-	sendMessageCmd.Flags().String("thread-id", "", "话题 ID（omt_xxx），在已有话题内追加消息；与 --receive-id-type/--receive-id 互斥")
-	sendMessageCmd.Flags().String("msg-type", "text", "消息类型（text/post/image/interactive 等）")
-	sendMessageCmd.Flags().StringP("content", "c", "", "消息内容 JSON")
-	sendMessageCmd.Flags().String("content-file", "", "消息内容 JSON 文件")
-	sendMessageCmd.Flags().StringP("text", "t", "", "简单文本消息")
-	sendMessageCmd.Flags().StringP("file", "f", "", "发送本地文件（自动上传并发送）")
-	sendMessageCmd.Flags().String("image", "", "发送本地图片（自动上传并发送）")
-	sendMessageCmd.Flags().Bool("upload-images", false, "自动上传 Markdown、post image_key 与 Card V2 img_key 中的本地图片")
+	sendMessageCmd.Flags().String("thread-id", "", "已废弃：飞书 create message 不支持 thread_id；请使用 msg reply <om_xxx>")
+	_ = sendMessageCmd.Flags().MarkDeprecated("thread-id", "飞书 create message 不支持 thread_id，请使用 msg reply <om_xxx>")
+	addMessageContentFlags(sendMessageCmd)
 	sendMessageCmd.Flags().String("idempotency-key", "", "幂等键（≤50 字符），服务端按此键去重；相同键重复发送返回首次消息，防止重发")
 	sendMessageCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	sendMessageCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")

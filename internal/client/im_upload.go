@@ -19,7 +19,7 @@ const (
 func fileExtToIMType(filename string) string {
 	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {
-	case ".opus":
+	case ".opus", ".ogg":
 		return "opus"
 	case ".mp4":
 		return "mp4"
@@ -37,8 +37,14 @@ func fileExtToIMType(filename string) string {
 }
 
 // UploadIMFile uploads a local file via the IM API (/open-apis/im/v1/files)
-// and returns the file_key that can be used directly in msg send --msg-type file.
+// and returns the file_key. file_type is inferred from the filename.
 func UploadIMFile(filePath string, fileName string) (string, error) {
+	return UploadIMFileWithOptions(filePath, fileName, "", 0)
+}
+
+// UploadIMFileWithOptions 上传 IM 文件，并允许调用方指定 file_type 与音视频时长。
+// fileType 为空时按文件扩展名推断；durationMs <= 0 时不提交 duration。
+func UploadIMFileWithOptions(filePath string, fileName string, fileType string, durationMs int) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -57,19 +63,32 @@ func UploadIMFile(filePath string, fileName string) (string, error) {
 	if stat.Size() > maxIMFileSize {
 		return "", fmt.Errorf("文件大小 %s 超过 IM 上传限制（30MB），请使用 file upload 命令上传到云空间", formatSize(int(stat.Size())))
 	}
+	if stat.Size() == 0 {
+		return "", fmt.Errorf("文件为空，飞书 IM 不允许上传空文件")
+	}
 
 	if fileName == "" {
 		fileName = filepath.Base(filePath)
 	}
 
-	fileType := fileExtToIMType(fileName)
+	if fileType == "" {
+		fileType = fileExtToIMType(fileName)
+	}
+	switch fileType {
+	case "opus", "mp4", "pdf", "doc", "xls", "ppt", "stream":
+	default:
+		return "", fmt.Errorf("无效的 IM file_type: %s", fileType)
+	}
 
+	bodyBuilder := larkim.NewCreateFileReqBodyBuilder().
+		FileType(fileType).
+		FileName(fileName).
+		File(f)
+	if durationMs > 0 {
+		bodyBuilder.Duration(durationMs)
+	}
 	req := larkim.NewCreateFileReqBuilder().
-		Body(larkim.NewCreateFileReqBodyBuilder().
-			FileType(fileType).
-			FileName(fileName).
-			File(f).
-			Build()).
+		Body(bodyBuilder.Build()).
 		Build()
 
 	resp, err := client.Im.File.Create(ContextWithTimeout(downloadTimeout), req)
