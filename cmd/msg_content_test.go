@@ -147,6 +147,124 @@ func TestMessageContentResolveLocalMedia(t *testing.T) {
 	}
 }
 
+func TestMessageContentResolvePrefixedLocalMediaPaths(t *testing.T) {
+	tempDir := t.TempDir()
+	oldWorkingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWorkingDir); err != nil {
+			t.Errorf("恢复工作目录失败: %v", err)
+		}
+	}()
+
+	files := map[string][]byte{
+		"img_logo.png":    []byte("\x89PNG\r\n\x1a\n"),
+		"file_report.pdf": []byte("%PDF-test"),
+		"file_voice.opus": []byte("fake-opus"),
+		"file_video.mp4":  []byte("fake-mp4"),
+		"img_cover.png":   []byte("\x89PNG\r\n\x1a\n"),
+	}
+	for name, data := range files {
+		if err := os.WriteFile(name, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	oldImageUpload := uploadIMImage
+	oldFileUpload := uploadIMFileWithOptions
+	defer func() {
+		uploadIMImage = oldImageUpload
+		uploadIMFileWithOptions = oldFileUpload
+	}()
+
+	var uploadedImages []string
+	uploadIMImage = func(path, imageType string) (string, error) {
+		uploadedImages = append(uploadedImages, filepath.Base(path))
+		return "img_uploaded_" + filepath.Base(path), nil
+	}
+	type fileUpload struct {
+		name     string
+		fileType string
+	}
+	var uploadedFiles []fileUpload
+	uploadIMFileWithOptions = func(path, name, fileType string, duration int) (string, error) {
+		baseName := filepath.Base(path)
+		uploadedFiles = append(uploadedFiles, fileUpload{name: baseName, fileType: fileType})
+		return "file_uploaded_" + baseName, nil
+	}
+
+	tests := []struct {
+		name        string
+		args        []string
+		wantMsgType string
+		wantContent []string
+	}{
+		{
+			name:        "image",
+			args:        []string{"--image", "img_logo.png"},
+			wantMsgType: "image",
+			wantContent: []string{`"image_key":"img_uploaded_img_logo.png"`},
+		},
+		{
+			name:        "file",
+			args:        []string{"--file", "file_report.pdf"},
+			wantMsgType: "file",
+			wantContent: []string{`"file_key":"file_uploaded_file_report.pdf"`},
+		},
+		{
+			name:        "audio",
+			args:        []string{"--audio", "file_voice.opus"},
+			wantMsgType: "audio",
+			wantContent: []string{`"file_key":"file_uploaded_file_voice.opus"`},
+		},
+		{
+			name:        "video",
+			args:        []string{"--video", "file_video.mp4", "--video-cover", "img_cover.png"},
+			wantMsgType: "media",
+			wantContent: []string{
+				`"file_key":"file_uploaded_file_video.mp4"`,
+				`"image_key":"img_uploaded_img_cover.png"`,
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, input := newMessageContentTestCommand(t, test.args...)
+			if err := input.validate(); err != nil {
+				t.Fatal(err)
+			}
+			msgType, content, err := input.resolve()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if msgType != test.wantMsgType {
+				t.Fatalf("msgType = %q, want %q", msgType, test.wantMsgType)
+			}
+			for _, want := range test.wantContent {
+				if !strings.Contains(content, want) {
+					t.Fatalf("content = %s, want contains %s", content, want)
+				}
+			}
+		})
+	}
+
+	if got, want := strings.Join(uploadedImages, ","), "img_logo.png,img_cover.png"; got != want {
+		t.Fatalf("上传图片 = %q, want %q", got, want)
+	}
+	gotFileUploads := []string{}
+	for _, upload := range uploadedFiles {
+		gotFileUploads = append(gotFileUploads, upload.name+":"+upload.fileType)
+	}
+	if got, want := strings.Join(gotFileUploads, ","), "file_report.pdf:,file_voice.opus:opus,file_video.mp4:mp4"; got != want {
+		t.Fatalf("上传文件 = %q, want %q", got, want)
+	}
+}
+
 func TestValidateReplyMessageID(t *testing.T) {
 	if err := validateReplyMessageID("om_xxx"); err != nil {
 		t.Fatalf("om_xxx 应合法: %v", err)
