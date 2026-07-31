@@ -11,6 +11,7 @@
 - [命令速查](#命令速查)
 - [典型工作流](#典型工作流)
 - [权限要求](#权限要求)
+- [filter DSL](#filter-dslrecord-list--record-search-结构化过滤实测验证)
 - [注意事项](#注意事项)
 
 ## 前置条件
@@ -458,8 +459,8 @@ feishu-cli bitable view view-sort-set --base-token $BASE_TOKEN --table-id $TABLE
 - **base/v3 需要 X-App-Id header**：命令自动注入，无需手动设置
 - **base_token / app_token 是同一个值**：飞书新旧文档用两种叫法，CLI 只认 `--base-token`（`--app-token` 已删除）
 - **--config / --config-file 两种输入**：所有写操作支持 inline JSON 或文件路径
-- **--dry-run 预览（仅本轮新增写命令支持）**：`--dry-run` 只在本轮新增的写命令上可用——`dashboard`/`block` 写、`form`/`form field` 写、`workflow create/update/enable/disable`、`role member` 写、`record upload/download/remove-attachment`、`bitable update`。**旧写命令不支持**（`record batch-create/batch-update/upsert/delete`、`table/field/view/role create·update·delete`、`advperm enable/disable`、`bitable create/copy` 等传 `--dry-run` 会报 `unknown flag`）。新命令的 dry-run 也尊重 `--format/--jq`（download-attachment 的 dry-run 始终打 stdout，不写 `--output`）。
-- **--format / --jq 输出控制（约 4 成命令支持，多为本轮新增）**：支持 `--format json|pretty|table|ndjson|csv`（默认 json）+ `--jq`（内置 gojq）的主要是本轮新增命令（`record batch-get`、`bitable update`、`dashboard`/`form`/`role member`/`workflow` 各命令等），可 `--jq '.items[].name'` 提取或 `--format table` 表格化。**大量旧命令不支持**：`record list/get/search/批量写`、`table/field/view/role list·CRUD`、`view-*-get/set`、`bitable create/copy/data-query/advperm`、`record download-attachment` 等——这些直接打印 JSON（部分用旧式 `-o json`），需要过滤时改用 `feishu-cli api ... --jq` 或外部 jq。
+- **--dry-run 预览（仅部分写命令支持）**：`--dry-run` 仅以下写命令可用——`dashboard`/`block` 写、`form`/`form field` 写、`workflow create/update/enable/disable`、`role member` 写、`record upload/download/remove-attachment`、`bitable update`。**其余写命令不支持**（`record batch-create/batch-update/upsert/delete`、`table/field/view/role create·update·delete`、`advperm enable/disable`、`bitable create/copy` 等传 `--dry-run` 会报 `unknown flag`）。支持 dry-run 的命令也尊重 `--format/--jq`（download-attachment 的 dry-run 始终打 stdout，不写 `--output`）。
+- **--format / --jq 输出控制（约 4 成命令支持）**：支持 `--format json|pretty|table|ndjson|csv`（默认 json）+ `--jq`（内置 gojq）的主要是 `record batch-get`、`bitable update`、`dashboard`/`form`/`role member`/`workflow` 各命令等，可 `--jq '.items[].name'` 提取或 `--format table` 表格化。**其余大量命令不支持**：`record list/get/search/批量写`、`table/field/view/role list·CRUD`、`view-*-get/set`、`bitable create/copy/data-query/advperm`、`record download-attachment` 等——这些直接打印 JSON（部分用旧式 `-o json`），需要过滤时改用 `feishu-cli api ... --jq` 或外部 jq。
 - **批量上限**：`record batch-create` / `batch-update` 单批 ≤200 条（官方契约）；`batch-delete` 单批 ≤500 条
 - **视图类型**：`view create --view-type` 可选值：`grid / kanban / gallery / gantt / calendar`
 - **附件命令为编排命令**：upload 走 `medias/upload_all` + `append_attachments`，download 走 `get_attachments` + `medias/{ft}/download`，单次 ≤50 个

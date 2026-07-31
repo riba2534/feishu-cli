@@ -1,12 +1,12 @@
 # 飞书 Markdown 兼容指南
 
-生成将导入飞书的 Markdown 前，按本指南检查。执行导入用 `feishu-cli-docs`，编辑已有文档用 `feishu-cli-docs`。
+生成将导入飞书的 Markdown 前，按本指南检查。执行导入见 `../workflow.md`，编辑已有文档见 `../../write/workflow.md`。
 
 ## 快速检查
 
 | 内容 | 必检项 |
 |---|---|
-| Mermaid | 禁花括号标签、禁 `par...and...end`、sequenceDiagram participant ≤ 8 |
+| Mermaid | 禁花括号标签、禁 `par...and...end`、sequenceDiagram participant 安全 ≤ 6（阈值详见 `mermaid-spec.md`） |
 | PlantUML | 无行首缩进、无 `skinparam`/`!define`、类图不写 `+ - # ~` 可见性 |
 | 表格 | 行 > 9 可导入同一 block；列 > 9 会拆列组；超大表建议 Sheet |
 | 图片 | `doc import` 默认上传；`doc add/content-update` 需传 `--upload-images` |
@@ -32,7 +32,7 @@
 
 1. Flowchart 标签不要写 `{}`。`A{判断}` 可以表达菱形，但标签文本里不要包含花括号。
 2. sequenceDiagram 不用 `par...and...end`，改成 `Note over A,B: 并行执行`。
-3. sequenceDiagram 参与者建议 ≤ 8，`alt/opt/loop` 不要嵌套太深。
+3. sequenceDiagram 参与者安全 ≤ 6（7-9 为警告区，阈值以 `mermaid-spec.md` 为准），`alt/opt/loop` 不要嵌套太深。
 4. 长标签换短句，避免 30+ 长消息叠加复杂结构。
 5. 状态图必须用 `stateDiagram-v2`。
 

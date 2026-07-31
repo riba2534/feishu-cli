@@ -9,7 +9,7 @@ description: >-
   feishu-cli-messaging。
 argument-hint: <calendar|task|tasklist|approval|attendance|okr> [args]
 user-invocable: true
-allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Read, Write
+allowed-tools: Bash(feishu-cli:*), Bash(./feishu-cli:*), Bash(jq:*), Read, Write
 ---
 
 # 飞书工作管理
@@ -30,6 +30,6 @@ allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Read, Write
 ## 执行规则
 
 1. 创建、修改、删除、审批通过/拒绝等操作会影响他人，执行前展示目标和关键参数。
-2. `task my`、审批任务动作和 `calendar rsvp` 必须使用 User Token；其他命令按各工作流说明选择身份。
+2. `task my`、`task search`、审批任务动作与查询（`approval task query` / `approval instance get`）和 `calendar rsvp` 必须使用 User Token；其他命令按各工作流说明选择身份。
 3. 时间统一使用带时区的 RFC3339；不要把全天事件和具体时段混用。
 4. 任务清单添加/移除任务使用 `task-add` / `task-remove`，不存在 `add-task` / `remove-task`。

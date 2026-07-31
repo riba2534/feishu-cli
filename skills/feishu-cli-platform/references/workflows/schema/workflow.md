@@ -191,7 +191,7 @@ feishu-cli api GET https://open.feishu.cn/open-apis/authen/v1/user_info --as use
 feishu-cli api GET '/open-apis/authen/v1/user_info?foo=bar' --as user
 ```
 
-### 与 `feishu-cli-shared` skill 的关系
+### 与 `feishu-cli-platform` 的 auth 工作流的关系
 
 如要让其他工具（curl/Python）复用 token 而不通过本命令，用 `feishu-cli auth token --as user/bot` 导出 token 字符串（见 `feishu-cli-platform` skill）。
 
@@ -216,6 +216,6 @@ feishu-cli api GET '/open-apis/authen/v1/user_info?foo=bar' --as user
 | 调 API 但没对应业务命令 / 想直接走 OpenAPI | **本 skill 介绍的 `feishu-cli api <method> <path>`**（v1.29+）|
 | 给 curl/Python 拿 token | `feishu-cli auth token --as user/bot`（详见 `feishu-cli-platform` skill） |
 | 查在线最新 schema、本地没收录 | 飞书 [OpenAPI Explorer](https://open.feishu.cn/api-explorer) |
-| 调"埋藏 API"（飞书文档站未收录） | 见 `skills/feishu-cli-platform/references/workflows/api/references/embedded-api-discovery.md`，已知 6 个埋藏 API |
+| 调"埋藏 API"（飞书文档站未收录） | 见 `../api/references/embedded-api-discovery.md`（相对本 workflow 目录），已知 6 个埋藏 API |
 | 申请 scope / 登录拿 User Token | `/feishu-cli-platform`（`auth check --scope` 预检、`auth login --domain --recommend` 按业务域申请） |
 | 发消息/文档/卡片等具体业务 | `/feishu-cli-messaging` / `/feishu-cli-docs` / `/feishu-cli-messaging` 等专用技能 |

@@ -6,25 +6,30 @@
 
 ## 目录
 
-- [职责边界](#与-feishu-cli-messaging-技能的职责边界)
+- [职责边界](#与-chat-工作流的职责边界)
 - [核心概念](#核心概念)
 - [消息类型选择](#消息类型选择)
 - [身份说明](#身份说明)
 - [发送命令](#发送命令)
 - [执行流程](#执行流程)
+- [权限要求](#权限要求)
+- [注意事项](#注意事项)
 - [错误处理](#错误处理)
+- [批量获取消息](#批量获取消息)
 - [资源下载](#下载消息资源)
 - [话题消息](#话题thread消息)
+- [参考文档](#参考文档)
+- [消息书签](#消息书签msg-flagv123-新增)
 
-## 与 feishu-cli-messaging 技能的职责边界
+## 与 chat 工作流的职责边界
 
-> **重要：CLI 路径 ≠ SKILL 归属。** `feishu-cli msg` 下的子命令同时被两个 SKILL 分管，**按动作类型划分**，不按 CLI 路径划分。
+> **重要：CLI 路径 ≠ 工作流归属。** `feishu-cli msg` 下的子命令按**动作类型**划分到本技能的不同子工作流，不按 CLI 路径划分。
 >
-> | 动作类型 | 子命令 | 归属 SKILL |
+> | 动作类型 | 子命令 | 归属工作流 |
 > | --- | --- | --- |
-> | **发送类**（本 SKILL 覆盖） | `send` / `reply` / `forward` / `merge-forward` / `urgent` / `flag` / `resource-download` | **feishu-cli-messaging** |
-> | **读取类**（请用 chat SKILL） | `history` / `list` / `get` / `mget` / `thread-messages` / `search-chats` / `read-users` / `pins` | **feishu-cli-messaging** |
-> | **互动类**（请用 chat SKILL） | `reaction` / `pin` / `unpin` / `delete` | **feishu-cli-messaging** |
+> | **发送类** | `send` / `reply` / `forward` / `merge-forward` / `urgent` / `flag` / `resource-download` | 本文档（`msg` 工作流） |
+> | **读取类** | `history` / `list` / `get` / `mget` / `thread-messages` / `search-chats` / `read-users` / `pins` | [`chat` 工作流](../chat/workflow.md) |
+> | **互动类** | `reaction` / `pin` / `unpin` / `delete` | [`chat` 工作流](../chat/workflow.md) |
 >
 > 端到端拉一段时间窗的群消息（含话题展开、名字反解、卡片解析）直接跑：
 > ```bash
@@ -105,7 +110,7 @@
 - **必需 User Token**：`msg flag` 收藏/书签子命令（`im:feed.flag:read/write`），见末尾"消息书签"章节。
 - **优先 User Token + Tenant 兜底**：`msg resource-download` 已登录时自动用 User Token 下载（要求你能看到该消息），未登录则尝试 App Token（要求 Bot 能看到该消息）。
 
-> 其他子命令（reaction/pin/delete/history/list/get/mget/thread-messages/search-chats）的 Token 策略见 **feishu-cli-messaging** 技能。
+> 其他子命令（reaction/pin/delete/history/list/get/mget/thread-messages/search-chats）的 Token 策略见 [`chat` 工作流](../chat/workflow.md)。
 
 ## 发送命令
 
@@ -295,7 +300,7 @@ feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
 
 卡片消息有三种发送方式：
 
-**方式一：完整 Card JSON（仅发送；复杂卡片先用 feishu-cli-messaging 生成）**
+**方式一：完整 Card JSON（仅发送；复杂卡片先按 [`card` 工作流](../card/workflow.md) 生成）**
 
 ```bash
 cat > /tmp/card.json << 'EOF'
@@ -355,7 +360,7 @@ feishu-cli msg send \
 
 本技能只负责发送 interactive 消息，不负责设计卡片 JSON。
 
-- 结构化或美观卡片必须先使用 feishu-cli-messaging 生成 v2 JSON（schema=2.0）。
+- 结构化或美观卡片必须先按 [`card` 工作流](../card/workflow.md) 生成 v2 JSON（schema=2.0）。
 - 本技能发送：feishu-cli msg send --msg-type interactive --content-file <card.json>。
 - 不要在本技能内新写 v1 elements/action/note 卡片模板；旧 v1 示例仅用于历史兼容排查。
 
@@ -380,7 +385,7 @@ feishu-cli msg urgent om_xxx --user-id-type open_id --user-ids ou_xxx,ou_yyy
 1. **确定接收者**：默认 `user@example.com`（email），或从上下文获取
 2. **选择消息类型**：
    - 用户明确指定类型 → 使用指定类型
-   - 结构化或美观通知 → 先用 `feishu-cli-messaging` 构造 JSON，再用 `interactive` 发送
+   - 结构化或美观通知 → 先按 [`card` 工作流](../card/workflow.md) 构造 JSON，再用 `interactive` 发送
    - 用户明确要求纯文本/富文本，或内容很短 → 使用 `text` / `post`
 3. **准备内容**：纯文本用 `--text`；Markdown 用 `--markdown`；卡片 JSON 用 `--content-file`；
    图片/附件/语音/视频分别用 `--image` / `--file` / `--audio` / `--video + --video-cover`
@@ -419,7 +424,7 @@ feishu-cli msg urgent om_xxx --user-id-type open_id --user-ids ou_xxx,ou_yyy
 
 ## 批量获取消息
 
-> 读消息详情和批量获取消息请使用 **feishu-cli-messaging** 技能。`msg get/list/history/mget` 默认请求 `user_card_content` 并额外提取 `card_texts`，该行为和排错说明维护在 chat skill 中，避免发送与读取职责混在一起。
+> 读消息详情和批量获取消息见 [`chat` 工作流](../chat/workflow.md)。`msg get/list/history/mget` 默认请求 `user_card_content` 并额外提取 `card_texts`，该行为和排错说明维护在 `chat` 工作流中，避免发送与读取职责混在一起。
 
 ## 下载消息资源
 
@@ -483,13 +488,13 @@ feishu-cli msg reply om_xxx --text "这里开个话题" --reply-in-thread
 
 ### 话题回复列表
 
-获取话题回复属于读取消息，请使用 **feishu-cli-messaging** 技能。`omt_xxx` 可用于
+获取话题回复属于读取消息，见 [`chat` 工作流](../chat/workflow.md)。`omt_xxx` 可用于
 `msg thread-messages` 等读取/转发能力；话题内发送使用 `msg reply <om_xxx>`。
 
 ## 参考文档
 
 - `references/message_content.md`：各消息类型的 content JSON 结构详解
-- `references/card_schema.md`：interactive 发送格式与历史卡片排障；新增卡片构造优先用 `feishu-cli-messaging`
+- `references/card_schema.md`：interactive 发送格式与历史卡片排障；新增卡片构造见 [`card` 工作流](../card/workflow.md)
 
 ## 消息书签（msg flag，v1.23+ 新增）
 

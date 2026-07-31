@@ -8,7 +8,7 @@ description: >-
   消息卡片由 feishu-cli-messaging 构造和发送；Markdown 图表导入由 feishu-cli-docs 执行。
 argument-hint: <dataviz|board|slides|htmlbox|apps> [args]
 user-invocable: true
-allowed-tools: Bash(feishu-cli:*), Bash(python3:*), Bash(node:*), Bash(npm:*), Read, Write
+allowed-tools: Bash(feishu-cli:*), Bash(./feishu-cli:*), Bash(python3:*), Bash(node:*), Bash(npm:*), Read, Write
 ---
 
 # 飞书可视化与展示

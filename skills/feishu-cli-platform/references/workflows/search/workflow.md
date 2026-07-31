@@ -30,7 +30,7 @@ feishu-cli auth check --scope "search:docs:read search:message search:app"
 feishu-cli auth login --scope "search:docs:read search:message" --json
 ```
 
-首行 stdout 输出 `{"event":"device_authorization","verification_uri_complete":"...","user_code":"...","expires_in":240,...}`。将 `verification_uri_complete` 展示给用户，等用户在浏览器完成授权后后台进程自动退出，第二行 stdout 输出 `{"event":"authorization_complete",...}`。
+首行 stdout 输出 `{"event":"device_authorization","verification_uri_complete":"...","user_code":"...","expires_in":240,...}`（授权链接有效期以服务端返回的 `expires_in` 为准，CLI 兜底 240s）。将 `verification_uri_complete` 展示给用户，等用户在浏览器完成授权后后台进程自动退出，第二行 stdout 输出 `{"event":"authorization_complete",...}`。
 
 如果 `auth check` 返回 `missing=[...]`，说明应用还没开通所需权限。**feishu-cli 不做权限申请自动化**——引导用户自己去飞书开放平台：
 

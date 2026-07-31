@@ -8,6 +8,8 @@
 **`open.feishu.cn/document/...` 官方文档站并不全**。至少有以下 API 在文档站 0 命中，
 但在飞书官方开源工程（本地镜像 `~/airepo/cli`）源码里被正常调用：
 
+> 注：`~/airepo/cli` 与 `~/airepo/feishu-open-docs` 是作者本机的镜像仓库路径。本地无这两个镜像仓库时跳过第 2/3 步，直接走在线查询兜底。
+
 | 接口 | 用途 |
 |---|---|
 | `POST /docs_ai/v1/documents` | **AI 文档创建** |

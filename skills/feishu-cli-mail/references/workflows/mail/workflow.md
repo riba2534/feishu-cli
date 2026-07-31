@@ -10,7 +10,7 @@
 ## 前置条件
 
 - **认证**：所有 mail 命令都需要 **User Access Token**（执行 `feishu-cli auth login` 登录）
-- **预检**：`feishu-cli auth check --scope "mail:user_mailbox:readonly"` 可验证 scope
+- **预检**：按「[权限要求](#权限要求)」节的三档分级预检（仅签名 / 消息只读 / 写类）执行对应 `auth check`，不要只检最弱 scope
 
 ## 命令速查
 
@@ -61,7 +61,7 @@ feishu-cli mail signature --detail 7012345678901234567
 | `mail draft-edit` | 编辑已有草稿（全量覆盖） |
 | `mail reply` | 回复邮件（自动 Re: 前缀 + 引用块 + In-Reply-To） |
 | `mail reply-all` | 全部回复（包含原邮件 To 和 CC 的所有人，**自动排除自己**） |
-| `mail forward` | 转发邮件（自动 Fwd: 前缀 + 原文；正文 text-only） |
+| `mail forward` | 转发邮件（自动 Fwd: 前缀 + 原文；body 限制见顶部「首期限制」） |
 | `mail draft-send` | 发送一封已存在的草稿（不可撤销，需 `--confirm-send` 确认） |
 | `mail message-modify` | 批量给邮件加/删标签、移动文件夹（单次 ≤20 封，标签操作可逆） |
 | `mail message-trash` | 批量软删除邮件（移入废纸篓，可恢复；单次 ≤20 封，需 `--yes` 或交互确认） |
@@ -151,8 +151,8 @@ DRAFT_ID=$(feishu-cli mail draft-create --to user@example.com --subject "合同"
 # 2. 审阅后修改
 feishu-cli mail draft-edit --draft-id $DRAFT_ID --to user@example.com --subject "合同 v2" --body "修订后内容"
 
-# 3. 通过 mail send 重建为真发送（draft-edit 只更新不发送）
-# 或在飞书 Web 上手动发送
+# 3. 确认后直接发送该草稿（draft-edit 只更新不发送；draft-send 不可撤销）
+feishu-cli mail draft-send --draft-id $DRAFT_ID --confirm-send
 ```
 
 ## 权限要求
@@ -186,14 +186,14 @@ feishu-cli mail draft-edit --draft-id $DRAFT_ID --to user@example.com --subject 
 ## 注意事项
 
 - **默认草稿**：`mail send` 默认只保存草稿（安全兜底）。必须显式加 `--confirm-send` 才会真正发送邮件。
-- **HTML 自动检测**：`send / draft-create / draft-edit / reply / reply-all` 如果 `--body` 含以下任一标签会自动按 HTML 发送：`<html>` / `<body>` / `<div>` / `<p>` / `<br>` / `<b>` / `<i>` / `<a ` / `<table>` / `<h1>` / `<h2>` / `<h3>`。可用 `--plain-text` 或 `--html` 强制指定。`forward` 当前没有 `--html`/`--plain-text` 参数。
+- **HTML 自动检测**：`send / draft-create / draft-edit / reply / reply-all` 如果 `--body` 含以下任一标签会自动按 HTML 发送：`<html>` / `<body>` / `<div>` / `<p>` / `<br>` / `<b>` / `<i>` / `<a ` / `<table>` / `<h1>` / `<h2>` / `<h3>`。可用 `--plain-text` 或 `--html` 强制指定。`forward` 的 body 类型限制见顶部「首期限制」块。
 - **引用块**：`reply/reply-all` 会自动把原邮件 body 作为 `> ` 引用块附加到回复正文后。
 - **发件人识别**：不传 `--from` 时，从 mailbox profile（`GET /profile`）自动读取 `primary_email_address` 和 `name`。
 - **EML 格式**：所有发送命令底层都构造 RFC 5322 格式 EML，经过 base64 URL-safe 编码后提交给 `/drafts` API。
 - **Mailbox 定位**：`--mailbox` 默认 `me`（当前登录用户），也可以传具体邮箱地址（前提是当前 Token 有权限）。
 - **subject 去重**：`reply` 自动避免 `Re: Re:` 重复；`forward` 自动避免 `Fwd: Fwd:` 重复。
 - **In-Reply-To / References**：`reply/reply-all` 自动从原邮件的 `smtp_message_id` / `references` 继承，确保邮件客户端正确展示对话线程。
-- **普通附件暂不支持**：首期 EML builder 仍不处理普通附件；CID 内联图片已由 `mail send --inline-images-auto-scan` 支持，仅在 HTML body 下生效。
+- **普通附件与 CID 内联图**：以顶部「首期限制」块为准。
 - **批量 messages 上限**：取决于飞书 API 端；本命令不做数量校验，但通常建议 ≤50 条。
 
 ## 高级能力（v1.23+ mail-advanced）
@@ -233,6 +233,8 @@ feishu-cli mail template list -o json
 ```bash
 feishu-cli auth check --scope "mail:user_mailbox:readonly mail:user_mailbox.message:modify"
 ```
+
+> 注意：部分租户暂未开放 template scope（CLI help 原话「scope 暂未开放」）。`auth check` 不通过属租户侧未开放，不要反复重试。
 
 ### 未做（暂未 MVP）
 

@@ -137,6 +137,8 @@ feishu-cli markdown diff --file-token boxcnxxx --file ./local.md --format table 
 feishu-cli markdown diff --file-token boxcnxxx --file ./local.md -o json   # 兼容写法，等价 --format json
 ```
 
+> **版本对比仅适用 docx/sheet/bitable**：Drive 原生 `.md` 的覆盖（`markdown overwrite`）是原地替换，不产生数字版本；`--from-version` / `--to-version`（模式 2/3）仅对 docx/sheet/bitable 等有版本记录的类型有效，对 `.md` 文件会 404。`.md` 场景请用模式 1（远端最新 vs 本地文件）。
+
 **关键 flag**：
 
 | flag | 说明 |

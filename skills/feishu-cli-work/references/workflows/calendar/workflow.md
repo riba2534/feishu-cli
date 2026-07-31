@@ -300,7 +300,7 @@ feishu-cli calendar attendee add --calendar-id <cal_id> --event-id <event_id> --
 - `--duration 30` = 30 **分钟**（不是秒、不是小时）
 - `--duration 30m` = 30 分钟
 - `--duration 1h30m` = 90 分钟
-- `--duration 1.5h` = **报错**（time.ParseDuration 不接受小数小时，要写 `1h30m`）
+- `--duration 1.5h` = 合法（time.ParseDuration 接受小数，= 90 分钟）；过小值如 `0.5m` 会被截断为 0 分钟，需避免
 - 范围 1-1440，超过 24 小时直接报错
 
 ### 4. start/end 默认值容易踩
@@ -329,7 +329,7 @@ feishu-cli calendar attendee add --calendar-id <cal_id> --event-id <event_id> --
 | 朴素 freebusy 查询单人/单时段 | 本工作流的 `references/basic-commands.md` |
 | 加/删 attendee、查 attendee 列表 | 本工作流的 `references/basic-commands.md` |
 | event-reply 老接口（位置参数版） | 本工作流的 `references/basic-commands.md` |
-| 给参会人发会议提醒消息 | `feishu-cli-messaging` + `feishu-cli-messaging` |
+| 给参会人发会议提醒消息 | `feishu-cli-messaging`（msg + card 工作流） |
 | 拿 `ou_xxx` open_id（email/user_id → open_id 转换） | `feishu-cli-platform` 的 directory 工作流 |
 
 ## 权限速查

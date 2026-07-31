@@ -1,6 +1,6 @@
 # 飞书会话浏览与管理
 
-本技能处理"读聊天记录 / 管群 / 消息互动"。发送新消息走 `feishu-cli-messaging`；构造卡片走 `feishu-cli-messaging`。
+本技能处理"读聊天记录 / 管群 / 消息互动"。发送新消息走 [`msg` 工作流](../msg/workflow.md)；构造卡片走 [`card` 工作流](../card/workflow.md)。
 
 ## 选哪条路径
 
@@ -66,7 +66,7 @@ python3 skills/feishu-cli-messaging/references/workflows/chat/scripts/fetch_chat
 1. `msg history` 用 `ByCreateTimeAsc + start-time + end-time`，按 page_token 翻页到 `has_more=false`；
 2. 收集所有非空 `thread_id`，对每个 tid 调 `msg thread-messages` 展开（不传 `-o json`，因为它默认就是 JSON 且加了反报错）；
 3. **名字反解**：首选顶层 `sender_names`（v1.36+ 服务端回填，含 Bot / 外部用户）；`mentions[].name` 补 @到的人；`user info` 仅极端兜底（外部用户 41050 静默跳过）；
-5. 渲染时同时处理：撤回消息（content 为字符串非 JSON）、post 双结构、system 模板占位符、interactive v2 卡片递归。
+4. 渲染时同时处理：撤回消息（content 为字符串非 JSON）、post 双结构、system 模板占位符、interactive v2 卡片递归。
 
 如果脚本不能用，看下面的"手工拉群消息"小节，知道每步在做什么再退化到 jq + bash。
 

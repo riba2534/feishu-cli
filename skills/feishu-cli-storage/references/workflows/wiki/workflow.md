@@ -22,7 +22,7 @@ feishu-cli wiki update <node_token> --title "新标题"
 feishu-cli wiki move <node_token> --target-space <space_id>
 feishu-cli wiki node-copy --space-id <src> --node-token <node> --target-space-id <dst>
 feishu-cli wiki space-create --name "新知识库"
-feishu-cli wiki member add <space_id> --member-id ou_xxx --member-type openid --role editor
+feishu-cli wiki member add <space_id> --member-id ou_xxx --member-type openid --role member   # --role 枚举仅 admin/member
 ```
 
 删除节点、成员或整个空间前必须确认目标。删除空间只有显式 `--yes` 才执行，并会轮询异步任务：

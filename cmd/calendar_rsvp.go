@@ -26,7 +26,7 @@ var calendarRsvpCmd = &cobra.Command{
   --rsvp-status        兼容别名，等价于 --action
 
 权限:
-  calendar:calendar.event:reply（推荐 User Token，以本人身份答复）
+  calendar:calendar.event:reply（必需 User Token，以本人身份答复；未登录时报错）
 
 示例:
   # 接受主日历上某个邀请
@@ -105,7 +105,7 @@ func init() {
 	calendarRsvpCmd.Flags().String("event-id", "", "日程 ID（必填）")
 	calendarRsvpCmd.Flags().String("action", "", "答复动作: accept/decline/tentative（必填）")
 	calendarRsvpCmd.Flags().String("rsvp-status", "", "答复动作，兼容别名：accept/decline/tentative")
-	calendarRsvpCmd.Flags().String("user-access-token", "", "User Access Token（推荐，以本人身份答复）")
+	calendarRsvpCmd.Flags().String("user-access-token", "", "User Access Token（必需，可显式传入或经 auth login 解析）")
 
 	mustMarkFlagRequired(calendarRsvpCmd, "event-id")
 }

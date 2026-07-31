@@ -19,7 +19,7 @@
 3. **按职能配色**。categorical（身份）/ ordinal（有序档位）/ sequential（量级）/
    diverging（极性）/ status（状态），每种职能一条规则，色值一律取自
    `references/palette.md`，**不自创色值、不循环生成第 9 个色**。
-4. **校验色板 —— 跑脚本，不要目测**（`scripts/` 相对本技能根目录）：
+4. **校验色板 —— 跑脚本，不要目测**（`scripts/` 相对本 workflow 目录）：
    ```bash
    node scripts/validate_palette.js
    node scripts/validate_palette.js "#3370ff,#d99904,..." --mode light
@@ -45,10 +45,10 @@
 
 | 需求特征 | 管线 | 技能 |
 |---|---|---|
-| 要"动"：交互 tooltip、动画、实时刷新、3D、复杂 dashboard | HTML 小组件（ECharts 等） | `feishu-cli-visual` |
+| 要"动"：交互 tooltip、动画、实时刷新、3D、复杂 dashboard | HTML 小组件（ECharts 等） | `../htmlbox/workflow.md` |
 | 图表出现在**消息/通知卡片**里 | 卡片 chart 组件（VChart） | `feishu-cli-messaging` |
 | 图表是**文档的一部分**，随 Markdown 批量导入，静态即可 | Mermaid → 画板 | `feishu-cli-docs` |
-| 单独一张**画板**：自由视觉/架构图/信息图，节点可编辑 | SVG → 原生节点 等 5 路径 | `feishu-cli-visual` |
+| 单独一张**画板**：自由视觉/架构图/信息图，节点可编辑 | SVG → 原生节点 等 5 路径 | `../board/workflow.md` |
 | 只有一两个数字 + 状态 | 不画图：卡片大数字/fields，文档 Callout | `feishu-cli-messaging` / `feishu-cli-docs` |
 
 各管线可控度不同，规范落地深度也不同：

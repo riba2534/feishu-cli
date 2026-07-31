@@ -13,7 +13,7 @@ description: >-
   feishu-cli-work；出现视频会议、妙记、minute、录制或逐字稿时应使用 feishu-cli-meetings。
 argument-hint: <auth|config|api|schema|search|user|dept> [args]
 user-invocable: true
-allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Bash(curl:*), Bash(python3:*), Read, Write
+allowed-tools: Bash(feishu-cli:*), Bash(./feishu-cli:*), Bash(jq:*), Bash(curl:*), Bash(python3:*), Read, Write
 ---
 
 # 飞书平台能力

@@ -10,8 +10,10 @@
 - [常用命令](#常用命令)
 - [Token 解析策略](#token-解析策略)
 - [业务域登录](#业务域登录)
-- [排错与 doctor](#排错)
+- [排错](#排错)
+- [环境诊断（doctor）](#环境诊断doctor)
 - [多 App Profile](#多-app-profileprofile)
+- [Agent 约定](#agent-约定)
 
 ## 推荐流程（人工 / 交互终端）
 
@@ -48,13 +50,13 @@ feishu-cli auth login --device-code <device_code> --json
 
 要点：
 - **scope 自动恢复**：第二步从 device_code 缓存读回第一步申请的 scope，**不用也不能**再传 `--scope/--domain/--recommend`（重传会报错）。
-- **device_code 有效期约 10 分钟**，超时需从第一步重来；每次重新跑第一步都会作废上一个链接。
+- **device_code 有效期以服务端返回的 `expires_in` 为准（CLI 兜底 240s）**，超时需从第一步重来；每次重新跑第一步都会作废上一个链接。
 - **不要用短 timeout 反复重试**第一步——每次重启都会让上一个授权链接失效。
 
 若 harness 支持后台任务，也可一步阻塞 + 后台运行：
 
 ```bash
-# run_in_background 跑：阻塞轮询最长约 10 分钟，stdout 逐行出 JSON 事件
+# run_in_background 跑：阻塞轮询到授权完成或 device_code 过期（以服务端返回的 expires_in 为准，CLI 兜底 240s），stdout 逐行出 JSON 事件
 feishu-cli auth login --recommend --json
 ```
 
@@ -67,7 +69,7 @@ feishu-cli auth login --recommend --json
 **`device_authorization`**（第一步 / 阻塞模式开头）：
 
 ```json
-{"event":"device_authorization","verification_uri_complete":"https://accounts.feishu.cn/oauth/v1/device/verify?flow_id=...&user_code=XXXX-XXXX","user_code":"XXXX-XXXX","device_code":"...","expires_in":600,"interval":5,"requested_scopes":["..."]}
+{"event":"device_authorization","verification_uri_complete":"https://accounts.feishu.cn/oauth/v1/device/verify?flow_id=...&user_code=XXXX-XXXX","user_code":"XXXX-XXXX","device_code":"...","expires_in":240,"interval":5,"requested_scopes":["..."]}
 ```
 
 → 把 `verification_uri_complete`（已含 user_code，可直接点开）**原样**发给用户，不要做任何 URL 编码/改写。
@@ -190,7 +192,7 @@ CLI 把命令分成四类；另有少量只接受显式 flag 的严格命令：
 - **sheet 全家桶**（项目历史就是这种行为）：`sheet read/export/get/meta/list-sheets/find/replace/write/append/insert/delete/clear/import-md/dropdown/filter/filter-view/protect/style/merge/...`，所有 sheet 子命令都走 fallback，登录后默认 User、未登录 Tenant 兜底
 - wiki 读：`wiki get/nodes/spaces/space-get/export/export-tree`、`wiki member list`
 - drive：`drive pull/push/status`
-- 其他：`user read`
+- 其他：`user info/search/list`
 
 ### 2. 写类 / 默认 Bot 身份（`resolveOptionalUserToken`）
 
@@ -212,11 +214,14 @@ CLI 把命令分成四类；另有少量只接受显式 flag 的严格命令：
 | `chat get/update/delete` | `im:chat:*` |
 | `approval task query/approve/reject/transfer` + `instance get/cancel/cc` | `approval:task` / `approval:instance:*` |
 | `task my` (`my_tasks`) | `task:task:read` |
+| `task search` | `task:task:read` |
 | `vc search/notes/recording`、`minutes *` | `vc:*`、`minutes:*` 相关 scope |
 | `mail *` | `mail:user_mailbox:*` |
-| `drive upload/download/export/import/move/add-comment/task-result/search` | `drive:drive`、`drive:file:*`、`search:docs:read` |
+| `drive upload/download/export/import/move/add-comment/task-result/search/secure-label` | `drive:drive`、`drive:file:*`、`search:docs:read` |
 | `calendar rsvp` | `calendar:calendar.event:reply` |
 | `markdown create/fetch/overwrite/diff` | `drive:file:upload/download/content:read` 或 `drive:drive` |
+
+> 本表为速查非穷举，以各命令 `--help` 为准。
 
 `markdown create/fetch/overwrite/diff` 使用 Drive scope：创建/覆盖需要 `drive:file:upload`（或
 `drive:drive`），读取/diff 需要 `drive:file:download` 或 `drive:file.content:read`（或 `drive:drive`）。
@@ -225,8 +230,9 @@ CLI 把命令分成四类；另有少量只接受显式 flag 的严格命令：
 
 ### 4. 身份可选 · `--as bot|user|auto`（`resolveIdentityToken`）
 
-`bitable` 全家桶使用这一模式。`auto` 默认优先 User Token、缺失时回落 Tenant Token；`bot` 强制
-Tenant Token；`user` 强制 User Token，缺失即报错。`chat member` 和 `msg history` 也提供同名
+`bitable` 与 `okr` 全家桶使用这一模式。`auto` 优先 User Token、缺失时回落 Tenant Token；`bot` 强制
+Tenant Token；`user` 强制 User Token，缺失即报错。默认值不同：**bitable 默认 `auto`，okr 默认 `--as bot`**
+（OKR 的 user scope 通常未随默认登录域授予）。`chat member` 和 `msg history` 也提供同名
 身份选择，但使用各自的解析函数，边界以命令帮助为准。
 
 ### 严格 flag-only

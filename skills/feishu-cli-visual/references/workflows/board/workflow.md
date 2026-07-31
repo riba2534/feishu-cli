@@ -252,7 +252,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 | `feishu-cli board update <board_id> nodes.json` | 更新画板（覆盖模式） | `--overwrite` `--snapshot` `--dry-run` `--stdin` |
 | `feishu-cli board delete <board_id> --all` | 删全部节点 | `--node-ids` |
 | `feishu-cli board clone <src> <dst>` | 克隆画板 | `--batch-size` `--interval` `--filter-types` `--dry-run` |
-| `feishu-cli board upload-image <board_id> photo.png` | 图片转 image 节点 | `--x` `--y` `--width` `--height` `--dry-run` |
+| `feishu-cli board upload-image <board_id> photo.png` | 图片转 image 节点（v1.38.3+ 支持 jpeg/png/gif/webp/bmp/tiff，只读文件头取尺寸；EXIF Orientation 5-8 旋转的 JPEG——手机竖拍照片最常见——无法自动取尺寸，会报错要求显式 `--width/--height`） | `--x` `--y` `--width` `--height` `--dry-run` |
 | `feishu-cli board lint <board_id>` | 几何质检 | 无 |
 | `feishu-cli board export-code <board_id>` | 反向导出 SVG | `--output-path` `--merge` |
 | `feishu-cli board svg-export <board_id> --output-path board.svg` | 服务端整板渲染 SVG 快照 | `--output-path` |
@@ -330,7 +330,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 - [ ] 节点数对：`feishu-cli board nodes <id> | jq '.data.nodes | length'`
 - [ ] z_index 最小是大背景：见 `references/pitfalls.md` 通用诊断 Step 2
 - [ ] viewBox 无溢出：`max(x+w) ≤ viewBox_w`
-- [ ] lint 质量分 ≥ 0.85：`feishu-cli board lint <id>`
+- [ ] lint 质量分 ≥ 0.85：`feishu-cli board lint <id>`；节点 >600 时 over_capacity 固定扣 0.2 属预期，按 ≥ 0.65 评估
 
 任何一项不通过，回 `references/pitfalls.md` 排障。
 
@@ -342,6 +342,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 |------|-------|
 | `references/svg-workflow.md` | 走路径 C 时必读（5 步管道详解 + 翻译映射表） |
 | `references/mermaid-engines.md` | 走路径 A/B 时必读（服务端 vs 本地引擎选型） |
+| `references/plantuml-safe-subset.md` | 走路径 A 用 PlantUML 时必读（服务端可稳定解析的安全语法子集） |
 | `references/pitfalls.md` | ⭐ 实战必读（z_index / viewBox / 翻倍三大陷阱排障） |
 | `references/examples-real.md` | 设计参考（14 张实战图的模式 + SVG 元素 + 节点密度） |
 | `references/schema.md` | 走路径 E 时必读（节点 JSON 权威参考） |
@@ -351,6 +352,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 | `references/typography.md` | 文字排版参考（字号层级） |
 | `references/content.md` | 信息量规划（避免过载） |
 | `references/node-api.md` | API 端点详解、错误码排障、典型工作流 |
+| `references/basic-commands.md` | 需要单条 board 命令的完整参数与示例时查（image 下载 / import 变体等基础操作详解） |
 
 ---
 

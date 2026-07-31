@@ -1,6 +1,6 @@
 # 飞书文档写入
 
-本技能负责创建和编辑飞书 docx。Markdown 文件导入创建文档也可直接用 `feishu-cli-docs`；只读/导出走 `feishu-cli-docs` / `feishu-cli-docs`。
+本技能负责创建和编辑飞书 docx。Markdown 文件导入创建文档见 `../import/workflow.md`；只读/导出走 `../read/workflow.md` / `../export/workflow.md`。
 
 ## 新建文档
 
@@ -77,7 +77,7 @@ feishu-cli doc content-update <document_id> --mode append \
 
 关键规则：用户说“修改/替换/更新某段”时用 `replace_range` 或 `replace_all`，不要 append 导致重复。
 
-`--table-column-width`（content-update / add 通用，默认 `auto`）：`auto` 按内容启发式 | `fixed` 固定宽度 | `N1,N2,...` 像素列表（`*` 表示该列走 auto）。仅 Markdown 内容类型生效；也可在表格上方写注释 `<!-- feishu-colwidth: 80,200,*,30% -->` 覆盖（注释优先级高于 flag）。
+`--table-column-width`（content-update / add 通用，默认 `auto`）：控制 Markdown 表格列宽，仅 Markdown 内容类型生效；取值与 `<!-- feishu-colwidth: ... -->` 注释的完整规则（单位/优先级/clamp）以 `../import/references/doc-guide.md` 表格章节为权威。
 
 ## Markdown 图片
 

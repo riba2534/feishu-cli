@@ -4,14 +4,7 @@
 
 ## 1. TOKEN 与 doc-type 匹配
 
-| Token 前缀 | 应使用的 doc-type |
-|------------|------------------|
-| `doxcn` | docx |
-| `doccn` | doc |
-| `shtcn` | sheet |
-| `bascn` | bitable |
-| `wikcn` | wiki |
-| `fldcn` | folder |
+前缀 → doc-type 对照见主工作流 [`../workflow.md`](../workflow.md) 的「Token 前缀对应关系」表。
 
 如果 Token 无前缀或前缀不明确，需用户手动确认文档类型。
 

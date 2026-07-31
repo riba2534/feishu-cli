@@ -265,7 +265,7 @@ feishu-cli msg send \
 
 ## interactive（卡片消息）
 
-卡片消息是最复杂的消息类型，支持三种发送方式。发送格式与历史排障见 `card_schema.md`；新增卡片 JSON 的设计与模板请用 `feishu-cli-messaging`。
+卡片消息是最复杂的消息类型，支持三种发送方式。发送格式与历史排障见 `card_schema.md`；新增卡片 JSON 的设计与模板见 [`card` 工作流](../../card/workflow.md)。
 
 ### 方式一：card_id（引用已创建的卡片）
 

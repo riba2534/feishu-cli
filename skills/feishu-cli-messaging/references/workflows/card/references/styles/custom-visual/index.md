@@ -1,8 +1,3 @@
----
-name: custom-visual-card-style
-description: feishu-cli-messaging card workflow 的自定义视觉主题指南。用于个人主页、作品集、品牌页、团队名片、暗黑科技风、节日贺卡、海报式、网页/落地页式等视觉卡片。
----
-
 # 自定义视觉卡片
 
 本文件中的数字、日期、标题和文案只演示布局，不是可发送事实。生成业务卡时必须替换为用户提供

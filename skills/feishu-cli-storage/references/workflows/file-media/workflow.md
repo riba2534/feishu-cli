@@ -12,12 +12,14 @@ feishu-cli file download <file_token> -o ./report.pdf
 feishu-cli file mkdir "新文件夹" --parent fldxxx
 feishu-cli file move <file_token> --target fldxxx --type file
 feishu-cli file copy <file_token> --target fldxxx --type file
-feishu-cli file delete <file_token> --type file
+feishu-cli file delete <file_token> --type file --force
 feishu-cli file version list <file_token> --obj-type docx
 feishu-cli file version revert <file_token> <version>
 feishu-cli file meta <token> --doc-type docx
 feishu-cli file stats <file_token> --doc-type docx
 ```
+
+`file delete` 默认交互确认（y/N）；非交互场景（Agent/管道）stdin 关闭时会打印「操作已取消」并以 exit 0 结束（**静默未删除**），因此脚本一律带 `--force`。
 
 `file version revert` 把文件回滚到指定历史版本（底层 `POST /open-apis/drive/v1/files/{file_token}/revert`，
 请求体 `{"version": version}`）：

@@ -145,6 +145,7 @@ members.json 格式（顶层为 JSON 数组）：
 
 ```bash
 feishu-cli perm transfer-owner <TOKEN> \
+  [--doc-type <DOC_TYPE>] \
   --member-type <MEMBER_TYPE> \
   --member-id <MEMBER_ID> \
   [--notification] \
@@ -155,6 +156,7 @@ feishu-cli perm transfer-owner <TOKEN> \
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
+| `--doc-type` | docx | 文档类型（docx/sheet/bitable 等），须与 TOKEN 类型匹配 |
 | `--notification` | true | 通知新所有者 |
 | `--remove-old-owner` | false | 移除原所有者权限 |
 | `--stay-put` | false | 文档保留在原位置 |
@@ -323,6 +325,8 @@ feishu-cli perm transfer-owner <TOKEN> \
   --member-id user@example.com \
   --notification
 ```
+
+仓库约定：授权邮箱按 `FEISHU_OWNER_EMAIL` 环境变量 → `~/.feishu-cli/config.yaml` 的 `owner_email` → 提示用户设置的顺序解析；第 2 步 `transfer-owner` 仅当 `transfer_ownership: true`（或 `FEISHU_TRANSFER_OWNERSHIP=true`）时执行。
 
 ## 错误排障
 

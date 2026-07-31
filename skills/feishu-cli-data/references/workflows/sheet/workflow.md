@@ -2,7 +2,7 @@
 
 `feishu-cli sheet` 子命令组的高级能力——**筛选视图 CRUD + 筛选条件 CRUD** + **单元格下拉菜单 CRUD** + **浮动图片 / 单元格写图** + **批量样式**。这些高级能力均已在 `feishu-cli` 原生支持。
 
-> **范围划分**：基础读写（`sheet read` / `write` / `style` / `add-rows` / `add-sheet` 等）和 V3 富文本走主命令 `feishu-cli sheet` / `feishu-cli bitable`，本 skill **覆盖 filter-view（含 condition）+ dropdown + image + batch-set-style**。其他子命令查询 `feishu-cli sheet --help`。
+> **范围划分**：基础读写（`sheet read` / `write` / `style` / `add-rows` / `add-sheet` 等）和 V3 富文本走主命令 `feishu-cli sheet` / `feishu-cli bitable`，本 skill **覆盖 filter-view（含 condition）+ dropdown + image + batch-set-style**。其他子命令查询 `feishu-cli sheet --help`；需要基础读写与 Markdown 互转（`import-md` / `export --format markdown`）的用法示例时读 `references/basic-commands.md`。
 
 ## 前置条件
 
@@ -197,7 +197,7 @@ feishu-cli sheet filter-view list --token $TOKEN --sheet-id $SHEET -o json | \
 ## 踩坑
 
 - **`--options` / `--options-json` 互斥**：同时传会报错 `--options 和 --options-json 不能同时使用，请选其一`；含逗号的选项必走 `--options-json`，否则会被 CSV 切碎
-- **dropdown 选项数量 ≤ 500 项**：飞书 V2 dataValidation 单次最多 500 个 list 选项（见 `internal/client/sheets.go:2331`），超出 API 直接报错；批量场景请按业务维度拆多列下拉
+- **dropdown 选项数量 ≤ 500 项**：飞书 V2 dataValidation 单次最多 500 个 list 选项（CLI 在 `internal/client/sheets.go` 侧预校验），超出 API 直接报错；批量场景请按业务维度拆多列下拉
 - **dropdown 每个选项 ≤ 100 字符**：单选项超 100 字符会被服务端拒；如果用 `--options-json` 注入长文案务必先截断或换成"短码 + 注释列"模式
 - **dropdown `--range` 必须带 `!` 前缀**：不带前缀直接报错（`--range 必须包含 sheetId 前缀`），不像 filter-view 会自动补
 - **`--colors` 长度必须 = options 长度**：例如 3 个选项就要 3 个颜色，少一个报错 `--colors 长度(X) 必须与选项数(Y) 一致`；传 colors 自动开启 `highlightValidData: true`
@@ -221,7 +221,7 @@ feishu-cli sheet filter-view list --token $TOKEN --sheet-id $SHEET -o json | \
 | 工作表管理 | `add-sheet` / `copy-sheet` / `delete-sheet` |
 | 单范围样式 / 合并 / 保护 | `style` / `merge` / `unmerge` / `protect` / `unprotect`（多范围批量样式走本 skill `batch-set-style`） |
 | 查找 / 替换 / 简单筛选 | `find` / `replace` / `filter`（注意：与 `filter-view` 不同，`filter` 是临时筛选） |
-| 导出 / Markdown 导入 | `export`（XLSX/CSV/MD）/ `import-md`（参考 `feishu-cli-work`） |
+| 导出 / Markdown 导入 | `export`（XLSX/CSV/MD）/ `import-md`（用法见 `references/basic-commands.md`） |
 | 浮动图片完整 CRUD | `image add/get/update/list/delete/media-upload/write-image`（示例见上文） |
 | 多维表格的视图过滤/排序/分组 | `feishu-cli bitable view view-*-set`（语义更强，能配条件） |
 

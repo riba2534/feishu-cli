@@ -154,7 +154,7 @@ JSON 模式直出归一化结构体（`AttendanceQueryUserTaskResult` / `Attenda
 |------|------|------|
 | `unsupported access token type, only support: Tenant` | 误传了 User Token | 移除 `--user-access-token` / `FEISHU_USER_ACCESS_TOKEN`；本模块只走 Tenant |
 | `--user-ids 单次最多 50 个 / 200 个` | 超过本地预校验上限 | user-task ≤ 50，user-stats ≤ 200，超出请分批 |
-| `--start 到 --end 跨度不能超过 31 天` | **仅 user-stats** 有此本地预校验（`cmd/attendance_user_stats.go:114`），user-task 不限制 | user-stats 拆成多次查询，每次 ≤ 31 天；user-task 不受此限 |
+| `--start 到 --end 跨度不能超过 31 天` | **仅 user-stats** 有此本地预校验（`cmd/attendance_user_stats.go`），user-task 不限制 | user-stats 拆成多次查询，每次 ≤ 31 天；user-task 不受此限 |
 | `日期 "xxx" 不是 YYYYMMDD 8 位数字` | 日期格式不对 | 用 `YYYY-MM-DD` 或纯 8 位数字 `YYYYMMDD` |
 | `99991663` / `attendance:task` 权限错误 | 应用未开通考勤 scope | 飞书开放平台 → 应用权限管理 → 申请 `attendance:task:readonly` 并发布新版本 |
 | `current_user_id is invalid`（user-stats） | 新系统用户未传 `--current-user-id` | 补上 `--current-user-id`，值与 user-ids 中目标用户保持同源 |

@@ -27,7 +27,7 @@ URL 中可以内嵌 query，但不要携带 `#fragment`：当前实现先解析 
 | `--params '<json>'` | query 参数（JSON 对象），如 `'{"page_size":10}'` |
 | `--data '<json>'` / `--data-file <file>` | 请求体：`--data` 传 JSON 字符串，或 `--data-file` 从文件读（`-` 表示 stdin）；二者互斥 |
 | `--as auto\|user\|bot` | 身份：auto（User 优先 Tenant 兜底，默认）/ user（强制 User Token，需先 `auth login`）/ bot（强制 Tenant/应用 Token） |
-| `--user-access-token` | 显式传 User Access Token（`--as user/auto` 时用） |
+| `--user-access-token` | 显式传 User Access Token（显式传入时无条件生效，覆盖 `--as`） |
 | `--dry-run` | 只打印将发送的请求（method/path/query/body/identity），不实际调用 |
 | `-o <file>` | 写原始响应体到文件（binary-safe，适合下载类接口） |
 | `--raw` | 原样输出响应 body，不做 pretty JSON |

@@ -12,7 +12,7 @@ description: >-
   只要意图是评论的 list/reply/resolve，即使请求中出现“文档”，也不要使用本 Skill。
 argument-hint: <read|write|import|export|markdown> [args]
 user-invocable: true
-allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Bash(python3:*), Bash(sleep:*), Read, Write
+allowed-tools: Bash(feishu-cli:*), Bash(./feishu-cli:*), Bash(jq:*), Bash(python3:*), Bash(sleep:*), Read, Write
 ---
 
 # 飞书文档

@@ -4,7 +4,7 @@
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 >
-> **发消息？** 请使用 **feishu-cli-messaging** 技能。本技能专注于事件订阅（**接收**应用事件），不负责发送。
+> **发消息？** 走 [`msg` 工作流](../msg/workflow.md)。本工作流专注于事件订阅（**接收**应用事件），不负责发送。
 
 ## 核心概念
 
@@ -68,7 +68,7 @@ feishu-cli event stop {--pid N | --event-key K | --all} [--force] [--json]  # 5.
 
 ### 1. `event list`：列出支持的 EventKey
 
-按 domain 分组展示当前支持的 22+ EventKey（im / contact / calendar / drive / approval / vc）。
+按 domain 分组展示当前支持的全部 EventKey；完整清单以 `feishu-cli event list` 输出为准。
 
 ```bash
 # 表格视图（默认）
@@ -274,13 +274,13 @@ feishu-cli event consume im.message.receive_v1 --max-events 1 --timeout 30s
 
 | 任务 | 路由 |
 |---|---|
-| **发**消息 / 回复 / 卡片 / 通知 | **feishu-cli-messaging** |
-| 构造 interactive 卡片 JSON | **feishu-cli-messaging** |
+| **发**消息 / 回复 / 卡片 / 通知 | [`msg` 工作流](../msg/workflow.md) |
+| 构造 interactive 卡片 JSON | [`card` 工作流](../card/workflow.md) |
 | 处理收到的消息事件 → 写多维表格 | **feishu-cli-data**（解析 payload 后调 record 命令） |
 | 处理收到的审批事件 → 查审批详情 | **feishu-cli-work**（approval 子命令） |
-| 收到群消息后查群信息/成员 | **feishu-cli-messaging** |
+| 收到群消息后查群信息/成员 | [`chat` 工作流](../chat/workflow.md) |
 | Webhook URL 模式（HTTP 回调，非长连接） | 不在本技能范围；走飞书开放平台的「请求网址配置」+ 自建 HTTP server |
-| 历史消息批量拉取（非实时） | **feishu-cli-messaging** 的 `msg history` / `msg list` |
+| 历史消息批量拉取（非实时） | [`chat` 工作流](../chat/workflow.md) 的 `msg history` / `msg list` |
 
 ## 参考
 

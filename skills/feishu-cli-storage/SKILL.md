@@ -10,7 +10,7 @@ description: >-
   feishu-cli-platform。
 argument-hint: <drive|file|media|wiki|comment|perm> [args]
 user-invocable: true
-allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Bash(python3:*), Read, Write
+allowed-tools: Bash(feishu-cli:*), Bash(./feishu-cli:*), Bash(jq:*), Bash(python3:*), Read, Write
 ---
 
 # 飞书云空间
@@ -32,5 +32,5 @@ allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Bash(python3:*), Read, Write
 
 1. 基础文件操作优先 file/media；需要分块、resume、镜像或异步任务时使用 drive。
 2. 删除、移动、覆盖、转移所有权和删除知识空间属于高风险操作，先确认目标并使用命令提供的确认参数。
-3. 个人文档的评论和权限常需 User Token；应用文档可使用 App Token。以工作流和实际帮助为准。
+3. 评论常需 User Token；perm 命令组仅 App 身份（无 user-token 参数），`drive apply-permission` 才需 User Token。以工作流和实际帮助为准。
 4. wiki node token 与普通 document/file token 不可混用。

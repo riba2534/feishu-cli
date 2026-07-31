@@ -11,7 +11,7 @@ description: >-
   feishu-cli-visual。
 argument-hint: <sheet|bitable> [args]
 user-invocable: true
-allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Read, Write
+allowed-tools: Bash(feishu-cli:*), Bash(./feishu-cli:*), Bash(jq:*), Read, Write
 ---
 
 # 飞书表格与多维表格

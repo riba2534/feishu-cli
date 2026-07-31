@@ -20,7 +20,7 @@
 | template_id | 使用飞书卡片搭建工具创建的模板 | 中等（模板变量） |
 | card_id | 引用已保存的卡片实例 | 最低（固定内容） |
 
-**推荐**：Agent 发送现成卡片时使用完整 Card JSON，最灵活且无需预先创建模板。卡片 JSON 本身由 `feishu-cli-messaging` 生成。
+**推荐**：Agent 发送现成卡片时使用完整 Card JSON，最灵活且无需预先创建模板。卡片 JSON 本身按 [`card` 工作流](../../card/workflow.md) 生成。
 
 ---
 
@@ -126,9 +126,8 @@
 
 ## 组件速查
 
-本节是历史排障参考，保留 v1/v2 混合组件用于读懂旧卡片。新增卡片以
-`skills/feishu-cli-messaging/references/workflows/card/references/components.md` 为准，
-不要使用 v1 的 `note` / `action`。
+> **本速查为 v1 兼容存档**：保留 v1/v2 混合组件仅用于读懂旧卡片、历史排障；构造新卡片一律以
+> `../../card/references/components.md` 为权威，不要使用 v1 的 `note` / `action`。
 
 ### 内容组件
 
@@ -364,7 +363,11 @@ v2 新卡片中按钮直接放入 `body.elements` 或 `column_set` 内，通过 
 
 ## 卡片 Markdown 语法（lark_md）
 
-卡片内的 `markdown` 组件使用 `lark_md` 语法，与标准 Markdown 有差异。
+> **仅限 v1 历史卡片**：本节记录的是 v1 卡片 lark_md 的历史限制，只用于读懂旧卡片。
+> schema 2.0 的 `markdown` 组件支持 CommonMark（标题/列表/表格/代码块）与 `<font>` 全色枚举 + rgba，
+> 规范见 `../../card/references/components.md`。
+
+v1 卡片内的 `markdown` 组件使用 `lark_md` 语法，与标准 Markdown 有差异。
 
 ### 支持的语法
 
@@ -409,9 +412,9 @@ v2 新卡片中按钮直接放入 `body.elements` 或 `column_set` 内，通过 
 
 ## 新卡片构造入口
 
-新增卡片不要从本文复制模板。先用 `feishu-cli-messaging` 参考
-`skills/feishu-cli-messaging/references/workflows/card/references/design.md` 与
-`skills/feishu-cli-messaging/references/workflows/card/references/components.md` 生成 v2 JSON，
+新增卡片不要从本文复制模板。先按 [`card` 工作流](../../card/workflow.md) 参考
+`../../card/references/design.md` 与
+`../../card/references/components.md` 生成 v2 JSON，
 再回到本命令发送：
 
 ```bash
@@ -514,6 +517,6 @@ feishu-cli msg send \
 1. **大小限制**：卡片 JSON 最大 30 KB，超出时精简内容或拆分多条消息
 2. **按钮回调**：`url` 属性可直接跳转（无需服务端）；`value` 属性需要应用服务端处理回调事件
 3. **图片引用**：卡片中的 `img_key` 需要通过飞书 API 上传获取，不能直接使用外部 URL
-4. **Markdown 差异**：卡片 Markdown（lark_md）不支持标题、列表等常见语法，仅支持加粗/斜体/删除线/链接/代码/颜色/@人
+4. **Markdown 差异（仅 v1）**：v1 卡片 Markdown（lark_md）不支持标题、列表等常见语法，仅支持加粗/斜体/删除线/链接/代码/颜色/@人；schema 2.0 的 `markdown` 组件支持 CommonMark 与 `<font>` 全色，见 `../../card/references/components.md`
 5. **v1 vs v2**：新增卡片优先用 v2；v1 仅用于历史兼容排查
 6. **颜色语义**：header 颜色应与消息语义匹配（绿=成功、红=错误、橙=警告、蓝=通知）

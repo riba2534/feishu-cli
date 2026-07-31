@@ -57,7 +57,7 @@ feishu-cli doc read <document_id> --keyword "QPS|限流" --context 5
 
 | Flag | 默认值 | 说明 |
 | --- | --- | --- |
-| `<document_id>` | 必填 | 文档 ID 或 URL（`https://xxx.feishu.cn/docx/<id>`） |
+| `<document_id>` | 必填 | 仅接受文档 ID，**不接受 URL**；URL 需先截取 `/docx/` 后段作为 ID（`doc read` / `doc export` 才支持直接传 URL） |
 | `-o, --output` | text | 输出格式，可选 `json` |
 | `--user-access-token` | 空 | 手动覆盖 User Token；不填则自动从 `~/.feishu-cli/token.json` 读取 |
 
@@ -68,8 +68,8 @@ feishu-cli doc get ABC123def456
 # JSON 输出（脚本里拿 revision_id / title）
 feishu-cli doc get ABC123def456 -o json
 
-# 从 URL 直接读
-feishu-cli doc get https://xxx.feishu.cn/docx/ABC123def456
+# doc get 不接受 URL：URL 场景先截取 /docx/ 后段作为 document_id（如上），
+# 或改用支持直接传 URL 的 doc read / doc export
 ```
 
 ## 列出文档所有块（doc blocks）
@@ -316,7 +316,7 @@ feishu-cli sheet export <spreadsheet_token> --format markdown -o /tmp/feishu_she
 | ------------------ | ------------------------------------------------------ |
 | Callout 高亮块     | `> [!NOTE]`、`> [!WARNING]` 等 6 种 GitHub-style alert |
 | 块级/行内公式      | `$formula$`（LaTeX 格式）                              |
-| 画板 (Board)       | `[画板/Whiteboard](feishu://board/...)` 链接           |
+| 画板 (Board)       | `--download-images` 时导出为 `![画板](assets/board_N.<ext>)` 图片；否则输出 `<whiteboard token="..." type="blank"/>` roundtrip 标签 |
 | 电子表格块 (Sheet) | 默认展开为 Markdown 表格；关闭 `--expand-sheets` 时输出 `<sheet .../>` |
 | ISV 块 (Mermaid)   | 画板链接                                               |
 | QuoteContainer     | `>` 引用语法（支持嵌套）                               |

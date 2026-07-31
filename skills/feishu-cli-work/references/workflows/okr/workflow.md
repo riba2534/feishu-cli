@@ -1,6 +1,6 @@
 # 飞书 OKR 查询与进度上报技能
 
-通过 feishu-cli 查询 OKR 周期、列出/创建进度记录。覆盖 OKR 最高频的 3 个操作。
+通过 feishu-cli 查询 OKR 周期与周期详情（`cycle list/detail`）、管理进展记录（`progress list/get/create/update/delete`）并上传进展图片（`upload-image`），与「命令速查」表一一对应。
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
@@ -209,8 +209,9 @@ GET /open-apis/okr/v2/cycles    ❌ 不存在，404
 | `cycle list` | 通用 HTTP client 直调 `/open-apis/okr/v1/periods` |
 | `progress list` | 通用 HTTP client 直调（按 target 类型分两条路径）：<br>• OKRTargetObjective: `/open-apis/okr/v2/objectives/{id}/progresses`<br>• OKRTargetKeyResult: `/open-apis/okr/v2/key_results/{id}/progresses` |
 
-SDK v3.5.3 暴露 Create/Get/Update/Delete，但没有适合当前列表语义的统一 List；CLI 当前只公开
-`progress create/list`，其中 create 走 SDK，list 按 Objective/KR 类型直调对应 HTTP endpoint。
+CLI 已公开完整的进展 CRUD 与配套命令（见「命令速查」）：`progress create/get/update/delete` 与
+`upload-image` 走 SDK v3.5.3（`ProgressRecord.*` / `Image.Upload`）；SDK 没有适合当前列表语义的
+统一 List，故 `progress list` 按 Objective/KR 类型直调对应 HTTP endpoint，`cycle list` 同为 HTTP 直调。
 
 ### 4. cycle 是租户级，没有 user_id 参数
 

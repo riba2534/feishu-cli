@@ -10,15 +10,13 @@
 - [前置条件](#前置条件)
 - [命令速查](#命令速查)
 - [典型工作流](#典型工作流)
-- [与基础命令的对照](#与老命令的对照)
+- [与老命令的对照](#与老命令的对照)
 - [权限要求](#权限要求)
 - [注意事项](#注意事项)
 
 ## 前置条件
 
-- **认证**：
-  - **必需 User Token**（`requireUserToken`，未登录直接报错）：`upload`/`download`/`export`/`export-download`/`import`/`move`/`add-comment`/`task-result`/`search`/`apply-permission`，先 `feishu-cli auth login`。
-  - **登录后 User 优先 + App 兜底**（`resolveOptionalUserTokenWithFallback`，未登录不报错）：`pull`/`push`/`status`/`inspect`。已 `auth login` 自动用 User Token；未登录回落 App Token（注意 Bot 通常看不到你云盘里的私人文件）。
+- **认证**：多数 drive 命令必需 User Token（先 `feishu-cli auth login`）；各命令的 Token 策略以「[权限要求](#权限要求)」表为唯一权威。
 - **预检**：`feishu-cli auth check --scope "drive:file:upload"` 可验证 scope
 
 ## 命令速查
@@ -415,7 +413,7 @@ feishu-cli drive export --token $DOC_TOKEN --doc-type docx --file-extension mark
 
 ## 注意事项
 
-- **Token 策略**：`upload/download/export/export-download/import/move/add-comment/task-result/search/apply-permission` 必需 User Token；`pull/push/status/inspect` 登录后默认 User Token，未登录回落 App Token。
+- **Token 策略**：以「权限要求」表为唯一权威（多数命令必需 User Token；`pull/push/status/inspect` 未登录可回落 App Token）。
 - **SSRF 防护**：下载 URL 会被校验，拒绝 localhost / 回环 IP / 内网段 / 链路本地
 - **重定向策略**：下载 HTTP 重定向最多 5 次，禁止 HTTPS → HTTP 降级
 - **大文件分块阈值**：固定 20MB，超过自动切分片

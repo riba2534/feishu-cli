@@ -9,14 +9,13 @@ description: >-
   邮件命令必须使用 User Token；发送默认先保存草稿，只有明确确认后才真正发送。
 argument-hint: <triage|message|thread|send|reply|forward|draft> [args]
 user-invocable: true
-allowed-tools: Bash(feishu-cli:*), Read, Write
+allowed-tools: Bash(feishu-cli:*), Bash(./feishu-cli:*), Read, Write
 ---
 
 # 飞书邮箱
 
 读取 `references/workflows/mail/workflow.md` 后执行。
-将该工作流中的 `references/`、`scripts/`、`templates/`、`examples/` 相对路径按 `workflow.md`
-所在目录解析；执行脚本时使用解析后的实际路径，不要依赖当前 shell 目录。
+将该工作流中的 `references/` 相对路径按 `workflow.md` 所在目录解析。
 
 ## 安全规则
 

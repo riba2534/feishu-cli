@@ -11,7 +11,7 @@ description: >-
   feishu-cli-mail 和 feishu-cli-meetings。全局消息搜索使用 feishu-cli-platform。
 argument-hint: <msg|chat|card|event> [args]
 user-invocable: true
-allowed-tools: Bash(feishu-cli:*), Bash(jq:*), Bash(python3:*), Read, Write
+allowed-tools: Bash(feishu-cli:*), Bash(./feishu-cli:*), Bash(jq:*), Bash(python3:*), Read, Write
 ---
 
 # 飞书即时消息

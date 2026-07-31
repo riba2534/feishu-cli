@@ -280,6 +280,8 @@ whiteboard-cli 的翻译规则（实测整理）：
 - **1000-2000 节点**：编辑器开始略卡，上传 ~60-120s（赛博朋克级）
 - **> 2000 节点**：编辑器明显卡顿，建议拆图或简化
 
+> 口径说明：本节 2000 是实测渲染容量上限；`schema.md` 节点密度表的 600 是 `board lint` 的不扣分阈值（>600 触发 over_capacity 固定扣 0.2），两个数字不矛盾。
+
 ---
 
 ## 6. 何时该拆图？
@@ -315,7 +317,7 @@ whiteboard-cli 的翻译规则（实测整理）：
 - [ ] **z_index 最小是大背景**：参考 `pitfalls.md` Step 2
 - [ ] **无 viewBox 溢出**：`max(x+w) ≤ viewBox_w`
 - [ ] **缩略图主要元素都在**：`board image <id> /tmp/check`（自动补实际扩展名，通常 .jpg）后看
-- [ ] **lint 质量分 ≥ 0.85**：`board lint <id>`
+- [ ] **lint 质量分 ≥ 0.85**：`board lint <id>`；节点 >600 时 over_capacity 固定扣 0.2 属预期，按 ≥ 0.65 评估
 
 如其中任何一项不通过，回到 `pitfalls.md` 排障。
 
