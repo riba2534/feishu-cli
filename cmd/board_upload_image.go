@@ -3,11 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"image"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
-	"os"
 	"path/filepath"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -23,7 +18,7 @@ var boardUploadImageCmd = &cobra.Command{
 
 参数:
   <whiteboard_id>       画板 ID
-  <local_image_path>    本地图片路径（jpeg/png/gif）
+  <local_image_path>    本地图片路径（jpeg/png/gif/webp/bmp/tiff）
 
 特性:
   - 默认宽高读自图片实际像素，可用 --width/--height 覆盖
@@ -46,18 +41,9 @@ var boardUploadImageCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 		userAccessToken := resolveOptionalUserToken(cmd)
 
-		// 读图片实际像素
-		f, openErr := os.Open(imgPath)
-		if openErr != nil {
-			return fmt.Errorf("打开图片失败: %w", openErr)
-		}
-		img, _, decodeErr := image.Decode(f)
-		_ = f.Close()
-		var pxWidth, pxHeight float64
-		if decodeErr == nil {
-			pxWidth = float64(img.Bounds().Dx())
-			pxHeight = float64(img.Bounds().Dy())
-		}
+		// 读图片实际像素（只读文件头，见 decodeImagePixelSize；解析失败返回 0）
+		pxW, pxH := decodeImagePixelSize(imgPath)
+		pxWidth, pxHeight := float64(pxW), float64(pxH)
 
 		width := widthFlag
 		height := heightFlag
@@ -68,7 +54,7 @@ var boardUploadImageCmd = &cobra.Command{
 			height = pxHeight
 		}
 		if width == 0 || height == 0 {
-			return fmt.Errorf("无法识别图片尺寸且未指定 --width/--height: %v", decodeErr)
+			return fmt.Errorf("无法识别图片尺寸（不支持的格式或带旋转 EXIF 的 JPEG），请显式指定 --width/--height")
 		}
 
 		if dryRun {

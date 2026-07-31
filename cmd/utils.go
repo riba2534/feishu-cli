@@ -3,8 +3,14 @@ package cmd
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +19,9 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
+	_ "golang.org/x/image/webp"
 )
 
 // flagString 读取字符串 flag，忽略错误（未注册 flag 返回空串）。
@@ -448,4 +457,125 @@ func translateChatError(err error) error {
 	}
 
 	return err
+}
+
+// decodeImagePixelSize 读取图片真实像素尺寸，用于显式指定飞书图片块/画板节点的显示宽高。
+// 只读文件头（image.DecodeConfig），不解整张图；支持 png/jpeg/gif/webp/bmp/tiff
+// （后三种经 golang.org/x/image 注册，均为飞书接受的图片格式）。
+//
+// JPEG 带 EXIF Orientation 5-8（显示时宽高转置的旋转）时返回 (0, 0)：DecodeConfig
+// 返回的是转置前的存储尺寸，直接下发会把显示框的宽高比写反，退回服务端推断更安全。
+// 任何失败都返回 (0, 0)，调用方据此退回服务端推断或要求显式指定，不影响主流程成功。
+func decodeImagePixelSize(path string) (int, int) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0
+	}
+	defer f.Close()
+
+	cfg, format, err := image.DecodeConfig(f)
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return 0, 0
+	}
+	if format == "jpeg" {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return 0, 0
+		}
+		if o := jpegEXIFOrientation(f); o >= 5 && o <= 8 {
+			return 0, 0
+		}
+	}
+	return cfg.Width, cfg.Height
+}
+
+// jpegEXIFOrientation 从 JPEG 字节流读取 EXIF Orientation（1-8），读不到返回 0。
+// 只顺序扫描 SOS（图像数据）之前的段头与 APP1 段内容，不解码图像数据。
+func jpegEXIFOrientation(r io.Reader) int {
+	br := bufio.NewReader(r)
+	var soi [2]byte
+	if _, err := io.ReadFull(br, soi[:]); err != nil || soi[0] != 0xFF || soi[1] != 0xD8 {
+		return 0
+	}
+	for {
+		b, err := br.ReadByte()
+		if err != nil || b != 0xFF {
+			return 0 // 读尽或段边界错乱，放弃
+		}
+		marker, err := br.ReadByte()
+		if err != nil {
+			return 0
+		}
+		for marker == 0xFF { // 跳过填充字节
+			if marker, err = br.ReadByte(); err != nil {
+				return 0
+			}
+		}
+		if marker == 0xDA || marker == 0xD9 { // SOS/EOI：EXIF 只会出现在此之前
+			return 0
+		}
+		if marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7) { // 无长度的独立标记
+			continue
+		}
+		var lenBuf [2]byte
+		if _, err := io.ReadFull(br, lenBuf[:]); err != nil {
+			return 0
+		}
+		segLen := int(binary.BigEndian.Uint16(lenBuf[:]))
+		if segLen < 2 {
+			return 0
+		}
+		payload := make([]byte, segLen-2)
+		if _, err := io.ReadFull(br, payload); err != nil {
+			return 0
+		}
+		if marker == 0xE1 {
+			if o := exifOrientationFromAPP1(payload); o != 0 {
+				return o
+			}
+		}
+	}
+}
+
+// exifOrientationFromAPP1 解析 APP1/EXIF 段负载（不含 marker 和长度字节）中
+// IFD0 的 Orientation 标签（tag 0x0112, 类型 SHORT），无效返回 0。
+func exifOrientationFromAPP1(payload []byte) int {
+	const exifHeader = "Exif\x00\x00"
+	if len(payload) < len(exifHeader)+8 || string(payload[:len(exifHeader)]) != exifHeader {
+		return 0
+	}
+	tiff := payload[len(exifHeader):]
+	var bo binary.ByteOrder
+	switch {
+	case tiff[0] == 'I' && tiff[1] == 'I':
+		bo = binary.LittleEndian
+	case tiff[0] == 'M' && tiff[1] == 'M':
+		bo = binary.BigEndian
+	default:
+		return 0
+	}
+	if bo.Uint16(tiff[2:4]) != 42 {
+		return 0
+	}
+	ifdOff := int(bo.Uint32(tiff[4:8]))
+	if ifdOff < 8 || ifdOff+2 > len(tiff) {
+		return 0
+	}
+	count := int(bo.Uint16(tiff[ifdOff : ifdOff+2]))
+	for i := 0; i < count; i++ {
+		entry := ifdOff + 2 + i*12
+		if entry+12 > len(tiff) {
+			return 0
+		}
+		tag := bo.Uint16(tiff[entry : entry+2])
+		typ := bo.Uint16(tiff[entry+2 : entry+4])
+		if tag != 0x0112 || typ != 3 { // Orientation 为 SHORT 类型
+			continue
+		}
+		// SHORT 值内联在 value 字段前 2 字节（按 TIFF 字节序）
+		if o := int(bo.Uint16(tiff[entry+8 : entry+10])); o >= 1 && o <= 8 {
+			return o
+		}
+		return 0
+	}
+	return 0
 }

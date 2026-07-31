@@ -2,10 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"image"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -235,6 +231,15 @@ type imageTask struct {
 	imageBlockID string // Image Block ID
 	source       string // 图片来源（本地路径或 URL）
 	basePath     string // Markdown 文件所在目录，用于解析相对路径
+	label        string // 消息前缀，空默认"图片"；单元格路径为"单元格图片"（编号空间不同，避免误标）
+}
+
+// kindLabel 返回进度/告警消息里的图片类别前缀。
+func (t imageTask) kindLabel() string {
+	if t.label != "" {
+		return t.label
+	}
+	return "图片"
 }
 
 // imageResult 表示图片上传的结果
@@ -1090,7 +1095,7 @@ func processImageTask(documentID string, task imageTask, verbose bool, userAcces
 	// 解析图片来源
 	localPath, fileName, cleanup, err := resolveImageSource(task.source, task.basePath)
 	if err != nil {
-		syncPrintf("  ✗ 图片 %d 解析失败 (%s): %v\n", task.index, task.source, err)
+		syncPrintf("  ✗ %s %d 解析失败 (%s): %v\n", task.kindLabel(), task.index, task.source, err)
 		return imageResult{task: task, success: false, err: err}
 	}
 	defer cleanup()
@@ -1099,12 +1104,12 @@ func processImageTask(documentID string, task imageTask, verbose bool, userAcces
 	const maxImageSize = 20 * 1024 * 1024
 	fi, err := os.Stat(localPath)
 	if err != nil {
-		syncPrintf("  ✗ 图片 %d 文件信息获取失败: %v\n", task.index, err)
+		syncPrintf("  ✗ %s %d 文件信息获取失败: %v\n", task.kindLabel(), task.index, err)
 		return imageResult{task: task, success: false, err: err}
 	}
 	if fi.Size() > maxImageSize {
 		err := fmt.Errorf("图片超过 20MB 限制 (%.1f MB)", float64(fi.Size())/(1024*1024))
-		syncPrintf("  ✗ 图片 %d: %v\n", task.index, err)
+		syncPrintf("  ✗ %s %d: %v\n", task.kindLabel(), task.index, err)
 		return imageResult{task: task, success: false, err: err}
 	}
 
@@ -1117,8 +1122,8 @@ func processImageTask(documentID string, task imageTask, verbose bool, userAcces
 		RetryOnRateLimit: true,
 		OnRetry: func(attempt int, err error, wait time.Duration) {
 			if verbose {
-				syncPrintf("  ⚠ 图片 %d 上传重试 %d/%d (等待 %.1fs): %v\n",
-					task.index, attempt, maxRetries, wait.Seconds(), err)
+				syncPrintf("  ⚠ %s %d 上传重试 %d/%d (等待 %.1fs): %v\n",
+					task.kindLabel(), task.index, attempt, maxRetries, wait.Seconds(), err)
 			}
 		},
 	}
@@ -1128,30 +1133,30 @@ func processImageTask(documentID string, task imageTask, verbose bool, userAcces
 	}, retryCfg)
 
 	if uploadResult.Err != nil {
-		syncPrintf("  ✗ 图片 %d 上传失败 (%s): %v\n", task.index, task.source, uploadResult.Err)
+		syncPrintf("  ✗ %s %d 上传失败 (%s): %v\n", task.kindLabel(), task.index, task.source, uploadResult.Err)
 		return imageResult{task: task, success: false, err: uploadResult.Err}
 	}
 
 	fileToken := uploadResult.Value
 
-	// 步骤 3: 替换 Image Block 的 token，并显式带上真实像素宽高。
-	// 不带宽高时显示尺寸由服务端从媒体推断，实测会偶发绑定到缩放变体（1600px 宽），
-	// 导致块的 width/height 变小、客户端渲染成极小缩略图。解码失败时传 0 退回旧行为。
+	// 步骤 3: 绑定 token 并显式带上真实像素宽高（为何必须带宽高见 client.ReplaceImage 注释）。
+	// 解码失败时传 0 退回服务端推断，不影响导入成功。
 	pxW, pxH := decodeImagePixelSize(localPath)
-	if pxW == 0 || pxH == 0 {
-		syncPrintf("  ⚠ 图片 %d 无法解析像素尺寸，显示尺寸交由服务端推断 (%s)\n", task.index, task.source)
+	if verbose && (pxW == 0 || pxH == 0) {
+		syncPrintf("  ⚠ %s %d 无法解析像素尺寸，显示尺寸交由服务端推断 (%s)\n", task.kindLabel(), task.index, task.source)
 	}
 	replaceResult := client.DoVoidWithRetry(func() (http.Header, error) {
-		return client.ReplaceImageWithSize(documentID, task.imageBlockID, fileToken, pxW, pxH, userAccessToken)
+		return client.ReplaceImage(documentID, task.imageBlockID, fileToken,
+			client.ReplaceImageOptions{Width: pxW, Height: pxH}, userAccessToken)
 	}, retryCfg)
 
 	if replaceResult.Err != nil {
-		syncPrintf("  ✗ 图片 %d 替换失败 (token=%s): %v\n", task.index, fileToken, replaceResult.Err)
+		syncPrintf("  ✗ %s %d 替换失败 (token=%s): %v\n", task.kindLabel(), task.index, fileToken, replaceResult.Err)
 		return imageResult{task: task, success: false, err: replaceResult.Err}
 	}
 
 	if verbose {
-		syncPrintf("  ✓ 图片 %d 成功 (%s)\n", task.index, task.source)
+		syncPrintf("  ✓ %s %d 成功 (%s)\n", task.kindLabel(), task.index, task.source)
 	}
 	return imageResult{task: task, success: true}
 }
@@ -1265,6 +1270,7 @@ func embedTableCellImages(documentID string, tTasks []tableTask, basePath string
 				imageBlockID: imageBlockID,
 				source:       w.source,
 				basePath:     basePath,
+				label:        "单元格图片", // 与顶层"图片 N"编号空间不同，消息前缀区分
 			}, verbose, userAccessToken)
 
 			stats.mu.Lock()
@@ -1464,23 +1470,6 @@ func validateMarkdownEncoding(content []byte) error {
 // 返回本地路径、上传文件名和清理函数（外部 URL 下载的临时文件需要清理）。
 func resolveImageSource(source, basePath string) (string, string, func(), error) {
 	return resolveMediaSource(source, basePath, ".png")
-}
-
-// decodeImagePixelSize 读取图片真实像素尺寸，用于显式指定飞书图片块的显示宽高。
-// 只读文件头（image.DecodeConfig），不解整张图，避免大图占用内存。
-// 任何失败都返回 (0, 0)，调用方据此退回服务端推断，不影响导入成功。
-func decodeImagePixelSize(path string) (int, int) {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0, 0
-	}
-	defer f.Close()
-
-	cfg, _, err := image.DecodeConfig(f)
-	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
-		return 0, 0
-	}
-	return cfg.Width, cfg.Height
 }
 
 func resolveMediaSource(source, basePath, defaultExt string) (string, string, func(), error) {

@@ -271,30 +271,60 @@ func UpdateBlock(documentID string, blockID string, updateContent any, userAcces
 	return headers, nil
 }
 
-// ReplaceImage replaces the image token of an Image block.
-// 用于图片三步法上传的第三步：将上传后的 fileToken 设置到 Image Block。
-//
-// 不传宽高时，显示尺寸完全依赖飞书服务端从媒体推断，实测不可靠：同一批 15 张图里
-// 有 2 张被服务端绑定到 1600px 宽的缩放变体，块的 width/height 随之变小，
-// 客户端渲染成极小的缩略图（issue: 导入后部分图片变得很小无法查看）。
-// 因此三步法应显式传入真实像素宽高，见 ReplaceImageWithSize。
-func ReplaceImage(documentID, imageBlockID, fileToken string, userAccessToken ...string) (http.Header, error) {
-	return ReplaceImageWithSize(documentID, imageBlockID, fileToken, 0, 0, userAccessToken...)
+// ReplaceImageOptions 绑定图片 token 时的可选显示属性，零值字段不下发。
+type ReplaceImageOptions struct {
+	Width   int    // 显示宽度（px），与 Height 同时 > 0 才下发
+	Height  int    // 显示高度（px）
+	Align   int    // 对齐方式（1=左 2=居中 3=右），0 不下发
+	Caption string // 图片描述，空串不下发
 }
 
-// ReplaceImageWithSize 在绑定 fileToken 的同时显式指定图片显示宽高（单位 px）。
-// width/height 任一为 0 时省略该字段，退回服务端推断，行为与旧版一致。
-func ReplaceImageWithSize(documentID, imageBlockID, fileToken string, width, height int, userAccessToken ...string) (http.Header, error) {
+// buildReplaceImagePayload 构造 replace_image 请求体。宽高遵循"同时 > 0 才下发"：
+// 任一缺失时两个字段都省略，交由服务端推断显示尺寸。
+func buildReplaceImagePayload(fileToken string, opts ReplaceImageOptions) map[string]any {
 	replace := map[string]any{
 		"token": fileToken,
 	}
-	if width > 0 && height > 0 {
-		replace["width"] = width
-		replace["height"] = height
+	if opts.Width > 0 && opts.Height > 0 {
+		replace["width"] = opts.Width
+		replace["height"] = opts.Height
 	}
-	return UpdateBlock(documentID, imageBlockID, map[string]any{
-		"replace_image": replace,
+	if opts.Align != 0 {
+		replace["align"] = opts.Align
+	}
+	if opts.Caption != "" {
+		replace["caption"] = map[string]string{"content": opts.Caption}
+	}
+	return replace
+}
+
+// ReplaceImage 图片三步法上传的第三步：将上传后的 fileToken 绑定到 Image Block。
+//
+// 调用方应显式传入真实像素宽高（opts.Width/Height）：只传 token 时显示尺寸完全依赖
+// 飞书服务端从媒体推断，实测不可靠——同一批 15 张图里有 2 张被服务端绑定到 1600px 宽
+// 的缩放变体，块的 width/height 随之变小，客户端渲染成极小的缩略图（issue: 导入后
+// 部分图片变得很小无法查看）。宽高任一为 0 时省略字段，退回服务端推断。
+//
+// 容错：带宽高的请求被服务端以非临时错误拒绝时（如尺寸超出校验范围），自动降级为
+// 不带宽高重绑一次（行为等价旧版），避免整个绑定失败；降级也失败则返回原始错误。
+// 临时错误（429/5xx）不降级，直接返回交给外层重试。
+func ReplaceImage(documentID, imageBlockID, fileToken string, opts ReplaceImageOptions, userAccessToken ...string) (http.Header, error) {
+	header, err := UpdateBlock(documentID, imageBlockID, map[string]any{
+		"replace_image": buildReplaceImagePayload(fileToken, opts),
 	}, userAccessToken...)
+	if err == nil || opts.Width <= 0 || opts.Height <= 0 || IsRetryableError(err) {
+		return header, err
+	}
+
+	fallback := opts
+	fallback.Width, fallback.Height = 0, 0
+	fbHeader, fbErr := UpdateBlock(documentID, imageBlockID, map[string]any{
+		"replace_image": buildReplaceImagePayload(fileToken, fallback),
+	}, userAccessToken...)
+	if fbErr != nil {
+		return header, err // 降级也失败：原始错误更能反映根因
+	}
+	return fbHeader, nil
 }
 
 // DeleteBlocks deletes child blocks from a parent block by index range.

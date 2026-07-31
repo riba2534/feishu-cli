@@ -1807,7 +1807,7 @@ func (c *MarkdownToBlock) convertImage(node *ast.Image) (*larkdocx.Block, error)
 	// 图片三步法上传：
 	// 1. 创建空 Image Block → 获得 imageBlockID
 	// 2. UploadMediaWithExtra(filePath, "docx_image", imageBlockID, ..., extra) → 获得 fileToken
-	// 3. ReplaceImage(documentID, imageBlockID, fileToken) → 图片显示
+	// 3. ReplaceImage(documentID, imageBlockID, fileToken, opts) → 绑定 token 与显示宽高
 	// 此处仅创建空 Image Block，记录图片来源路径，实际上传在 cmd 层完成。
 	c.imageStats.Total++
 	c.imageSources = append(c.imageSources, dest)
