@@ -58,6 +58,8 @@ feishu-cli doc export <document_id> \
 
 `--front-matter`、`--highlight` 仅 `doc export` 支持；`--expand-sheets`、`--expand-mentions` 同时支持 `doc export` 和 `wiki export`。所有读类导出命令 token 默认走"User 优先 + Tenant 兜底"——已 `auth login` 自动用 User Token，未登录尝试 App Token。
 
+跨文档引用同步块会按 `source_document_id` / `source_block_id` 自动读取源块及全部后代并展开。重复引用只请求一次；循环引用、权限不足或 API 失败时，Markdown 会保留带源标识的 `WARNING` 占位，stderr 同时给出诊断，不会静默丢失内容。使用 `--download-images` 时，同步块中的图片、视频和画板按源文档上下文下载。
+
 ## Sheet Markdown
 
 ```bash
@@ -168,6 +170,7 @@ Token 已登录优先 User Token，未登录回落 App Token。
 
 - **sheet export markdown 复杂单元格可能丢内容**：电子表格部分单元格（块类型 32 / 富文本嵌套）在转 Markdown 时存在内容丢失风险（见仓库 CLAUDE.md "已知问题"）。**对账/留档场景请优先用 `--format xlsx`**，仅在阅读/diff 场景才用 markdown。
 - **doc export 内嵌电子表格展开失败时保留占位**：`--expand-sheets`（默认 true）拉子表失败时输出 `<sheet token="..." id="..." rows=".." cols=".."/>` 占位标签而非报错中断，重新导出或排查权限/网络后再跑一次即可补齐。需要原样保留 token 引用时改用 `--expand-sheets=false`。
+- **doc export 跨文档同步块展开失败时保留占位**：权限不足、源块失效、循环引用或 API 异常时输出含 `source_document_id` / `source_block_id` 的 `WARNING`，同时查看 stderr 诊断并确认当前登录身份可以读取源文档。
 
 ## 验证
 

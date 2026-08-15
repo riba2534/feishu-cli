@@ -104,7 +104,7 @@ export FEISHU_APP_SECRET=xxx
 **导入**：`feishu-cli doc import doc.md --title "文档" --verbose`
 **导出**：`feishu-cli doc export <doc_id> -o output.md`
 
-支持的语法：标题、段落、列表（无限深度嵌套）、任务列表、代码块、引用（QuoteContainer）、Callout（6 种类型）、表格、分割线、图片（默认 `--upload-images` 上传）、链接、公式、粗体/斜体/删除线/下划线/行内代码/高亮
+支持的语法：标题、段落、列表（无限深度嵌套）、任务列表、代码块、引用（QuoteContainer）、Callout（6 种类型）、同步块（含跨文档引用；不可读时输出 WARNING 占位与诊断）、表格、分割线、图片（默认 `--upload-images` 上传）、链接、公式、粗体/斜体/删除线/下划线/行内代码/高亮
 
 ### Mermaid / PlantUML 图表转画板
 

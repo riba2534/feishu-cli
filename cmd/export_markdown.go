@@ -24,6 +24,7 @@ var exportMarkdownCmd = &cobra.Command{
 使用 --download-images 可同时下载文档中的图片和画板（画板自动导出为 PNG），
 通过 --assets-dir 指定资源保存目录（默认 ./assets）。
 内嵌飞书电子表格默认会自动展开为 Markdown 表格，可用 --expand-sheets=false 保留为 <sheet/> 引用。
+跨文档引用同步块会自动读取源文档并展开；权限或 API 异常时输出带源标识的 WARNING 占位和 stderr 诊断，不会静默丢失内容。
 
 示例:
   feishu-cli doc export ABC123def456

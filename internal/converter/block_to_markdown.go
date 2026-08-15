@@ -3,6 +3,7 @@ package converter
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,6 +17,30 @@ import (
 // 最大递归深度，防止栈溢出
 const maxRecursionDepth = 100
 
+type syncReferenceKey struct {
+	documentID string
+	blockID    string
+}
+
+type syncExpansionResult struct {
+	blocks []*larkdocx.Block
+	err    error
+}
+
+// syncExpansionState 在同一次导出内共享，避免重复请求，并用 active 检测跨文档循环引用。
+type syncExpansionState struct {
+	cache  map[syncReferenceKey]syncExpansionResult
+	active map[syncReferenceKey]bool
+	warned map[string]bool
+}
+
+type blockToMarkdownServices struct {
+	getMediaTempURL func(string, client.DownloadMediaOptions) (string, error)
+	downloadFromURL func(string, string) error
+	downloadMedia   func(string, string, client.DownloadMediaOptions) error
+	getBoardImage   func(string, string, string) (string, error)
+}
+
 // BlockToMarkdown converts Feishu blocks to Markdown
 type BlockToMarkdown struct {
 	blocks        []*larkdocx.Block
@@ -27,6 +52,10 @@ type BlockToMarkdown struct {
 	videoFiles    map[string]bool
 	headingSeqs   []string                   // 标题自动编号状态，按深度索引（depth-1）
 	userCache     map[string]MentionUserInfo // 用户 ID → 信息缓存
+	userResolver  UserResolver
+	syncState     *syncExpansionState
+	services      *blockToMarkdownServices
+	diagnostics   io.Writer
 }
 
 // NewBlockToMarkdown creates a new converter
@@ -107,19 +136,57 @@ func NewBlockToMarkdown(blocks []*larkdocx.Block, options ConvertOptions) *Block
 		blockMap:      blockMap,
 		childBlockIDs: childBlockIDs,
 		options:       options,
+		syncState: &syncExpansionState{
+			cache:  make(map[syncReferenceKey]syncExpansionResult),
+			active: make(map[syncReferenceKey]bool),
+			warned: make(map[string]bool),
+		},
+		services: &blockToMarkdownServices{
+			getMediaTempURL: func(token string, opts client.DownloadMediaOptions) (string, error) {
+				return client.GetMediaTempURL(token, opts)
+			},
+			downloadFromURL: func(downloadURL, outputPath string) error {
+				return client.DownloadFromURL(downloadURL, outputPath)
+			},
+			downloadMedia: func(token, outputPath string, opts client.DownloadMediaOptions) error {
+				return client.DownloadMedia(token, outputPath, opts)
+			},
+			getBoardImage: func(token, outputPath, userAccessToken string) (string, error) {
+				return client.GetBoardImage(token, outputPath, userAccessToken)
+			},
+		},
+		diagnostics: os.Stderr,
 	}
 }
 
 // NewBlockToMarkdownWithResolver 创建支持 @用户 展开的转换器
 func NewBlockToMarkdownWithResolver(blocks []*larkdocx.Block, options ConvertOptions, resolver UserResolver) *BlockToMarkdown {
 	c := NewBlockToMarkdown(blocks, options)
-	if resolver != nil && options.ExpandMentions {
-		userIDs := c.collectMentionUserIDs()
-		if len(userIDs) > 0 {
-			c.userCache = resolver.BatchResolve(userIDs)
+	c.userResolver = resolver
+	c.resolveMentionUsers()
+	return c
+}
+
+func (c *BlockToMarkdown) resolveMentionUsers() {
+	if c.userResolver == nil || !c.options.ExpandMentions {
+		return
+	}
+	if c.userCache == nil {
+		c.userCache = make(map[string]MentionUserInfo)
+	}
+	userIDs := c.collectMentionUserIDs()
+	missing := make([]string, 0, len(userIDs))
+	for _, userID := range userIDs {
+		if _, ok := c.userCache[userID]; !ok {
+			missing = append(missing, userID)
 		}
 	}
-	return c
+	if len(missing) == 0 {
+		return
+	}
+	for userID, info := range c.userResolver.BatchResolve(missing) {
+		c.userCache[userID] = info
+	}
 }
 
 // collectMentionUserIDs 扫描所有块的 TextElement，收集去重的 MentionUser ID
@@ -422,20 +489,19 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 			}
 		}
 		return "[链接预览]\n", nil
-	case BlockTypeSyncSource, BlockTypeSyncReference:
-		// 同步块：容器块，递归展开子块（类似 AddOns）
-		if block.Children != nil {
-			var sb strings.Builder
-			for _, childID := range block.Children {
-				childBlock := c.blockMap[childID]
-				if childBlock != nil {
-					text, _ := c.convertBlockWithDepth(childBlock, indent, depth+1)
-					sb.WriteString(text)
-				}
+	case BlockTypeSyncSource:
+		// 源同步块的内容位于当前块树的 children 中。
+		return c.convertSyncChildren(block, indent, depth)
+	case BlockTypeSyncReference:
+		// 同文档引用会直接返回 children；跨文档引用需根据 reference_synced
+		// 指向的源文档和源块另行获取完整子孙树。
+		if len(block.Children) > 0 {
+			text, err := c.convertSyncChildren(block, indent, depth)
+			if err != nil || text != "" {
+				return text, err
 			}
-			return sb.String(), nil
 		}
-		return "", nil
+		return c.convertRemoteSyncReference(block, indent, depth)
 	case BlockTypeWikiCatalogV2:
 		return "[知识库目录 V2]\n", nil
 	case BlockTypeAITemplate:
@@ -444,6 +510,149 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 		typeName := BlockTypeName(blockType)
 		return fmt.Sprintf("<!-- 不支持的块类型: %s (type=%d) -->\n", typeName, int(blockType)), nil
 	}
+}
+
+func (c *BlockToMarkdown) convertSyncChildren(block *larkdocx.Block, indent, depth int) (string, error) {
+	var sb strings.Builder
+	for _, childID := range block.Children {
+		childBlock := c.blockMap[childID]
+		if childBlock == nil {
+			continue
+		}
+		text, err := c.convertBlockWithDepth(childBlock, indent, depth+1)
+		if err != nil {
+			return "", err
+		}
+		sb.WriteString(text)
+	}
+	return sb.String(), nil
+}
+
+func (c *BlockToMarkdown) convertRemoteSyncReference(block *larkdocx.Block, indent, depth int) (string, error) {
+	sourceDocumentID, sourceBlockID := syncReferenceSource(block)
+	if sourceDocumentID == "" || sourceBlockID == "" {
+		blockID := "未知"
+		if block.BlockId != nil && *block.BlockId != "" {
+			blockID = *block.BlockId
+		}
+		c.warnSyncOnce("missing:"+blockID, "同步引用块 %s 缺少 source_document_id/source_block_id，已输出降级占位", blockID)
+		return syncReferencePlaceholder(indent, sourceDocumentID, sourceBlockID, "缺少源文档或源块标识"), nil
+	}
+
+	key := syncReferenceKey{documentID: sourceDocumentID, blockID: sourceBlockID}
+	warnKey := sourceDocumentID + ":" + sourceBlockID
+	if c.syncState.active[key] {
+		c.warnSyncOnce("cycle:"+warnKey, "检测到同步块循环引用 (source_document_id=%s, source_block_id=%s)，已停止递归展开", sourceDocumentID, sourceBlockID)
+		return syncReferencePlaceholder(indent, sourceDocumentID, sourceBlockID, "检测到循环引用"), nil
+	}
+
+	result, cached := c.syncState.cache[key]
+	if !cached {
+		provider := c.options.SyncBlockProvider
+		if provider == nil {
+			provider = func(documentID, blockID, userAccessToken string) ([]*larkdocx.Block, error) {
+				return client.GetAllBlockDescendants(documentID, blockID, userAccessToken)
+			}
+		}
+		blocks, err := provider(sourceDocumentID, sourceBlockID, c.options.UserAccessToken)
+		if err == nil && len(blocks) == 0 {
+			err = fmt.Errorf("源块接口未返回任何块")
+		}
+		if err == nil && findBlockByID(blocks, sourceBlockID) == nil {
+			err = fmt.Errorf("源块接口响应未包含 source_block_id=%s", sourceBlockID)
+		}
+		result = syncExpansionResult{blocks: blocks, err: err}
+		c.syncState.cache[key] = result
+	}
+	if result.err != nil {
+		c.warnSyncOnce("fetch:"+warnKey, "同步块展开失败 (source_document_id=%s, source_block_id=%s): %v", sourceDocumentID, sourceBlockID, result.err)
+		return syncReferencePlaceholder(indent, sourceDocumentID, sourceBlockID, "无权访问源文档或 API 调用失败"), nil
+	}
+
+	c.syncState.active[key] = true
+	defer delete(c.syncState.active, key)
+
+	child := c.newNestedBlockToMarkdown(result.blocks, sourceDocumentID)
+	sourceBlock := child.blockMap[sourceBlockID]
+	text, err := child.convertBlockWithDepth(sourceBlock, indent, depth+1)
+	c.adoptNestedState(child)
+	if err != nil {
+		c.warnSyncOnce("convert:"+warnKey, "同步块内容转换失败 (source_document_id=%s, source_block_id=%s): %v", sourceDocumentID, sourceBlockID, err)
+		return syncReferencePlaceholder(indent, sourceDocumentID, sourceBlockID, "源块内容转换失败"), nil
+	}
+	return text, nil
+}
+
+func syncReferenceSource(block *larkdocx.Block) (string, string) {
+	if block == nil || block.ReferenceSynced == nil {
+		return "", ""
+	}
+	sourceDocumentID := ""
+	if block.ReferenceSynced.SourceDocumentId != nil {
+		sourceDocumentID = *block.ReferenceSynced.SourceDocumentId
+	}
+	sourceBlockID := ""
+	if block.ReferenceSynced.SourceBlockId != nil {
+		sourceBlockID = *block.ReferenceSynced.SourceBlockId
+	}
+	return sourceDocumentID, sourceBlockID
+}
+
+func findBlockByID(blocks []*larkdocx.Block, blockID string) *larkdocx.Block {
+	for _, block := range blocks {
+		if block != nil && block.BlockId != nil && *block.BlockId == blockID {
+			return block
+		}
+	}
+	return nil
+}
+
+func (c *BlockToMarkdown) newNestedBlockToMarkdown(blocks []*larkdocx.Block, documentID string) *BlockToMarkdown {
+	options := c.options
+	options.DocumentID = documentID
+	child := NewBlockToMarkdown(blocks, options)
+	child.userResolver = c.userResolver
+	child.userCache = c.userCache
+	child.resolveMentionUsers()
+	child.syncState = c.syncState
+	child.services = c.services
+	child.diagnostics = c.diagnostics
+	child.imageCount = c.imageCount
+	child.videoCount = c.videoCount
+	child.videoFiles = c.videoFiles
+	child.headingSeqs = c.headingSeqs
+	return child
+}
+
+func (c *BlockToMarkdown) adoptNestedState(child *BlockToMarkdown) {
+	c.userCache = child.userCache
+	c.imageCount = child.imageCount
+	c.videoCount = child.videoCount
+	c.videoFiles = child.videoFiles
+	c.headingSeqs = child.headingSeqs
+}
+
+func (c *BlockToMarkdown) warnSyncOnce(key, format string, args ...interface{}) {
+	if c.syncState.warned[key] {
+		return
+	}
+	c.syncState.warned[key] = true
+	if c.diagnostics == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(c.diagnostics, "警告: "+format+"\n", args...)
+}
+
+func syncReferencePlaceholder(indent int, sourceDocumentID, sourceBlockID, reason string) string {
+	if sourceDocumentID == "" {
+		sourceDocumentID = "未知"
+	}
+	if sourceBlockID == "" {
+		sourceBlockID = "未知"
+	}
+	prefix := strings.Repeat(" ", indent)
+	return fmt.Sprintf("%s> [!WARNING]\n%s> 同步块内容未展开（source_document_id=%s, source_block_id=%s）：%s\n",
+		prefix, prefix, sourceDocumentID, sourceBlockID, reason)
 }
 
 func (c *BlockToMarkdown) convertText(block *larkdocx.Block) (string, error) {
@@ -631,7 +840,7 @@ func (c *BlockToMarkdown) convertBullet(block *larkdocx.Block, indent, depth int
 		return "", nil
 	}
 	text := c.convertTextElements(block.Bullet.Elements)
-	prefix := strings.Repeat("  ", indent)
+	prefix := strings.Repeat(" ", indent)
 	result := fmt.Sprintf("%s- %s\n", prefix, text)
 
 	// 递归处理嵌套子列表
@@ -639,7 +848,8 @@ func (c *BlockToMarkdown) convertBullet(block *larkdocx.Block, indent, depth int
 		for _, childID := range block.Children {
 			childBlock := c.blockMap[childID]
 			if childBlock != nil {
-				childMd, _ := c.convertBlockWithDepth(childBlock, indent+1, depth+1)
+				// CommonMark 要求子块缩进到父列表正文起始列；"- " 宽 2 列。
+				childMd, _ := c.convertBlockWithDepth(childBlock, indent+2, depth+1)
 				result += childMd
 			}
 		}
@@ -652,7 +862,7 @@ func (c *BlockToMarkdown) convertOrdered(block *larkdocx.Block, indent, depth in
 		return "", nil
 	}
 	text := c.convertTextElements(block.Ordered.Elements)
-	prefix := strings.Repeat("  ", indent)
+	prefix := strings.Repeat(" ", indent)
 
 	seq := "1"
 	if block.Ordered.Style != nil && block.Ordered.Style.Sequence != nil {
@@ -668,7 +878,8 @@ func (c *BlockToMarkdown) convertOrdered(block *larkdocx.Block, indent, depth in
 		for _, childID := range block.Children {
 			childBlock := c.blockMap[childID]
 			if childBlock != nil {
-				childMd, _ := c.convertBlockWithDepth(childBlock, indent+1, depth+1)
+				// 有序 marker 宽度随编号变化："1. "=3，"10. "=4。
+				childMd, _ := c.convertBlockWithDepth(childBlock, indent+len(seq)+2, depth+1)
 				result += childMd
 			}
 		}
@@ -727,7 +938,7 @@ func (c *BlockToMarkdown) convertTodoWithDepth(block *larkdocx.Block, indent, de
 	}
 
 	text := c.convertTextElements(block.Todo.Elements)
-	prefix := strings.Repeat("  ", indent)
+	prefix := strings.Repeat(" ", indent)
 	result := fmt.Sprintf("%s- %s %s\n", prefix, checkbox, text)
 
 	// 递归处理嵌套子项
@@ -735,7 +946,8 @@ func (c *BlockToMarkdown) convertTodoWithDepth(block *larkdocx.Block, indent, de
 		for _, childID := range block.Children {
 			childBlock := c.blockMap[childID]
 			if childBlock != nil {
-				childMd, _ := c.convertBlockWithDepth(childBlock, indent+1, depth+1)
+				// Todo 仍是 bullet list item，父 marker "- " 宽 2 列；[ ] 属于正文。
+				childMd, _ := c.convertBlockWithDepth(childBlock, indent+2, depth+1)
 				result += childMd
 			}
 		}
@@ -789,9 +1001,9 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 		}
 
 		// 方式一：获取临时 URL 后下载
-		tmpURL, urlErr := client.GetMediaTempURL(token, dlOpts)
+		tmpURL, urlErr := c.services.getMediaTempURL(token, dlOpts)
 		if urlErr == nil {
-			if dlErr := client.DownloadFromURL(tmpURL, localPath); dlErr == nil {
+			if dlErr := c.services.downloadFromURL(tmpURL, localPath); dlErr == nil {
 				return fmt.Sprintf("![%s](%s)\n", alt, localPath), nil
 			} else if c.options.Debug {
 				fmt.Fprintf(os.Stderr, "[Debug] 图片下载失败 (URL方式): %v\n", dlErr)
@@ -801,7 +1013,7 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 		}
 
 		// 方式二：SDK 直接下载
-		if sdkErr := client.DownloadMedia(token, localPath, dlOpts); sdkErr == nil {
+		if sdkErr := c.services.downloadMedia(token, localPath, dlOpts); sdkErr == nil {
 			return fmt.Sprintf("![%s](%s)\n", alt, localPath), nil
 		} else if c.options.Debug {
 			fmt.Fprintf(os.Stderr, "[Debug] 图片SDK下载失败: %v\n", sdkErr)
@@ -1067,8 +1279,8 @@ func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (s
 
 		localPath := c.nextVideoAssetPath(name)
 		dlOpts := client.DownloadMediaOptions{UserAccessToken: c.options.UserAccessToken, DocToken: c.options.DocumentID}
-		if tmpURL, err := client.GetMediaTempURL(token, dlOpts); err == nil {
-			if dlErr := client.DownloadFromURL(tmpURL, localPath); dlErr == nil {
+		if tmpURL, err := c.services.getMediaTempURL(token, dlOpts); err == nil {
+			if dlErr := c.services.downloadFromURL(tmpURL, localPath); dlErr == nil {
 				attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", localPath)), name, viewType)
 				return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
 			} else if c.options.Debug {
@@ -1077,7 +1289,7 @@ func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (s
 		} else if c.options.Debug {
 			fmt.Fprintf(os.Stderr, "[Debug] 获取视频临时URL失败: %v\n", err)
 		}
-		if err := client.DownloadMedia(token, localPath, dlOpts); err == nil {
+		if err := c.services.downloadMedia(token, localPath, dlOpts); err == nil {
 			attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", localPath)), name, viewType)
 			return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
 		} else if c.options.Debug {
@@ -1307,7 +1519,7 @@ func (c *BlockToMarkdown) convertBoard(block *larkdocx.Block) (string, error) {
 
 		localPath := filepath.Join(c.options.AssetsDir, filename)
 
-		if savedPath, err := client.GetBoardImage(token, localPath, c.options.UserAccessToken); err == nil {
+		if savedPath, err := c.services.getBoardImage(token, localPath, c.options.UserAccessToken); err == nil {
 			return fmt.Sprintf("![画板](%s)\n", savedPath), nil
 		} else if c.options.Debug {
 			fmt.Fprintf(os.Stderr, "[Debug] 画板下载失败: %v\n", err)

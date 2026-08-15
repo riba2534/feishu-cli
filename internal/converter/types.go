@@ -1,6 +1,10 @@
 package converter
 
-import "fmt"
+import (
+	"fmt"
+
+	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
+)
 
 // BlockType represents Feishu block types
 type BlockType int
@@ -94,6 +98,10 @@ type ImageInfo struct {
 // SheetDataProvider 提供电子表格数据，用于导出 docx 内嵌 Sheet 块。
 type SheetDataProvider func(spreadsheetToken, sheetID, userAccessToken string) ([]*SheetData, error)
 
+// SyncBlockProvider 提供引用同步块的源块及全部子孙块。
+// 返回值应包含 sourceBlockID 对应的源同步块本身（with_descendants=true 的飞书 API 语义）。
+type SyncBlockProvider func(sourceDocumentID, sourceBlockID, userAccessToken string) ([]*larkdocx.Block, error)
+
 // ConvertOptions holds conversion options
 type ConvertOptions struct {
 	DownloadImages bool
@@ -112,6 +120,7 @@ type ConvertOptions struct {
 	ExpandMentions      bool   // 导出时展开 @用户为友好格式（默认 false，CLI 默认 true）
 	ExpandSheets        bool   // 导出时展开内嵌电子表格为 Markdown 表格
 	SheetDataProvider   SheetDataProvider
+	SyncBlockProvider   SyncBlockProvider
 
 	// ColumnWidthMode 控制 Markdown 表格转飞书表格时的列宽策略：
 	//   - "" 或 "auto"：保留默认启发式（按字符宽度估算，CJK 14px / ASCII 8px）

@@ -1152,7 +1152,7 @@ func TestConvertOrderedWithNestedSublist(t *testing.T) {
 		t.Errorf("Convert() error = %v", err)
 	}
 	got = strings.TrimSpace(got)
-	want := "1. Item 1\n  1. Subitem 1.1"
+	want := "1. Item 1\n   1. Subitem 1.1"
 	if got != want {
 		t.Errorf("Convert() got:\n%s\n\nwant:\n%s", got, want)
 	}

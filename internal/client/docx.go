@@ -460,8 +460,19 @@ func GetBlockChildren(documentID string, blockID string, userAccessToken ...stri
 	return resp.Data.Items, headers, nil
 }
 
-// GetAllBlockChildren retrieves all direct children of a block with pagination
+// GetAllBlockChildren retrieves all direct children of a block with pagination.
 func GetAllBlockChildren(documentID string, blockID string, userAccessToken ...string) ([]*larkdocx.Block, error) {
+	return getAllBlockChildren(documentID, blockID, false, userAccessToken...)
+}
+
+// GetAllBlockDescendants retrieves a block and all of its descendants with pagination.
+// 飞书的引用同步块只返回 source_document_id/source_block_id；官方要求调用子块接口并设置
+// with_descendants=true 才能取得源同步块的完整块树。
+func GetAllBlockDescendants(documentID string, blockID string, userAccessToken ...string) ([]*larkdocx.Block, error) {
+	return getAllBlockChildren(documentID, blockID, true, userAccessToken...)
+}
+
+func getAllBlockChildren(documentID string, blockID string, withDescendants bool, userAccessToken ...string) ([]*larkdocx.Block, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -478,6 +489,9 @@ func GetAllBlockChildren(documentID string, blockID string, userAccessToken ...s
 			BlockId(blockID).
 			PageSize(pageSize).
 			DocumentRevisionId(-1)
+		if withDescendants {
+			reqBuilder.WithDescendants(true)
+		}
 
 		if pageToken != "" {
 			reqBuilder.PageToken(pageToken)

@@ -74,7 +74,7 @@ feishu-cli doc import report.md --title "技术报告" --verbose
 feishu-cli doc export <document_id> -o doc.md --download-images
 ```
 
-**支持的语法**：标题（6 级）、段落、列表（无限深度嵌套）、任务列表、代码块、引用、Callout（6 种类型）、表格（自动拆分）、分割线、图片、链接、公式、粗体 / 斜体 / 删除线 / 下划线 / 行内代码 / 高亮
+**支持的语法**：标题（6 级）、段落、列表（无限深度嵌套）、任务列表、代码块、引用、Callout（6 种类型）、同步块（含跨文档引用）、表格（自动拆分）、分割线、图片、链接、公式、粗体 / 斜体 / 删除线 / 下划线 / 行内代码 / 高亮。跨文档同步块无法读取时会保留带源标识的 WARNING 占位并输出诊断，不会静默导出为空。
 
 ### Mermaid / PlantUML 图表
 
