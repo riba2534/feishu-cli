@@ -47,7 +47,14 @@ func LoadCurrentUserCache() (*CurrentUserCache, error) {
 	if err != nil {
 		return nil, err
 	}
+	return LoadUserCacheFrom(path)
+}
 
+// LoadUserCacheFrom 从指定路径加载 user_profile.json，文件不存在返回 nil, nil。
+func LoadUserCacheFrom(path string) (*CurrentUserCache, error) {
+	if path == "" {
+		return nil, nil
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

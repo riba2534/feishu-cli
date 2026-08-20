@@ -169,6 +169,12 @@ feishu-cli auth check --scope "search:docs:read" && feishu-cli search docs --que
 | `cached_user.open_id` / `.name` | **当前登录的是谁**——需要本人 open_id（发消息给自己、查自己任务）时从这里取（仅当本地有 user cache 时出现） |
 | `note` | 健康度提示文案（如 `missing_refresh_token` / `expired` 场景出现） |
 | `verified` / `verify_error` | 仅 `--verify`：在线调 `user_info` 核验 token 是否仍被服务端接受 |
+| `profile` / `profile_source` | 当前选中的 profile 及其选择来源（flag/env/pointer/fallback/legacy/none） |
+| `app_id` | 叠加 `--bot-app-*` / `FEISHU_APP_*` 后的生效 App ID |
+| `token_from_profile` | `token.json` 的候选目录（**不是**本次实际用的 token，见下） |
+| `env_overrides` / `flag_overrides` | 当前命令有哪些 App/Profile 覆盖来源 |
+| `profile_error` | 当前生效那套的配置/token 读取问题（配置损坏时仍会输出，便于排查） |
+| `hint` | App 凭证被覆盖时的说明 |
 
 未登录时返回 `{"logged_in": false, "identity": "bot", "note": "..."}`。
 
@@ -313,29 +319,54 @@ CI 用法：`feishu-cli doctor --offline --json | jq -e '.ok == true'`。
 
 已经明确是 scope 缺失时，不需要 doctor，直接 `auth check --scope "..."`。
 
-> **v1.27.1 新增**：使用 `--config <path>` 显式覆盖配置时，CLI 会在 stderr 打印 warning，提示 profile 系统被绕过（`token.json` 自动加载等行为失效）。AI Agent 调试时若看到该 warning，意味着当前命令未走 profile 体系，token 解析仅依赖该 `--config` 文件中的字段。
+> **v1.27.1 新增**：使用 `--config <path>` 显式覆盖配置时，CLI 会在 stderr 打印 warning：`--config` **只换 yaml，token 仍读当前 profile**。完整隔离请用 `--profile <name>` 或 `FEISHU_PROFILE`。此时 `profile list --json` / `profile current --json` 的 `effective`（app_id、base_url、has_secret）反映的是 `--config` 那份文件，而 `profiles[]` 仍是各 profile 目录里的原值，`token_from_profile` 不受影响。
 
 ## 多 App Profile（profile）
 
-用户需要在多个飞书租户、多个 App ID 或工作/个人账号之间切换时，用 profile 管理独立的 `config.yaml` 和 `token.json`：
+用户需要在多个飞书租户、多个 App ID 或工作/个人账号之间切换时，用 profile 管理独立的 `config.yaml` 和 `token.json`。
+
+**发现入口（Agent 必跑）**：`feishu-cli profile list --json`。这是 Bot 清单，不是目录清单。即使还没 `profile add`，也会给出 `effective`（环境变量 / 旧布局正在用的那一套），不要把空的 `profiles[]` 理解成「没有 Bot」。
 
 ```bash
 feishu-cli profile add work --app-id cli_xxx --app-secret secret_xxx --use
 feishu-cli profile list --json
-feishu-cli profile current
-feishu-cli profile use work
+feishu-cli profile current --json
+feishu-cli --profile work msg send ...     # 单次指定，不改指针（推荐）
+feishu-cli --bot-app-id cli_xxx --bot-app-secret xxx auth status -o json  # 仅本次覆盖 App 凭证
+feishu-cli profile use work                # 改默认指针；仅当用户要求「以后都用这个」
 feishu-cli profile use -                    # toggle 到上一个 profile（previous-profile 指针）
 feishu-cli profile rename old-name new-name
 feishu-cli profile remove old-name
 feishu-cli profile migrate --name work
 ```
 
-解析优先级：
+`profile list --json` 关键字段：
 
-1. `FEISHU_PROFILE=<name>` 环境变量强制覆盖。
-2. `~/.feishu-cli/active-profile` 指针。
-3. 指针缺失或失效时，回退到 `profiles/` 下字典序第一个（可能不是预期的那个）。
-4. 未启用 profile 系统时，继续使用旧布局 `~/.feishu-cli/config.yaml` 和 `~/.feishu-cli/token.json`。
+- `mode`: `profile` 或 `legacy`
+- `active` / `active_source`: `flag` / `env` / `pointer` / `fallback` / `legacy` / `none`
+- `env_overrides.app_id`: `true` 表示 `FEISHU_APP_ID` 会盖住所有 profile 的 app_id
+- `flag_overrides.app_id/app_secret`: `true` 表示对应 `--bot-app-*` 正在覆盖 App 凭证
+- `token_from_profile`: `token.json` 的**候选目录**；App 凭证覆盖不会改变它
+- `user_token_override`: `--user-access-token` / `FEISHU_USER_ACCESS_TOKEN` / 空。非空表示存在压过 `token.json` 的显式 User Token
+- `has_config_user_token`: 生效的 `config.yaml` 里是否配了静态 `user_access_token`（解析链最后一级，不输出明文）
+- `effective_error` / `profiles[].config_error` / `token_error` / `cache_error`: 各文件的读取问题；单个 profile 损坏不会让整张清单失败
+- `hint`: App 凭证与 User Token 来自不同解析链时的显式提醒
+- `effective`: 叠加环境变量后真正会拿去调 API 的那一套（含 `app_id`、`token_status`、`select_with`）
+- `profiles[]`: 磁盘上每一套；`app_id` 是文件里的值。`select_with` 形如 `--profile alert`
+
+两条解析链彼此正交：
+
+1. **目录 / User Token**：`--profile` > `FEISHU_PROFILE` > `~/.feishu-cli/active-profile` 指针 > 旧布局。指针缺失或失效且没有旧布局时，回退到 `profiles/` 下字典序第一个。
+2. **App 凭证**：`--bot-app-id` / `--bot-app-secret` > `FEISHU_APP_ID` / `FEISHU_APP_SECRET` > 上一条选中目录的 `config.yaml`。
+
+**不要把这些字段当成「本次命令实际用了哪个 token」**：本项目按命令分四类 token helper（读类 User 优先 Tenant 兜底、写类默认 Bot、必须 User Token、`--as` 显式切换），`--as bot`、默认 Bot 身份的写命令、只认 flag 的 `vc bot meeting-join`、固定读本地文件的 `auth status` 各走各的路径。CLI 只陈述可离线证明的事实（设置了哪些覆盖、候选目录是谁、文件在不在），实际身份要看目标命令自己的文档与 `--dry-run` 输出。
+
+`--profile` 不会压过 `FEISHU_APP_ID/FEISHU_APP_SECRET`，App 凭证覆盖也不会切换 `token.json`。`hint` 和 `token_from_profile` 任何时候都描述这组正交来源；stderr 只在**真错配**时出声，两种情形：
+
+- 覆盖来的 `app_id` 与所选目录 `config.yaml` 里的不是同一个应用（User Token 仍读该目录的 `token.json`）；
+- `app_id` 与 `app_secret` 落在不同层（例如只传了 `--bot-app-secret`），两半凭证可能不属于同一应用。
+
+单应用 `export FEISHU_APP_ID/FEISHU_APP_SECRET`（没有 profile，或与所选 profile 是同一个应用）不会有任何 stderr 输出——不要把「没有警告」理解成「没在用环境变量」，要判断覆盖关系一律读 `profile list --json` 的 `env_overrides` / `effective`。
 
 踩坑（违反直觉、可能丢数据，逐条留意）：
 
@@ -356,3 +387,7 @@ profile 名校验规则 `[A-Za-z0-9_-]{1,64}`（禁止 `.` / `..` / `profiles` /
 3. 授权成功后读 `authorization_complete` 的 `missing_scopes`：非空只是 warning，开通后按需补授（增量授权，补缺失的几个即可，不会丢已授 scope）。
 4. 不把 `user_access_token` / `device_code` 写入文档、代码或日志。
 5. 错误信息明确指向 scope/token 时直接 `auth check`；只有错误不明确（"突然不工作"/网络异常）才用 `doctor` 缩小问题面，不要混用。
+6. 用户可能有多个飞书 Bot、或没指明用哪个时，先 `feishu-cli profile list --json`。看 `effective` 和 `env_overrides`，不要猜。
+7. 单次指定用 `feishu-cli --profile <name> <cmd>`（或 `FEISHU_PROFILE=<name>`）。不要为了跑一条业务去 `profile use`——会改全局指针。
+8. `--as bot` 只选身份，不选 App。看到 `env_overrides.app_id/app_secret=true` 必须告诉用户：环境变量仍会覆盖所选 profile 的 App 凭证；要用 profile YAML 中的凭证必须先 unset 对应变量。
+9. `app_id` 可以出现在回复里；`app_secret` / 裸 token / `device_code` 禁止写入回复或文件。

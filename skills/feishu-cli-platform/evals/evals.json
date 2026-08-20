@@ -48,6 +48,14 @@
       "expected_output": "使用 user search 与 dept children 的只读命令，并说明 ID 类型应显式指定。",
       "expectations": ["使用 user search --email user@example.com", "使用 dept children od_xxx", "明确只读查询且 ID 类型应根据实际输入显式设置，而非靠前缀猜测"],
       "files": []
+    },
+    {
+      "id": 7,
+      "workflows": ["auth"],
+      "prompt": "本机有多个飞书机器人，我不确定当前会打到哪个。先看能操作哪些 Bot，再用名为 work 的那个发一条消息，不要改默认 profile。",
+      "expected_output": "先 profile list --json，再用 --profile work 发消息，不执行 profile use。",
+      "expectations": ["先执行 profile list --json", "业务命令带 --profile work 或 FEISHU_PROFILE=work", "不使用 profile use"],
+      "files": []
     }
   ]
 }

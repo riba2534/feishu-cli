@@ -17,6 +17,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/spf13/cobra"
 )
 
@@ -433,6 +434,7 @@ func outputJSON(results []checkResult) error {
 		"ok":     allOK,
 		"checks": results,
 	}
+	attachProfileContext(out)
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(out); err != nil {
@@ -445,6 +447,21 @@ func outputJSON(results []checkResult) error {
 }
 
 func outputPretty(results []checkResult) error {
+	name, source, err := profile.ResolveActive()
+	switch {
+	case err != nil:
+		fmt.Printf("profile=? source=? （解析失败: %v）\n", err)
+	default:
+		if name == "" {
+			name = "(legacy)"
+		}
+		fmt.Printf("profile=%s source=%s\n", name, source)
+	}
+	if config.BotFlagAppID() != "" {
+		fmt.Println("提示: --bot-app-id 已设置，doctor 看到的是命令行覆盖后的应用身份")
+	} else if profile.EnvOverrides().AppID {
+		fmt.Println("提示: FEISHU_APP_ID 已设置，doctor 看到的是环境变量覆盖后的应用身份")
+	}
 	allOK := true
 	for _, r := range results {
 		var icon string

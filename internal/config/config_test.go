@@ -11,6 +11,8 @@ import (
 // resetConfig 重置全局配置状态，用于测试隔离
 func resetConfig() {
 	cfg = nil
+	botFlagAppID = ""
+	botFlagAppSecret = ""
 	viper.Reset()
 }
 

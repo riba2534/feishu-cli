@@ -26,19 +26,27 @@ var profileCmd = &cobra.Command{
   - 第一次执行 'profile add' 不会自动迁移旧文件——用 'profile migrate'
     把现有 config.yaml + token.json 拷到 profiles/default/。
 
-环境变量：
-  FEISHU_PROFILE=<name>   临时强制使用指定 profile（不修改指针文件）
+指定 Bot（不改指针，Agent 推荐）:
+  feishu-cli --profile <name> <命令>
+  FEISHU_PROFILE=<name> feishu-cli <命令>
+
+两条解析链彼此独立:
+  目录 / User Token: --profile > FEISHU_PROFILE > active-profile 指针 > 旧布局
+  App 凭证: --bot-app-id/--bot-app-secret > FEISHU_APP_ID/FEISHU_APP_SECRET > 选中目录的 config.yaml
+
+先看能操作哪些 Bot:
+  feishu-cli profile list --json
 
 示例:
   feishu-cli profile add work --app-id cli_xxx --app-secret secret_xxx --use
-  feishu-cli profile list
+  feishu-cli profile list --json
   feishu-cli profile use personal
   feishu-cli profile use -                # 切回上一个 profile
   feishu-cli profile rename old new
   feishu-cli profile remove temp --force
-  feishu-cli profile current
+  feishu-cli profile current --json
   feishu-cli profile migrate              # 旧布局 → profiles/default/
-  FEISHU_PROFILE=work feishu-cli msg send ...`,
+  feishu-cli --profile work msg send ...`,
 }
 
 func init() {
