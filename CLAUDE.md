@@ -66,14 +66,24 @@ go vet ./...                      # 静态检查
 
 ### 配置方式
 
-**优先级**：环境变量 > 配置文件 > 默认值
+配置与 Token 使用两条正交解析链：
+
+- **目录 / User Token**：`--profile` > `FEISHU_PROFILE` > `active-profile` 指针 > 旧布局
+- **App 凭证**：`--bot-app-id` / `--bot-app-secret` > `FEISHU_APP_ID` / `FEISHU_APP_SECRET` > 选中目录的 `config.yaml`
 
 ```bash
-# 环境变量（推荐）
+# 多 Bot：先看清单，再单次指定（不要长期 export FEISHU_APP_ID）
+feishu-cli profile list --json
+feishu-cli --profile alert msg send ...
+
+# 单次覆盖 App 凭证（不写盘；User Token 仍来自当前 profile）
+feishu-cli --bot-app-id cli_xxx --bot-app-secret xxx auth status -o json
+
+# 单应用环境变量（会盖住所选 profile 的 App 凭证，不切换 token.json）
 export FEISHU_APP_ID=cli_xxx
 export FEISHU_APP_SECRET=xxx
 
-# 配置文件 (~/.feishu-cli/config.yaml)，通过 feishu-cli config init 初始化
+# 配置文件 (~/.feishu-cli/config.yaml 或 profiles/<name>/config.yaml)
 ```
 
 ## 核心功能

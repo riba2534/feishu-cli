@@ -160,7 +160,7 @@ feishu-cli doc import large-doc.md --title "大文档" \
 | **实时事件** | WebSocket 长连接订阅应用事件（EventKey 列表/schema/consume/status/stop），**卡片按钮/表单回调（card.action.trigger）**、**审批 v4 事件（自动注册服务端订阅）**、Bot 菜单事件 |
 | **Raw API** | `api GET/POST/PUT/DELETE/PATCH <path>` 裸调任意未封装的 OpenAPI 接口，自动鉴权与错误码处理，支持 dry-run、自定义超时、jq 过滤与 json/pretty/table/ndjson/csv 多格式输出 |
 | **OpenAPI Schema** | 本地查询内置 OpenAPI service/resource/method、路径、参数和 scope，无需 token |
-| **Profile 多配置** | 多 App / 多账号配置 add/list/use/current/rename/remove/migrate，支持 `FEISHU_PROFILE` 临时切换 |
+| **Profile 多配置** | 多 App / 多账号配置 add/list/use/current/rename/remove/migrate；`profile list --json` 列出可操作 Bot；全局 `--profile` / `FEISHU_PROFILE` 单次切换目录与 User Token（`FEISHU_APP_ID/SECRET` 仍可覆盖 App 凭证） |
 | **健康检查** | `doctor` 一次检查配置、User Token、端点、代理和本地依赖 |
 
 </details>
@@ -1012,8 +1012,12 @@ feishu-cli event stop --all
 feishu-cli schema list --service im
 feishu-cli schema im.messages.delete --format json
 feishu-cli doctor --json
+feishu-cli profile list --json
+feishu-cli profile current --json
 feishu-cli profile migrate
 feishu-cli profile add work --app-id cli_xxx --app-secret secret_xxx --use
+feishu-cli --profile work auth status -o json
+feishu-cli --bot-app-id cli_xxx --bot-app-secret xxx profile list --json  # 单次覆盖 App 凭证，不切换 token.json
 feishu-cli profile use -
 
 # 通用 OpenAPI 透传（v1.29+）⭐ 覆盖 2500+ 未封装端点

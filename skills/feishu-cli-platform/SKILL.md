@@ -11,7 +11,7 @@ description: >-
   这里的“全局搜索”仅指 `search docs/messages/apps`，不包括在审批、会议、邮箱等业务域内查询。
   请求出现 approval、approval_code、审批定义/实例/待办时绝对不要使用本 Skill，应使用
   feishu-cli-work；出现视频会议、妙记、minute、录制或逐字稿时应使用 feishu-cli-meetings。
-argument-hint: <auth|config|api|schema|search|user|dept> [args]
+argument-hint: <auth|config|profile|api|schema|search|user|dept> [args]
 user-invocable: true
 allowed-tools: Bash(feishu-cli:*), Bash(./feishu-cli:*), Bash(jq:*), Bash(curl:*), Bash(python3:*), Read, Write
 ---
@@ -38,8 +38,9 @@ Schema 只负责发现接口；API 负责执行请求。通常先查 schema，�
 
 1. 优先运行仓库当前编译产物 `./feishu-cli`；安装环境才使用 PATH 中的 `feishu-cli`。
 2. User Token 操作先执行 `auth check --scope`。不要在输出、文件或命令历史中暴露真实 Token。
-3. 写请求先用 `--dry-run`；API 不支持 dry-run 的端点需明确告知用户副作用。
-4. 搜索与通讯录结果默认只读取；用户要求后续写操作时再切换到对应领域 Skill。
+3. 多 Bot / 不确定当前是哪个应用时，先 `profile list --json`；单次目录/Token 选择用 `--profile <name>`，不要为一条命令去 `profile use`。若 `env_overrides.app_id/app_secret=true`，环境变量仍覆盖 App 凭证，需先提示用户 unset 对应变量。
+4. 写请求先用 `--dry-run`；API 不支持 dry-run 的端点需明确告知用户副作用。
+5. 搜索与通讯录结果默认只读取；用户要求后续写操作时再切换到对应领域 Skill。
 
 ## 领域边界
 
