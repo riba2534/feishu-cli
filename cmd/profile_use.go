@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/spf13/cobra"
@@ -37,6 +38,12 @@ var profileUseCmd = &cobra.Command{
 			return err
 		}
 
+		// 显式针对切换后的 profile 判定，不受本次 --profile 影响；只有真错配才出声
+		if msg := appCredentialWarningForProfile(newActive, dir); msg != "" {
+			fmt.Fprintln(os.Stderr, msg)
+			fmt.Fprintf(os.Stderr, "    profile use 只切换目录和 User Token；要改用 profile %q 自带的 App 凭证，请先 unset FEISHU_APP_ID/FEISHU_APP_SECRET 或去掉 --bot-app-* flag。\n", newActive)
+		}
+
 		if profileUseJSON {
 			out := map[string]any{
 				"ok":       true,
@@ -60,23 +67,39 @@ var profileUseCmd = &cobra.Command{
 	},
 }
 
+var profileCurrentJSON bool
+
 var profileCurrentCmd = &cobra.Command{
 	Use:   "current",
-	Short: "显示当前激活的 profile",
+	Short: "显示当前真正生效的 Bot / profile",
+	Long: `显示叠加 --profile / FEISHU_PROFILE / App 凭证覆盖后，当前命令会使用的完整身份上下文。
+
+JSON 输出与 profile list --json 同形的完整 inventory，包含 effective、active_source、
+token_from_profile、env_overrides、flag_overrides 和 hint，便于 Agent 确认身份。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name, err := profile.ActiveName()
+		inv, err := buildProfileInventory()
 		if err != nil {
 			return err
 		}
+		if profileCurrentJSON {
+			return printJSON(inv)
+		}
+		eff := inv.Effective
+		name := eff.Name
 		if name == "" {
-			fmt.Fprintln(cmd.OutOrStdout(), "(未启用 profile 系统，使用旧布局 ~/.feishu-cli/)")
-			return nil
+			name = "(legacy)"
 		}
-		dir, err := profile.ProfileDir(name)
-		if err != nil {
-			return err
+		fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", name, eff.Path)
+		if eff.AppID != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "app_id:\t%s\n", eff.AppID)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", name, dir)
+		fmt.Fprintf(cmd.OutOrStdout(), "source:\t%s\n", inv.ActiveSource)
+		if inv.EffectiveError != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "⚠️ 问题:\t%s\n", inv.EffectiveError)
+		}
+		if inv.Hint != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "提示:\t%s\n", inv.Hint)
+		}
 		return nil
 	},
 }
@@ -126,6 +149,7 @@ var profileMigrateCmd = &cobra.Command{
 
 func init() {
 	profileUseCmd.Flags().BoolVar(&profileUseJSON, "json", false, "JSON 输出")
+	profileCurrentCmd.Flags().BoolVar(&profileCurrentJSON, "json", false, "JSON 输出（完整 inventory，适合 Agent）")
 	profileCmd.AddCommand(profileUseCmd)
 	profileCmd.AddCommand(profileCurrentCmd)
 

@@ -382,38 +382,6 @@ func TestEnvVarOverride(t *testing.T) {
 	}
 }
 
-func TestDescribe(t *testing.T) {
-	withTempHome(t)
-	if err := Create("work", CreateOpts{SwitchTo: true}); err != nil {
-		t.Fatalf("Create work: %v", err)
-	}
-	if err := Create("personal", CreateOpts{}); err != nil {
-		t.Fatalf("Create personal: %v", err)
-	}
-
-	infos, err := Describe()
-	if err != nil {
-		t.Fatalf("Describe: %v", err)
-	}
-	if len(infos) != 2 {
-		t.Fatalf("Describe len = %d, want 2", len(infos))
-	}
-	for _, info := range infos {
-		if info.Name == "work" && !info.Active {
-			t.Errorf("work should be active")
-		}
-		if info.Name == "personal" && info.Active {
-			t.Errorf("personal should not be active")
-		}
-		if !info.HasConfig {
-			t.Errorf("%s should have config.yaml", info.Name)
-		}
-		if info.HasToken {
-			t.Errorf("%s should not have token.json (not logged in)", info.Name)
-		}
-	}
-}
-
 func TestMigrateLegacy(t *testing.T) {
 	home := withTempHome(t)
 	legacyDir := filepath.Join(home, ".feishu-cli")

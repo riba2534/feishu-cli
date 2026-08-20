@@ -5,6 +5,7 @@ go 1.21
 require (
 	github.com/itchyny/gojq v0.12.17
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
+	github.com/rivo/uniseg v0.4.7
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.18.2

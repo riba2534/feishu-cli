@@ -19,6 +19,7 @@ var authStatusCmd = &cobra.Command{
   - Access Token（脱敏）和有效期
   - Refresh Token 状态和有效期
   - 授权范围
+  - 当前 profile / 生效 app_id
 
 示例:
   feishu-cli auth status
@@ -35,20 +36,25 @@ var authStatusCmd = &cobra.Command{
 		token, err := auth.LoadToken()
 		if err != nil {
 			if output == "json" {
-				return printJSON(map[string]any{"logged_in": false, "error": err.Error()})
+				out := map[string]any{"logged_in": false, "error": err.Error()}
+				attachProfileContext(out)
+				return printJSON(out)
 			}
 			return fmt.Errorf("读取 token 失败: %w", err)
 		}
 
 		if token == nil {
 			if output == "json" {
-				return printJSON(map[string]any{
+				out := map[string]any{
 					"logged_in": false,
 					"identity":  "bot",
 					"note":      "未登录用户身份，仅可使用应用身份（App Token）能力",
-				})
+				}
+				attachProfileContext(out)
+				return printJSON(out)
 			}
 			fmt.Println("授权状态: 未登录")
+			printProfileContextHuman()
 			fmt.Println("  使用 feishu-cli auth login 进行授权")
 			return nil
 		}
@@ -114,23 +120,24 @@ var authStatusCmd = &cobra.Command{
 				result["verify_error"] = verifyErr
 			}
 		}
-
-		// JSON 输出模式
+		// JSON 输出模式（人类可读走 printProfileContextHuman，避免重复构建 inventory）
 		if output == "json" {
+			attachProfileContext(result)
 			return printJSON(result)
 		}
 
 		// 人类可读输出
 		fmt.Printf("授权状态: 已登录（%s）\n", status)
+		printProfileContextHuman()
 		fmt.Printf("  Access Token:   %s\n", auth.MaskToken(token.AccessToken))
 
 		if token.IsAccessTokenValid() {
 			remaining := time.Until(token.ExpiresAt)
-			fmt.Printf("  有效期至:        %s（剩余 %s）\n",
+			fmt.Printf("  有效期至:       %s（剩余 %s）\n",
 				token.ExpiresAt.Format("2006-01-02 15:04:05"),
 				formatDuration(remaining))
 		} else {
-			fmt.Printf("  有效期至:        %s（已过期）\n", token.ExpiresAt.Format("2006-01-02 15:04:05"))
+			fmt.Printf("  有效期至:       %s（已过期）\n", token.ExpiresAt.Format("2006-01-02 15:04:05"))
 		}
 
 		if refreshPresent {
@@ -149,20 +156,20 @@ var authStatusCmd = &cobra.Command{
 		}
 
 		if token.Scope != "" {
-			fmt.Printf("  授权范围:        %s\n", token.Scope)
+			fmt.Printf("  授权范围:       %s\n", token.Scope)
 		}
 		if cache, ok := result["cached_user"].(map[string]any); ok {
-			fmt.Printf("  当前用户:        %s (%s)\n", cache["name"], cache["open_id"])
+			fmt.Printf("  当前用户:       %s (%s)\n", cache["name"], cache["open_id"])
 		}
-		fmt.Printf("  健康度:          %s\n", health)
+		fmt.Printf("  健康度:         %s\n", health)
 		if note != "" {
-			fmt.Printf("  提示:            %s\n", note)
+			fmt.Printf("  提示:           %s\n", note)
 		}
 		if verify {
 			if verified, _ := result["verified"].(bool); verified {
-				fmt.Println("  在线校验:        通过")
+				fmt.Println("  在线校验:       通过")
 			} else if verifyErr, _ := result["verify_error"].(string); verifyErr != "" {
-				fmt.Printf("  在线校验:        失败（%s）\n", verifyErr)
+				fmt.Printf("  在线校验:       失败（%s）\n", verifyErr)
 			}
 		}
 

@@ -36,8 +36,54 @@ type ImportConfig struct {
 
 var cfg *Config
 
+// 命令行 --bot-app-id / --bot-app-secret，优先于环境变量和配置文件，不写盘。
+var botFlagAppID, botFlagAppSecret string
+
+// SetBotFlagCredentials 记录本进程 --bot-app-id / --bot-app-secret（trim 后）。
+// 空字符串表示该 flag 未传，不覆盖。
+func SetBotFlagCredentials(appID, appSecret string) {
+	botFlagAppID = strings.TrimSpace(appID)
+	botFlagAppSecret = strings.TrimSpace(appSecret)
+}
+
+// BotFlagAppID 返回 --bot-app-id，未传则为空。
+func BotFlagAppID() string { return botFlagAppID }
+
+// BotFlagAppSecretSet 报告是否传了 --bot-app-secret（不返回明文）。
+func BotFlagAppSecretSet() bool { return botFlagAppSecret != "" }
+
+func applyBotFlagCredentials() {
+	if botFlagAppID != "" {
+		if cfg != nil {
+			cfg.AppID = botFlagAppID
+		}
+		viper.Set("app_id", botFlagAppID)
+	}
+	if botFlagAppSecret != "" {
+		if cfg != nil {
+			cfg.AppSecret = botFlagAppSecret
+		}
+		viper.Set("app_secret", botFlagAppSecret)
+	}
+}
+
+// ApplyBotFlagCredentials 在 Init 被跳过时仍把 flag 写进进程配置，供 doctor/list 看到覆盖。
+func ApplyBotFlagCredentials() {
+	if botFlagAppID == "" && botFlagAppSecret == "" {
+		return
+	}
+	if cfg == nil {
+		cfg = &Config{
+			BaseURL: "https://open.feishu.cn",
+			Export:  ExportConfig{AssetsDir: "./assets"},
+			Import:  ImportConfig{UploadImages: true},
+		}
+	}
+	applyBotFlagCredentials()
+}
+
 // Init initializes the configuration from file and environment
-// 配置优先级: 环境变量 > 配置文件 > 默认值
+// 应用凭证优先级: --bot-app-id/--bot-app-secret > 环境变量 > 选中目录的配置文件 > 默认值
 //
 // 配置文件路径解析顺序：
 //  1. --config <path> 显式指定
@@ -96,6 +142,9 @@ func Init(cfgFile string) error {
 	// 统一去除 BaseURL 尾部斜杠，避免拼接 API 路径时产生双斜杠
 	cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
 
+	// 5. 命令行凭证覆盖环境变量和文件，不写盘
+	applyBotFlagCredentials()
+
 	return nil
 }
 
@@ -124,10 +173,10 @@ func Validate() error {
 	}
 	cfgPath := activeConfigPathForError()
 	if cfg.AppID == "" {
-		return fmt.Errorf("缺少 app_id，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_ID=xxx\n  2. 配置文件: %s", cfgPath)
+		return fmt.Errorf("缺少 app_id，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_ID=xxx\n  3. 配置文件: %s", cfgPath)
 	}
 	if cfg.AppSecret == "" {
-		return fmt.Errorf("缺少 app_secret，请通过以下方式之一设置:\n  1. 环境变量: export FEISHU_APP_SECRET=xxx\n  2. 配置文件: %s", cfgPath)
+		return fmt.Errorf("缺少 app_secret，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_SECRET=xxx\n  3. 配置文件: %s", cfgPath)
 	}
 	return nil
 }
@@ -164,7 +213,7 @@ func CreateDefaultConfig() error {
 	content := `# 飞书 CLI 配置文件
 # 从飞书开放平台获取应用凭证: https://open.feishu.cn/app
 #
-# 配置优先级: 环境变量 > 配置文件 > 默认值
+# 应用凭证优先级: --bot-app-id/--bot-app-secret > 环境变量 > 配置文件 > 默认值
 #
 # 环境变量方式:
 #   export FEISHU_APP_ID=your_app_id

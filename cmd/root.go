@@ -5,14 +5,18 @@ import (
 	"os"
 
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/spf13/cobra"
 )
 
 var (
-	cfgFile   string
-	debug     bool
-	version   = "dev"
-	buildTime = "unknown"
+	cfgFile          string
+	profileFlag      string
+	botAppIDFlag     string
+	botAppSecretFlag string
+	debug            bool
+	version          = "dev"
+	buildTime        = "unknown"
 )
 
 // SetVersionInfo sets version information from main package
@@ -67,14 +71,18 @@ var rootCmd = &cobra.Command{
 注意：bitable 命令已切换到 base/v3 API，flag 使用 --base-token。
 
 配置方式:
-  1. 环境变量（推荐）:
+  1. 单次覆盖（不写盘）:
+     --bot-app-id cli_xxx --bot-app-secret xxx
+
+  2. 环境变量:
      export FEISHU_APP_ID="cli_xxx"
      export FEISHU_APP_SECRET="xxx"
 
-  2. 配置文件:
+  3. 配置文件:
      ~/.feishu-cli/config.yaml
 
-  配置优先级: 环境变量 > 配置文件 > 默认值
+  目录 / User Token: --profile > FEISHU_PROFILE > active-profile 指针 > 旧布局
+  App 凭证: --bot-app-id/--bot-app-secret > FEISHU_APP_ID/FEISHU_APP_SECRET > 选中目录的 config.yaml
 
 快速开始:
   # 创建文档
@@ -94,33 +102,33 @@ var rootCmd = &cobra.Command{
 
 更多信息请访问: https://github.com/riba2534/feishu-cli`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// --profile 必须在 skip / config.Init 之前生效，doctor/auth status/profile 才能看到覆盖。
+		if err := profile.SetCommandOverride(profileFlag); err != nil {
+			return err
+		}
+		config.SetBotFlagCredentials(botAppIDFlag, botAppSecretFlag)
+		setUserTokenFlagPresence(cmd)
+		// profile use 切换后局面才是用户关心的那个，由它自己在切换完成后打印
+		if !isProfileUseCmd(cmd) {
+			warnAppCredentialTokenSource()
+		}
 		// --config 仅影响 config.yaml 加载，token 仍按 profile 解析；显式提醒避免错配
 		if cfgFile != "" {
-			fmt.Fprintln(os.Stderr, "⚠️  使用 --config 时，token 仍读自当前 profile（~/.feishu-cli/[profiles/<active>/]token.json）。")
-			fmt.Fprintln(os.Stderr, "    如需完整隔离，请改用 FEISHU_PROFILE=<name>。")
+			fmt.Fprintln(os.Stderr, "⚠️  --config 只替换 config.yaml，不改变 token.json 的候选目录（~/.feishu-cli/[profiles/<active>/]）。")
+			fmt.Fprintln(os.Stderr, "    如需完整隔离，请改用 --profile <name> 或 FEISHU_PROFILE=<name>。")
 		}
-		// Skip config initialization for group commands (those with subcommands but no own RunE,
-		// or with the guard-injected RunE) and utility commands that don't need config
-		if cmd.HasSubCommands() && (cmd.RunE == nil && cmd.Run == nil || cmd.Annotations[groupGuardAnnotation] == "1") {
+		if shouldSkipConfigInit(cmd) {
+			config.ApplyBotFlagCredentials()
 			return nil
-		}
-		switch cmd.Name() {
-		case "init", "help", "completion", "version", "doctor", "schema":
-			return nil
-		}
-		// auth status/logout / schema list / profile 全子命令 不需要配置（纯本地操作或配置自身）
-		if cmd.Parent() != nil {
-			switch cmd.Parent().Name() {
-			case "schema", "profile":
-				return nil
-			case "auth":
-				if cmd.Name() == "status" || cmd.Name() == "logout" {
-					return nil
-				}
-			}
 		}
 
 		if err := config.Init(cfgFile); err != nil {
+			// auth status/logout 是排查入口：config.yaml 坏掉时更需要它们跑得起来
+			if configInitOptional(cmd) {
+				fmt.Fprintf(os.Stderr, "⚠️  读取配置失败（%v）；%s 继续以本地 token 运行，在线刷新/吊销可能不可用。\n", err, cmd.CommandPath())
+				config.ApplyBotFlagCredentials()
+				return nil
+			}
 			return err
 		}
 
@@ -132,6 +140,33 @@ var rootCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// isProfileUseCmd 判断是否 `profile use`（别名 switch/checkout 不改变 cmd.Name()）。
+func isProfileUseCmd(cmd *cobra.Command) bool {
+	return cmd.Parent() != nil && cmd.Parent().Name() == "profile" && cmd.Name() == "use"
+}
+
+// configInitOptional 报告命令能否在配置加载失败时降级继续。
+// auth status/logout 纯读本地 token 也有价值，不该被一个坏掉的 config.yaml 堵死。
+func configInitOptional(cmd *cobra.Command) bool {
+	if cmd.Parent() == nil || cmd.Parent().Name() != "auth" {
+		return false
+	}
+	return cmd.Name() == "status" || cmd.Name() == "logout"
+}
+
+// shouldSkipConfigInit 只跳过纯本地元数据/配置管理命令。
+// auth status --verify 与 auth logout 需要当前 profile 的 App 凭证做刷新/吊销，必须返回 false。
+func shouldSkipConfigInit(cmd *cobra.Command) bool {
+	if cmd.HasSubCommands() && (cmd.RunE == nil && cmd.Run == nil || cmd.Annotations[groupGuardAnnotation] == "1") {
+		return true
+	}
+	switch cmd.Name() {
+	case "init", "help", "completion", "version", "doctor", "schema":
+		return true
+	}
+	return cmd.Parent() != nil && (cmd.Parent().Name() == "schema" || cmd.Parent().Name() == "profile")
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -152,6 +187,9 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径（默认: ~/.feishu-cli/config.yaml）")
+	rootCmd.PersistentFlags().StringVar(&profileFlag, "profile", "", "使用指定 profile（优先于 FEISHU_PROFILE，不修改指针）")
+	rootCmd.PersistentFlags().StringVar(&botAppIDFlag, "bot-app-id", "", "本次命令使用的 Bot app_id（优先于环境变量和配置文件，不写盘）")
+	rootCmd.PersistentFlags().StringVar(&botAppSecretFlag, "bot-app-secret", "", "本次命令使用的 Bot app_secret（优先于环境变量和配置文件，不写盘；会进入 shell 历史与 ps 输出，共享机器慎用）")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "启用调试模式")
 	// R1 review fix: RunE 返回 error 时不再打印整页 usage 淹没真错误（11/13 PR 未单独设此 flag → root 统一处理）
 	rootCmd.SilenceUsage = true

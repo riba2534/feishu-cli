@@ -38,13 +38,20 @@ func TokenPath() (string, error) {
 	return tokenPathFunc()
 }
 
-// LoadToken 从文件加载 token，文件不存在返回 nil, nil
+// LoadToken 从当前激活 profile 的 token.json 加载，文件不存在返回 nil, nil。
 func LoadToken() (*TokenStore, error) {
 	path, err := TokenPath()
 	if err != nil {
 		return nil, err
 	}
+	return LoadTokenFrom(path)
+}
 
+// LoadTokenFrom 从指定路径加载 token.json，文件不存在返回 nil, nil。
+func LoadTokenFrom(path string) (*TokenStore, error) {
+	if path == "" {
+		return nil, nil
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

@@ -15,10 +15,11 @@
 //	      config.yaml
 //	      ...
 //
-// 解析优先级（由 ActiveDir 返回）：
-//  1. 环境变量 FEISHU_PROFILE=<name>（强制覆盖，profile 必须存在）
-//  2. ~/.feishu-cli/active-profile 指针指向的 profile
-//  3. 无 profile 系统时，返回旧布局 ~/.feishu-cli/
+// 解析优先级（由 ActiveDir / ActiveSource 返回）：
+//  1. 进程内 --profile flag（SetCommandOverride，不写指针）
+//  2. 环境变量 FEISHU_PROFILE=<name>（强制覆盖，profile 必须存在）
+//  3. ~/.feishu-cli/active-profile 指针指向的 profile
+//  4. 无 profile 系统时，返回旧布局 ~/.feishu-cli/
 //
 // 设计要点：
 //   - 向后兼容：旧用户的 ~/.feishu-cli/config.yaml + token.json 仍然能读，
@@ -69,6 +70,23 @@ var nameRegex = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 // 进程内锁，用于 active-profile / previous-profile 指针文件的串行化。
 // 仅 sync.Mutex 保护进程内并发；跨进程并发场景应用层避免。
 var writeMu sync.Mutex
+
+// commandOverride 是本进程 --profile flag 的覆盖值，优先于 FEISHU_PROFILE。
+// 空字符串表示未设置。由 SetCommandOverride 写入。
+//
+// 用独立 mutex：writeMu 保护文件写入，而 Create/Remove/Use 等写函数持锁期间可能需要
+// 读覆盖值，复用同一把不可重入的锁会自锁死。
+var (
+	overrideMu      sync.Mutex
+	commandOverride string
+)
+
+// 导出文件名常量，供上层按任意 profile 目录拼路径，避免各处硬编码字符串。
+const (
+	ConfigFileName    = configFileName
+	TokenFileName     = tokenFileName
+	UserCacheFileName = userCacheName
+)
 
 // ErrNotConfigured 当未配置 profile 系统时返回（无 profiles/ 目录）。
 var ErrNotConfigured = errors.New("profile 系统未初始化")
@@ -264,67 +282,126 @@ func ReadPrevious() (string, error) {
 	return readPointer(previousPointerName)
 }
 
-// ActiveName 返回当前激活的 profile 名（解析优先级见包注释）。
-// 若未启用 profile 系统返回空字符串和 nil error，调用方应回退到旧布局。
-func ActiveName() (string, error) {
+// SetCommandOverride 设置本进程 --profile 覆盖（优先于 FEISHU_PROFILE，不写指针）。
+// name 为空则清除覆盖。非空时 profile 必须已存在。
+func SetCommandOverride(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		overrideMu.Lock()
+		commandOverride = ""
+		overrideMu.Unlock()
+		return nil
+	}
+	if err := ValidateName(name); err != nil {
+		return fmt.Errorf("--profile %w", err)
+	}
+	ok, err := Exists(name)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%w: --profile 指向的 profile %q 不存在", ErrNotFound, name)
+	}
+	overrideMu.Lock()
+	commandOverride = name
+	overrideMu.Unlock()
+	return nil
+}
+
+// CommandOverride 返回本进程 --profile 覆盖值，未设置时为空。
+func CommandOverride() string {
+	overrideMu.Lock()
+	defer overrideMu.Unlock()
+	return commandOverride
+}
+
+// ActiveSource 取值：flag / env / pointer / fallback / legacy / none。
+const (
+	SourceFlag     = "flag"
+	SourceEnv      = "env"
+	SourcePointer  = "pointer"
+	SourceFallback = "fallback"
+	SourceLegacy   = "legacy"
+	SourceNone     = "none"
+)
+
+// ResolveActive 返回当前 profile 名及其来源。名称为空表示走旧布局。
+func ResolveActive() (name, source string, err error) {
+	if override := CommandOverride(); override != "" {
+		return override, SourceFlag, nil
+	}
 	if env := strings.TrimSpace(os.Getenv(EnvVar)); env != "" {
 		if err := ValidateName(env); err != nil {
-			return "", fmt.Errorf("%s 环境变量值非法: %w", EnvVar, err)
+			return "", "", fmt.Errorf("%s 环境变量值非法: %w", EnvVar, err)
 		}
 		ok, err := Exists(env)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		if !ok {
-			return "", fmt.Errorf("%w: %s 指向的 profile %q 不存在", ErrNotFound, EnvVar, env)
+			return "", "", fmt.Errorf("%w: %s 指向的 profile %q 不存在", ErrNotFound, EnvVar, env)
 		}
-		return env, nil
+		return env, SourceEnv, nil
 	}
 	hasProfiles, err := HasProfiles()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if !hasProfiles {
-		return "", nil
+		if hasLegacyLayout() {
+			return "", SourceLegacy, nil
+		}
+		return "", SourceNone, nil
 	}
-	name, err := ReadActive()
+	name, err = ReadActive()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if name == "" {
 		// 有 profile 但没指针。codex review P2 finding：legacy 文件存在时优先 legacy，
 		// 避免 profile add 后未 use 就被悄悄切走（zero-touch upgrade 破坏）。
 		if hasLegacyLayout() {
-			return "", nil // caller (ActiveDir) 会用 RootDir() 走旧布局
+			return "", SourceLegacy, nil
 		}
 		all, err := List()
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		if len(all) == 0 {
-			return "", nil
+			return "", SourceNone, nil
 		}
-		return all[0], nil
+		return all[0], SourceFallback, nil
 	}
 	if err := ValidateName(name); err != nil {
-		return "", fmt.Errorf("active-profile 指针非法: %w", err)
+		return "", "", fmt.Errorf("active-profile 指针非法: %w", err)
 	}
 	ok, err := Exists(name)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if !ok {
-		// 指针指向不存在的 profile，回退到第一个
+		// 指针指向已不存在的 profile。与「指针缺失」同一语义：旧布局还在时先用旧布局，
+		// 不要把仍在用 ~/.feishu-cli/ 的老用户静默切到另一套 Bot。
+		if hasLegacyLayout() {
+			return "", SourceLegacy, nil
+		}
 		all, err := List()
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		if len(all) == 0 {
-			return "", nil
+			return "", SourceNone, nil
 		}
-		return all[0], nil
+		return all[0], SourceFallback, nil
 	}
-	return name, nil
+	return name, SourcePointer, nil
+}
+
+// ActiveName 返回当前激活的 profile 名（解析优先级见包注释）。
+// 若未启用 profile 系统返回空字符串和 nil error，调用方应回退到旧布局。
+func ActiveName() (string, error) {
+	name, _, err := ResolveActive()
+	return name, err
 }
 
 // ActiveDir 返回当前激活 profile 的目录。
@@ -369,44 +446,6 @@ func UserCacheFilePath() (string, error) {
 	return filepath.Join(dir, userCacheName), nil
 }
 
-// Info 描述一个 profile 的元数据，用于 list 输出。
-type Info struct {
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	Active    bool   `json:"active"`
-	HasConfig bool   `json:"has_config"`
-	HasToken  bool   `json:"has_token"`
-}
-
-// Describe 返回所有 profile 的元数据列表。当未启用 profile 系统时返回空切片。
-func Describe() ([]Info, error) {
-	names, err := List()
-	if err != nil {
-		return nil, err
-	}
-	active, err := ActiveName()
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Info, 0, len(names))
-	for _, name := range names {
-		dir, err := ProfileDir(name)
-		if err != nil {
-			return nil, err
-		}
-		info := Info{
-			Name:      name,
-			Path:      dir,
-			Active:    name == active,
-			HasConfig: fileExists(filepath.Join(dir, configFileName)),
-			HasToken:  fileExists(filepath.Join(dir, tokenFileName)),
-		}
-		out = append(out, info)
-	}
-	return out, nil
-}
-
-// fileExists 测试文件是否存在。
 // hasLegacyLayout 检测旧布局是否存在（~/.feishu-cli/config.yaml 或 token.json 任一即视为 legacy）。
 // 用于 ActiveName 在指针缺失时优先 legacy 而非自动切到字典序第一个 profile。
 func hasLegacyLayout() bool {
@@ -422,6 +461,7 @@ func hasLegacyLayout() bool {
 	return false
 }
 
+// fileExists 测试文件是否存在。
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
