@@ -7,7 +7,7 @@ feishu-cli task create --summary "完成项目文档"
 feishu-cli task get <task_guid>
 feishu-cli task list
 feishu-cli task search --uncompleted --assignee ou_xxx --due-before "2026-12-31"
-feishu-cli task my
+feishu-cli task my --uncompleted
 feishu-cli task update <task_guid> --summary "新标题"
 feishu-cli task complete <task_guid>
 feishu-cli task reopen <task_guid>
@@ -15,11 +15,16 @@ feishu-cli task subtask create <task_guid> --summary "子任务"
 feishu-cli task member add <task_guid> --members ou_xxx --role assignee
 feishu-cli task reminder add <task_guid> --minutes 30
 feishu-cli task comment add <task_guid> --content "进展说明"
-feishu-cli task upload-attachment <task_guid> ./report.pdf
+feishu-cli task upload-attachment --task-guid <task_guid> --file ./report.pdf
 ```
 
-`task my` 和 `task search` 必须使用 User Token。task get/list、子任务和评论读取优先 User Token并可回落 App Token；
-创建、修改、删除、成员、提醒和评论写入默认 Bot 身份，显式 User Token 才切换用户身份。
+`task my` 和 `task search` 必须使用 User Token。task get/list、子任务和评论读取优先 User Token 并可回落 App Token。
+创建、修改、删除、完成/重开、子任务创建、成员、提醒、评论写入、附件上传以及清单写操作支持 `--as bot|user|auto`，
+**默认 auto**：已登录即以本人身份操作（**行为变更**：此前默认 Bot，纯 Bot 读写用户的任务实测报 1470403）；
+未配置 User Token 时回落 Bot，已配置但刷新失败 fail-closed。无人值守或操作 Bot 自建任务时显式 `--as bot`。
+
+`task my` 默认返回**全部**任务（含已完成，与官方一致）；只看未完成用 `--uncompleted`，只看已完成用 `--completed`，两者互斥。
+`task complete` 幂等：已完成的任务不会被重复改写完成时间（JSON 带 `already_completed=true`）。
 
 `task search` 按创建人 / 负责人 / 关注人 / 完成状态 / 截止时间在服务端过滤，`--keyword` 为服务端关键词检索；
 命中项会自动并发拉取详情。至少提供一个搜索条件。服务端限制：`--page-size` 最大 30，翻页 offset 上限 150
@@ -32,8 +37,8 @@ feishu-cli tasklist create --name "项目清单"
 feishu-cli tasklist get <tasklist_guid>
 feishu-cli tasklist list
 feishu-cli tasklist tasks <tasklist_guid>
-feishu-cli tasklist task-add <tasklist_guid> <task_guid>
-feishu-cli tasklist task-remove <tasklist_guid> <task_guid>
+feishu-cli tasklist task-add <tasklist_guid> --task-ids <task_guid>[,<task_guid>]
+feishu-cli tasklist task-remove <tasklist_guid> --task-ids <task_guid>
 feishu-cli tasklist delete <tasklist_guid>
 ```
 
