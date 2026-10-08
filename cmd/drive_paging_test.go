@@ -112,6 +112,11 @@ func TestPrintListPageHint(t *testing.T) {
 		t.Fatalf("no hint expected, got %q", buf.String())
 	}
 	buf.Reset()
+	printListPageHint(&buf, &listPageResult[int]{HasMore: true, NextPageToken: "1791006493||0"})
+	if !strings.Contains(buf.String(), "--page-token '1791006493||0'") {
+		t.Fatalf("含 shell 元字符的 token 必须加引号: %q", buf.String())
+	}
+	buf.Reset()
 	printListPageHint(&buf, &listPageResult[int]{HasMore: true, NextPageToken: "x", Truncated: true})
 	if !strings.Contains(buf.String(), "--page-limit") {
 		t.Fatalf("truncated hint = %q", buf.String())

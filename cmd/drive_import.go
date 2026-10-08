@@ -184,13 +184,13 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
 		}
 		fmt.Fprintf(os.Stderr, "创建导入任务: %s\n", ticket)
 
+		nextCmd := fmt.Sprintf("feishu-cli drive task-result --scenario import --ticket %s --as %s", quotePOSIXShell(ticket), resumeIdentity(cmd))
 		status, timedOut, err := client.WaitDriveImportWithBound(ticket, token)
 		if err != nil {
-			return err
+			return withDrivePollResume(err, nextCmd)
 		}
 
 		if timedOut {
-			nextCmd := fmt.Sprintf("feishu-cli drive task-result --scenario import --ticket %s", ticket)
 			result := map[string]any{
 				"ticket":       ticket,
 				"file_token":   fileToken,

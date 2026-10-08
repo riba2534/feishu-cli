@@ -2,8 +2,12 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"strings"
+
+	"github.com/spf13/cobra"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
@@ -105,4 +109,26 @@ func isNetworkFailure(err error) bool {
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr)
+}
+
+// resumeIdentity 返回续查命令应携带的身份（与创建任务时一致，避免续查时静默切到另一身份）。
+func resumeIdentity(cmd *cobra.Command) string {
+	if cmd != nil {
+		if as, err := cmd.Flags().GetString("as"); err == nil {
+			if as = strings.ToLower(strings.TrimSpace(as)); as != "" {
+				return as
+			}
+		}
+	}
+	return "auto"
+}
+
+// withDrivePollResume 在轮询未拿到终态（限流立即停止 / 全部查询失败）时，把续查命令附到错误上：
+// 任务已在服务端创建，用户应续查而不是重新创建任务。
+func withDrivePollResume(err error, nextCmd string) error {
+	var pe *client.DrivePollError
+	if errors.As(err, &pe) {
+		return fmt.Errorf("%w\n任务已创建，请稍后续查: %s", err, nextCmd)
+	}
+	return err
 }

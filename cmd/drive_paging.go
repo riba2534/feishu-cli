@@ -92,11 +92,13 @@ func printListPageHint(w io.Writer, res interface {
 	if !hasMore {
 		return
 	}
+	// page_token 可能含 "||" 等 shell 元字符（实测 wiki spaces 返回 "1791006493||0"），续翻命令必须加引号
+	quoted := quotePOSIXShell(next)
 	if truncated {
-		fmt.Fprintf(w, "⚠️  已达到 --page-limit 上限，结果不完整（has_more=true, page_token=%s）。可加大 --page-limit，或用 --page-token %s 继续翻页\n", next, next)
+		fmt.Fprintf(w, "⚠️  已达到 --page-limit 上限，结果不完整（has_more=true, page_token=%s）。可加大 --page-limit，或用 --page-token %s 继续翻页\n", next, quoted)
 		return
 	}
-	fmt.Fprintf(w, "提示: 还有更多结果（has_more=true, page_token=%s）。续翻: --page-token %s；或加 --page-all 拉取全部\n", next, next)
+	fmt.Fprintf(w, "提示: 还有更多结果（has_more=true, page_token=%s）。续翻: --page-token %s；或加 --page-all 拉取全部\n", next, quoted)
 }
 
 func (r *listPageResult[T]) pageHint() (bool, string, bool) {

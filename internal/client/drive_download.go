@@ -228,3 +228,15 @@ func resetTenantTokenCacheForTest() {
 	tenantTokenCache.key, tenantTokenCache.token, tenantTokenCache.expires = "", "", time.Time{}
 	tenantTokenCache.mu.Unlock()
 }
+
+// buildOpenAPIURL 拼接 Open API 完整 URL（base_url 为空时使用官方飞书域名）。
+func buildOpenAPIURL(apiPath string) string {
+	base := ""
+	if cfg := config.Get(); cfg != nil {
+		base = strings.TrimRight(cfg.BaseURL, "/")
+	}
+	if base == "" {
+		base = config.OfficialFeishuOpen
+	}
+	return base + apiPath
+}

@@ -9,20 +9,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var driveTaskScenarios = []string{"import", "export", "task_check", "wiki_delete_node"}
+var driveTaskScenarios = []string{"import", "export", "task_check", "wiki_move", "wiki_move_to_drive", "wiki_delete_space", "wiki_delete_node"}
 
 var driveTaskResultCmd = &cobra.Command{
 	Use:   "task-result",
-	Short: "通用异步任务查询（import / export / task_check / wiki_delete_node）",
-	Long: `统一查询异步任务状态，用于 drive import / export / move 与 wiki 节点删除等异步任务的 resume。
+	Short: "通用异步任务查询（import / export / task_check / wiki_move / wiki_move_to_drive / wiki_delete_space / wiki_delete_node）",
+	Long: `统一查询异步任务状态，用于 drive import / export / move / delete 与 wiki 移动、移出到云盘、
+删除空间、删除节点等异步任务的 resume。
 
 必填:
-  --scenario     任务场景: import / export / task_check / wiki_delete_node
+  --scenario     任务场景:
+                   import              drive import 导入任务（--ticket）
+                   export              drive export 导出任务（--ticket + --file-token）
+                   task_check          drive move/delete 文件夹异步任务（--task-id）
+                   wiki_move           wiki move-docs（云盘文档移入知识库）异步任务（--task-id）
+                   wiki_move_to_drive  wiki move-to-drive（知识库节点移出到云盘）异步任务（--task-id）
+                   wiki_delete_space   wiki delete-space 异步任务（--task-id）
+                   wiki_delete_node    wiki delete 节点删除异步任务（--task-id）
 
 对应入参:
   --ticket       import/export 场景必填
   --file-token   export 场景必填（原始文档 token）
-  --task-id      task_check 与 wiki_delete_node 场景必填（异步任务 ID）
+  --task-id      task_check 与所有 wiki_* 场景必填（异步任务 ID）
+
+状态:
+  输出 ready / failed / pending；task_check 的失败终态同时识别 "failed" 与删除任务返回的 "fail"。
 
 权限与身份:
   - User / Bot 身份（--as bot|user|auto，默认 auto: User 优先，回退 Bot）
@@ -31,6 +42,8 @@ var driveTaskResultCmd = &cobra.Command{
   feishu-cli drive task-result --scenario export --ticket abcxxx --file-token docxxx
   feishu-cli drive task-result --scenario import --ticket abcxxx
   feishu-cli drive task-result --scenario task_check --task-id xxx
+  feishu-cli drive task-result --scenario wiki_move_to_drive --task-id xxx --as user
+  feishu-cli drive task-result --scenario wiki_delete_space --task-id xxx --as user
   feishu-cli drive task-result --scenario wiki_delete_node --task-id xxx --as bot`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -74,7 +87,7 @@ var driveTaskResultCmd = &cobra.Command{
 			if err := validateResourceIdentifier(fileToken, "--file-token"); err != nil {
 				return err
 			}
-		case "task_check", "wiki_delete_node":
+		case "task_check", "wiki_move", "wiki_move_to_drive", "wiki_delete_space", "wiki_delete_node":
 			if taskID == "" {
 				return fmt.Errorf("--task-id 在 %s 场景必填", scenario)
 			}
@@ -142,8 +155,71 @@ var driveTaskResultCmd = &cobra.Command{
 				"scenario": "task_check",
 				"task_id":  taskID,
 				"status":   status.Status,
-				"ready":    status.Status == "success",
-				"failed":   status.Status == "failed",
+				"ready":    status.Ready(),
+				"failed":   status.Failed(),
+				"pending":  status.Pending(),
+			}
+		case "wiki_move":
+			status, err := client.GetWikiMoveTask(taskID, token)
+			if err != nil {
+				return err
+			}
+			code := 1
+			if p := status.Primary(); p != nil {
+				code = p.Status
+			}
+			result = map[string]any{
+				"scenario":   "wiki_move",
+				"task_id":    status.TaskID,
+				"ready":      status.Ready(),
+				"failed":     status.Failed(),
+				"pending":    !status.Ready() && !status.Failed(),
+				"status":     code,
+				"status_msg": status.StatusLabel(),
+			}
+			if len(status.MoveResults) > 0 {
+				result["move_results"] = status.MoveResults
+				if node := status.MoveResults[0].Node; node != nil {
+					result["node"] = node
+					if tok, ok := node["node_token"].(string); ok && tok != "" {
+						result["wiki_token"] = tok
+					}
+				}
+			}
+		case "wiki_move_to_drive":
+			status, err := client.GetMoveWikiToDriveTask(taskID, token)
+			if err != nil {
+				return err
+			}
+			result = map[string]any{
+				"scenario":   "wiki_move_to_drive",
+				"task_id":    taskIDOr(status.TaskID, taskID),
+				"ready":      status.Ready(),
+				"failed":     status.Failed(),
+				"pending":    !status.Ready() && !status.Failed(),
+				"status":     status.Status,
+				"status_msg": status.StatusMsg,
+				"obj_token":  status.ObjToken,
+				"obj_type":   status.ObjType,
+				"url":        status.URL,
+			}
+		case "wiki_delete_space":
+			status, err := client.GetWikiDeleteSpaceTask(taskID, token)
+			if err != nil {
+				return err
+			}
+			st := status.Status
+			if strings.TrimSpace(st) == "" {
+				st = "processing"
+			}
+			result = map[string]any{
+				"scenario":   "wiki_delete_space",
+				"task_id":    taskIDOr(status.TaskID, taskID),
+				"ready":      status.Ready(),
+				"failed":     status.Failed(),
+				"pending":    !status.Ready() && !status.Failed(),
+				"status":     st,
+				"status_msg": status.StatusMsg,
 			}
 		case "wiki_delete_node":
 			status, err := client.GetWikiDeleteNodeTask(taskID, token)
@@ -176,13 +252,21 @@ var driveTaskResultCmd = &cobra.Command{
 	},
 }
 
+// taskIDOr 服务端未回显 task_id 时使用请求里的 task_id。
+func taskIDOr(got, fallback string) string {
+	if strings.TrimSpace(got) != "" {
+		return got
+	}
+	return fallback
+}
+
 func init() {
 	driveCmd.AddCommand(driveTaskResultCmd)
-	driveTaskResultCmd.Flags().String("scenario", "", "任务场景: import/export/task_check/wiki_delete_node（必填）")
+	driveTaskResultCmd.Flags().String("scenario", "", "任务场景: import/export/task_check/wiki_move/wiki_move_to_drive/wiki_delete_space/wiki_delete_node（必填）")
 	driveTaskResultCmd.Flags().String("as", "auto", "操作身份：bot|user|auto（默认 auto: User 优先，回退 Bot）")
 	driveTaskResultCmd.Flags().String("ticket", "", "异步任务 ticket（import/export 必填）")
 	driveTaskResultCmd.Flags().String("file-token", "", "原始文档 token（export 必填）")
-	driveTaskResultCmd.Flags().String("task-id", "", "异步任务 ID（task_check 与 wiki_delete_node 场景必填）")
+	driveTaskResultCmd.Flags().String("task-id", "", "异步任务 ID（task_check 与 wiki_* 场景必填）")
 	driveTaskResultCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	driveTaskResultCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(driveTaskResultCmd, "scenario")
