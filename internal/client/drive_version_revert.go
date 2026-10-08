@@ -1,9 +1,7 @@
 package client
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 )
 
@@ -24,18 +22,6 @@ func RevertFileVersion(fileToken, version, userAccessToken string) error {
 	if err != nil {
 		return fmt.Errorf("回滚文件版本失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("回滚文件版本失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
-	}
-	var parsed struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-	}
-	if err := json.Unmarshal(resp.RawBody, &parsed); err != nil {
-		return fmt.Errorf("回滚文件版本响应解析失败: %w", err)
-	}
-	if parsed.Code != 0 {
-		return fmt.Errorf("回滚文件版本失败: code=%d, msg=%s", parsed.Code, parsed.Msg)
-	}
-	return nil
+	// 业务错误常随 HTTP 400 下发：先解析飞书信封里的 code，再看 HTTP 状态
+	return CheckAPIResponse("回滚文件版本", resp)
 }

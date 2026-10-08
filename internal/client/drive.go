@@ -96,8 +96,8 @@ func uploadMediaForImportAll(file io.Reader, fileName string, fileSize int64, ex
 	if err != nil {
 		return "", fmt.Errorf("上传导入媒体失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("上传导入媒体失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("上传导入媒体", resp); err != nil {
+		return "", err
 	}
 
 	var apiResp struct {
@@ -137,8 +137,8 @@ func uploadMediaForImportMultipart(filePath, fileName string, fileSize int64, ex
 	if err != nil {
 		return "", fmt.Errorf("初始化导入媒体分片上传失败: %w", err)
 	}
-	if prepareResp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("初始化导入媒体分片上传失败: HTTP %d, body: %s", prepareResp.StatusCode, string(prepareResp.RawBody))
+	if err := CheckAPIResponse("初始化导入媒体分片上传", prepareResp); err != nil {
+		return "", err
 	}
 
 	session, err := parseMultipartSessionFromAPI(prepareResp.RawBody, fileSize)
@@ -174,11 +174,8 @@ func uploadMediaForImportMultipart(filePath, fileName string, fileSize int64, ex
 		if err != nil {
 			return "", fmt.Errorf("上传导入媒体分片 %d/%d 失败: %w", seq+1, session.BlockNum, err)
 		}
-		if partResp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("上传导入媒体分片 %d/%d 失败: HTTP %d, body: %s", seq+1, session.BlockNum, partResp.StatusCode, string(partResp.RawBody))
-		}
-		if code, msg, isErr := parseJSONBusinessError(partResp.RawBody); isErr {
-			return "", fmt.Errorf("上传导入媒体分片 %d/%d 失败: code=%d, msg=%s", seq+1, session.BlockNum, code, msg)
+		if err := CheckAPIResponse(fmt.Sprintf("上传导入媒体分片 %d/%d", seq+1, session.BlockNum), partResp); err != nil {
+			return "", err
 		}
 		fmt.Fprintf(os.Stderr, "  分片 %d/%d 上传完成 (%s)\n", seq+1, session.BlockNum, formatSize(n))
 		remaining -= int64(n)
@@ -194,8 +191,8 @@ func uploadMediaForImportMultipart(filePath, fileName string, fileSize int64, ex
 	if err != nil {
 		return "", fmt.Errorf("完成导入媒体分片上传失败: %w", err)
 	}
-	if finishResp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("完成导入媒体分片上传失败: HTTP %d, body: %s", finishResp.StatusCode, string(finishResp.RawBody))
+	if err := CheckAPIResponse("完成导入媒体分片上传", finishResp); err != nil {
+		return "", err
 	}
 
 	var apiResp struct {
@@ -649,8 +646,8 @@ func GetRootFolderToken(userAccessToken string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("获取根目录 token 失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("获取根目录 token 失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("获取根目录 token", resp); err != nil {
+		return "", err
 	}
 	var apiResp struct {
 		Code int    `json:"code"`

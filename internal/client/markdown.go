@@ -88,7 +88,10 @@ func FetchMarkdownSource(fileToken, version, userAccessToken string) ([]byte, st
 		return nil, "", fmt.Errorf("下载 Markdown 源文件失败: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("下载 Markdown 源文件失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+		// 业务错误常随 HTTP 400/403 下发：先解析飞书信封里的 code（含 log_id），再回退 HTTP 状态
+		if err := ParseAPIResponse("下载 Markdown 源文件", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+			return nil, "", err
+		}
 	}
 	if code, msg, isErr := parseDownloadJSONError(resp.Header, resp.RawBody); isErr {
 		return nil, "", fmt.Errorf("下载 Markdown 源文件失败: code=%d, msg=%s", code, msg)
@@ -362,8 +365,8 @@ func uploadMarkdownAll(spec MarkdownUploadSpec, fileSize int64, openReader func(
 	if err != nil {
 		return MarkdownUploadResult{}, fmt.Errorf("上传 Markdown 失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return MarkdownUploadResult{}, fmt.Errorf("上传 Markdown 失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("上传 Markdown", resp); err != nil {
+		return MarkdownUploadResult{}, err
 	}
 	return parseMarkdownUploadAPIResponse(resp.RawBody, spec.FileToken != "")
 }
@@ -390,8 +393,8 @@ func uploadMarkdownMultipart(spec MarkdownUploadSpec, fileSize int64, openReader
 	if err != nil {
 		return MarkdownUploadResult{}, fmt.Errorf("初始化 Markdown 分片上传失败: %w", err)
 	}
-	if prepareResp.StatusCode != http.StatusOK {
-		return MarkdownUploadResult{}, fmt.Errorf("初始化 Markdown 分片上传失败: HTTP %d, body: %s", prepareResp.StatusCode, string(prepareResp.RawBody))
+	if err := CheckAPIResponse("初始化 Markdown 分片上传", prepareResp); err != nil {
+		return MarkdownUploadResult{}, err
 	}
 
 	session, err := parseMultipartSessionFromAPI(prepareResp.RawBody, fileSize)
@@ -428,11 +431,8 @@ func uploadMarkdownMultipart(spec MarkdownUploadSpec, fileSize int64, openReader
 		if err != nil {
 			return MarkdownUploadResult{}, fmt.Errorf("上传 Markdown 分片 %d/%d 失败: %w", seq+1, session.BlockNum, err)
 		}
-		if partResp.StatusCode != http.StatusOK {
-			return MarkdownUploadResult{}, fmt.Errorf("上传 Markdown 分片 %d/%d 失败: HTTP %d, body: %s", seq+1, session.BlockNum, partResp.StatusCode, string(partResp.RawBody))
-		}
-		if code, msg, isErr := parseJSONBusinessError(partResp.RawBody); isErr {
-			return MarkdownUploadResult{}, fmt.Errorf("上传 Markdown 分片 %d/%d 失败: code=%d, msg=%s", seq+1, session.BlockNum, code, msg)
+		if err := CheckAPIResponse(fmt.Sprintf("上传 Markdown 分片 %d/%d", seq+1, session.BlockNum), partResp); err != nil {
+			return MarkdownUploadResult{}, err
 		}
 		fmt.Fprintf(os.Stderr, "  分片 %d/%d 上传完成 (%s)\n", seq+1, session.BlockNum, formatSize(n))
 		remaining -= int64(n)
@@ -448,8 +448,8 @@ func uploadMarkdownMultipart(spec MarkdownUploadSpec, fileSize int64, openReader
 	if err != nil {
 		return MarkdownUploadResult{}, fmt.Errorf("完成 Markdown 分片上传失败: %w", err)
 	}
-	if finishResp.StatusCode != http.StatusOK {
-		return MarkdownUploadResult{}, fmt.Errorf("完成 Markdown 分片上传失败: HTTP %d, body: %s", finishResp.StatusCode, string(finishResp.RawBody))
+	if err := CheckAPIResponse("完成 Markdown 分片上传", finishResp); err != nil {
+		return MarkdownUploadResult{}, err
 	}
 	return parseMarkdownUploadAPIResponse(finishResp.RawBody, spec.FileToken != "")
 }
@@ -481,20 +481,6 @@ func parseMarkdownUploadAPIResponse(raw []byte, requireVersion bool) (MarkdownUp
 		return MarkdownUploadResult{}, fmt.Errorf("覆盖 Markdown 失败: 未返回 version")
 	}
 	return result, nil
-}
-
-func parseJSONBusinessError(raw []byte) (int, string, bool) {
-	var e struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-	}
-	if err := json.Unmarshal(bytes.TrimSpace(raw), &e); err != nil {
-		return 0, "", false
-	}
-	if e.Code != 0 {
-		return e.Code, e.Msg, true
-	}
-	return 0, "", false
 }
 
 func fileNameFromDownloadHeader(header http.Header, fallback string) string {
