@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -225,7 +226,7 @@ func saveMinuteTranscript(minuteToken, title, outputDir string, content []byte, 
 			name = "untitled"
 		}
 		if len(name) > 50 {
-			name = name[:50]
+			name = textutil.TruncateUTF8(name, 50)
 		}
 		dir = filepath.Join(outputDir, fmt.Sprintf("artifact-%s-%s", name, minuteToken))
 	} else {

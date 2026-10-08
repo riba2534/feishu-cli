@@ -3,6 +3,7 @@ package client
 import (
 	"errors"
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -89,7 +90,7 @@ func bodyPreview(body []byte) string {
 	const max = 512
 	s := strings.TrimSpace(string(body))
 	if len(s) > max {
-		return s[:max] + "...(已截断)"
+		return textutil.TruncateUTF8(s, max) + "...(已截断)"
 	}
 	return s
 }

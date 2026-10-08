@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"io"
 	"net/http"
 	"net/url"
@@ -268,5 +269,5 @@ func deviceFlowTruncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	return textutil.TruncateUTF8(s, maxLen) + "..."
 }

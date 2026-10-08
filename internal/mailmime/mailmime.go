@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"io"
 	"mime"
 	"mime/quotedprintable"
@@ -134,7 +135,7 @@ func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "..."
+	return textutil.TruncateUTF8(s, n) + "..."
 }
 
 // splitMultipart 按 boundary 切分子 part。按 RFC 2046，分隔行之前的换行属于分隔符本身。

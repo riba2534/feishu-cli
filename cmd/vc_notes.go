@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -429,7 +430,7 @@ func downloadTranscriptFile(minuteToken, title string, opts *notesOptions) (stri
 		sanitized = "untitled"
 	}
 	if len(sanitized) > 50 {
-		sanitized = sanitized[:50]
+		sanitized = textutil.TruncateUTF8(sanitized, 50)
 	}
 	dirName := fmt.Sprintf("artifact-%s-%s", sanitized, minuteToken)
 	dir := filepath.Join(opts.OutputDir, dirName)

@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"strings"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -79,5 +80,5 @@ func truncateForError(s string) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + "...(已截断)"
+	return textutil.TruncateUTF8(s, max) + "...(已截断)"
 }

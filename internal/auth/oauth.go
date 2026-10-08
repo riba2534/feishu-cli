@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"io"
 	"net/http"
 	"net/http/httptrace"
@@ -336,7 +337,7 @@ func truncateAuthBody(body []byte) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + "..."
+	return textutil.TruncateUTF8(s, max) + "..."
 }
 
 func authBodyPreview(body []byte) string {

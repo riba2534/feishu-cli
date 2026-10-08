@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -726,7 +727,7 @@ func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	return textutil.TruncateUTF8(s, n) + "…"
 }
 
 func init() {

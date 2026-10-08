@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"io"
 	"net/http"
 	"net/url"
@@ -319,5 +320,5 @@ func truncateStr(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	return textutil.TruncateUTF8(s, maxLen) + "..."
 }
