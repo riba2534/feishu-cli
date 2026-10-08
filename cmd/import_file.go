@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -28,6 +29,8 @@ var importFileCmd = &cobra.Command{
 支持的导入格式:
   docx      导入为新版文档（支持 .docx/.doc/.md/.txt 等）
   sheet     导入为电子表格（支持 .xlsx/.xls/.csv 等）
+
+Bot 身份导入时自动给当前 CLI 登录用户授予新文档 full_access（JSON 输出 permission_grant）。
 
 示例:
   # 导入 Word 文档
@@ -81,11 +84,14 @@ var importFileCmd = &cobra.Command{
 			return err
 		}
 
+		// Bot 身份导入时自动给当前 CLI 登录用户授予新文档 full_access（User 身份不触发）
+		grant := autoGrantCurrentUser(userAccessToken, docToken, targetType)
+
 		if output == "json" {
-			return printJSON(map[string]string{
+			return printJSON(withPermissionGrant(map[string]any{
 				"token": docToken,
 				"url":   url,
-			})
+			}, grant))
 		}
 
 		fmt.Printf("导入成功！\n")
@@ -94,6 +100,7 @@ var importFileCmd = &cobra.Command{
 		if url != "" {
 			fmt.Printf("  链接: %s\n", url)
 		}
+		printPermissionGrantText(os.Stdout, grant)
 
 		return nil
 	},

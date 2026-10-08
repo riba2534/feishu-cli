@@ -28,6 +28,8 @@ var markdownCreateCmd = &cobra.Command{
   --dry-run        只打印将要发出的请求
   --user-access-token  覆盖登录态
 
+以 Bot 身份创建时，自动给当前 CLI 登录用户授予文件 full_access（JSON 输出 permission_grant）。
+
 示例:
   feishu-cli markdown create --name plan.md --content "# Plan"
   feishu-cli markdown create --file ./local.md --folder-token fldxxx
@@ -156,6 +158,10 @@ var markdownCreateCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "warning: 创建后查询 URL 失败: %v\n", metaErr)
 		}
 
+		// --as bot（或 auto 未登录）创建时，自动给当前 CLI 登录用户授予文件 full_access
+		grant := autoGrantCurrentUser(token, result.FileToken, client.ResourceTypeFile)
+		withPermissionGrant(out, grant)
+
 		if output == "json" {
 			return printJSON(out)
 		}
@@ -166,6 +172,7 @@ var markdownCreateCmd = &cobra.Command{
 		if u, ok := out["url"].(string); ok && u != "" {
 			fmt.Printf("  url:        %s\n", u)
 		}
+		printPermissionGrantText(os.Stdout, grant)
 		return nil
 	},
 }

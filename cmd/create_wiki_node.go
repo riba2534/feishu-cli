@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -28,6 +29,8 @@ var createWikiNodeCmd = &cobra.Command{
 节点类型（--node-type）:
   origin    实体节点（默认）
   shortcut  快捷方式
+
+Bot 身份创建时自动给当前 CLI 登录用户授予节点 full_access（容器权限，JSON 输出 url 与 permission_grant）。
 
 示例:
   # 在知识空间根目录创建文档
@@ -61,13 +64,32 @@ var createWikiNodeCmd = &cobra.Command{
 			return fmt.Errorf("--origin-node-token 仅在 --node-type=shortcut 时可用")
 		}
 
-		result, err := client.CreateWikiNode(spaceID, title, parentNode, objType, nodeType, originNodeToken, resolveOptionalUserToken(cmd))
+		userAccessToken := resolveOptionalUserToken(cmd)
+		result, err := client.CreateWikiNode(spaceID, title, parentNode, objType, nodeType, originNodeToken, userAccessToken)
 		if err != nil {
 			return err
 		}
 
+		// Bot 身份创建时自动给当前 CLI 登录用户授予节点 full_access（wiki 授予容器权限；User 身份创建不触发）
+		grant := autoGrantCurrentUser(userAccessToken, result.NodeToken, client.ResourceTypeWiki)
+
 		if output == "json" {
-			if err := printJSON(result); err != nil {
+			out := map[string]any{
+				"space_id":   result.SpaceID,
+				"node_token": result.NodeToken,
+				"obj_token":  result.ObjToken,
+				"obj_type":   result.ObjType,
+			}
+			if result.NodeType != "" {
+				out["node_type"] = result.NodeType
+			}
+			if result.OriginNodeToken != "" {
+				out["origin_node_token"] = result.OriginNodeToken
+			}
+			if url := client.BuildResourceURL(client.ResourceTypeWiki, result.NodeToken); url != "" {
+				out["url"] = url
+			}
+			if err := printJSON(withPermissionGrant(out, grant)); err != nil {
 				return err
 			}
 		} else {
@@ -79,6 +101,10 @@ var createWikiNodeCmd = &cobra.Command{
 			if result.OriginNodeToken != "" {
 				fmt.Printf("  源节点:     %s\n", result.OriginNodeToken)
 			}
+			if url := client.BuildResourceURL(client.ResourceTypeWiki, result.NodeToken); url != "" {
+				fmt.Printf("  链接:       %s\n", url)
+			}
+			printPermissionGrantText(os.Stdout, grant)
 		}
 
 		return nil

@@ -46,7 +46,8 @@ feishu-cli bitable record upsert --base-token bscnxxxx --table-id tblxxx \
 ### 基础（4 命令）
 
 ```bash
-# 创建多维表格
+# 创建多维表格（--as bot 或未登录时以 Bot 创建，自动给当前 CLI 登录用户授予 full_access，
+# 输出新增 permission_grant 字段；bitable copy 同理）
 feishu-cli bitable create --name "项目管理" --time-zone Asia/Shanghai
 feishu-cli bitable create --name "销售" --folder-token fldxxx
 

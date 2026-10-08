@@ -44,6 +44,8 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
   --as             bot|user|auto（默认 auto：User 优先；未配置回退 Bot；已配置但解析/刷新失败 fail-closed）
   --dry-run        只打印将要发出的请求（不解析/刷新 token）
 
+以 Bot 身份导入成功后，自动给当前 CLI 登录用户授予新文档 full_access（JSON 输出 permission_grant）。
+
 示例:
   feishu-cli drive import --file report.docx --type docx
   feishu-cli drive import --file data.xlsx --type sheet --folder-token fldxxx
@@ -223,6 +225,9 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
 		if status.DocURL != "" {
 			result["url"] = status.DocURL
 		}
+		// --as bot（或 auto 未登录）导入时，自动给当前 CLI 登录用户授予新文档 full_access
+		grant := autoGrantCurrentUser(token, status.DocToken, resultType)
+		withPermissionGrant(result, grant)
 
 		if output == "json" {
 			return printJSON(result)
@@ -234,6 +239,7 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
 		if status.DocURL != "" {
 			fmt.Printf("  URL:       %s\n", status.DocURL)
 		}
+		printPermissionGrantText(os.Stdout, grant)
 		return nil
 	},
 }

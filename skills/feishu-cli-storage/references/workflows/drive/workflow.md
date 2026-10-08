@@ -120,6 +120,7 @@ feishu-cli drive import --file report.docx --type docx
 feishu-cli drive import --file data.xlsx --type sheet --folder-token fldxxx
 feishu-cli drive import --file bigsheet.csv --type bitable --folder-token fldxxx
 feishu-cli drive import --file deck.pptx --type slides
+# --as bot（或 auto 未登录）导入成功后自动给当前 CLI 登录用户授予新文档 full_access，JSON 带 permission_grant
 feishu-cli drive import --file snapshot.base --type bitable --target-token bascnxxx
 ```
 

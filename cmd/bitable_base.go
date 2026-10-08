@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -35,6 +37,8 @@ var bitableCreateCmd = &cobra.Command{
 可选:
   --folder-token  目标文件夹 token（默认根目录）
   --time-zone     时区（如 Asia/Shanghai）
+
+以 Bot 身份创建时，自动给当前 CLI 登录用户授予 full_access（输出 permission_grant）。
 
 示例:
   feishu-cli bitable create --name "项目管理"
@@ -70,6 +74,12 @@ var bitableCreateCmd = &cobra.Command{
 			return err
 		}
 
+		// --as bot（或 auto 未登录）创建时，自动给当前 CLI 登录用户授予 full_access
+		grant := autoGrantCurrentUser(token, extractBaseTokenFromResponse(data), client.ResourceTypeBitable)
+		if data != nil {
+			withPermissionGrant(data, grant)
+		}
+
 		if output == "json" {
 			return printJSON(data)
 		}
@@ -86,6 +96,7 @@ var bitableCreateCmd = &cobra.Command{
 				fmt.Printf("  URL:        %s\n", u)
 			}
 		}
+		printPermissionGrantText(os.Stdout, grant)
 		return nil
 	},
 }
@@ -157,6 +168,11 @@ var bitableCopyCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// --as bot（或 auto 未登录）复制时，自动给当前 CLI 登录用户授予副本 full_access
+		grant := autoGrantCurrentUser(token, extractBaseTokenFromResponse(data), client.ResourceTypeBitable)
+		if data != nil {
+			withPermissionGrant(data, grant)
+		}
 		if output == "json" {
 			return printJSON(data)
 		}
@@ -166,6 +182,7 @@ var bitableCopyCmd = &cobra.Command{
 				fmt.Printf("  new base_token: %s\n", t)
 			}
 		}
+		printPermissionGrantText(os.Stdout, grant)
 		return nil
 	},
 }
@@ -192,4 +209,21 @@ func init() {
 	bitableCopyCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	bitableCopyCmd.Flags().String("user-access-token", "", "User Access Token")
 	mustMarkFlagRequired(bitableCopyCmd, "name")
+}
+
+// extractBaseTokenFromResponse 从 base/v3 创建/复制响应中取出新表的 token。
+// 兼容 base 对象直接位于 data 顶层与嵌套在 data.base 两种形状，字段名兼容 base_token / app_token。
+func extractBaseTokenFromResponse(data map[string]any) string {
+	candidates := []map[string]any{data}
+	if nested, ok := data["base"].(map[string]any); ok {
+		candidates = append(candidates, nested)
+	}
+	for _, m := range candidates {
+		for _, key := range []string{"base_token", "app_token"} {
+			if t, _ := m[key].(string); strings.TrimSpace(t) != "" {
+				return strings.TrimSpace(t)
+			}
+		}
+	}
+	return ""
 }

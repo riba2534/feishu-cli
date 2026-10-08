@@ -109,6 +109,10 @@ var driveTaskResultCmd = &cobra.Command{
 				"doc_url":       status.DocURL,
 				"type":          status.Type,
 			}
+			// 导入完成且以 Bot 身份查询时，给当前 CLI 登录用户授予新文档 full_access（对齐 drive import）
+			if status.Ready() && status.DocToken != "" {
+				withPermissionGrant(result, autoGrantCurrentUser(token, status.DocToken, status.Type))
+			}
 		case "export":
 			status, err := client.GetDriveExportStatus(ticket, fileToken, token)
 			if err != nil {

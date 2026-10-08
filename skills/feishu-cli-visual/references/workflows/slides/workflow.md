@@ -85,6 +85,10 @@ feishu-cli slides create --title "Demo" --user-access-token <u-xxx>
 | `--output`, `-o` | 输出格式（留空 = 文本摘要，`json` = JSON） | 文本摘要 |
 | `--user-access-token` | 显式传 User Token | 不传走 App Token |
 
+> **Bot 创建自动授权**：不传 User Token（Bot 身份）创建时，CLI 自动给当前 CLI 登录用户授予 `full_access`，
+> JSON 输出新增 `url`（按品牌生成）与 `permission_grant`（`granted`/`skipped`/`failed`，见 feishu-cli-storage 的 perm 工作流）；
+> 以 User 身份创建时不触发。
+
 > **两层默认值分工**：未传 `--title/--width/--height` 时，client 层注入 `Untitled` 和 `960x540`。
 > CLI 会检查 flag 是否由用户显式设置；显式传 `--width 0` 或 `--height 0` 会报“必须大于 0”，不会使用默认值。
 

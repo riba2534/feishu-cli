@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -20,6 +21,9 @@ var slidesCreateCmd = &cobra.Command{
   --output, -o      输出格式，可选 json
 
 权限: slides:presentation:create 或 slides:presentation:write_only
+
+Bot 身份创建（未传 User Token）时，自动给当前 CLI 登录用户授予 full_access，
+JSON 输出 url 与 permission_grant；以 User 身份创建时不触发。
 
 示例:
   # 创建空白演示文稿
@@ -59,8 +63,22 @@ var slidesCreateCmd = &cobra.Command{
 			return err
 		}
 
+		// Bot 身份创建时自动给当前 CLI 登录用户授予 full_access（User 身份创建不触发）
+		grant := autoGrantCurrentUser(userAccessToken, result.XmlPresentationID, client.ResourceTypeSlides)
+		url := client.BuildResourceURL(client.ResourceTypeSlides, result.XmlPresentationID)
+
 		if output == "json" {
-			return printJSON(result)
+			out := map[string]any{"xml_presentation_id": result.XmlPresentationID}
+			if result.RevisionID != 0 {
+				out["revision_id"] = result.RevisionID
+			}
+			if result.Title != "" {
+				out["title"] = result.Title
+			}
+			if url != "" {
+				out["url"] = url
+			}
+			return printJSON(withPermissionGrant(out, grant))
 		}
 
 		fmt.Printf("Slides 演示文稿已创建：\n")
@@ -69,6 +87,10 @@ var slidesCreateCmd = &cobra.Command{
 		if result.RevisionID > 0 {
 			fmt.Printf("  revision_id:         %d\n", result.RevisionID)
 		}
+		if url != "" {
+			fmt.Printf("  url:                 %s\n", url)
+		}
+		printPermissionGrantText(os.Stdout, grant)
 		return nil
 	},
 }

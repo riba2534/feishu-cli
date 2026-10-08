@@ -22,7 +22,7 @@ feishu-cli wiki export-tree <node_token> --output-dir ./backup
 ## 写操作
 
 ```bash
-feishu-cli wiki create --space-id <space_id> --title "新文档"
+feishu-cli wiki create --space-id <space_id> --title "新文档"   # Bot 创建时自动给当前登录用户授予节点 full_access（permission_grant）
 # 创建快捷方式节点必须提供 --origin-node-token
 feishu-cli wiki create --space-id <space_id> --title "快捷方式" --node-type shortcut --origin-node-token <origin_node_token>
 feishu-cli wiki update <node_token> --title "新标题"

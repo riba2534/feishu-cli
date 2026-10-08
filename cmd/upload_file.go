@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -20,6 +21,8 @@ var uploadFileCmd = &cobra.Command{
 选项:
   --parent      父文件夹 Token（默认上传到根目录）
   --name        文件名（默认使用本地文件名）
+
+Bot 身份上传时自动给当前 CLI 登录用户授予 full_access（JSON 输出 permission_grant）。
 
 示例:
   # 上传文件到根目录
@@ -52,16 +55,20 @@ var uploadFileCmd = &cobra.Command{
 			displayName = filepath.Base(localPath)
 		}
 
+		// Bot 身份上传时自动给当前 CLI 登录用户授予 full_access（User 身份上传不触发）
+		grant := autoGrantCurrentUser(userAccessToken, fileToken, client.ResourceTypeFile)
+
 		if output == "json" {
-			return printJSON(map[string]string{
+			return printJSON(withPermissionGrant(map[string]any{
 				"file_token": fileToken,
 				"file_name":  displayName,
-			})
+			}, grant))
 		}
 
 		fmt.Printf("文件上传成功！\n")
 		fmt.Printf("  文件名:     %s\n", displayName)
 		fmt.Printf("  文件 Token: %s\n", fileToken)
+		printPermissionGrantText(os.Stdout, grant)
 
 		return nil
 	},

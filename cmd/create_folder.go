@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -16,6 +17,8 @@ var createFolderCmd = &cobra.Command{
 参数:
   name       文件夹名称
   --parent   父文件夹 Token（不指定则在根目录创建）
+
+Bot 身份创建时自动给当前 CLI 登录用户授予 full_access（JSON 输出 permission_grant）。
 
 示例:
   # 在根目录创建
@@ -42,11 +45,14 @@ var createFolderCmd = &cobra.Command{
 			return err
 		}
 
+		// Bot 身份创建时自动给当前 CLI 登录用户授予 full_access（User 身份创建不触发）
+		grant := autoGrantCurrentUser(userAccessToken, token, client.ResourceTypeFolder)
+
 		if output == "json" {
-			if err := printJSON(map[string]string{
+			if err := printJSON(withPermissionGrant(map[string]any{
 				"token": token,
 				"url":   url,
-			}); err != nil {
+			}, grant)); err != nil {
 				return err
 			}
 		} else {
@@ -56,6 +62,7 @@ var createFolderCmd = &cobra.Command{
 			if url != "" {
 				fmt.Printf("  链接:  %s\n", url)
 			}
+			printPermissionGrantText(os.Stdout, grant)
 		}
 
 		return nil

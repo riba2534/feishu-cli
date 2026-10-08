@@ -8,6 +8,10 @@
 feishu-cli doc create --title "文档标题" --output json
 ```
 
+以 Bot 身份创建（默认）时，CLI 会自动给当前 CLI 登录用户授予 `full_access`，结果见 JSON 的
+`permission_grant.status`（`granted` / `skipped` / `failed`，详见 feishu-cli-storage 的 perm 工作流）。
+这只覆盖当前登录用户本人，不替代下面的 owner 交付流程。
+
 用户已指定接收人时按该目标授权；否则，需要按 owner 配置交付时：
 
 1. 用 CLI 读取生效配置；以下命令与创建、授权命令沿用本次相同的 `--profile` / `--config`（若已指定）：

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -27,6 +28,8 @@ var copyFileCmd = &cobra.Command{
   mindnote  思维笔记
   file      普通文件
 
+Bot 身份复制时自动给当前 CLI 登录用户授予副本的 full_access（JSON 输出 permission_grant）。
+
 示例:
   # 复制文档
   feishu-cli file copy doccnXXX --target fldcnYYY --type docx
@@ -51,11 +54,14 @@ var copyFileCmd = &cobra.Command{
 			return err
 		}
 
+		// Bot 身份复制时自动给当前 CLI 登录用户授予副本的 full_access（User 身份复制不触发）
+		grant := autoGrantCurrentUser(userAccessToken, newToken, fileType)
+
 		if output == "json" {
-			if err := printJSON(map[string]string{
+			if err := printJSON(withPermissionGrant(map[string]any{
 				"token": newToken,
 				"url":   url,
-			}); err != nil {
+			}, grant)); err != nil {
 				return err
 			}
 		} else {
@@ -65,6 +71,7 @@ var copyFileCmd = &cobra.Command{
 			if url != "" {
 				fmt.Printf("  链接:         %s\n", url)
 			}
+			printPermissionGrantText(os.Stdout, grant)
 		}
 
 		return nil
