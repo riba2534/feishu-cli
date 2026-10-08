@@ -100,6 +100,8 @@ func setupWorkCmdTest(t *testing.T, userToken string, handler func(w http.Respon
 // runWorkCmd 设置 flags 后直接调用 RunE，捕获 stdout，结束后把 flags 复位为默认值。
 func runWorkCmd(t *testing.T, c *cobra.Command, args []string, flags map[string]string) (string, error) {
 	t.Helper()
+	// 直接调用 RunE 时 cobra 不会合并父命令的 persistent flag（如 okr 的 --as），先手动触发合并
+	_ = c.InheritedFlags()
 	t.Cleanup(func() {
 		c.Flags().VisitAll(func(f *pflag.Flag) {
 			if sv, ok := f.Value.(pflag.SliceValue); ok {
