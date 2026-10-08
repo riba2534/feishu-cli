@@ -26,11 +26,11 @@
   feishu-cli auth check --scope "im:message:readonly im:message.group_msg:get_as_user"
   feishu-cli auth login --domain chat --recommend
   ```
-- **必需 User Token**（`reaction add/remove/list`、`pin/unpin/pins`、`chat get/update/delete`）：未登录直接报错。
+- **身份可选 `--as bot|user|auto`**（`reaction add/remove/list`、`pin/unpin/pins`、`chat get/update/delete`）：接口两种身份都支持。默认 auto：已登录用 User Token（与旧版一致），**未登录回退 Bot**；已配置 User 但刷新失败 fail-closed。`--as bot` 以应用身份操作（Bot 需在群内）；`reaction remove` 只能删除同一身份添加的表情。
 - **身份可选 `--as bot|user|auto`**（`msg search-chats`）：current `POST /im/v2/chats/search` 支持 User 与 Bot。默认 auto（User 优先，未配置回落 Bot；已配置 User 但刷新失败 fail-closed）。`--as bot` 走 App Token。
 - **读类 · User 优先 Tenant 兜底**（`chat list`）：默认自动加载 User Token（列你本人加入的群），未登录回落 App Token（列 Bot 加入的群）。
 - **群成员身份可选**（`chat member list/add/remove`）：`--as auto` 默认 User 优先、Bot 兜底；外部群通常显式用 `--as bot`。
-- **固定 Bot 身份**（`chat create`、`chat link`）：当前命令没有 `--user-access-token` 或 `--as`，始终使用 App Token。
+- **固定 Bot 身份**（`chat create`、`chat link`、`msg merge-forward`）：始终使用 App Token。`msg merge-forward` 的接口只接受 tenant token，传 `--user-access-token` / `FEISHU_USER_ACCESS_TOKEN` 会被忽略并在 stderr 提示。
 - **`msg delete`**：默认 App Token，用于 Bot 撤回自己 24 小时内发送的消息；传 `--user-access-token` 或环境变量时可走管理员撤回场景。
 
 ## 端到端：拉一段时间窗的完整聊天记录
@@ -105,9 +105,15 @@ feishu-cli msg mget --message-ids <id1,id2>
 
 # 话题回复（注意：thread-messages 不接受 -o json，默认就是 JSON 输出）
 feishu-cli msg thread-messages <thread_id> --page-size 50 --sort ByCreateTimeAsc
+
+# 话题内时间窗：与 history 一样传秒（也接受毫秒 / RFC3339 / YYYY-MM-DD），客户端本地过滤
+feishu-cli msg thread-messages <thread_id> --start-time 1704067200 --end-time 1704153600
 ```
 
 ### 自动展开线程的 JSON 输出（v1.27.1+）
+
+群聊容器（`--container-id-type chat`）请求时带 `only_thread_root_messages=true`：`items` 只含话题根消息与普通消息，
+话题内回复只出现在 `thread_replies` 中，不会再重复出现在 `items`、也不再占用翻页额度（话题群旧版两处重复）。
 
 `msg history -o json` 顶层新增三个字段：
 
@@ -132,11 +138,12 @@ feishu-cli search messages --chat-ids oc_xxx --is-at-me -o json   # 可省略 qu
 ## 消息互动
 
 ```bash
-feishu-cli msg reaction add <message_id> --emoji-type THUMBSUP
-feishu-cli msg reaction remove <message_id> --reaction-id <reaction_id>
+feishu-cli msg reaction add <message_id> --emoji-type THUMBSUP          # 默认 auto（登录即本人）
+feishu-cli msg reaction add <message_id> --emoji-type THUMBSUP --as bot # 以 Bot 身份表态
+feishu-cli msg reaction remove <message_id> --reaction-id <reaction_id> # 需与添加时同一身份
 feishu-cli msg reaction list <message_id>
 
-feishu-cli msg pin <message_id>
+feishu-cli msg pin <message_id>              # 同样支持 --as bot|user|auto
 feishu-cli msg unpin <message_id>
 feishu-cli msg pins --chat-id <chat_id>
 
@@ -165,9 +172,18 @@ feishu-cli chat delete oc_xxx --yes                # 不可逆；非交互环境
 - 排序：`--sort-type ByCreateTimeAsc`（默认）/ `ByActiveTimeDesc`
 - 输出：默认文本摘要，`-o json` 输出 `{items, page_token, has_more}`
 
-`chat member list --page-all`：自动翻页拉全部成员。若群配置限制了成员可见性
-（如非管理员只能看部分成员），服务端会在成员总数 `member_total` 远大于可取回条数时截断，
-命令会在 stderr 打印中文告警提示名单不完整（stdout 的 JSON 不受影响）。
+`chat member list` 走 `GET /im/v1/chats/{chat_id}/members/list`（旧端点拿不到群内机器人），JSON 输出：
+
+| 字段 | 说明 |
+|---|---|
+| `users[]` | 用户成员 `{member_id, member_id_type, name, tenant_key}` |
+| `items[]` | 与 `users[]` 相同（兼容旧版字段，**仍只含用户**） |
+| `bots[]` | 群内机器人 `{member_id, name, app_id, tenant_key}` |
+| `truncations[]` | 非空表示服务端因群安全设置截断了某类成员（名单不完整），stderr 同时告警 |
+| `user_total` / `bot_total` / `has_more` / `page_token` | 总数与分页 |
+
+`--member-types user|bot|user,bot` 只取某类成员；`--page-all` 自动翻页（未指定 `--page-size` 时每页 100），
+`truncations` 取最后一页。未翻完时 stderr 提示 `--page-token` 续翻。
 
 `chat member list/add/remove` 支持 `--as bot|user|auto`：
 - `auto`（默认）：优先 User Token，回退 Bot Token
@@ -228,7 +244,7 @@ feishu-cli chat member list oc_xxx --as bot
 |---|---|
 | `thread-messages` 加 `-o json` 报错 | **不要传**；它默认就是 JSON 输出 |
 | `thread-messages` 返回 PascalCase | 用 `d.get("items") or d.get("Items")` 兼容两套 key |
-| `history` 时间秒、`thread-messages` 时间毫秒 | `start_sec` vs `start_sec * 1000`，分别传 |
+| `thread-messages` 的时间范围 | 与 `history` 一样传**秒**（毫秒也兼容）；服务端对话题容器忽略时间范围，CLI 在本地按 create_time 过滤**当前页**，`has_more` 时继续翻页 |
 | 撤回消息 `body.content` 是字面字符串 | `try: json.loads(...)` 包住，失败时直接当字符串显示 |
 | post content 两种结构 | 兼容 `{zh_cn:{title,content}}` 和扁平 `{title,content}` |
 | system 消息 `template` 含 `{from_user}` 占位符 | 用同对象其他字段填充（list 逗号 join） |

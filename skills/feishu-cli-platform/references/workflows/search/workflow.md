@@ -173,7 +173,9 @@ feishu-cli search messages "关键词" [选项]
 
 > **`--page-all` 上限 40 页**：`--page-limit` 范围 1–40；`0` 在 `--page-all` 时等于 40（不是无限）。负数会在发网前失败。空/重复游标也会停止以免死循环。
 
-> **默认 vs `--enrich`**：默认仅返回消息 ID（`-o json` 输出 `{MessageIDs,HasMore,PageToken}`），与历史行为一致、向后兼容。加 `--enrich` 才会多发 `GET /im/v1/messages/mget`（每批最多 50）等 API 补全内容/发送者/群名/时间，`-o json` 此时返回富化后的数组。
+> **服务端 notice**：查询词超过 50 字时服务端会截断并在 `data.notice` 提示（如 `The query is too long and has been truncated to the first 50 characters`）。CLI 会把它打印到 stderr（`[提示] 服务端提示: ...`），非 enrich 的 JSON 输出额外带 `notice` 字段（无提示时不出现）；`msg search-chats` 同样处理。看到该提示应缩短查询词。
+
+> **默认 vs `--enrich`**：默认仅返回消息 ID（`-o json` 输出 `{MessageIDs,HasMore,PageToken}`，有 notice 时多一个 `notice`），与历史行为一致、向后兼容。加 `--enrich` 才会多发 `GET /im/v1/messages/mget`（每批最多 50）等 API 补全内容/发送者/群名/时间，`-o json` 此时返回富化后的数组。
 
 ### 示例
 
