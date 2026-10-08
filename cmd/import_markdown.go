@@ -702,12 +702,12 @@ func phase1CreateBlocks(
 				}
 				batch := topLevelBlocks[i:end]
 
-				createResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-					return client.CreateBlock(documentID, documentID, batch, -1, userAccessToken)
-				}, client.RetryConfig{
+				// 整个重试周期复用同一个 client_token：首次请求已在服务端成功但客户端收到 5xx 时，
+				// 重放会返回同一批块而不是重复插入
+				createResult := client.CreateBlockWithRetry(documentID, documentID, batch, -1, client.RetryConfig{
 					MaxRetries:       5,
 					RetryOnRateLimit: true,
-				})
+				}, userAccessToken)
 				if createResult.Err != nil {
 					return nil, nil, nil, nil, fmt.Errorf("添加内容失败 (段落 %d): %w", segIdx+1, createResult.Err)
 				}
@@ -781,8 +781,9 @@ func phase1CreateBlocks(
 			}
 
 			// 只创建画板占位块，不导入图表
+			boardClientToken := client.NewClientToken() // 重试复用同一 token，避免重复创建画板块
 			createResult := client.DoWithRetry(func() (*client.AddBoardResult, http.Header, error) {
-				return client.AddBoard(documentID, "", -1, userAccessToken)
+				return client.AddBoardWithClientToken(documentID, "", -1, boardClientToken, userAccessToken)
 			}, client.RetryConfig{
 				MaxRetries:       5,
 				RetryOnRateLimit: true,
@@ -1553,12 +1554,10 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 		}
 		batch := childBlocks[i:end]
 
-		result := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-			return client.CreateBlock(documentID, parentBlockID, batch, -1, userAccessToken)
-		}, client.RetryConfig{
+		result := client.CreateBlockWithRetry(documentID, parentBlockID, batch, -1, client.RetryConfig{
 			MaxRetries:       5,
 			RetryOnRateLimit: true,
-		})
+		}, userAccessToken)
 		if result.Err != nil {
 			return totalCreated, createdNodes, fmt.Errorf("创建嵌套子块失败 (parent=%s): %w", parentBlockID, result.Err)
 		}
