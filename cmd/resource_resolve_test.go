@@ -315,3 +315,49 @@ func TestNormalizeDriveExportInput_PathPrefixOnly(t *testing.T) {
 		t.Fatal("含路径分隔符的 --token 应被拒绝")
 	}
 }
+
+func TestDriveInspect_BareTokenDetectedByQueryByToken(t *testing.T) {
+	server, reqs := newResourceTestServer(t, "sheet", "ShtObj", func(w http.ResponseWriter, r *http.Request) bool {
+		switch {
+		case r.URL.Path == client.DriveQueryByTokenPath:
+			_, _ = fmt.Fprint(w, `{"code":0,"data":{"is_wiki_token":true,"obj_token":"ShtObj","obj_type":"sheet","status":0}}`)
+			return true
+		case strings.Contains(r.URL.Path, "metas/batch_query"):
+			_, _ = fmt.Fprint(w, `{"code":0,"data":{"metas":[{"title":"表","doc_token":"ShtObj","doc_type":"sheet"}]}}`)
+			return true
+		}
+		return false
+	})
+	initWikiNodeDeleteTestConfig(t, server.URL)
+
+	_ = driveInspectCmd.Flags().Set("url", "WikBare")
+	_ = driveInspectCmd.Flags().Set("output", "json")
+	defer resetCmdFlag(driveInspectCmd, "url", "output")
+	out, err := captureCmdStdout(t, func() error { return driveInspectCmd.RunE(driveInspectCmd, nil) })
+	if err != nil {
+		t.Fatalf("裸 token 未传 --type 应自动识别（旧实现直接报 --type 必填）: %v", err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("输出不是 JSON: %s", out)
+	}
+	if result["type"] != "sheet" || result["token"] != "ShtObj" || result["detected_by"] != "query_by_token" || result["wiki_node"] == nil {
+		t.Fatalf("输出不符: %s", out)
+	}
+	got := reqs()
+	if len(got) < 2 || !strings.HasPrefix(got[0], "GET "+client.DriveQueryByTokenPath+"?token=WikBare") ||
+		!strings.HasPrefix(got[1], "GET "+client.WikiNodeByTokenPath+"?token=WikBare") {
+		t.Fatalf("应先 query_by_token 识别、再 node_by_token 展开 wiki: %v", got)
+	}
+}
+
+func TestResolveResourceArg_DetectRequiresOptIn(t *testing.T) {
+	server, reqs := newResourceTestServer(t, "docx", "DocObj", nil)
+	initWikiNodeDeleteTestConfig(t, server.URL)
+	if _, err := resolveResourceArg("BareTok", resourceArgOptions{ArgName: "--x"}); err == nil {
+		t.Fatal("未开启 DetectBareType 时裸 token 无类型应报错")
+	}
+	if len(reqs()) != 0 {
+		t.Fatalf("未开启识别时不应发请求: %v", reqs())
+	}
+}

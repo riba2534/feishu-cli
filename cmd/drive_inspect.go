@@ -101,16 +101,18 @@ func inspectFetchTitle(docToken, docType, userToken string) (title string, err e
 var driveInspectCmd = &cobra.Command{
 	Use:   "inspect",
 	Short: "解析文档 URL → 输出 type/title/token/canonical URL（自动展开 wiki 节点）",
-	Long: `给定文档 URL 或裸 token + type，统一输出 type / title / token / canonical URL。
+	Long: `给定文档 URL 或裸 token，统一输出 type / title / token / canonical URL。
 
 特别功能：
+  - URL 只按路径前缀推断类型（?from=/wiki/... 等查询参数不会劫持解析）；--type 与 URL 冲突时报错
   - URL 中带 /wiki/ 时，自动调 wiki node_by_token 拆出底层文档的 obj_type/obj_token
+  - 裸 token 未传 --type 时，自动调 drive query_by_token 识别类型（wiki 节点同样自动展开）
   - 自动检测无权限、不存在等异常
   - 默认 auto Token（User 优先，回退 Bot）
 
 参数:
   --url           文档 URL 或裸 token（必填）
-  --type          文档类型（裸 token 必填；URL 自动推断）
+  --type          文档类型（可选；URL 自动推断，裸 token 省略时通过 query_by_token 自动识别）
                   可选: doc / docx / sheet / bitable / wiki / file / folder / mindnote / slides
   --output, -o    输出格式 (json)
 
@@ -121,7 +123,8 @@ var driveInspectCmd = &cobra.Command{
   # 解析 wiki URL（自动展开到底层文档）
   feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx"
 
-  # 裸 token + type
+  # 裸 token（自动识别类型）/ 裸 token + type
+  feishu-cli drive inspect --url doxcnxxx
   feishu-cli drive inspect --url doxcnxxx --type docx
 
   # JSON 输出
@@ -137,10 +140,11 @@ var driveInspectCmd = &cobra.Command{
 
 		// 统一解析：只按 URL 路径前缀推断类型；--type 与 URL 冲突时报错（wiki URL + 非 wiki 类型视为对底层类型的断言）
 		opts := resourceArgOptions{
-			ArgName:      "--url",
-			ExplicitType: explicitType,
-			Allowed:      driveInspectTypes,
-			ResolveWiki:  true,
+			ArgName:        "--url",
+			ExplicitType:   explicitType,
+			Allowed:        driveInspectTypes,
+			ResolveWiki:    true,
+			DetectBareType: true, // 裸 token 未传 --type 时用 query_by_token 自动识别
 		}
 		res, err := parseResourceArg(rawURL, opts)
 		if err != nil {
@@ -151,10 +155,26 @@ var driveInspectCmd = &cobra.Command{
 		userToken := resolveOptionalUserTokenWithFallback(cmd)
 		opts.UserAccessToken = userToken
 
+		// Step 0: 裸 token 未指定 --type 时，通过 query_by_token 识别真实类型（wiki 节点自动识别）
+		if res.InputType == "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "未指定 --type，通过 query_by_token 识别类型: %s ...\n", res.InputToken)
+			if err := detectResourceType(res, opts); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "识别为 %s\n", res.InputType)
+		}
+
 		result := map[string]any{
 			"input_url": strings.TrimSpace(rawURL),
 			"type":      res.InputType,
 			"token":     res.InputToken,
+		}
+		if res.DetectedBy != "" {
+			result["detected_by"] = res.DetectedBy
+			if res.TokenStatus != 0 {
+				result["token_status"] = res.TokenStatus
+				fmt.Fprintf(cmd.ErrOrStderr(), "⚠️ 该节点状态异常（status=%d：1=在回收站，2=已删除）\n", res.TokenStatus)
+			}
 		}
 
 		// Step 1: 如果是 wiki，先通过 node_by_token 展开
@@ -207,7 +227,7 @@ var driveInspectCmd = &cobra.Command{
 func init() {
 	driveCmd.AddCommand(driveInspectCmd)
 	driveInspectCmd.Flags().String("url", "", "文档 URL 或裸 token（必填）")
-	driveInspectCmd.Flags().String("type", "", "文档类型（裸 token 必填；URL 可自动推断）")
+	driveInspectCmd.Flags().String("type", "", "文档类型（可选；URL 按路径推断，裸 token 省略时自动识别）")
 	driveInspectCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	driveInspectCmd.Flags().String("user-access-token", "", "User Access Token（auto 时可选）")
 	mustMarkFlagRequired(driveInspectCmd, "url")

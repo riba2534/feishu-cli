@@ -27,7 +27,8 @@
 # 解析任意文档 URL → 输出 type/title/canonical token（自动展开 wiki）
 feishu-cli drive inspect --url "https://xxx.feishu.cn/docx/doxcnxxx"
 feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx"   # 自动 wiki node_by_token
-feishu-cli drive inspect --url doxcnxxx --type docx -o json            # 裸 token + JSON
+feishu-cli drive inspect --url doxcnxxx -o json                        # 裸 token：query_by_token 自动识别类型
+feishu-cli drive inspect --url doxcnxxx --type docx -o json            # 裸 token + 显式类型
 
 # 向文档所有者申请权限（埋藏 API，飞书文档站未收录但服务端可用）
 # 必需 User Token + docs:permission.member:apply scope（或 drive:drive 等任一大权限）
@@ -379,7 +380,11 @@ feishu-cli drive inspect --url "https://xxx.feishu.cn/docx/doxcnxxx"
 feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx"
 # → 输出 type=docx, token=<真实 docx token>
 
-# 裸 token + 显式 type → 拿标题做权限/分类
+# 裸 token：未传 --type 时自动调 GET /drive/v2/files/query_by_token 识别类型（Bot/User 均可用，
+# wiki node_token 自动识别并展开；JSON 带 detected_by=query_by_token，节点在回收站/已删除时带 token_status）
+feishu-cli drive inspect --url doxcnxxx
+
+# 裸 token + 显式 type → 跳过识别，直接查标题
 feishu-cli drive inspect --url doxcnxxx --type docx
 
 # JSON 输出（脚本/Agent 友好）

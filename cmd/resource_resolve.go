@@ -22,6 +22,9 @@ type resourceArgOptions struct {
 	Allowed []string
 	// ResolveWiki 为 true 时，wiki 输入通过 node_by_token 换出底层 obj_token / obj_type。
 	ResolveWiki bool
+	// DetectBareType 为 true 时，未声明类型（且无 DefaultType）的裸 token 通过
+	// query_by_token 自动识别类型（会发起网络请求；wiki node_token 识别为 wiki）。
+	DetectBareType bool
 	// UserAccessToken wiki 解析使用的身份；为空表示 Bot（App）身份。
 	UserAccessToken string
 }
@@ -37,6 +40,10 @@ type resolvedResource struct {
 	WikiNode   *client.WikiNode // 非 nil 表示输入是 wiki 节点且已解包
 	// ExpectedObjType 是 wiki 输入时用户声明的期望底层类型（来自 ExplicitType），解包后校验。
 	ExpectedObjType string
+	// DetectedBy 非空表示类型由服务端识别（目前只有 "query_by_token"）。
+	DetectedBy string
+	// TokenStatus 是 query_by_token 返回的输入节点状态：0 正常，1 回收站，2 已删除。
+	TokenStatus int
 }
 
 func (o resourceArgOptions) argName() string {
@@ -87,6 +94,10 @@ func parseResourceArg(raw string, opts resourceArgOptions) (*resolvedResource, e
 			res.InputType = client.NormalizeResourceType(opts.DefaultType)
 		}
 		if res.InputType == "" {
+			if opts.DetectBareType {
+				// 类型留空，由 detectResourceType 通过 query_by_token 识别
+				return res, nil
+			}
 			return nil, fmt.Errorf("%s 是裸 token 时必须显式指定资源类型", name)
 		}
 	}
@@ -125,11 +136,40 @@ func resolveWikiInResource(res *resolvedResource, opts resourceArgOptions) error
 	return nil
 }
 
-// resolveResourceArg 解析资源参数并在需要时解包 wiki（会发起 node_by_token 请求）。
-// 是 doc/slides/drive 等命令接收「裸 token 或 URL」的统一入口。
+// detectResourceType 对类型未知的裸 token 调用 query_by_token 识别真实类型。
+// wiki node_token 识别为 wiki（保留原 token，后续由 resolveWikiInResource 解包取得 space_id 等信息）；
+// 其他资源直接采用服务端返回的 obj_type/obj_token。类型已知时不发请求。
+func detectResourceType(res *resolvedResource, opts resourceArgOptions) error {
+	if res == nil || res.InputType != "" || !opts.DetectBareType {
+		return nil
+	}
+	info, err := client.QueryDriveToken(res.InputToken, opts.UserAccessToken)
+	if err != nil {
+		return fmt.Errorf("%w\n无法自动识别 %s 的类型时，请显式指定资源类型", err, opts.argName())
+	}
+	res.DetectedBy = "query_by_token"
+	res.TokenStatus = info.Status
+	if info.IsWikiToken {
+		res.InputType = client.ResourceTypeWiki
+	} else {
+		res.InputType = info.ObjType
+		res.InputToken = info.ObjToken
+	}
+	res.Type, res.Token = res.InputType, res.InputToken
+	if !(res.InputType == client.ResourceTypeWiki && opts.ResolveWiki) {
+		return checkResourceTypeAllowed(opts.argName(), res.Type, opts.Allowed)
+	}
+	return nil
+}
+
+// resolveResourceArg 解析资源参数：离线解析 → （可选）query_by_token 识别裸 token 类型 →
+// （可选）node_by_token 解包 wiki。是 doc/slides/drive 等命令接收「裸 token 或 URL」的统一入口。
 func resolveResourceArg(raw string, opts resourceArgOptions) (*resolvedResource, error) {
 	res, err := parseResourceArg(raw, opts)
 	if err != nil {
+		return nil, err
+	}
+	if err := detectResourceType(res, opts); err != nil {
 		return nil, err
 	}
 	if err := resolveWikiInResource(res, opts); err != nil {
