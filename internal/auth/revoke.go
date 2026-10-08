@@ -3,13 +3,13 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 // accountsBaseFor 按 baseURL 选择 OAuth accounts 域（吊销 / 设备流端点所在域）。
@@ -43,7 +43,7 @@ func RevokeToken(appID, appSecret, baseURL, token, tokenTypeHint string) error {
 		form.Set("token_type_hint", tokenTypeHint)
 	}
 
-	req, err := http.NewRequest("POST", endpoint, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(runctx.Root(), "POST", endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("构造吊销请求失败: %w", err)
 	}
@@ -56,44 +56,40 @@ func RevokeToken(appID, appSecret, baseURL, token, tokenTypeHint string) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := readLimitedAuthBody(resp.Body)
 	if err != nil {
 		return fmt.Errorf("读取吊销响应失败: %w", err)
 	}
 
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("吊销端点返回 HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	// 空响应体（部分实现吊销成功不返回内容）视为成功
-	if len(body) == 0 {
-		return nil
-	}
-
+	// 先解析业务码 / OAuth 错误，再看 HTTP 状态：飞书错误常随 HTTP 4xx 下发
 	var data struct {
 		Code             int    `json:"code"`
 		Msg              string `json:"msg"`
 		Error            string `json:"error"`
 		ErrorDescription string `json:"error_description"`
 	}
-	// HTTP 2xx 但响应体非标准 JSON 时，无法判定失败，保守视为成功
-	if err := json.Unmarshal(body, &data); err != nil {
-		return nil
-	}
-	if data.Code != 0 {
+	parsed := len(body) > 0 && json.Unmarshal(body, &data) == nil
+	if parsed && data.Code != 0 {
 		msg := data.Msg
+		if msg == "" {
+			msg = data.ErrorDescription
+		}
 		if msg == "" {
 			msg = "未知错误"
 		}
-		return fmt.Errorf("吊销失败: code=%d, msg=%s", data.Code, msg)
+		return fmt.Errorf("吊销失败: code=%d, msg=%s", data.Code, redactAuthPreview(msg))
 	}
-	if data.Error != "" {
+	if parsed && data.Error != "" {
 		desc := data.ErrorDescription
 		if desc == "" {
 			desc = data.Error
 		}
-		return fmt.Errorf("吊销失败: %s", desc)
+		return fmt.Errorf("吊销失败: %s", redactAuthPreview(desc))
 	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("吊销端点返回 HTTP %d: %s", resp.StatusCode, authBodyPreview(body))
+	}
+	// HTTP 2xx：空响应体或非标准 JSON（部分实现吊销成功不返回内容）保守视为成功
 	return nil
 }
 

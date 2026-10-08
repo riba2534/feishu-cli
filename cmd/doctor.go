@@ -241,6 +241,14 @@ func checkUserToken() checkResult {
 			"运行 feishu-cli auth login（仅 vc/minutes/mail/drive/search 等命令必需）")
 	}
 	status := token.TokenStatus()
+	if f := token.RefreshFailure; f != nil {
+		// 终态刷新失败标记：refresh_token 已被服务端判定失效，不会再自动刷新
+		if status == "valid" {
+			return checkWarn("user_token", fmt.Sprintf("access_token 仍有效，但 refresh_token 已失效（code=%d），过期后无法自动续期", f.Code),
+				"运行 feishu-cli auth login 重新授权")
+		}
+		return checkFail("user_token", f.Err().Error(), "运行 feishu-cli auth login 重新授权")
+	}
 	switch status {
 	case "valid":
 		// 不暴露 token 本体，只给状态
@@ -266,6 +274,9 @@ func checkUserIdentity() checkResult {
 	if token == nil {
 		return checkWarn("user_identity", "用户身份未就绪：未登录（token.json 不存在）",
 			"如需 search/vc/minutes/mail/drive 等用户态命令，运行 feishu-cli auth login")
+	}
+	if f := token.RefreshFailure; f != nil && token.TokenStatus() != "valid" {
+		return checkFail("user_identity", "用户身份未就绪："+f.Err().Error(), "运行 feishu-cli auth login 重新授权")
 	}
 	switch token.TokenStatus() {
 	case "valid":

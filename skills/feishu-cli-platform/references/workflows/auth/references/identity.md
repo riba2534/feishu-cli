@@ -6,7 +6,8 @@
 ## 预检的含义
 
 - `auth check --scope` 只检查选中 profile 的本地 User Token 的 scope 和有效期；不验证 Bot、资源权限或显式传入的 User Token。
-- Bot：确认应用权限已开通，`doctor --only bot_identity` 可验证凭证能否换取 Tenant Token；实际资源访问仍以 API 返回为准。
+- Bot：确认应用权限已开通（`auth scopes --scope "..." -o json` 的 `tenant_enabled`），`doctor --only bot_identity` 可验证凭证能否换取 Tenant Token；实际资源访问仍以 API 返回为准。
+- 区分"应用没开通"与"用户没授权"：`auth scopes --scope` 的 `diagnosis`（`app_not_enabled` / `tenant_only` 需在开放平台开通，`user_not_granted` 需 `auth login --scope`）。
 - 本地登录的 User：按本次命令所需 scope 运行 `auth check`；缺失时按提示补授。
 - 显式 `--user-access-token` / `FEISHU_USER_ACCESS_TOKEN`：不把另一个本地 token 的预检结果当作它的授权证明。
 - `--dry-run` 成功仅表示本地校验与请求构造完成，不代表已访问飞书或写入成功。
