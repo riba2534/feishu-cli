@@ -34,7 +34,10 @@ var deleteTaskCmd = &cobra.Command{
 			return tokenErr
 		}
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 
 		if err := client.DeleteTask(taskGuid, token); err != nil {
 			return err

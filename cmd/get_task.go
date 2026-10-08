@@ -11,7 +11,9 @@ import (
 var getTaskCmd = &cobra.Command{
 	Use:   "get <task_id>",
 	Short: "获取任务详情",
-	Long: `获取指定任务的详细信息。
+	Long: `task_id 也可以是任务 applink（含 guid= 参数）。输出含成员、父任务与提醒 ID（task reminder remove 需要）。
+
+获取指定任务的详细信息。
 
 参数:
   task_id     任务 ID（必填）
@@ -31,7 +33,10 @@ var getTaskCmd = &cobra.Command{
 
 		token := resolveOptionalUserTokenWithFallback(cmd)
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 
 		task, err := client.GetTask(taskGuid, token)
 		if err != nil {
@@ -63,6 +68,19 @@ var getTaskCmd = &cobra.Command{
 			}
 			if task.OriginHref != "" {
 				fmt.Printf("  来源链接: %s\n", task.OriginHref)
+			}
+			if task.ParentTaskGuid != "" {
+				fmt.Printf("  父任务: %s\n", task.ParentTaskGuid)
+			}
+			for _, m := range task.Members {
+				fmt.Printf("  成员: %s（%s）\n", m.ID, m.Role)
+			}
+			for _, r := range task.Reminders {
+				// 提醒 ID 供 task reminder remove --ids 使用
+				fmt.Printf("  提醒: 截止前 %d 分钟（提醒 ID: %s）\n", r.RelativeFireMinute, r.ID)
+			}
+			if task.URL != "" {
+				fmt.Printf("  链接: %s\n", task.URL)
 			}
 		}
 

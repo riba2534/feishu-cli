@@ -45,6 +45,10 @@ var taskUploadAttachmentCmd = &cobra.Command{
 		if taskGuid == "" {
 			return fmt.Errorf("--task-guid 必填")
 		}
+		taskGuid, guidErr := parseTaskGUIDArg(taskGuid)
+		if guidErr != nil {
+			return guidErr
+		}
 		if filePath == "" {
 			return fmt.Errorf("--file 必填")
 		}

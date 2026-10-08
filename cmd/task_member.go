@@ -47,7 +47,10 @@ var taskMemberAddCmd = &cobra.Command{
 			return tokenErr
 		}
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 		membersStr, _ := cmd.Flags().GetString("members")
 		role, _ := cmd.Flags().GetString("role")
 
@@ -100,7 +103,10 @@ var taskMemberRemoveCmd = &cobra.Command{
 			return tokenErr
 		}
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 		membersStr, _ := cmd.Flags().GetString("members")
 		role, _ := cmd.Flags().GetString("role")
 

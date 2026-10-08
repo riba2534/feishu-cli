@@ -37,7 +37,10 @@ var completeTaskCmd = &cobra.Command{
 			return tokenErr
 		}
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 
 		task, err := client.CompleteTask(taskGuid, token)
 		if err != nil {

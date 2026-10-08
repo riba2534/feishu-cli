@@ -46,7 +46,10 @@ var taskCommentAddCmd = &cobra.Command{
 			return tokenErr
 		}
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 		content, _ := cmd.Flags().GetString("content")
 		replyTo, _ := cmd.Flags().GetString("reply-to")
 		output, _ := cmd.Flags().GetString("output")
@@ -90,7 +93,10 @@ var taskCommentListCmd = &cobra.Command{
 
 		token := resolveOptionalUserTokenWithFallback(cmd)
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")

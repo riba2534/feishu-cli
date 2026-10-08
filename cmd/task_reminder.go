@@ -46,7 +46,10 @@ var taskReminderAddCmd = &cobra.Command{
 			return tokenErr
 		}
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 		minutes, _ := cmd.Flags().GetInt("minutes")
 
 		if err := client.AddTaskReminders(taskGuid, minutes, token); err != nil {
@@ -84,7 +87,10 @@ var taskReminderRemoveCmd = &cobra.Command{
 			return tokenErr
 		}
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 		idsStr, _ := cmd.Flags().GetString("ids")
 
 		var ids []string
