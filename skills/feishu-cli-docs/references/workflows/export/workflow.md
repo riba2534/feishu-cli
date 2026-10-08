@@ -142,6 +142,22 @@ feishu-cli doc import-file report.docx --type docx --name "季度报告"
 
 更推荐的异步导入、大小限制和 resume 能力见 `feishu-cli-storage`。
 
+## docs_ai 引擎导出（--engine docs_ai）
+
+```bash
+# 服务端 Markdown（docs_ai 方言：<callout emoji>、<cite>、```mermaid 画板源码、原图 token）
+feishu-cli doc export <doc> --engine docs_ai -o doc.md
+# 需要保留 callout 颜色、文字颜色、下划线等样式时用 XML + full
+feishu-cli doc export <doc> --engine docs_ai --doc-format xml --detail full -o doc.xml
+```
+
+- 适合"导出 → 修改 → `doc content-update` 写回"：方言与写入接口一致，写回无需本地方言转换（本地引擎的
+  `<whiteboard token type="blank"/>` 等占位在写回时会被 fail-closed 拒绝）。
+- Markdown 序列化会丢失 callout 颜色、文字颜色、下划线；需要保真时用 `--doc-format xml --detail full`（含 block id，
+  写回整篇时服务端会重建 block id）。
+- 实测：画板在**同一文档**内可按 token 克隆，写回到其它文档常因 `degrade_code=2105` 失败（命令以退出码 1 报告 partial_success）。
+- 本地引擎专属参数（`--download-images`、`--highlight`、`--expand-mentions`、`--expand-sheets`）不能与 docs_ai 引擎同用。
+
 ## 单素材下载（doc media-download）
 
 按素材 token 单独下载文档内嵌图片、画板缩略图或附件文件，不依赖 `doc export --download-images` 的批处理流程。适合做手动补抓、画板缩略图导出、超大附件下载。
