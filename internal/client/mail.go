@@ -851,3 +851,69 @@ func ListMailLabels(mailboxID, userAccessToken string) (json.RawMessage, error) 
 	}
 	return callMailAPI(http.MethodGet, mailboxPath(mailboxID, "labels"), nil, userAccessToken)
 }
+
+// ResolveMailFolderID 把 --folder 输入解析为 messages 列表端点可用的 folder_id。
+// 规则（对齐官方 resolveFolderName）：系统文件夹别名/ID（inbox/收件箱/INBOX…）本地解析；
+// 其余按"精确 ID 优先、名称（大小写不敏感）其次"在文件夹列表中查找，名称重复或不存在时报错。
+// 修复：列表端点只接受 folder_id，此前直接透传 "inbox" 被服务端以 4038 拒绝。
+func ResolveMailFolderID(mailboxID, input, userAccessToken string) (string, error) {
+	value := strings.TrimSpace(input)
+	if value == "" {
+		return "", nil
+	}
+	if id, ok := resolveFolderSystemAliasOrID(value); ok {
+		return id, nil
+	}
+	raw, err := ListMailFolders(mailboxID, userAccessToken)
+	if err != nil {
+		return "", fmt.Errorf("查询文件夹列表失败: %w", err)
+	}
+	return resolveMailNamedID("文件夹", "--list-folders", value, raw, "folders")
+}
+
+// ResolveMailLabelID 把 --label 输入解析为 messages 列表端点可用的 label_id。
+// 系统标签（important/flagged/other 及其大写 ID）本地解析；其余在标签列表中按 ID / 名称查找。
+func ResolveMailLabelID(mailboxID, input, userAccessToken string) (string, error) {
+	value := strings.TrimSpace(input)
+	if value == "" {
+		return "", nil
+	}
+	if id, ok := resolveSystemLabel(value); ok {
+		return id, nil
+	}
+	if strings.EqualFold(value, "UNREAD") {
+		return "UNREAD", nil
+	}
+	raw, err := ListMailLabels(mailboxID, userAccessToken)
+	if err != nil {
+		return "", fmt.Errorf("查询标签列表失败: %w", err)
+	}
+	return resolveMailNamedID("标签", "--list-labels", value, raw, "labels")
+}
+
+func resolveMailNamedID(kind, listFlag, value string, raw json.RawMessage, altKey string) (string, error) {
+	var resp map[string][]mailNamedItem
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return "", fmt.Errorf("解析%s列表失败: %w", kind, err)
+	}
+	items := append(resp["items"], resp[altKey]...)
+	for _, it := range items {
+		if it.ID != "" && it.ID == value {
+			return it.ID, nil
+		}
+	}
+	var matches []string
+	for _, it := range items {
+		if it.ID != "" && strings.EqualFold(strings.TrimSpace(it.Name), value) {
+			matches = append(matches, it.ID)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return "", fmt.Errorf("未找到%s %q；可先用 `feishu-cli mail triage %s` 查看可用的 ID 与名称", kind, value, listFlag)
+	default:
+		return "", fmt.Errorf("%s名称 %q 对应多个 ID（%s），请改用 ID", kind, value, strings.Join(matches, ","))
+	}
+}
