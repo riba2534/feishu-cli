@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 )
 
@@ -197,4 +198,43 @@ func TestFetchTenantAccessToken_RedactsSecretsAndRejectsOversize(t *testing.T) {
 			t.Fatalf("超过 1MiB 必须报错: %v", err)
 		}
 	})
+}
+
+// App 凭证被确定性拒绝（invalid_client，如 20002 secret 错误、20048 应用不存在）→ 鉴权类（退出码 3），
+// 文本保持不变；5xx / 临时错误不算凭证被拒。
+func TestFetchTenantAccessToken_CredentialRejected(t *testing.T) {
+	cases := []struct {
+		status   int
+		body     string
+		rejected bool
+	}{
+		{400, `{"code":20002,"error":"invalid_client","error_description":"The client secret is invalid."}`, true},
+		{400, `{"code":20048,"error":"invalid_client","error_description":"The specified app does not exist."}`, true},
+		{400, `{"code":99991543,"msg":"app secret invalid"}`, true},
+		{503, `{"error":"server_error","error_description":"busy"}`, false},
+		{400, `{"code":12345,"msg":"other"}`, false},
+	}
+	for _, c := range cases {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(c.status)
+			_, _ = w.Write([]byte(c.body))
+		}))
+		orig := TATEndpointFunc
+		TATEndpointFunc = func(string) string { return srv.URL }
+		_, err := FetchTenantAccessToken("cli_a", "bad", "")
+		TATEndpointFunc = orig
+		srv.Close()
+		if err == nil {
+			t.Fatalf("%s: 应失败", c.body)
+		}
+		if IsCredentialRejected(err) != c.rejected {
+			t.Fatalf("%s: IsCredentialRejected=%v want %v (%v)", c.body, !c.rejected, c.rejected, err)
+		}
+		if c.rejected && !clierr.HasKind(err, clierr.KindAuth) {
+			t.Fatalf("%s: 凭证被拒应打鉴权标签", c.body)
+		}
+		if c.rejected && !strings.Contains(err.Error(), "获取 tenant_access_token 失败") {
+			t.Fatalf("错误文本应保持不变: %v", err)
+		}
+	}
 }

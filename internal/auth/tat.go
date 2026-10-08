@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/runctx"
 )
@@ -158,7 +160,50 @@ func fetchTenantAccessToken(ctx context.Context, httpClient *http.Client, appID,
 	return nil, classifyTATFailure(resp.StatusCode, body)
 }
 
+// TATError 是 tenant_access_token 换取被服务端拒绝的结果；Error() 文本与历史版本一致。
+type TATError struct {
+	msg        string
+	HTTPStatus int
+	Code       int
+	OAuthError string
+}
+
+func (e *TATError) Error() string { return e.msg }
+
+// credentialRejectCodes 是 Accounts / Open API 对 app_id、app_secret 的确定性拒绝码：
+// 20002 client secret 无效、20048 应用不存在、99991543 app_id/app_secret 错误、10014 旧端点 secret 无效。
+var credentialRejectCodes = map[int]bool{20002: true, 20048: true, 99991543: true, 10014: true}
+
+// CredentialRejected 报告服务端是否确定性拒绝了 app_id / app_secret（而不是网络或临时错误）。
+func (e *TATError) CredentialRejected() bool {
+	if e == nil {
+		return false
+	}
+	return e.OAuthError == "invalid_client" || e.OAuthError == "unauthorized_client" || credentialRejectCodes[e.Code]
+}
+
+// IsCredentialRejected 报告 err 链上是否为 App 凭证被确定性拒绝。
+func IsCredentialRejected(err error) bool {
+	var te *TATError
+	return errors.As(err, &te) && te.CredentialRejected()
+}
+
 func classifyTATFailure(status int, body []byte) error {
+	err := classifyTATFailureMsg(status, body)
+	te := &TATError{msg: err.Error(), HTTPStatus: status}
+	var result tatResponse
+	if json.Unmarshal(body, &result) == nil {
+		te.Code = result.Code
+		te.OAuthError = result.Error
+	}
+	if te.CredentialRejected() {
+		// App 凭证配置错误归鉴权类（退出码 3），文本不变
+		return clierr.Auth(te)
+	}
+	return te
+}
+
+func classifyTATFailureMsg(status int, body []byte) error {
 	var result tatResponse
 	if json.Unmarshal(body, &result) == nil {
 		desc := result.ErrorDescription
