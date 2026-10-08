@@ -24,8 +24,9 @@ import (
 // printMu 保护并发 goroutine 的日志输出不交叉
 var printMu sync.Mutex
 
-// maxInlineVideoSize 视频通过 drive_media 接口直传的大小上限（字节）。
-// 飞书该接口暂不支持分块上传，超过此值的视频会被拒绝；后续支持分块上传后可放宽。
+// maxInlineVideoSize 视频走 medias/upload_all 单次直传的大小上限（字节）。
+// 超过此值的视频改走 upload_prepare / upload_part / upload_finish 分片上传（client.UploadDocMedia），
+// 不再拒绝（此前注释称"飞书该接口不支持分块上传"有误，官方 doc_media_upload 即用分片上传大素材）。
 const maxInlineVideoSize = 20 * 1024 * 1024
 
 // syncPrintf 线程安全的 Printf，用于并发阶段的日志输出
@@ -1494,14 +1495,6 @@ func processVideoTask(documentID string, task videoTask, verbose bool, userAcces
 		syncPrintf("  ✗ 视频 %d 文件信息获取失败: %v\n", task.index, err)
 		return failWith(fmt.Sprintf("文件信息获取失败: %v", err), err)
 	}
-	if fi.Size() > maxInlineVideoSize {
-		sizeMB := float64(fi.Size()) / (1024 * 1024)
-		err := fmt.Errorf("视频超过 %.1f MB 限制 (当前 %.1f MB)，当前上传通道暂不支持大文件分块上传",
-			float64(maxInlineVideoSize)/(1024*1024), sizeMB)
-		syncPrintf("  ✗ 视频 %d: %v\n", task.index, err)
-		return failWith(fmt.Sprintf("超过 %.1f MB 限制", float64(maxInlineVideoSize)/(1024*1024)), err)
-	}
-
 	extra := fmt.Sprintf(`{"drive_route_token":"%s"}`, documentID)
 	retryCfg := client.RetryConfig{
 		MaxRetries:       maxRetries,
@@ -1515,9 +1508,19 @@ func processVideoTask(documentID string, task videoTask, verbose bool, userAcces
 		},
 	}
 
-	uploadResult := client.DoWithRetry(func() (string, http.Header, error) {
-		return client.UploadMediaWithExtra(localPath, "docx_file", task.fileBlockID, fileName, extra, userAccessToken)
-	}, retryCfg)
+	var uploadResult client.RetryResult[string]
+	if fi.Size() > maxInlineVideoSize {
+		// 大视频分片上传：分片级重试在 UploadDocMedia 内部完成，外层不再整体重放
+		if verbose {
+			syncPrintf("  [视频 %d] %.1f MB，走分片上传\n", task.index, float64(fi.Size())/(1024*1024))
+		}
+		token, upErr := client.UploadDocMedia(localPath, "docx_file", task.fileBlockID, fileName, documentID, userAccessToken)
+		uploadResult = client.RetryResult[string]{Value: token, Err: upErr}
+	} else {
+		uploadResult = client.DoWithRetry(func() (string, http.Header, error) {
+			return client.UploadMediaWithExtra(localPath, "docx_file", task.fileBlockID, fileName, extra, userAccessToken)
+		}, retryCfg)
+	}
 	if uploadResult.Err != nil {
 		syncPrintf("  ✗ 视频 %d 上传失败 (%s): %v\n", task.index, task.source, uploadResult.Err)
 		return failWith(fmt.Sprintf("上传失败: %v", uploadResult.Err), uploadResult.Err)

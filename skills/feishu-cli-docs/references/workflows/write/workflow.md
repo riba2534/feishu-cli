@@ -125,8 +125,13 @@ feishu-cli doc content-update <document_id> --mode append \
 
 ```bash
 feishu-cli doc media-insert <document_id> --file /path/to/image.png --type image --align center --caption "说明"
+# 指定显示宽度（只给一边时按原图比例计算另一边；两边都给则按给定值）
+feishu-cli doc media-insert <document_id> --file /path/to/chart.png --width 600
 feishu-cli doc media-insert <document_id> --file /path/to/report.pdf --type file
 ```
+
+超过 20MB 的文件自动走分片上传（upload_prepare / upload_part / upload_finish，stderr 打印分片进度）；
+`doc import` 中超过 20MB 的视频同样走分片上传。`--width/--height` 只用于 `--type image`（1-10000 像素）。
 
 ## 低层块操作
 

@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +26,11 @@ var docMediaInsertCmd = &cobra.Command{
   --type       插入类型（image/file，默认 image）
   --align      图片对齐方式（left/center/right，默认 center，仅图片）
   --caption    图片描述（仅图片）
+  --width      图片显示宽度（像素，仅图片；只给一边时按原图比例计算另一边）
+  --height     图片显示高度（像素，仅图片）
   --output     输出格式（json/text，默认 text）
+
+超过 20MB 的文件自动走分片上传（upload_prepare / upload_part / upload_finish）。
 
 示例:
   # 插入图片（居中对齐）
@@ -33,7 +39,10 @@ var docMediaInsertCmd = &cobra.Command{
   # 插入图片并添加描述
   feishu-cli doc media-insert DOC_ID --file logo.png --type image --caption "公司 Logo"
 
-  # 插入文件
+  # 指定显示宽度（高度按原图比例）
+  feishu-cli doc media-insert DOC_ID --file chart.png --width 600
+
+  # 插入文件（>20MB 自动分片上传）
   feishu-cli doc media-insert DOC_ID --file report.pdf --type file`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -47,6 +56,38 @@ var docMediaInsertCmd = &cobra.Command{
 		caption, _ := cmd.Flags().GetString("caption")
 		output, _ := cmd.Flags().GetString("output")
 		userAccessToken := resolveOptionalUserToken(cmd)
+
+		if insertType != "image" && insertType != "file" {
+			return clierr.Usagef("不支持的 --type %q，可选 image / file", insertType)
+		}
+		widthSet, heightSet := cmd.Flags().Changed("width"), cmd.Flags().Changed("height")
+		userWidth, _ := cmd.Flags().GetInt("width")
+		userHeight, _ := cmd.Flags().GetInt("height")
+		if (widthSet || heightSet) && insertType != "image" {
+			return clierr.Usagef("--width / --height 只用于 --type image")
+		}
+		const maxImageDimension = 10000
+		if widthSet && (userWidth <= 0 || userWidth > maxImageDimension) {
+			return clierr.Usagef("--width 必须是 1-%d 的整数像素，当前: %d", maxImageDimension, userWidth)
+		}
+		if heightSet && (userHeight <= 0 || userHeight > maxImageDimension) {
+			return clierr.Usagef("--height 必须是 1-%d 的整数像素，当前: %d", maxImageDimension, userHeight)
+		}
+		if st, statErr := os.Stat(filePath); statErr != nil {
+			return clierr.Usagef("无法读取 --file %s: %v", filePath, statErr)
+		} else if !st.Mode().IsRegular() || st.Size() == 0 {
+			return clierr.Usagef("--file %s 不是非空的普通文件", filePath)
+		}
+		// 显示尺寸在上传前算好：只给一边时按原图比例补另一边，无法解析原图尺寸则要求两边都给
+		dispW, dispH := 0, 0
+		if insertType == "image" {
+			pxW, pxH := decodeImagePixelSize(filePath)
+			var dimErr error
+			dispW, dispH, dimErr = resolveImageDisplaySize(userWidth, userHeight, widthSet, heightSet, pxW, pxH)
+			if dimErr != nil {
+				return dimErr
+			}
+		}
 
 		// wiki 节点必须先换出底层 docx 的 obj_token：块接口与素材上传的 drive_route_token
 		// 都只认文档 token，直接使用 wiki token 会导致创建块失败或素材挂错路由。
@@ -119,9 +160,8 @@ var docMediaInsertCmd = &cobra.Command{
 			newBlockID = fileBlockID
 
 			// 步骤 3：上传文件到 Drive，使用 File Block ID 作为 parent_node
-			extra := fmt.Sprintf(`{"drive_route_token":"%s"}`, documentID)
 			fileName := filepath.Base(filePath)
-			fileToken, _, err = client.UploadMediaWithExtra(filePath, parentType, fileBlockID, fileName, extra, userAccessToken)
+			fileToken, err = client.UploadDocMedia(filePath, parentType, fileBlockID, fileName, documentID, userAccessToken)
 			if err != nil {
 				rollbackErr := rollbackInsertedBlock(documentID, insertIndex, userAccessToken)
 				if rollbackErr != nil {
@@ -161,9 +201,8 @@ var docMediaInsertCmd = &cobra.Command{
 			newBlockID = client.StringVal(createdBlocks[0].BlockId)
 
 			// 步骤 3：上传文件到 Drive
-			extra := fmt.Sprintf(`{"drive_route_token":"%s"}`, documentID)
 			fileName := filepath.Base(filePath)
-			fileToken, _, err = client.UploadMediaWithExtra(filePath, parentType, newBlockID, fileName, extra, userAccessToken)
+			fileToken, err = client.UploadDocMedia(filePath, parentType, newBlockID, fileName, documentID, userAccessToken)
 			if err != nil {
 				rollbackErr := rollbackInsertedBlock(documentID, insertIndex, userAccessToken)
 				if rollbackErr != nil {
@@ -173,10 +212,9 @@ var docMediaInsertCmd = &cobra.Command{
 			}
 
 			// 步骤 4：绑定文件 token 到图片块（显式宽高与降级策略见 client.ReplaceImage 注释）
-			pxW, pxH := decodeImagePixelSize(filePath)
 			_, err = client.ReplaceImage(documentID, newBlockID, fileToken, client.ReplaceImageOptions{
-				Width:   pxW,
-				Height:  pxH,
+				Width:   dispW,
+				Height:  dispH,
 				Align:   align,
 				Caption: caption,
 			}, userAccessToken)
@@ -213,6 +251,33 @@ var docMediaInsertCmd = &cobra.Command{
 	},
 }
 
+// resolveImageDisplaySize 计算图片显示尺寸：两边都给直接用；只给一边按原图比例计算另一边；
+// 都不给时用原图像素尺寸（解析失败返回 0，交由服务端推断）。
+func resolveImageDisplaySize(userW, userH int, widthSet, heightSet bool, nativeW, nativeH int) (int, int, error) {
+	switch {
+	case widthSet && heightSet:
+		return userW, userH, nil
+	case widthSet || heightSet:
+		if nativeW <= 0 || nativeH <= 0 {
+			return 0, 0, clierr.Usagef("无法解析原图尺寸，不能按比例计算另一边；请同时提供 --width 与 --height")
+		}
+		if widthSet {
+			h := int(float64(userW)*float64(nativeH)/float64(nativeW) + 0.5)
+			if h < 1 {
+				h = 1
+			}
+			return userW, h, nil
+		}
+		w := int(float64(userH)*float64(nativeW)/float64(nativeH) + 0.5)
+		if w < 1 {
+			w = 1
+		}
+		return w, userH, nil
+	default:
+		return nativeW, nativeH, nil
+	}
+}
+
 // rollbackInsertedBlock 回滚创建的空块
 func rollbackInsertedBlock(documentID string, blockIndex int, userAccessToken string) error {
 	_, err := client.DeleteBlocks(documentID, documentID, blockIndex, blockIndex+1, userAccessToken)
@@ -225,6 +290,8 @@ func init() {
 	docMediaInsertCmd.Flags().String("type", "image", "插入类型（image/file）")
 	docMediaInsertCmd.Flags().String("align", "center", "图片对齐方式（left/center/right，仅图片）")
 	docMediaInsertCmd.Flags().String("caption", "", "图片描述（仅图片）")
+	docMediaInsertCmd.Flags().Int("width", 0, "图片显示宽度（像素，仅图片；只给一边时按原图比例计算另一边）")
+	docMediaInsertCmd.Flags().Int("height", 0, "图片显示高度（像素，仅图片）")
 	docMediaInsertCmd.Flags().StringP("output", "o", "", "输出格式（json/text）")
 	docMediaInsertCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
 	mustMarkFlagRequired(docMediaInsertCmd, "file")
