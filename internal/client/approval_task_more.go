@@ -150,3 +150,48 @@ func RemindApprovalTask(opts RemindApprovalTaskOptions, userAccessToken string) 
 	_, err = doApprovalUserPost(approvalInstanceRemind, body, "", userAccessToken, "催办审批任务")
 	return err
 }
+
+// ApprovalWritePreview 审批写操作的请求预览（dry-run 用，不联网）
+type ApprovalWritePreview struct {
+	Path   string
+	Params map[string]any
+	Body   map[string]any
+}
+
+// PreviewApprovalWrite 按动作构造请求预览：approve / reject / transfer / cancel / cc / create
+func PreviewApprovalWrite(action string, opts any) (*ApprovalWritePreview, error) {
+	withType := func(path string, body map[string]any, t string, err error) (*ApprovalWritePreview, error) {
+		if err != nil {
+			return nil, err
+		}
+		p := &ApprovalWritePreview{Path: path, Body: body}
+		if t != "" {
+			p.Params = map[string]any{"user_id_type": t}
+		}
+		return p, nil
+	}
+	switch o := opts.(type) {
+	case ApprovalTaskActionOptions:
+		switch action {
+		case "approve":
+			b, err := buildApprovalTaskActionBody(o, true)
+			return withType(approvalTaskPassPath, b, "", err)
+		case "reject":
+			b, err := buildApprovalTaskActionBody(o, false)
+			return withType(approvalTaskRefusePath, b, "", err)
+		}
+	case TransferApprovalTaskOptions:
+		b, t, err := buildTransferApprovalTaskBody(o)
+		return withType(approvalTaskForwardPath, b, t, err)
+	case CancelApprovalInstanceOptions:
+		b, err := buildCancelApprovalInstanceBody(o)
+		return withType(approvalInstanceRecallPath, b, "", err)
+	case CCApprovalInstanceOptions:
+		b, t, err := buildCCApprovalInstanceBody(o)
+		return withType(approvalInstanceAddCCPath, b, t, err)
+	case CreateApprovalInstanceOptions:
+		b, err := buildCreateApprovalInstanceBody(o)
+		return withType(approvalInstanceInitiatePath, b, "", err)
+	}
+	return nil, fmt.Errorf("不支持预览的审批动作 %q", action)
+}

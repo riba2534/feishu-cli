@@ -61,3 +61,37 @@ func TestApprovalPagingRepeatedTokenStops(t *testing.T) {
 		t.Fatalf("重复游标应在第 2 页后停止: calls=%d res=%+v err=%v", calls, res, err)
 	}
 }
+
+// TestApprovalWriteDryRunNoNetwork 审批写命令 --dry-run 不联网、不要求 User Token（真实回归只允许 dry-run）
+func TestApprovalWriteDryRunNoNetwork(t *testing.T) {
+	rec := setupWorkCmdTest(t, "", nil)
+	cases := []struct {
+		name  string
+		run   func() (string, error)
+		wants []string
+	}{
+		{"approve", func() (string, error) {
+			return runWorkCmd(t, approvalTaskApproveCmd, nil, map[string]string{"instance-code": "IC", "task-id": "T", "dry-run": "true"})
+		}, []string{"/open-apis/approval/v4/tasks/pass", `"task_id": "T"`}},
+		{"remind", func() (string, error) {
+			return runWorkCmd(t, approvalTaskRemindCmd, nil, map[string]string{"instance-code": "IC", "task-ids": "T1,T2", "dry-run": "true"})
+		}, []string{"/open-apis/approval/v4/instances/remind", `"T2"`}},
+		{"cancel", func() (string, error) {
+			return runWorkCmd(t, approvalInstanceCancelCmd, nil, map[string]string{"instance-code": "IC", "dry-run": "true"})
+		}, []string{"/open-apis/approval/v4/instances/recall"}},
+	}
+	for _, c := range cases {
+		out, err := c.run()
+		if err != nil {
+			t.Fatalf("%s --dry-run: %v", c.name, err)
+		}
+		for _, w := range c.wants {
+			if !strings.Contains(out, w) {
+				t.Fatalf("%s 预览缺少 %s: %s", c.name, w, out)
+			}
+		}
+	}
+	if len(rec.all()) != 0 {
+		t.Fatalf("dry-run 不应联网: %+v", rec.all())
+	}
+}

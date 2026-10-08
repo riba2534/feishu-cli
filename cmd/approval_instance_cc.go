@@ -46,6 +46,12 @@ var approvalInstanceCcCmd = &cobra.Command{
 			return err
 		}
 
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return approvalWriteDryRun(cmd, "approval instance cc", "cc", client.CCApprovalInstanceOptions{
+				InstanceCode: instanceCode, CCUserIDs: ccUserIDs, Comment: comment, UserIDType: userIDType,
+			})
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -90,6 +96,7 @@ func parseCommaSeparatedIDs(raw string) []string {
 
 func init() {
 	approvalInstanceCmd.AddCommand(approvalInstanceCcCmd)
+	approvalInstanceCcCmd.Flags().Bool("dry-run", false, "只预览请求，不执行（不联网、不解析身份）")
 
 	approvalInstanceCcCmd.Flags().String("instance-code", "", "审批实例 code（必填）")
 	approvalInstanceCcCmd.Flags().String("cc-user-ids", "", "被抄送用户 ID 列表，逗号分隔（必填）")

@@ -273,6 +273,9 @@ feishu-cli approval task transfer \
 
 ## 输出格式
 
+所有审批写命令（`instance create|cancel|cc`、`task approve|reject|transfer|rollback|add-sign|remind`）支持 `--dry-run`：
+只构造并打印将发出的请求（不联网、不解析身份），确认参数后再去掉 `--dry-run` 执行。
+
 写命令默认输出单行成功摘要；`instance create` 还会打印 `instance_link`（若返回）。
 
 读命令 `approval get` / `approval instance get` / `approval instance initiated` / `task query` 支持：

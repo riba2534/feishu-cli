@@ -191,3 +191,12 @@ func init() {
 	approvalTaskRemindCmd.Flags().String("task-ids", "", "被催办的任务 ID，逗号分隔（必填）")
 	mustMarkFlagRequired(approvalTaskRemindCmd, "instance-code", "task-ids")
 }
+
+// approvalWriteDryRun 审批写操作的预览：只构造请求，不联网、不解析身份
+func approvalWriteDryRun(cmd *cobra.Command, name, action string, opts any) error {
+	p, err := client.PreviewApprovalWrite(action, opts)
+	if err != nil {
+		return clierr.Usage(err)
+	}
+	return printDryRunPlan(cmd, name+" 预览（未执行）", nil, []dryRunStep{{Method: "POST", URL: p.Path, Params: p.Params, Body: p.Body}})
+}
