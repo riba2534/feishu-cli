@@ -23,16 +23,18 @@ var driveUploadCmd = &cobra.Command{
   --folder-token  目标文件夹 token（默认根目录）
   --file-token    已有文件的 token：原地覆盖上传为该文件的新版本（保留 token、刷新版本/大小）
   --name          上传后的文件名（默认本地文件名）
+  --as            bot | user | auto（不传时保持旧行为：必须 User Token）；
+                  Bot 新建文件后自动给当前登录用户授予 full_access
   --user-access-token  覆盖登录态
 
 覆盖上传说明（--file-token）:
   - 内容写入目标文件的新版本，文件 token 不变；不会新建文件
   - 覆盖不会改变该文件已有的权限设置（协作者、公开范围等保持原样）
-  - 仅支持 ≤ 20MB 的文件（单次上传上限）；大文件覆盖暂不支持
+  - ≤ 20MB 走 upload_all，> 20MB 走 upload_prepare/part/finish，均携带 file_token
   - --file-token 与 --folder-token 互斥（覆盖已有文件时不需要指定目标文件夹）
 
 权限:
-  - User Access Token
+  - User Access Token（默认）或 Tenant Token（--as bot）
   - drive:file:upload
 
 示例:
@@ -44,7 +46,12 @@ var driveUploadCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := requireUserToken(cmd, "drive upload")
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		token, err := resolveIdentityWithLegacyDefault(cmd, func(c *cobra.Command) (string, error) {
+			return requireUserToken(c, "drive upload")
+		})
 		if err != nil {
 			return err
 		}
@@ -75,15 +82,15 @@ var driveUploadCmd = &cobra.Command{
 			displayName = filepath.Base(filePath)
 		}
 
-		var fileToken string
+		var fileToken, version string
 		if overwriteToken != "" {
-			// 原地覆盖：走 upload_all 的 file_token 字段，仅支持 ≤ 20MB 的文件。
-			const maxOverwriteSize = 20 * 1024 * 1024
-			if stat.Size() > maxOverwriteSize {
-				return fmt.Errorf("覆盖上传仅支持 ≤ 20MB 的文件，当前 %d bytes；大文件覆盖暂不支持", stat.Size())
-			}
+			// 原地覆盖：upload_all（>20MB 走 upload_prepare）携带 file_token，token 不变
 			fmt.Fprintf(os.Stderr, "覆盖上传: %s (%d bytes) → 文件 %s\n", displayName, stat.Size(), overwriteToken)
-			fileToken, err = client.OverwriteFileFromPathWithToken(filePath, overwriteToken, displayName, token)
+			var res *client.DriveOverwriteResult
+			res, err = client.OverwriteDriveFileFromPath(filePath, "", displayName, overwriteToken, token)
+			if res != nil {
+				fileToken, version = res.FileToken, res.Version
+			}
 		} else {
 			fmt.Fprintf(os.Stderr, "上传: %s (%d bytes)\n", displayName, stat.Size())
 			fileToken, err = client.UploadFileWithToken(filePath, folderToken, fileName, token)
@@ -97,6 +104,13 @@ var driveUploadCmd = &cobra.Command{
 			"file_name":  displayName,
 			"size_bytes": stat.Size(),
 			"overwrite":  overwriteToken != "",
+		}
+		if version != "" {
+			result["version"] = version
+		}
+		if overwriteToken == "" {
+			// Bot 新建文件后给当前 CLI 登录用户授予 full_access（User 身份上传时不触发）
+			withPermissionGrant(result, autoGrantCurrentUser(token, fileToken, "file"))
 		}
 
 		if output == "json" {
@@ -119,9 +133,10 @@ func init() {
 	driveCmd.AddCommand(driveUploadCmd)
 	driveUploadCmd.Flags().String("file", "", "本地文件路径（必填）")
 	driveUploadCmd.Flags().String("folder-token", "", "目标文件夹 token（默认根目录）")
-	driveUploadCmd.Flags().String("file-token", "", "已有文件 token：原地覆盖为新版本（≤20MB，不改权限，与 --folder-token 互斥）")
+	driveUploadCmd.Flags().String("file-token", "", "已有文件 token：原地覆盖为新版本（token 不变、不改权限，与 --folder-token 互斥）")
 	driveUploadCmd.Flags().String("name", "", "上传后的文件名（默认本地文件名）")
 	driveUploadCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	driveUploadCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addLegacyAsFlag(driveUploadCmd, "保持旧行为（必须 User Token）")
 	mustMarkFlagRequired(driveUploadCmd, "file")
 }
