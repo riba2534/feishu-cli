@@ -157,7 +157,7 @@ feishu-cli chat member list oc_xxx --page-all       # 自动翻页拉全部成�
 feishu-cli chat member add oc_xxx --id-list ou_xxx,ou_yyy
 feishu-cli chat member remove oc_xxx --id-list ou_xxx
 feishu-cli chat create --name "项目群" --user-ids ou_xxx,ou_yyy
-feishu-cli chat delete oc_xxx
+feishu-cli chat delete oc_xxx --yes                # 不可逆；非交互环境必须显式 --yes，否则退出码 10
 ```
 
 `chat list`：列出当前身份加入的所有群。

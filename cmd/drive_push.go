@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -80,7 +81,7 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 			return fmt.Errorf("--if-exists 只能是 overwrite 或 skip")
 		}
 		if deleteRemote && !yes {
-			return fmt.Errorf("--delete-remote 是高危操作，必须同时加 --yes 才执行")
+			return clierr.ConfirmationRequiredf("--delete-remote 是高危操作，必须同时加 --yes 才执行")
 		}
 
 		safeRoot, _, err := resolveSafeLocalDir(localDir)

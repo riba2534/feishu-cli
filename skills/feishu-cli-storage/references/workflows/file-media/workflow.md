@@ -19,7 +19,7 @@ feishu-cli file meta <token> --doc-type docx
 feishu-cli file stats <file_token> --doc-type docx
 ```
 
-`file delete` 默认交互确认（y/N）；非交互场景（Agent/管道）stdin 关闭时会打印「操作已取消」并以 exit 0 结束（**静默未删除**），因此脚本一律带 `--force`。
+`file delete` 默认交互确认（y/N，提示写 stderr）；非交互场景（Agent/管道/cron）未带 `--force`/`--yes` 时**不执行删除**并以退出码 10 失败（需要确认），获得用户同意后追加 `--yes`（或 `--force`）重新运行。交互式回答非 y 时退出码为 1（已取消）。
 
 `file version revert` 把文件回滚到指定历史版本（底层 `POST /open-apis/drive/v1/files/{file_token}/revert`，
 请求体 `{"version": version}`）：

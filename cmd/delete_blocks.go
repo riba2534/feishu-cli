@@ -70,9 +70,8 @@ var deleteBlocksCmd = &cobra.Command{
 		// 危险操作确认
 		if !force {
 			prompt := fmt.Sprintf("确定要删除块 %s 下索引 %d 到 %d 的子块吗？此操作不可恢复", blockID, startIndex, endIndex)
-			if !confirmAction(prompt) {
-				fmt.Println("操作已取消")
-				return nil
+			if err := confirmDangerousAction(cmd, prompt); err != nil {
+				return err
 			}
 		}
 

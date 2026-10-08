@@ -30,9 +30,8 @@ var chatDeleteCmd = &cobra.Command{
 		}
 		chatID := args[0]
 
-		if !confirmAction(fmt.Sprintf("确定要解散群聊 %s 吗？此操作不可逆", chatID)) {
-			fmt.Println("操作已取消")
-			return nil
+		if err := confirmDangerousAction(cmd, fmt.Sprintf("确定要解散群聊 %s 吗？此操作不可逆", chatID)); err != nil {
+			return err
 		}
 
 		if err := client.DeleteChat(chatID, token); err != nil {

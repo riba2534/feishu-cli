@@ -35,7 +35,7 @@ feishu-cli wiki member add <space_id> --member-id ou_xxx --member-type openid --
 删除节点走官方 `DELETE /wiki/v2/spaces/{space}/nodes/{node}` 接口，支持级联删除与异步任务轮询（若未完成或失败非零退出并保留 task_id 与 resume 命令）；删除空间只有显式 `--yes` 才执行，并会轮询异步任务：
 
 ```bash
-# 删除节点（--space-id 可选，缺省自动解析；--obj-type 默认 wiki；支持 -f 跳过确认）
+# 删除节点（--space-id 可选，缺省自动解析；--obj-type 默认 wiki；-f/--yes 跳过确认，非交互未确认时退出码 10 且不删除）
 feishu-cli wiki delete <node_token> [-f]
 feishu-cli wiki delete-space <space_id> --yes
 ```

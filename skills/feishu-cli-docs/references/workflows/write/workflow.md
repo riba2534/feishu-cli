@@ -125,7 +125,7 @@ feishu-cli doc add <document_id> table.md --content-type markdown --table-column
 
 feishu-cli doc update <document_id> <block_id> --content-file update.json
 
-# doc delete：必须指定父块 ID + 索引范围（左闭右开），或用 --all 删全部子块；--force 跳过确认
+# doc delete：必须指定父块 ID + 索引范围（左闭右开），或用 --all 删全部子块；--force/--yes 跳过确认（非交互未确认时退出码 10 且不删除）
 feishu-cli doc delete <document_id> <parent_block_id> --start 0 --end 3
 feishu-cli doc delete <document_id> <parent_block_id> --all --force
 

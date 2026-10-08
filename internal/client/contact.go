@@ -53,14 +53,14 @@ func BatchGetUsersBasic(openIDs []string, userAccessToken string) (map[string]st
 		}
 
 		reqURL := fmt.Sprintf("%s/open-apis/contact/v3/users/basic_batch?user_id_type=open_id", baseURL)
-		req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(bodyBytes))
+		req, err := http.NewRequestWithContext(Context(), http.MethodPost, reqURL, bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nameMap, fmt.Errorf("批量查询用户基本资料失败: %w", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+userAccessToken)
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-		httpResp, err := http.DefaultClient.Do(req)
+		httpResp, err := rawHTTPClient().Do(req)
 		if err != nil {
 			return nameMap, fmt.Errorf("批量查询用户基本资料失败: %w", err)
 		}
@@ -138,14 +138,14 @@ func SearchUsers(query string, pageSize int, pageToken, userAccessToken string) 
 	}
 
 	reqURL := fmt.Sprintf("%s/open-apis/search/v1/user?%s", baseURL, params.Encode())
-	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(Context(), http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("搜索用户失败: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+userAccessToken)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-	httpResp, err := http.DefaultClient.Do(req)
+	httpResp, err := rawHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("搜索用户失败: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/spf13/viper"
 )
@@ -181,11 +182,12 @@ func Validate() error {
 		return fmt.Errorf("配置未初始化")
 	}
 	cfgPath := activeConfigPathForError()
+	// 缺少 App 凭证与鉴权失败同类（退出码 3）：都需要补配置 / 授权后才能继续
 	if cfg.AppID == "" {
-		return fmt.Errorf("缺少 app_id，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_ID=xxx\n  3. 配置文件: %s", cfgPath)
+		return clierr.Authf("缺少 app_id，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_ID=xxx\n  3. 配置文件: %s", cfgPath)
 	}
 	if cfg.AppSecret == "" {
-		return fmt.Errorf("缺少 app_secret，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_SECRET=xxx\n  3. 配置文件: %s", cfgPath)
+		return clierr.Authf("缺少 app_secret，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_SECRET=xxx\n  3. 配置文件: %s", cfgPath)
 	}
 	if err := CheckBaseURL(cfg.BaseURL); err != nil {
 		return err

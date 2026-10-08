@@ -17,8 +17,11 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
+	"github.com/riba2534/feishu-cli/internal/runctx"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -107,12 +110,12 @@ func init() {
 func runAPI(cmd *cobra.Command, args []string) error {
 	method := strings.ToUpper(strings.TrimSpace(args[0]))
 	if !isValidHTTPMethod(method) {
-		return fmt.Errorf("不支持的 HTTP method %q，可选: GET, POST, PUT, DELETE, PATCH", method)
+		return clierr.Usagef("不支持的 HTTP method %q，可选: GET, POST, PUT, DELETE, PATCH", method)
 	}
 
 	apiPath, embeddedQuery, err := normalizeAPIPath(args[1])
 	if err != nil {
-		return err
+		return clierr.Usage(err)
 	}
 
 	// 校验 --as 取值合法性（前置验证）
@@ -121,27 +124,27 @@ func runAPI(cmd *cobra.Command, args []string) error {
 	case "", "auto", "bot", "tenant", "app", "user":
 		// 合法
 	default:
-		return fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", apiAs)
+		return clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", apiAs)
 	}
 
 	if apiPageLimit < 0 {
-		return fmt.Errorf("--page-limit 必须 >= 0，得到 %d", apiPageLimit)
+		return clierr.Usagef("--page-limit 必须 >= 0，得到 %d", apiPageLimit)
 	}
 	if apiPageDelayMs < 0 {
-		return fmt.Errorf("--page-delay 必须 >= 0，得到 %d", apiPageDelayMs)
+		return clierr.Usagef("--page-delay 必须 >= 0，得到 %d", apiPageDelayMs)
 	}
 	if apiTimeoutSec <= 0 {
-		return fmt.Errorf("--timeout 必须 > 0，得到 %d", apiTimeoutSec)
+		return clierr.Usagef("--timeout 必须 > 0，得到 %d", apiTimeoutSec)
 	}
 
 	// 校验 --format / --jq 参数合法性（在网络请求与 token 刷新前验证）
 	if apiFormat != "" || apiJQ != "" {
 		if _, err := output.NewOptions(apiFormat, apiJQ); err != nil {
-			return err
+			return clierr.Usage(err)
 		}
 		if apiJQ != "" {
 			if _, err := gojq.Parse(apiJQ); err != nil {
-				return fmt.Errorf("jq 表达式解析失败: %w", err)
+				return clierr.Usagef("jq 表达式解析失败: %w", err)
 			}
 		}
 	}
@@ -156,7 +159,7 @@ func runAPI(cmd *cobra.Command, args []string) error {
 	// 解析 query 参数：优先合并 path 中内嵌的 query，再用 --params 追加/覆盖
 	queryParams, err := parseQueryParams(apiParams)
 	if err != nil {
-		return fmt.Errorf("解析 --params 失败: %w", err)
+		return clierr.Usagef("解析 --params 失败: %w", err)
 	}
 	for k, vals := range embeddedQuery {
 		if _, override := queryParams[k]; override {
@@ -170,20 +173,20 @@ func runAPI(cmd *cobra.Command, args []string) error {
 	// 解析 body（在网络调用前验证合法 JSON）
 	bodyBytes, err := loadAPIBody(apiData, apiDataFile)
 	if err != nil {
-		return err
+		return err // 互斥 / 敏感路径为用法错误（已打标签），读文件失败为一般错误
 	}
 	var body any
 	if len(bodyBytes) > 0 {
 		// 校验是合法 JSON（防止用户传 raw text 调一些 JSON-only API）
 		var probe any
 		if err := json.Unmarshal(bodyBytes, &probe); err != nil {
-			return fmt.Errorf("--data/--data-file 不是合法 JSON: %w", err)
+			return clierr.Usagef("--data/--data-file 不是合法 JSON: %w", err)
 		}
 		body = probe
 	}
 
 	if apiPageAll && apiOutput != "" && apiFormat == "" && apiJQ == "" {
-		return fmt.Errorf("--output 与 --page-all 不能同时用于二进制下载；去掉其中一个，或给 --page-all 加上 --format/--jq")
+		return clierr.Usagef("--output 与 --page-all 不能同时用于二进制下载；去掉其中一个，或给 --page-all 加上 --format/--jq")
 	}
 
 	// dry-run：静态检查 token 策略，打印请求后直接返回（不触发 token refresh，不写 token 文件，不发网络请求）
@@ -233,7 +236,7 @@ func invokeAPI(method, apiPath string, queryParams larkcore.QueryParams, body an
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(apiTimeoutSec)*time.Second)
+	ctx, cancel := context.WithTimeout(runctx.Root(), time.Duration(apiTimeoutSec)*time.Second)
 	defer cancel()
 	var opts []larkcore.RequestOptionFunc
 	if userToken != "" {
@@ -256,6 +259,10 @@ func emitAPIBody(status int, header http.Header, rawBody []byte) error {
 		printRespHeaders(os.Stderr, header)
 		fmt.Fprintln(os.Stderr)
 	}
+	// 先按飞书业务信封解析（业务错误常随 HTTP 400 下发），再看 HTTP 状态码
+	if respErr := client.ParseAPIResponse("", status, header, rawBody); respErr != nil {
+		return emitAPIError(rawBody, respErr)
+	}
 	if apiFormat != "" || apiJQ != "" {
 		o, oerr := output.NewOptions(apiFormat, apiJQ)
 		if oerr != nil {
@@ -266,34 +273,56 @@ func emitAPIBody(status int, header http.Header, rawBody []byte) error {
 		if err != nil {
 			return fmt.Errorf("响应不是合法 JSON，无法用 --format/--jq 渲染（去掉这两个 flag 可用 --raw 原样输出）: %w", err)
 		}
-		if err := output.Render(o, parsed); err != nil {
-			return err
-		}
-	} else {
-		outWriter := io.Writer(os.Stdout)
-		if apiOutput != "" {
-			f, err := os.Create(apiOutput)
-			if err != nil {
-				return fmt.Errorf("打开输出文件失败: %w", err)
-			}
-			defer f.Close()
-			outWriter = f
-		}
-		if err := writeAPIResponse(outWriter, rawBody, apiRaw); err != nil {
-			return err
-		}
+		return output.Render(o, parsed)
 	}
-	if hint := detectFeishuBizError(status, rawBody); hint != "" {
-		fmt.Fprintln(os.Stderr, hint)
+	return writeAPIOutput(rawBody, apiRaw)
+}
+
+// writeAPIOutput 把响应体写到 stdout 或 --output 文件（原子写入：失败不留半截文件、不破坏原文件）。
+func writeAPIOutput(rawBody []byte, raw bool) error {
+	if apiOutput == "" {
+		return writeAPIResponse(os.Stdout, rawBody, raw)
 	}
-	if bizCode, bizMsg, hasBizErr := parseFeishuBizError(rawBody); hasBizErr {
-		return fmt.Errorf("飞书业务错误: code=%d, msg=%s", bizCode, bizMsg)
+	var buf bytes.Buffer
+	if err := writeAPIResponse(&buf, rawBody, raw); err != nil {
+		return err
 	}
-	if status < 200 || status >= 300 {
-		return fmt.Errorf("HTTP %d", status)
+	if err := safefile.AtomicWriteFile(apiOutput, buf.Bytes(), 0o644); err != nil {
+		return fmt.Errorf("写入输出文件失败: %w", err)
 	}
 	return nil
 }
+
+// emitAPIError 处理业务错误 / HTTP 错误响应：stdout 不输出错误体（--jq/--format 也不处理），
+// 避免管道下游把错误 JSON 当成功结果消费；错误信息、诊断与修复建议由根命令写 stderr。
+// --raw 保留原样输出响应体的调试能力（stdout 或 --output），退出码仍非 0。
+func emitAPIError(rawBody []byte, respErr error) error {
+	if apiRaw {
+		if err := writeAPIOutput(rawBody, true); err != nil {
+			return err
+		}
+	}
+	apiErr, ok := client.AsAPIError(respErr)
+	if !ok {
+		return respErr // 非飞书信封的 HTTP 错误："HTTP <status>, body: <预览>"
+	}
+	return &apiBizError{apiErr: apiErr, hint: apiBizErrorHint(apiErr.Code, apiErr.Msg)}
+}
+
+// apiBizError 是 api 命令的业务错误：文本保持 "飞书业务错误: code=N, msg=M"，
+// Unwrap 到 *client.APIError 供根命令附加 log_id / 缺失 scope 等诊断，Hint 提供 api 专属建议。
+type apiBizError struct {
+	apiErr *client.APIError
+	hint   string
+}
+
+func (e *apiBizError) Error() string {
+	return fmt.Sprintf("飞书业务错误: code=%d, msg=%s", e.apiErr.Code, e.apiErr.Msg)
+}
+
+func (e *apiBizError) Unwrap() error { return e.apiErr }
+
+func (e *apiBizError) Hint() string { return e.hint }
 
 func decodeJSONUseNumber(raw []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
@@ -460,7 +489,7 @@ func stringifyQueryValue(v any) string {
 // --data-file 用 "-" 表示 stdin
 func loadAPIBody(inline, file string) ([]byte, error) {
 	if inline != "" && file != "" {
-		return nil, fmt.Errorf("--data 和 --data-file 不能同时使用")
+		return nil, clierr.Usagef("--data 和 --data-file 不能同时使用")
 	}
 	if inline != "" {
 		return []byte(inline), nil
@@ -471,7 +500,7 @@ func loadAPIBody(inline, file string) ([]byte, error) {
 	if file == "-" {
 		return io.ReadAll(os.Stdin)
 	}
-	return os.ReadFile(file)
+	return readLocalInputFile(file)
 }
 
 // resolveAPIToken 根据 --as 选择 token 策略
@@ -506,7 +535,7 @@ func resolveAPIToken(cmd *cobra.Command, as string) ([]larkcore.AccessTokenType,
 		return []larkcore.AccessTokenType{larkcore.AccessTokenTypeUser}, userToken, nil
 
 	default:
-		return nil, "", fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", as)
+		return nil, "", clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
 	}
 }
 
@@ -539,7 +568,7 @@ func resolveAPITokenDryRun(cmd *cobra.Command, as string) ([]larkcore.AccessToke
 		return []larkcore.AccessTokenType{larkcore.AccessTokenTypeUser}, true, nil
 
 	default:
-		return nil, false, fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", as)
+		return nil, false, clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
 	}
 }
 
@@ -965,41 +994,30 @@ func parseFeishuBizError(body []byte) (int, string, bool) {
 	return env.Code, env.Msg, true
 }
 
-// detectFeishuBizError 检查飞书业务错误码并给出友好提示
-// 飞书约定：HTTP 200 但 body.code != 0 表示业务错误
-func detectFeishuBizError(_ int, body []byte) string {
-	code, msg, hasErr := parseFeishuBizError(body)
-	if !hasErr {
-		return ""
-	}
-
-	// 已知常见错误码 → 解决建议
-	var hint string
+// apiBizErrorHint 返回 api 命令遇到业务错误时的修复建议：
+// 鉴权 / 权限 / 限流等跨领域错误码由 client.APIErrorHint 统一给出（根命令打印），
+// 这里只补充 api 透传场景常见的领域错误码。
+func apiBizErrorHint(code int, msg string) string {
 	switch code {
-	case 99991661, 99991663, 99991668, 99991672, 99991679, 99991677:
-		hint = "提示：Token 失效或权限不足。请运行 `feishu-cli auth status` 检查，或 `feishu-cli auth login --recommend` 重新授权。"
 	case 1254005, 1254404:
-		hint = "提示：资源不存在或无访问权限，请检查 token / ID。"
-	case 99991400:
-		hint = "提示：请求被限流，请降低并发或稍后重试。"
-	case 230001, 230002, 230020:
-		hint = "提示：scope 不足。可运行 `feishu-cli auth check --scope \"<所需 scope>\"` 预检并补充权限。"
+		return "提示：资源不存在或无访问权限，请检查 token / ID。"
+	case 230001:
+		return "提示：请求参数无效（230001），请对照接口文档检查参数名、取值与格式（可用 `feishu-cli schema` 查看参数定义）。"
+	case 230002:
+		return "提示：Bot 或用户不在该群内（230002），请先把 Bot 拉进群，或确认 chat_id 与调用身份。"
+	case 230020:
+		return "提示：触发该接口的频率限制（230020），请降低调用频率后重试。"
 	case 232033:
-		hint = `提示：外部群权限不足。当前 App 未开启「对外共享能力」或 Bot 未加入此群。
+		return `提示：外部群权限不足。当前 App 未开启「对外共享能力」或 Bot 未加入此群。
   - 切换到对外共享 App 调用：
       FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=xxx feishu-cli api ...
   - 详见 skills/feishu-cli-messaging/references/workflows/chat/references/external-chat.md`
 	case 232011:
-		hint = "提示：操作者不在群里。让群管理员邀请进群后重试，或用 `feishu-cli chat member add <chat_id> --id-list <id>`。"
+		return "提示：操作者不在群里。让群管理员邀请进群后重试，或用 `feishu-cli chat member add <chat_id> --id-list <id>`。"
 	case 232006:
-		hint = "提示：chat_id 无效。可用 `feishu-cli msg search-chats --query \"<群名关键词>\"` 重新查找。"
+		return "提示：chat_id 无效。可用 `feishu-cli msg search-chats --query \"<群名关键词>\"` 重新查找。"
 	case 232025:
-		hint = "提示：App 未启用机器人能力。请到飞书开放平台 → 应用 → 应用能力 → 添加「机器人」能力并发布。"
+		return "提示：App 未启用机器人能力。请到飞书开放平台 → 应用 → 应用能力 → 添加「机器人」能力并发布。"
 	}
-
-	header := fmt.Sprintf("⚠️  飞书业务错误：code=%d, msg=%s", code, msg)
-	if hint != "" {
-		return header + "\n" + hint
-	}
-	return header
+	return ""
 }

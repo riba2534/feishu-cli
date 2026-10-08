@@ -5,7 +5,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/apidiag"
 )
 
 const defaultRedirectLimit = 10
@@ -16,14 +19,21 @@ func NewHTTPClient(timeout time.Duration) *http.Client {
 	return NewHTTPClientWithTransport(nil, timeout)
 }
 
-// NewHTTPClientWithTransport 使用指定底层 Transport；timeout=0 表示不设客户端墙钟超时，改由请求 context 控制。
+// sharedTransport 进程级共享的底层 Transport。
+// 过去每次 NewHTTPClient 都 Clone 一次 DefaultTransport：每个客户端各持一个连接池，
+// 空闲连接既不能跨客户端复用，也要等各自的 IdleConnTimeout 才释放（批量下载/翻页时连接数随调用数增长）。
+var sharedTransport = sync.OnceValue(func() http.RoundTripper {
+	if t, ok := http.DefaultTransport.(*http.Transport); ok {
+		return t.Clone()
+	}
+	return http.DefaultTransport
+})
+
+// NewHTTPClientWithTransport 使用指定底层 Transport（nil 表示进程级共享 Transport）；
+// timeout=0 表示不设客户端墙钟超时，改由请求 context 控制。
 func NewHTTPClientWithTransport(base http.RoundTripper, timeout time.Duration) *http.Client {
 	if base == nil {
-		if t, ok := http.DefaultTransport.(*http.Transport); ok {
-			base = t.Clone()
-		} else {
-			base = http.DefaultTransport
-		}
+		base = sharedTransport()
 	}
 	return &http.Client{
 		Transport:     &policyTransport{base: base},
@@ -47,7 +57,12 @@ func (t *policyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	return base.RoundTrip(req)
+	resp, err := base.RoundTrip(req)
+	if err == nil {
+		// 旁路记录飞书错误信封里的 log_id / 缺失 scope / 字段校验，供根命令打印诊断
+		apidiag.ObserveResponse(resp)
+	}
+	return resp, err
 }
 
 // RedirectPolicy 拒绝默认的 HTTPS→HTTP 与带 body 跨源重定向，并在跨源时剥离 Authorization。

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +46,8 @@ var authCheckCmd = &cobra.Command{
 			return err
 		}
 		if !ok {
-			return errCheckFailed
+			// 缺 scope / 未登录 / token 过期：鉴权类失败（退出码 3），结果已在 stdout
+			return clierr.Auth(errCheckFailed)
 		}
 		return nil
 	},

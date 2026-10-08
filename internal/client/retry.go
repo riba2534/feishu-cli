@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 // 限流重置 header 名称
@@ -32,7 +34,7 @@ type RetryConfig struct {
 	IsPermanent func(error) bool
 	// OnRetry 每次重试前的回调，可用于日志输出。attempt 从 1 开始。
 	OnRetry func(attempt int, err error, wait time.Duration)
-	// Context 用于支持外部取消。为 nil 时不检查取消。
+	// Context 用于支持外部取消。为 nil 时使用进程根 context（runctx.Root()，Ctrl-C 时取消）。
 	Context context.Context
 }
 
@@ -79,28 +81,87 @@ func ClassifyError(err error, retryOnRateLimit bool) RetryDecision {
 	return RetryDecision{ShouldRetry: false, IsRealFailure: true}
 }
 
-// GetRetryWaitDuration 计算下一次重试前的等待时间。
-// 优先使用服务端返回的限流重置时间（±10% 抖动）；
-// 否则使用 full jitter：random(0, min(2^attempt, 30s))。
-func GetRetryWaitDuration(headers http.Header, attempt int) time.Duration {
-	// 尝试从 header 读取限流重置时间
-	if headers != nil {
-		for key, values := range headers {
-			if strings.EqualFold(key, rateLimitResetHeader) && len(values) > 0 {
-				if resetSec, err := strconv.ParseFloat(values[0], 64); err == nil && resetSec >= 0 {
-					// 对服务端提供的等待时间做 ±10% 抖动，避免齐步醒来
-					jittered := resetSec * (0.9 + rand.Float64()*0.2)
-					jittered = math.Min(jittered, maxBackoffSeconds)
-					return time.Duration(jittered * float64(time.Second))
-				}
-			}
-		}
-	}
+// maxServerWaitSeconds 服务端给出的恢复时间上限（秒），防止异常的超大值让命令长时间挂起。
+// 只对服务端时间生效；超过上限时提前醒来最多再触发一次限流，由重试循环继续处理。
+const maxServerWaitSeconds = 120
 
+// GetRetryWaitDuration 计算下一次重试前的等待时间。
+// 优先使用服务端给出的恢复时间（x-ogw-ratelimit-reset，其次标准 Retry-After 的秒数或 HTTP-date）：
+// 秒数向上取整后只向上抖动 0~10%，保证不会早于服务端恢复时刻醒来、又避免多进程齐步重试；
+// 无服务端时间时使用 full jitter：random(0, min(2^attempt, 30s))。
+func GetRetryWaitDuration(headers http.Header, attempt int) time.Duration {
+	if wait, ok := serverRetryWait(headers, time.Now()); ok {
+		return wait
+	}
 	// full jitter: random(0, min(2^attempt, 30s))
 	base := math.Min(math.Pow(2, float64(attempt)), maxBackoffSeconds)
 	wait := rand.Float64() * base
 	return time.Duration(wait * float64(time.Second))
+}
+
+// serverRetryWait 解析服务端给出的恢复时间并加上向上抖动；无有效值时返回 ok=false。
+func serverRetryWait(headers http.Header, now time.Time) (time.Duration, bool) {
+	seconds, ok := parseRateLimitReset(headerValue(headers, rateLimitResetHeader))
+	if !ok {
+		seconds, ok = parseRetryAfter(headerValue(headers, "Retry-After"), now)
+	}
+	if !ok {
+		return 0, false
+	}
+	if seconds > maxServerWaitSeconds {
+		seconds = maxServerWaitSeconds
+	}
+	base := time.Duration(seconds) * time.Second
+	// 只向上抖动：[base, base*1.1]
+	return base + time.Duration(rand.Float64()*0.1*float64(base)), true
+}
+
+// parseRateLimitReset 解析 x-ogw-ratelimit-reset（剩余恢复秒数，允许小数），向上取整；非正数视为无效。
+func parseRateLimitReset(v string) (int64, bool) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+	if err != nil || f <= 0 || math.IsInf(f, 0) || math.IsNaN(f) {
+		return 0, false
+	}
+	return int64(math.Ceil(math.Min(f, maxServerWaitSeconds))), true
+}
+
+// parseRetryAfter 解析标准 Retry-After：delta-seconds 或 HTTP-date（RFC 9110 §10.2.3），向上取整到秒。
+func parseRetryAfter(v string, now time.Time) (int64, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0, false
+	}
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+		if n <= 0 {
+			return 0, false
+		}
+		return n, true
+	}
+	at, err := http.ParseTime(v)
+	if err != nil {
+		return 0, false
+	}
+	delay := at.Sub(now)
+	if delay <= 0 {
+		return 0, false
+	}
+	return int64(math.Ceil(delay.Seconds())), true
+}
+
+// headerValue 大小写不敏感地读取 header（兼容未规范化 key 的手工构造 header）。
+func headerValue(headers http.Header, name string) string {
+	if headers == nil {
+		return ""
+	}
+	if v := headers.Get(name); v != "" {
+		return v
+	}
+	for key, values := range headers {
+		if strings.EqualFold(key, name) && len(values) > 0 {
+			return values[0]
+		}
+	}
+	return ""
 }
 
 // DoWithRetry 泛型重试执行器。
@@ -114,23 +175,27 @@ func DoWithRetry[T any](fn func() (T, http.Header, error), cfg RetryConfig) Retr
 		isPermanent = IsPermanentError
 	}
 
+	// 未指定 Context 时使用进程根 context：Ctrl-C 能打断退避等待，而不是睡满整个间隔
+	ctx := cfg.Context
+	if ctx == nil {
+		ctx = runctx.Root()
+	}
+
 	var zero T
 	failureCount := 0
 	rateLimitHits := 0
 
 	for attempt := 0; attempt < cfg.MaxTotalAttempts; attempt++ {
 		// 检查 context 是否已取消
-		if cfg.Context != nil {
-			select {
-			case <-cfg.Context.Done():
-				return RetryResult[T]{
-					Value:         zero,
-					Err:           fmt.Errorf("重试被取消: %w", cfg.Context.Err()),
-					Attempts:      attempt,
-					RateLimitHits: rateLimitHits,
-				}
-			default:
+		select {
+		case <-ctx.Done():
+			return RetryResult[T]{
+				Value:         zero,
+				Err:           fmt.Errorf("重试被取消: %w", ctx.Err()),
+				Attempts:      attempt,
+				RateLimitHits: rateLimitHits,
 			}
+		default:
 		}
 
 		value, headers, err := fn()
@@ -189,21 +254,17 @@ func DoWithRetry[T any](fn func() (T, http.Header, error), cfg RetryConfig) Retr
 			cfg.OnRetry(attempt+1, err, wait)
 		}
 
-		if cfg.Context != nil {
-			timer := time.NewTimer(wait)
-			select {
-			case <-cfg.Context.Done():
-				timer.Stop()
-				return RetryResult[T]{
-					Value:         zero,
-					Err:           fmt.Errorf("重试等待被取消: %w", cfg.Context.Err()),
-					Attempts:      attempt + 1,
-					RateLimitHits: rateLimitHits,
-				}
-			case <-timer.C:
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return RetryResult[T]{
+				Value:         zero,
+				Err:           fmt.Errorf("重试等待被取消: %w", ctx.Err()),
+				Attempts:      attempt + 1,
+				RateLimitHits: rateLimitHits,
 			}
-		} else {
-			time.Sleep(wait)
+		case <-timer.C:
 		}
 	}
 

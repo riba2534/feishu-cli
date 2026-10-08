@@ -12,17 +12,19 @@ import (
 	_ "image/png"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
+	"golang.org/x/term"
 )
 
 // flagString 读取字符串 flag，忽略错误（未注册 flag 返回空串）。
@@ -173,7 +175,7 @@ func resolveIdentityToken(cmd *cobra.Command) (string, error) {
 		}
 		return token, nil
 	default:
-		return "", fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", as)
+		return "", clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
 	}
 }
 
@@ -194,7 +196,7 @@ func validateIdentityAs(cmd *cobra.Command) error {
 	case "", "auto", "bot", "tenant", "app", "user":
 		return nil
 	default:
-		return fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", as)
+		return clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
 	}
 }
 
@@ -296,7 +298,7 @@ func validateEnum(value, fieldName string, allowedValues []string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("不支持的%s %q，可选值: %s", fieldName, value, strings.Join(allowedValues, ", "))
+	return clierr.Usagef("不支持的%s %q，可选值: %s", fieldName, value, strings.Join(allowedValues, ", "))
 }
 
 // mustMarkFlagRequired 标记 flag 为必填，如果失败则 panic
@@ -312,11 +314,11 @@ func mustMarkFlagRequired(cmd *cobra.Command, flags ...string) {
 // loadJSONInput 统一处理 --xxx 和 --xxx-file 两种 JSON 输入方式。
 func loadJSONInput(inlineValue, filePath, inlineFlag, fileFlag, label string) (string, error) {
 	if inlineValue != "" && filePath != "" {
-		return "", fmt.Errorf("--%s 和 --%s 不能同时使用", inlineFlag, fileFlag)
+		return "", clierr.Usagef("--%s 和 --%s 不能同时使用", inlineFlag, fileFlag)
 	}
 
 	if filePath != "" {
-		data, err := os.ReadFile(filePath)
+		data, err := readLocalInputFile(filePath)
 		if err != nil {
 			return "", fmt.Errorf("读取 %s 文件失败: %w", label, err)
 		}
@@ -324,7 +326,7 @@ func loadJSONInput(inlineValue, filePath, inlineFlag, fileFlag, label string) (s
 	}
 
 	if strings.TrimSpace(inlineValue) == "" {
-		return "", fmt.Errorf("请通过 --%s 或 --%s 提供%s", inlineFlag, fileFlag, label)
+		return "", clierr.Usagef("请通过 --%s 或 --%s 提供%s", inlineFlag, fileFlag, label)
 	}
 
 	return inlineValue, nil
@@ -359,46 +361,85 @@ func printJSONLine(v any) error {
 	return nil
 }
 
-// confirmAction 在执行危险操作前请求用户确认
-// 返回 true 表示用户确认执行，false 表示取消
-func confirmAction(prompt string) bool {
-	fmt.Printf("%s (y/N): ", prompt)
-	reader := bufio.NewReader(os.Stdin)
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		return false
+// 确认门禁的输入源与交互判定，供测试注入。
+//
+// 交互判定必须用真正的 TTY 检测（ioctl），不能复用 isTerminal 的字符设备判断：
+// /dev/null 也是字符设备，`cmd </dev/null` 会被误判为交互终端，读到 EOF 后
+// 又落回"已取消"分支。isTerminal 保持原语义（event consume 的 stdin EOF 协议依赖它）。
+var (
+	confirmInput         io.Reader = os.Stdin
+	confirmPromptOut     io.Writer = os.Stderr
+	confirmIsInteractive           = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
+)
+
+// confirmDangerousAction 危险操作（删除等不可逆写）的确认门禁。返回 nil 表示可以继续执行。
+//
+//   - 带 --yes（根命令全局 flag，或命令自身的同名 flag）或 --force → 直接放行；
+//     仅用于 --force 语义就是"跳过确认"的命令。
+//   - stdin 不是终端（AI Agent / 管道 / cron）→ 不读 stdin，返回"需要确认"错误（退出码 10）。
+//     过去这里读到 EOF 就打印"操作已取消"并 exit 0，调用方会把"什么都没做"误判为删除成功。
+//   - 交互式终端：提示写 stderr（不污染 stdout），仅输入 y/yes 放行，否则返回"已取消"错误（退出码 1）。
+//
+// 调用方必须在 --dry-run 提前返回之后再调用：预览不执行写操作，不需要确认。
+func confirmDangerousAction(cmd *cobra.Command, prompt string) error {
+	if confirmationBypassed(cmd) {
+		return nil
 	}
+	if !confirmIsInteractive() {
+		return clierr.ConfirmationRequiredf("需要确认：%s\n当前为非交互环境（stdin 不是终端），未执行任何操作。确认执行请追加 --yes 后重新运行", prompt)
+	}
+	fmt.Fprintf(confirmPromptOut, "%s (y/N): ", prompt)
+	// 读到 EOF 也按已读内容判断：只有明确输入 y/yes 才放行
+	response, _ := bufio.NewReader(confirmInput).ReadString('\n')
 	response = strings.TrimSpace(strings.ToLower(response))
-	return response == "y" || response == "yes"
+	if response == "y" || response == "yes" {
+		return nil
+	}
+	return clierr.Cancelledf("操作已取消，未执行任何操作")
 }
 
-// validateOutputPath 验证输出路径是否安全
-// 防止路径遍历攻击
-func validateOutputPath(outputPath string, allowedDir string) error {
-	// 清理路径
-	cleanPath := filepath.Clean(outputPath)
-
-	// 检查是否包含路径遍历
-	if strings.Contains(cleanPath, "..") {
-		return fmt.Errorf("输出路径不能包含 '..'")
+// confirmationBypassed 报告本次调用是否已显式确认（--yes 或 --force）。
+func confirmationBypassed(cmd *cobra.Command) bool {
+	if assumeYes {
+		return true
 	}
+	if cmd == nil {
+		return false
+	}
+	for _, name := range []string{"yes", "force"} {
+		if f := cmd.Flags().Lookup(name); f != nil && f.Value.Type() == "bool" && f.Value.String() == "true" {
+			return true
+		}
+	}
+	return false
+}
 
-	// 如果指定了允许的目录，验证路径在该目录下
+// validateOutputPath 验证用户指定的输出路径是否安全：
+//   - 相对路径按路径段拒绝 ".."（越出当前目录），report..v2.json 这类文件名放行；
+//   - 解析符号链接后拒绝敏感目录（~/.ssh、~/.aws、~/.feishu-cli、/etc 等，见 internal/safefile）；
+//   - allowedDir 非空时要求路径（解析符号链接后）位于该目录内，判断带路径分隔符边界。
+func validateOutputPath(outputPath string, allowedDir string) error {
+	if err := safefile.ValidateOutputPath(outputPath); err != nil {
+		return err
+	}
 	if allowedDir != "" {
-		absOutput, err := filepath.Abs(cleanPath)
+		within, err := safefile.IsWithinResolved(outputPath, allowedDir)
 		if err != nil {
 			return fmt.Errorf("无法解析输出路径: %w", err)
 		}
-		absAllowed, err := filepath.Abs(allowedDir)
-		if err != nil {
-			return fmt.Errorf("无法解析允许目录: %w", err)
-		}
-		if !strings.HasPrefix(absOutput, absAllowed) {
-			return fmt.Errorf("输出路径必须在 %s 目录下", allowedDir)
+		if !within {
+			return clierr.Usagef("输出路径必须在 %s 目录下", allowedDir)
 		}
 	}
-
 	return nil
+}
+
+// readLocalInputFile 读取用户指定的本地输入文件，先拒绝敏感目录（防止把凭证当请求体发往远端）。
+func readLocalInputFile(path string) ([]byte, error) {
+	if err := safefile.ValidateInputPath(path); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
 }
 
 // unescapeSheetRange 处理 shell 转义的范围字符串

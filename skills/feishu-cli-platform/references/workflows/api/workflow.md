@@ -26,11 +26,11 @@ OpenAPI host：`open.feishu.cn` / `open.larksuite.com` / `open.larkoffice.com`�
 | Flag | 说明 |
 |------|------|
 | `--params '<json>'` | query 参数（**单个** JSON 对象），如 `'{"page_size":10}'`；尾部有多余内容（如 `'{"a":1} {"b":2}'`）会报错而非静默只取前半 |
-| `--data '<json>'` / `--data-file <file>` | 请求体：`--data` 传 JSON 字符串，或 `--data-file` 从文件读（`-` 表示 stdin）；二者互斥 |
+| `--data '<json>'` / `--data-file <file>` | 请求体：`--data` 传 JSON 字符串，或 `--data-file` 从文件读（`-` 表示 stdin）；二者互斥。`--data-file` 拒绝读取 `~/.ssh`、`~/.aws`、`~/.feishu-cli`、`/etc` 等敏感目录（退出码 2） |
 | `--as auto\|user\|bot` | 身份：auto（未配置 User 时回退 Tenant；已配置但不可用时失败，默认）/ user（强制 User Token，需先 `auth login`）/ bot（强制 Tenant/应用 Token） |
 | `--user-access-token` | 显式 User Token，仅 auto/user 路径解析；`--as bot` 强制应用身份，不用 User Token |
 | `--dry-run` | 只打印将发送的请求（method/path/query/body/identity），不实际调用 |
-| `-o <file>` | 写原始响应体到文件（binary-safe，适合下载类接口） |
+| `-o <file>` | 写原始响应体到文件（binary-safe，原子写入；拒绝敏感目录与越出当前目录的相对 `..` 路径） |
 | `--raw` | 原样输出响应 body，不做 pretty JSON |
 | `--include-headers` | 在 stderr 打印响应状态码和响应头 |
 | `--timeout <seconds>` | 单次请求超时，默认 30 秒 |
@@ -43,6 +43,10 @@ OpenAPI host：`open.feishu.cn` / `open.larksuite.com` / `open.larkoffice.com`�
 > **`-o` 二进制下载 与 `--format/--jq` 互斥**：默认 / `--raw` / 纯 `-o` 走原样写文件路径（binary-safe）；一旦带上 `--format` 或 `--jq`，响应会先按 JSON 解析再渲染，二进制响应会 decode 失败并报错「响应不是合法 JSON，无法用 --format/--jq 渲染（去掉这两个 flag 可用 --raw 原样输出）」。下载媒体/文件时只用 `-o`，不要叠加 `--format/--jq`。
 
 > 大整数精度：响应用 `UseNumber` 解析，飞书 19 位 `message_id`/`chat_id` 等不会被降级丢精度。
+
+> **业务错误不进 stdout**：响应 `code != 0`（即使随 HTTP 400 下发）或 HTTP 非 2xx 时，stdout 为空、`--jq/--format/-o` 不处理错误体；
+> stderr 输出 `飞书业务错误: code=..., msg=...`，并附 `log_id`、所需 scope、字段校验与修复建议。需要原始错误体调试时加 `--raw`（原样写 stdout / `-o`，退出码仍非 0）。
+> 退出码：`1` 业务错误，`2` 用法错误，`3` 鉴权/权限（99991672 应用未开通 scope、99991679 用户未授权、token 失效等），`4` 网络错误。
 
 ---
 

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
 // logf 输出日志到 stderr，避免污染 stdout 的 JSON 输出
@@ -53,6 +55,16 @@ func HasUserTokenConfigured(flagValue, configValue string) bool {
 //  4. configValue（config.yaml 静态配置）
 //  5. 全部为空 → 返回 ErrNoUserTokenConfigured
 func ResolveUserAccessToken(flagValue, configValue, appID, appSecret, baseURL string) (string, error) {
+	token, err := resolveUserAccessToken(flagValue, configValue, appID, appSecret, baseURL)
+	if err != nil {
+		// 统一标记为鉴权类错误（退出码 3）；文本不变，errors.Is(ErrNoUserTokenConfigured) 仍成立。
+		// 刷新因断网失败时错误链里带网络错误，cmd 层会优先按网络错误（退出码 4）处理。
+		return "", clierr.Auth(err)
+	}
+	return token, nil
+}
+
+func resolveUserAccessToken(flagValue, configValue, appID, appSecret, baseURL string) (string, error) {
 	// 1. 命令行参数
 	if flagValue != "" {
 		refreshed, err := refreshIfStaleLocalToken(flagValue, appID, appSecret, baseURL)
@@ -159,6 +171,14 @@ func refreshIfStaleLocalToken(explicitToken, appID, appSecret, baseURL string) (
 //
 // 失败原因可能是: token.json 不存在、refresh_token 已过期、网络/服务端错误。
 func ForceRefreshLocalToken(appID, appSecret, baseURL string) (*TokenStore, error) {
+	store, err := forceRefreshLocalToken(appID, appSecret, baseURL)
+	if err != nil {
+		return nil, clierr.Auth(err)
+	}
+	return store, nil
+}
+
+func forceRefreshLocalToken(appID, appSecret, baseURL string) (*TokenStore, error) {
 	local, err := LoadToken()
 	if err != nil {
 		return nil, fmt.Errorf("读取 token.json 失败: %w", err)

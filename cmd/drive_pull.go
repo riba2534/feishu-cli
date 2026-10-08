@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -76,7 +77,7 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
 			return fmt.Errorf("--if-exists 只能是 overwrite 或 skip")
 		}
 		if deleteLocal && !yes {
-			return fmt.Errorf("--delete-local 是高危操作，必须同时加 --yes 才执行")
+			return clierr.ConfirmationRequiredf("--delete-local 是高危操作，必须同时加 --yes 才执行")
 		}
 
 		safeRoot, _, err := resolveSafeLocalDir(localDir)

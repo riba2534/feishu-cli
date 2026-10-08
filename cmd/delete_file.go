@@ -46,11 +46,10 @@ var deleteFileCmd = &cobra.Command{
 		force, _ := cmd.Flags().GetBool("force")
 		userAccessToken := resolveOptionalUserToken(cmd)
 
-		// 危险操作确认
+		// 危险操作确认（--force / --yes 跳过；非交互且未确认时报错退出码 10）
 		if !force {
-			if !confirmAction(fmt.Sprintf("确定要删除文件 %s (%s) 吗？此操作不可恢复", fileToken, fileType)) {
-				fmt.Println("操作已取消")
-				return nil
+			if err := confirmDangerousAction(cmd, fmt.Sprintf("确定要删除文件 %s (%s) 吗？此操作不可恢复", fileToken, fileType)); err != nil {
+				return err
 			}
 		}
 

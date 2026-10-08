@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/profile"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 	"github.com/spf13/cobra"
 )
 
@@ -15,6 +17,7 @@ var (
 	botAppIDFlag     string
 	botAppSecretFlag string
 	debug            bool
+	assumeYes        bool
 	version          = "dev"
 	buildTime        = "unknown"
 )
@@ -177,11 +180,24 @@ func Execute() {
 	// 所有 init() 注册完成后统一安装：嵌套命令组的未知子命令守卫 + flag 拼写建议
 	installUnknownSubcommandGuard(rootCmd)
 	rootCmd.SetFlagErrorFunc(flagSuggestionErrorFunc)
-	if err := rootCmd.Execute(); err != nil {
+
+	// 根 context 接 SIGINT/SIGTERM：cmd.Context() 与 client.Context() 等都从它派生，
+	// Ctrl-C 时进行中的请求与等待立即取消。
+	ctx, stopSignals := newSignalContext(context.Background(), interruptGracePeriod, os.Stderr)
+	runctx.Set(ctx)
+	err := rootCmd.ExecuteContext(ctx)
+	stopSignals()
+	if err != nil {
 		if msg := err.Error(); msg != "" {
 			fmt.Fprintln(os.Stderr, msg)
 		}
-		os.Exit(1)
+		// 附加 log_id / 缺失 scope / 字段校验等诊断与按业务码的修复建议
+		for _, line := range renderErrorDiagnostics(err) {
+			fmt.Fprintln(os.Stderr, line)
+		}
+		// 按错误分类退出（0 成功 / 1 一般 / 2 用法 / 3 鉴权 / 4 网络 / 10 需确认 / 130 中断），
+		// 供脚本与 AI Agent 区分失败类型；错误文本保持不变。
+		os.Exit(exitCodeFor(err))
 	}
 }
 
@@ -191,6 +207,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&botAppIDFlag, "bot-app-id", "", "本次命令使用的 Bot app_id（优先于环境变量和配置文件，不写盘）")
 	rootCmd.PersistentFlags().StringVar(&botAppSecretFlag, "bot-app-secret", "", "本次命令使用的 Bot app_secret（优先于环境变量和配置文件，不写盘；会进入 shell 历史与 ps 输出，共享机器慎用）")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "启用调试模式")
+	rootCmd.PersistentFlags().BoolVar(&assumeYes, "yes", false, "跳过危险操作（删除等）的确认；非交互环境执行这类操作时必须显式指定")
 	// R1 review fix: RunE 返回 error 时不再打印整页 usage 淹没真错误（11/13 PR 未单独设此 flag → root 统一处理）
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true
