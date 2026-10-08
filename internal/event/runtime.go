@@ -27,7 +27,11 @@ import (
 type ConsumeOptions struct {
 	AppID     string
 	AppSecret string
-	EventKey  string
+	// EventKey 单个 EventKey（兼容旧调用方）；EventKeys 非空时以 EventKeys 为准。
+	EventKey string
+	// EventKeys 同一进程内一起订阅的多个 EventKey：共用一条 WebSocket 连接，
+	// 避免同 App 多连接被服务端随机分发事件而互相"抢"事件。
+	EventKeys []string
 	BaseURL   string // 飞书 API 域名（默认 https://open.feishu.cn）
 
 	// 输出控制
@@ -59,6 +63,12 @@ type ConsumeOptions struct {
 
 	// ConsumerPID 覆盖写入 bus.json 的 PID；0 表示 os.Getpid()。仅测试用于模拟并发 consumer。
 	ConsumerPID int
+
+	// AckUnsubscribed 为 true 时，未订阅的已知事件类型 ACK 后本地丢弃。
+	// 仅应在确认本连接是该 App 唯一的长连接时开启（远端预检 online_instance_cnt=0）：
+	// 存在其他连接（其他机器/服务）时，ACK 会让本应由对方处理的事件就此丢失；
+	// 不开启时这类事件由 SDK 回 500，服务端可重投给其他连接。
+	AckUnsubscribed bool
 }
 
 // Runtime 表示一次 consume 会话的运行时状态。
@@ -72,6 +82,9 @@ type Runtime struct {
 	cancel    context.CancelFunc // emit 触发 max-events 退出时调用，由 Run 在派生 subCtx 后注入
 	reasonMu  sync.Mutex         // 串行写入 reason 字段，避免 timeout/maxEvents 并发竞争
 	reason    string             // 多触发源时记录原因；Run 末尾读取
+
+	dedup        *dedupFilter // 按 event_id 去重（服务端重投 / 重连补投）
+	droppedTypes sync.Map     // 已提示过的"未订阅事件类型"，每种只提示一次
 }
 
 // NewRuntime 构造一个 consume runtime。
@@ -85,7 +98,37 @@ func NewRuntime(opts ConsumeOptions) *Runtime {
 	if opts.BaseURL == "" {
 		opts.BaseURL = "https://open.feishu.cn"
 	}
-	return &Runtime{opts: opts}
+	return &Runtime{opts: opts, dedup: newDedupFilter()}
+}
+
+// NormalizeEventKeys 把命令行传入的 EventKey（支持逗号分隔）展开、去空白、去重保序。
+func NormalizeEventKeys(raw []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, item := range raw {
+		for _, k := range strings.Split(item, ",") {
+			k = strings.TrimSpace(k)
+			if k == "" || seen[k] {
+				continue
+			}
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// eventKeys 返回本次要消费的 EventKey 列表（EventKeys 优先，兼容单 EventKey）。
+func (r *Runtime) eventKeys() []string {
+	if len(r.opts.EventKeys) > 0 {
+		return NormalizeEventKeys(r.opts.EventKeys)
+	}
+	return NormalizeEventKeys([]string{r.opts.EventKey})
+}
+
+// eventKeyLabel 用于 ready marker 等展示：多个 key 以逗号连接（单 key 时与旧版完全一致）。
+func (r *Runtime) eventKeyLabel() string {
+	return strings.Join(r.eventKeys(), ",")
 }
 
 // Run 启动 WebSocket 连接 → 注册到 bus.json → 阻塞接收事件直到上下文取消或退出条件触发。
@@ -98,9 +141,17 @@ func NewRuntime(opts ConsumeOptions) *Runtime {
 //
 // 退出码 0 表示正常完成；非 0 表示 startup 失败或不可恢复错误。
 func (r *Runtime) Run(ctx context.Context) (reason string, err error) {
-	def, ok := Lookup(r.opts.EventKey)
-	if !ok {
-		return "error", fmt.Errorf("未知 EventKey: %q（运行 `feishu-cli event list` 查看支持的 key）", r.opts.EventKey)
+	keys := r.eventKeys()
+	if len(keys) == 0 {
+		return "error", fmt.Errorf("未指定 EventKey（运行 `feishu-cli event list` 查看支持的 key）")
+	}
+	defs := make([]KeyDefinition, 0, len(keys))
+	for _, key := range keys {
+		def, ok := Lookup(key)
+		if !ok {
+			return "error", fmt.Errorf("未知 EventKey: %q（运行 `feishu-cli event list` 查看支持的 key）", key)
+		}
+		defs = append(defs, def)
 	}
 	if err := ValidateDotPathExpr(r.opts.JQExpr); err != nil {
 		return "error", err
@@ -112,58 +163,46 @@ func (r *Runtime) Run(ctx context.Context) (reason string, err error) {
 	// 每个 consumer 都幂等 POST subscribe（服务端幂等），ready 前必须订阅成功。
 	// 不能「first 才 subscribe」：first 的 subscribe 阻塞/失败时 second 会跳过并提前 ready。
 	// 注销仍只由 last-consumer 执行，避免先退出者打断同伴。
+	// 多 EventKey 时按 key 逐个登记 bus.json / 注册订阅，退出时逐个释放（defer 逆序执行）。
 	pid := r.consumerPID()
-	weSubscribed := false
-	if r.opts.Bus != nil {
-		entry := ConsumerEntry{
-			PID:        pid,
-			EventKey:   r.opts.EventKey,
-			StartedAt:  time.Now(),
-			OutputDir:  r.opts.OutputDir,
-			JQExpr:     r.opts.JQExpr,
-			MaxEvents:  r.opts.MaxEvents,
-			TimeoutSec: int(r.opts.Timeout.Seconds()),
-		}
-		if _, claimErr := r.opts.Bus.ClaimConsumer(entry); claimErr != nil {
-			if def.SubscribePath != "" || def.UnsubscribePath != "" {
-				return "error", fmt.Errorf("注册到 bus.json 失败: %w", claimErr)
+	weSubscribed := map[string]bool{}
+	for _, def := range defs {
+		def := def
+		if r.opts.Bus != nil {
+			entry := ConsumerEntry{
+				PID:        pid,
+				EventKey:   def.Key,
+				StartedAt:  time.Now(),
+				OutputDir:  r.opts.OutputDir,
+				JQExpr:     r.opts.JQExpr,
+				MaxEvents:  r.opts.MaxEvents,
+				TimeoutSec: int(r.opts.Timeout.Seconds()),
 			}
-			fmt.Fprintf(r.opts.ErrOut, "[event] 警告: 注册到 bus.json 失败: %v\n", claimErr)
-		} else {
+			if _, claimErr := r.opts.Bus.ClaimConsumer(entry); claimErr != nil {
+				if def.SubscribePath != "" || def.UnsubscribePath != "" {
+					return "error", fmt.Errorf("注册到 bus.json 失败: %w", claimErr)
+				}
+				fmt.Fprintf(r.opts.ErrOut, "[event] 警告: 注册到 bus.json 失败: %v\n", claimErr)
+				continue
+			}
+			defer r.releaseConsumer(pid, def, weSubscribed)
+		} else if def.UnsubscribePath != "" {
 			defer func() {
-				last, relErr := r.opts.Bus.ReleaseConsumer(pid, r.opts.EventKey)
-				if relErr != nil {
-					fmt.Fprintf(r.opts.ErrOut, "[event] 警告: 从 bus.json 移除失败: %v\n", relErr)
-					return
-				}
-				if def.UnsubscribePath == "" || !last || !weSubscribed {
-					return
-				}
-				r.unregisterSubscriptions(def)
-				// 注销是锁外的网络调用，期间可能有新 consumer 完成注册并订阅。
-				// 复检：若此刻已有存活 consumer，说明我们刚把它的服务端订阅抹掉了，
-				// 必须补回去——否则它仍在运行且已 ready，却静默收不到任何事件。
-				if n, cntErr := r.opts.Bus.CountEventKeyConsumers(r.opts.EventKey); cntErr == nil && n > 0 {
-					fmt.Fprintf(r.opts.ErrOut, "[event] 注销后检测到 %d 个新 consumer，正在恢复服务端订阅\n", n)
-					if subErr := r.registerSubscriptions(context.Background(), def); subErr != nil {
-						fmt.Fprintf(r.opts.ErrOut, "[event] 警告: 恢复订阅失败，存活 consumer 可能收不到事件: %v\n", subErr)
-					}
+				if weSubscribed[def.Key] {
+					r.unregisterSubscriptions(def)
 				}
 			}()
 		}
-	} else if def.UnsubscribePath != "" {
-		defer func() {
-			if weSubscribed {
-				r.unregisterSubscriptions(def)
-			}
-		}()
 	}
 
-	if def.SubscribePath != "" {
+	for _, def := range defs {
+		if def.SubscribePath == "" {
+			continue
+		}
 		if err := r.registerSubscriptions(ctx, def); err != nil {
 			return "error", err
 		}
-		weSubscribed = true
+		weSubscribed[def.Key] = true
 	}
 
 	// 准备输出目录
@@ -192,22 +231,8 @@ func (r *Runtime) Run(ctx context.Context) (reason string, err error) {
 		}()
 	}
 
-	// 构造 dispatcher：卡片回调走 callback 分发通道（与普通事件是不同的 WS 帧类型），
-	// 其余走 OnCustomizedEvent 原样透传。
-	dis := dispatcher.NewEventDispatcher("", "")
-	if def.CardCallback {
-		dis.OnP2CardActionTrigger(func(ctx context.Context, ev *callback.CardActionTriggerEvent) (*callback.CardActionTriggerResponse, error) {
-			if ev != nil && ev.EventReq != nil {
-				_ = r.emit(ev.EventReq)
-			}
-			// 返回空响应 = ACK 且不更新卡片；卡片回写由消费方用 event.token 调 OpenAPI 完成
-			return &callback.CardActionTriggerResponse{}, nil
-		})
-	} else {
-		dis.OnCustomizedEvent(def.EventType, func(ctx context.Context, ev *larkevent.EventReq) error {
-			return r.emit(ev)
-		})
-	}
+	// 构造 dispatcher：同一条连接注册全部订阅的事件类型；其余已知类型 ACK 后本地丢弃。
+	dis := r.buildDispatcher(defs)
 
 	handshakeCh := make(chan struct{})
 	var handshakeOnce sync.Once
@@ -237,6 +262,83 @@ func (r *Runtime) Run(ctx context.Context) (reason string, err error) {
 	case <-subCtx.Done():
 		return r.drainWSExit(errCh)
 	}
+}
+
+// releaseConsumer 从 bus.json 移除 (PID, EventKey)；若本进程是该 key 的最后一个 consumer
+// 且本进程注册过服务端订阅，则注销订阅（并复检竞态，必要时恢复）。
+func (r *Runtime) releaseConsumer(pid int, def KeyDefinition, weSubscribed map[string]bool) {
+	last, relErr := r.opts.Bus.ReleaseConsumer(pid, def.Key)
+	if relErr != nil {
+		fmt.Fprintf(r.opts.ErrOut, "[event] 警告: 从 bus.json 移除失败: %v\n", relErr)
+		return
+	}
+	if def.UnsubscribePath == "" || !last || !weSubscribed[def.Key] {
+		return
+	}
+	r.unregisterSubscriptions(def)
+	// 注销是锁外的网络调用，期间可能有新 consumer 完成注册并订阅。
+	// 复检：若此刻已有存活 consumer，说明我们刚把它的服务端订阅抹掉了，
+	// 必须补回去——否则它仍在运行且已 ready，却静默收不到任何事件。
+	if n, cntErr := r.opts.Bus.CountEventKeyConsumers(def.Key); cntErr == nil && n > 0 {
+		fmt.Fprintf(r.opts.ErrOut, "[event] 注销后检测到 %d 个新 consumer，正在恢复服务端订阅\n", n)
+		if subErr := r.registerSubscriptions(context.Background(), def); subErr != nil {
+			fmt.Fprintf(r.opts.ErrOut, "[event] 警告: 恢复订阅失败，存活 consumer 可能收不到事件: %v\n", subErr)
+		}
+	}
+}
+
+// buildDispatcher 在同一个 dispatcher 上注册本进程订阅的全部事件类型；AckUnsubscribed 时
+// 再为其余已知事件类型注册"ACK 后本地丢弃"的处理器。
+//
+// 原因：飞书长连接按 App 维度把事件随机投递到任一条连接，不管这条连接注册了哪些类型。
+// 没注册处理器的类型 SDK 会回 500，服务端随后重投，事件被延迟甚至在多连接间来回漂移；
+// 显式 ACK 并丢弃可以让未订阅类型干净地结束，订阅的类型照常输出。
+// 卡片回调（card.action.trigger）是同步回调，未订阅时不代答，避免吞掉其他处理方的响应。
+func (r *Runtime) buildDispatcher(defs []KeyDefinition) *dispatcher.EventDispatcher {
+	dis := dispatcher.NewEventDispatcher("", "")
+	registered := map[string]bool{}
+	for _, def := range defs {
+		if registered[def.EventType] {
+			continue
+		}
+		registered[def.EventType] = true
+		if def.CardCallback {
+			dis.OnP2CardActionTrigger(func(ctx context.Context, ev *callback.CardActionTriggerEvent) (*callback.CardActionTriggerResponse, error) {
+				if ev != nil && ev.EventReq != nil {
+					_ = r.emit(ev.EventReq)
+				}
+				// 返回空响应 = ACK 且不更新卡片；卡片回写由消费方用 event.token 调 OpenAPI 完成
+				return &callback.CardActionTriggerResponse{}, nil
+			})
+			continue
+		}
+		dis.OnCustomizedEvent(def.EventType, func(ctx context.Context, ev *larkevent.EventReq) error {
+			return r.emit(ev)
+		})
+	}
+	if !r.opts.AckUnsubscribed {
+		return dis
+	}
+	for _, et := range ackOnlyEventTypes() {
+		if registered[et] {
+			continue
+		}
+		registered[et] = true
+		eventType := et
+		dis.OnCustomizedEvent(eventType, func(ctx context.Context, ev *larkevent.EventReq) error {
+			r.noteDropped(eventType)
+			return nil
+		})
+	}
+	return dis
+}
+
+// noteDropped 每种未订阅事件类型只提示一次，避免刷屏。
+func (r *Runtime) noteDropped(eventType string) {
+	if _, loaded := r.droppedTypes.LoadOrStore(eventType, true); loaded {
+		return
+	}
+	fmt.Fprintf(r.opts.ErrOut, "[event] 收到未订阅的事件类型 %s，已 ACK 并本地丢弃（本进程只输出 %s）\n", eventType, r.eventKeyLabel())
 }
 
 // wsShutdownGrace 取消后等待 WebSocket goroutine 收尾的窗口。
@@ -304,7 +406,7 @@ func (r *Runtime) emitReady() {
 	if w == nil {
 		w = os.Stderr
 	}
-	fmt.Fprintf(w, "[event] ready event_key=%s\n", r.opts.EventKey)
+	fmt.Fprintf(w, "[event] ready event_key=%s\n", r.eventKeyLabel())
 }
 
 // handshakeLogger 把 SDK 握手成功的 Info 日志转成 onHandshake。
@@ -501,12 +603,23 @@ func (r *Runtime) emit(ev *larkevent.EventReq) error {
 	// 解析事件以提取 event_id（用于文件名）；失败也不阻塞输出。
 	body := ev.Body
 	var meta struct {
+		UUID   string `json:"uuid"` // schema 1.0 事件的唯一 ID
 		Header struct {
 			EventID   string `json:"event_id"`
 			EventType string `json:"event_type"`
 		} `json:"header"`
 	}
 	_ = json.Unmarshal(body, &meta)
+
+	// 按 event_id 去重：服务端在未及时 ACK、断线重连时会重投同一事件（对齐官方 dedup）。
+	eventID := meta.Header.EventID
+	if eventID == "" {
+		eventID = meta.UUID
+	}
+	if r.dedup.isDuplicate(eventID) {
+		fmt.Fprintf(r.opts.ErrOut, "[event] 跳过重复投递的事件 event_id=%s\n", eventID)
+		return nil
+	}
 
 	// 简单 jq 支持：仅支持 `.event.xxx` / `.header.xxx` 这种点路径（避免引入 itchyny/gojq 依赖）
 	output := body

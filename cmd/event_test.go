@@ -2,10 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/event"
+	"github.com/spf13/cobra"
 )
 
 func TestEventListCmd_OutputsAllDomains(t *testing.T) {
@@ -114,5 +118,78 @@ func TestEventCmd_HasAllSubcommands(t *testing.T) {
 		if !found {
 			t.Errorf("event 命令缺少子命令 %q", name)
 		}
+	}
+}
+
+// TestShouldWatchStdinEOF 有界运行（--max-events / --timeout）忽略 stdin EOF；
+// 只有非 TTY 的无界运行把 EOF 当退出信号（对齐官方 #1285）。
+func TestShouldWatchStdinEOF(t *testing.T) {
+	tests := []struct {
+		name      string
+		tty       bool
+		maxEvents int
+		timeout   time.Duration
+		want      bool
+	}{
+		{"非 TTY 无界", false, 0, 0, true},
+		{"非 TTY + timeout", false, 0, 30 * time.Second, false},
+		{"非 TTY + max-events", false, 1, 0, false},
+		{"非 TTY + 两者", false, 1, 30 * time.Second, false},
+		{"TTY 无界", true, 0, 0, false},
+		{"负数视为无界", false, -1, -1, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldWatchStdinEOF(tt.tty, tt.maxEvents, tt.timeout); got != tt.want {
+				t.Fatalf("shouldWatchStdinEOF(%v,%d,%s) = %v, want %v", tt.tty, tt.maxEvents, tt.timeout, got, tt.want)
+			}
+		})
+	}
+}
+
+func newEventConsumeTestCmd() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Flags().Int("max-events", 0, "")
+	cmd.Flags().Duration("timeout", 0, "")
+	cmd.Flags().String("jq", "", "")
+	cmd.Flags().String("user-access-token", "", "")
+	cmd.Flags().String("output-dir", "", "")
+	cmd.Flags().Bool("quiet", false, "")
+	cmd.Flags().Bool("force", false, "")
+	return cmd
+}
+
+// TestEventConsumeRejectsSecondInstance 同一 App 已有 consume 持有单实例锁时，
+// 第二个进程在建连前报错，并提示合并 EventKey / --force。
+func TestEventConsumeRejectsSecondInstance(t *testing.T) {
+	isolateMsgTokenTestEnv(t)
+	cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("锁冲突时不应发出任何网络请求: %s", r.URL.Path)
+	})
+	defer cleanup()
+
+	lock, err := event.AcquireConsumeLock("test_app_id")
+	if err != nil {
+		t.Fatalf("预先获取锁失败: %v", err)
+	}
+	defer lock.Release()
+
+	cmd := newEventConsumeTestCmd()
+	err = eventConsumeCmd.RunE(cmd, []string{"im.message.receive_v1"})
+	if err == nil {
+		t.Fatal("第二个 consume 应报错")
+	}
+	for _, want := range []string{"只允许一个", "event consume <key1> <key2>", "--force"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("错误信息缺少 %q: %v", want, err)
+		}
+	}
+}
+
+func TestEventConsumeRejectsUnknownKeyAsUsage(t *testing.T) {
+	cmd := newEventConsumeTestCmd()
+	err := eventConsumeCmd.RunE(cmd, []string{"im.message.receive_v1,not.a.key"})
+	if err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+		t.Fatalf("未知 EventKey 应为用法错误，got %v", err)
 	}
 }
