@@ -181,7 +181,9 @@ func Execute() {
 		if msg := err.Error(); msg != "" {
 			fmt.Fprintln(os.Stderr, msg)
 		}
-		os.Exit(1)
+		// 按错误分类退出（0 成功 / 1 一般 / 2 用法 / 3 鉴权 / 4 网络 / 10 需确认），
+		// 供脚本与 AI Agent 区分失败类型；错误文本保持不变。
+		os.Exit(exitCodeFor(err))
 	}
 }
 

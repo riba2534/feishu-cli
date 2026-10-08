@@ -4,12 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"sync"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 )
 
@@ -38,7 +38,7 @@ func secretFingerprint(secret string) string {
 func GetClient() (*lark.Client, error) {
 	cfg := config.Get()
 	if cfg.AppID == "" || cfg.AppSecret == "" {
-		return nil, fmt.Errorf("缺少 app_id 或 app_secret 配置")
+		return nil, clierr.Authf("缺少 app_id 或 app_secret 配置")
 	}
 	if err := config.CheckBaseURL(cfg.BaseURL); err != nil {
 		return nil, err

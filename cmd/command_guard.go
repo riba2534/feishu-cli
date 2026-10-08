@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -50,7 +51,7 @@ func unknownSubcommandError(cmd *cobra.Command, name string) error {
 		msg += fmt.Sprintf("\n\n你是不是想用:\n\t%s", strings.Join(suggestions, "\n\t"))
 	}
 	msg += fmt.Sprintf("\n\n运行 `%s --help` 查看全部可用子命令", cmd.CommandPath())
-	return fmt.Errorf("%s", msg)
+	return clierr.Usagef("%s", msg)
 }
 
 // flagSuggestionErrorFunc 是 cobra FlagErrorFunc：flag 解析失败（未知 flag / 拼写错误）时
@@ -59,18 +60,19 @@ func flagSuggestionErrorFunc(cmd *cobra.Command, err error) error {
 	if err == nil {
 		return nil
 	}
+	// flag 解析失败一律是用法错误（退出码 2）
 	name := parseUnknownFlagName(err.Error())
 	if name == "" {
-		return err
+		return clierr.Usage(err)
 	}
 	suggestions := closestFlagNames(cmd, name, 3)
 	if len(suggestions) == 0 {
-		return err
+		return clierr.Usage(err)
 	}
 	for i := range suggestions {
 		suggestions[i] = "--" + suggestions[i]
 	}
-	return fmt.Errorf("%w\n\n你是不是想用: %s", err, strings.Join(suggestions, ", "))
+	return clierr.Usagef("%w\n\n你是不是想用: %s", err, strings.Join(suggestions, ", "))
 }
 
 // parseUnknownFlagName 从 pflag 错误信息里提取未知 flag 名。
