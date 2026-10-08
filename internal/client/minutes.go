@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 )
 
 const minutesBase = "/open-apis/minutes/v1"
@@ -14,74 +13,24 @@ const minutesBase = "/open-apis/minutes/v1"
 // API: GET /open-apis/minutes/v1/minutes/{minute_token}
 // 返回 data 字段原始 JSON（包含 minute.title / minute.url / minute.create_time / minute.owner_id / minute.note_id 等）
 func GetMinute(minuteToken, userAccessToken string) (json.RawMessage, error) {
-	client, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
-	tokenType, opts := resolveTokenOpts(userAccessToken)
 	apiPath := fmt.Sprintf("%s/minutes/%s", minutesBase, url.PathEscape(minuteToken))
 
-	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("获取妙记信息失败: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("获取妙记信息失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
-	}
-
-	var apiResp struct {
-		Code int             `json:"code"`
-		Msg  string          `json:"msg"`
-		Data json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
-	}
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("获取妙记信息失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
-	}
-	return apiResp.Data, nil
+	return vcCallAPI("获取妙记信息", http.MethodGet, apiPath, nil, userAccessToken)
 }
 
 // GetMinuteArtifacts 获取妙记 AI 产物（summary / minute_todos / minute_chapters）
 // API: GET /open-apis/minutes/v1/minutes/{minute_token}/artifacts
 func GetMinuteArtifacts(minuteToken, userAccessToken string) (json.RawMessage, error) {
-	client, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
-	tokenType, opts := resolveTokenOpts(userAccessToken)
 	apiPath := fmt.Sprintf("%s/minutes/%s/artifacts", minutesBase, url.PathEscape(minuteToken))
 
-	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("获取妙记 AI 产物失败: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("获取妙记 AI 产物失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
-	}
-
-	var apiResp struct {
-		Code int             `json:"code"`
-		Msg  string          `json:"msg"`
-		Data json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
-	}
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("获取妙记 AI 产物失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
-	}
-	return apiResp.Data, nil
+	return vcCallAPI("获取妙记 AI 产物", http.MethodGet, apiPath, nil, userAccessToken)
 }
 
 // GetMinuteTranscript 获取妙记文字稿（txt 格式，含说话人和时间戳）
 // API: GET /open-apis/minutes/v1/minutes/{minute_token}/transcript
-// 返回原始字节，调用方负责写文件
+// 返回原始字节，调用方负责写文件。
+// 成功时服务端直接返回文件字节；失败时返回飞书 JSON 信封（可能随 HTTP 4xx 下发），
+// 先按业务信封解析，保证 2091005 等业务码能被 HasAPICode 识别。
 func GetMinuteTranscript(minuteToken, userAccessToken string) ([]byte, error) {
 	client, err := GetClient()
 	if err != nil {
@@ -96,29 +45,12 @@ func GetMinuteTranscript(minuteToken, userAccessToken string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("获取妙记文字稿失败: %w", err)
 	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("获取妙记文字稿失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("获取妙记文字稿", resp); err != nil {
+		return nil, err
 	}
-
-	// 文字稿 API 成功时直接返回文件字节，失败时返回 JSON 错误包
-	// 通过 Content-Type 或首字节启发式区分
-	contentType := resp.Header.Get("Content-Type")
-	if strings.Contains(contentType, "application/json") ||
-		(len(resp.RawBody) > 0 && resp.RawBody[0] == '{') {
-		var apiResp struct {
-			Code int    `json:"code"`
-			Msg  string `json:"msg"`
-		}
-		if err := json.Unmarshal(resp.RawBody, &apiResp); err == nil && apiResp.Code != 0 {
-			return nil, fmt.Errorf("获取妙记文字稿失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
-		}
-	}
-
 	if len(resp.RawBody) == 0 {
 		return nil, fmt.Errorf("获取妙记文字稿失败: 响应体为空")
 	}
-
 	return resp.RawBody, nil
 }
 
@@ -126,38 +58,19 @@ func GetMinuteTranscript(minuteToken, userAccessToken string) ([]byte, error) {
 // API: GET /open-apis/minutes/v1/minutes/{minute_token}/media
 // 返回 data.download_url
 func GetMinuteMediaURL(minuteToken, userAccessToken string) (string, error) {
-	client, err := GetClient()
+	apiPath := fmt.Sprintf("%s/minutes/%s/media", minutesBase, url.PathEscape(minuteToken))
+	data, err := vcCallAPI("获取妙记媒体下载链接", http.MethodGet, apiPath, nil, userAccessToken)
 	if err != nil {
 		return "", err
 	}
-
-	tokenType, opts := resolveTokenOpts(userAccessToken)
-	apiPath := fmt.Sprintf("%s/minutes/%s/media", minutesBase, url.PathEscape(minuteToken))
-
-	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
-	if err != nil {
-		return "", fmt.Errorf("获取妙记媒体下载链接失败: %w", err)
+	var parsed struct {
+		DownloadURL string `json:"download_url"`
 	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("获取妙记媒体下载链接失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return "", fmt.Errorf("获取妙记媒体下载链接失败: 解析响应失败: %w", err)
 	}
-
-	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-		Data struct {
-			DownloadURL string `json:"download_url"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
-		return "", fmt.Errorf("解析响应失败: %w", err)
-	}
-	if apiResp.Code != 0 {
-		return "", fmt.Errorf("获取妙记媒体下载链接失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
-	}
-	if apiResp.Data.DownloadURL == "" {
+	if parsed.DownloadURL == "" {
 		return "", fmt.Errorf("获取妙记媒体下载链接失败: 响应中未包含 download_url")
 	}
-	return apiResp.Data.DownloadURL, nil
+	return parsed.DownloadURL, nil
 }
