@@ -65,8 +65,20 @@ func SparkCall(method, path string, params map[string]any, body any, userAccessT
 	return parseSparkResponse(resp.StatusCode, resp.RawBody)
 }
 
-// parseSparkResponse 解析妙搭响应：HTTP 错误 / 业务 code!=0 → error；否则返回 data 子对象。
+// parseSparkResponse 解析妙搭响应：先解析业务信封（业务错误常随 HTTP 4xx 下发，按 code 才能给出专门提示），
+// 再看 HTTP 状态；成功返回 data 子对象。
 func parseSparkResponse(statusCode int, raw []byte) (map[string]any, error) {
+	var result map[string]any
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	decodeErr := dec.Decode(&result)
+	if decodeErr == nil {
+		if _, hasCode := result["code"]; hasCode {
+			if code := toInt(result["code"]); code != 0 {
+				return nil, fmt.Errorf("妙搭 API 失败: code=%d, msg=%s", code, apiErrorDetail(result))
+			}
+		}
+	}
 	if statusCode >= http.StatusBadRequest {
 		bodyPreview := strings.TrimSpace(string(raw))
 		if bodyPreview == "" {
@@ -74,16 +86,8 @@ func parseSparkResponse(statusCode int, raw []byte) (map[string]any, error) {
 		}
 		return nil, fmt.Errorf("妙搭 API HTTP %d: %s", statusCode, bodyPreview)
 	}
-
-	var result map[string]any
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	if err := dec.Decode(&result); err != nil {
-		return nil, fmt.Errorf("妙搭 API 响应解析失败: %w", err)
-	}
-
-	if code := toInt(result["code"]); code != 0 {
-		return nil, fmt.Errorf("妙搭 API 失败: code=%d, msg=%s", code, apiErrorDetail(result))
+	if decodeErr != nil {
+		return nil, fmt.Errorf("妙搭 API 响应解析失败: %w", decodeErr)
 	}
 
 	if data, ok := result["data"].(map[string]any); ok {
@@ -105,4 +109,14 @@ func SparkPreReleasePath(appID string) string {
 // SparkReleaseCreatePath 返回 POST /apps/{id}/releases（body.tos_path 触发发布）。
 func SparkReleaseCreatePath(appID string) string {
 	return SparkAppGetPath(appID) + "/releases"
+}
+
+// SparkReleaseGetPath 返回 GET /apps/{id}/releases/{release_id}（单次发布详情）。
+func SparkReleaseGetPath(appID, releaseID string) string {
+	return SparkReleaseCreatePath(appID) + "/" + url.PathEscape(releaseID)
+}
+
+// SparkReleaseListPath 返回 GET /apps/{id}/releases（发布历史，最近的在前）。
+func SparkReleaseListPath(appID string) string {
+	return SparkReleaseCreatePath(appID)
 }
