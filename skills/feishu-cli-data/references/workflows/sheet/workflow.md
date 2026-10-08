@@ -6,10 +6,13 @@
 
 ## 前置条件
 
-- **认证**：`sheets:spreadsheet` scope，User Token 或 App Token 均可。命令默认走 `resolveOptionalUserTokenWithFallback`：
-  - 已 `feishu-cli auth login` → 自动用 User Token
-  - 未配置 User Token → 落回 App Token（Bot 身份）；显式传空 `--user-access-token` 不会跳过环境变量或本地 Token
-- **token / sheet-id 来源**：电子表格 URL `https://xxx.feishu.cn/sheets/<token>?sheet=<sheet-id>` 中分别取。
+- **认证**：`sheets:spreadsheet` scope，User Token 或 App Token 均可。所有 sheet 命令支持 `--as bot|user|auto`：
+  - 不传 `--as`（旧行为）：已 `feishu-cli auth login` → User Token；未配置 → App Token（Bot）；User Token 损坏时 stderr 告警后回退 Bot
+  - `--as bot`：已登录也强制 Bot（Bot 自有表格、cron 无人值守；否则 User 身份访问 Bot 表格会报 1310213）
+  - `--as user`：强制 User，缺 Token 报错；`--as auto`：User 优先，已配置但刷新失败时 fail-closed
+  - `sheet create` / `import-md` 以 Bot 创建时自动给当前登录用户授 full_access（JSON 输出 `permission_grant`）
+- **token / sheet-id 来源**：表格参数可直接传 URL（`/sheets/<token>?sheet=<sheet-id>`、`/spreadsheets/<token>`、
+  `/wiki/<node_token>` 自动换出底层表格）；范围前缀可写 sheetId 或子表名（`Sheet1!A1:C10` 自动换算为 sheetId）。
 
 ## 命令速查
 
@@ -67,7 +70,7 @@ feishu-cli sheet filter-view condition list   --token shtcnxxxxxx --sheet-id 0b1
 |---|---|---|
 | `--token` / `--spreadsheet-token` | 是 | 电子表格 token（URL `/sheets/<token>`）；`--spreadsheet-token` 为兼容别名 |
 | `--sheet-id` | 是 | 工作表 ID（URL `?sheet=<sheet-id>`） |
-| `--range` | create 必填 | `"<sheetId>!A1:H14"`，不带 `!` 前缀自动补 |
+| `--range` | create 必填 | `"<sheetId>!A1:H14"` 或 `"<子表名>!A1:H14"`，不带 `!` 前缀自动补 `--sheet-id` |
 | `--name` | 否 | 视图名称 ≤ 100 字符 |
 | `--filter-view-id` | delete 必填；create 可选 | create 留空时由飞书生成；显式指定时为 10 位字母数字 |
 | `-o json` | 否 | 输出原始 JSON |
@@ -90,7 +93,7 @@ feishu-cli sheet dropdown set --token shtcnxxxxxx --range "0b1212!B1:B100" \
 feishu-cli sheet dropdown set --token shtcnxxxxxx --range "0b1212!C1:C100" \
   --options-json '["a, b","c"]'
 
-# get —— 读取区域的下拉菜单设置（range 必须带 sheetId 前缀）；输出为 JSON（JSON-only，无 text 模式）
+# get —— 读取区域的下拉菜单设置（range 前缀可写 sheetId 或子表名）；输出为 JSON（JSON-only，无 text 模式）
 feishu-cli sheet dropdown get --token shtcnxxxxxx --range "0b1212!A1:A100"
 
 # update —— 更新下拉（--sheet-id + --ranges 多范围，支持 --multiple / --colors / --highlight）
@@ -112,7 +115,8 @@ feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100,0b
 ### 浮动图片与单元格图片 image
 
 ```bash
-# media-upload —— 上传本地图片素材，返回 file_token（再用于 image add）
+# media-upload —— 上传本地图片素材，返回 file_token（再用于 image add）；>20MB 自动分片上传，
+# 但浮动图片接口实测不接受 >20MB 图片（1310245），作浮动图片前先压缩
 feishu-cli sheet image media-upload shtcnxxxxxx ./logo.png
 feishu-cli sheet image media-upload shtcnxxxxxx ./logo.png --name banner.png -o json
 
@@ -157,7 +161,7 @@ feishu-cli sheet image delete shtcnxxxxxx 0b1212 ScDmuyHm
 ### 批量样式 batch-set-style（1 命令）
 
 ```bash
-# --data 为 {ranges, style} 对象的 JSON 数组，每个 range 须带 sheetId 前缀
+# --data 为 {ranges, style} 对象的 JSON 数组，每个 range 带 sheetId 或子表名前缀
 feishu-cli sheet batch-set-style shtcnxxxxxx \
   --data '[{"ranges":["0b1212!A1:A2"],"style":{"font":{"bold":true},"backColor":"#FF0000"}}]'
 
@@ -173,7 +177,7 @@ feishu-cli sheet batch-set-style shtcnxxxxxx \
 | 参数 | 必填 | 说明 |
 |---|---|---|
 | `<spreadsheet_token>` | 是 | 位置参数，电子表格 token（URL `/sheets/<token>`） |
-| `--data` | 是 | `{ranges, style}` 对象的 JSON 数组；每个 `range` **必须带 sheetId 前缀**（如 `0b1212!A1:C3`） |
+| `--data` | 是 | `{ranges, style}` 对象的 JSON 数组；每个 `range` 带 sheetId 或子表名前缀（如 `0b1212!A1:C3`、`Sheet1!A1:C3`；不带前缀时用唯一子表补全） |
 | `--user-access-token` | 否 | 显式覆盖登录态（访问无 App 权限的表格时用） |
 
 > `style` 沿用飞书 V2 `styles_batch_update` 原始结构：`font`（含 `bold` / `italic` / `fontSize` / `clean`）/ `hAlign` / `vAlign` / `backColor` / `foreColor` / `borderType` / `borderColor` / `formatter` / `clean`。
@@ -217,7 +221,7 @@ feishu-cli sheet filter-view list --token $TOKEN --sheet-id $SHEET -o json | \
 - **`--options` / `--options-json` 互斥**：同时传会报错 `--options 和 --options-json 不能同时使用，请选其一`；含逗号的选项必走 `--options-json`，否则会被 CSV 切碎
 - **dropdown 选项数量 ≤ 500 项**：飞书 V2 dataValidation 单次最多 500 个 list 选项（CLI 在 `internal/client/sheets.go` 侧预校验），超出 API 直接报错；批量场景请按业务维度拆多列下拉
 - **dropdown 每个选项 ≤ 100 字符**：单选项超 100 字符会被服务端拒；如果用 `--options-json` 注入长文案务必先截断或换成"短码 + 注释列"模式
-- **dropdown `--range` 必须带 `!` 前缀**：不带前缀直接报错（`--range 必须包含 sheetId 前缀`），不像 filter-view 会自动补
+- **dropdown `--range` 前缀**：可写 sheetId 或子表名；不带前缀时用 `--token` URL 的 `?sheet=` 或唯一子表补全，表格有多个子表且无法确定时报错并列出子表
 - **`--colors` 长度必须 = options 长度**：例如 3 个选项就要 3 个颜色，少一个报错 `--colors 长度(X) 必须与选项数(Y) 一致`；传 colors 自动开启 `highlightValidData: true`
 - **dropdown 用英文逗号分隔 不是中文「，」**：`--options` CSV 解析器只识别 ASCII `,`，中文逗号会让多选项合并成一个，容易踩
 - **filter-view 条件已可用 CLI 写**：用 `filter-view condition create/update`（按列字母 `--condition-id` 定位）；多维表格（非电子表格）的复杂条件仍走 **`feishu-cli bitable view view-filter-set`**
@@ -233,17 +237,19 @@ feishu-cli sheet filter-view list --token $TOKEN --sheet-id $SHEET -o json | \
 | 创建 / 元信息 | `create` / `get` / `meta` / `list-sheets` |
 | 读取（普通 + 富文本） | `read` / `read-plain` / `read-rich` |
 | 写入 / 追加 / 插入 / 清除 | `write` / `write-rich` / `append` / `append-rich` / `insert` / `clear` |
-| 按列 dtype 类型保真写入（日期写 Excel 序列号+日期 formatter 成真日期、数字保数值、文本 @ 防误判） | `table-put`（pandas to_json(orient=split) 形状 JSON） |
-| 按列类型保真读取（数字/日期/布尔自动推断 dtype，输出与 table-put 输入对称，支持 get→改→put round-trip） | `table-get`（`--range` 指定区域，缺省读整表自动裁空行空列；`--no-header` 首行按数据处理） |
-| 行列管理 | `add-rows` / `add-cols` / `insert-rows` / `delete-rows` / `delete-cols` |
-| 工作表管理 | `add-sheet` / `copy-sheet` / `delete-sheet` |
+| 按列 dtype 类型保真写入（日期写 Excel 序列号+日期 formatter 成真日期、数字保数值、文本 @ 防误判） | `table-put`（pandas to_json(orient=split) 形状 JSON；`--mode append` 写到已有数据之后、`--start-cell C3` 指定起点、网格不足自动扩容；日期时间保留时分秒） |
+| 按列类型保真读取（数字/日期/布尔自动推断 dtype，输出与 table-put 输入对称，支持 get→改→put round-trip） | `table-get`（`--range` 指定区域，缺省读整表自动裁空行空列；`--no-header` 首行按数据处理；带时间的日期列 formats 为 `yyyy-mm-dd hh:mm:ss`） |
+| 行列管理 | `add-rows` / `add-cols` / `insert-rows` / `insert-cols` / `delete-rows` / `delete-cols`（`--range "3:5"`/`"B:D"`，1 起始两端包含；或 `--start/--end` 0 起始不含 end；删除支持 `--dry-run`） |
+| 隐藏行列 / 行高列宽 / 移动行列 | `update-dimension --range "3:5" --hidden` / `--size 40`；`move-dimension --range "2:3" --target 5`（移到原第 5 行之前） |
+| 工作表管理 | `add-sheet` / `copy-sheet` / `delete-sheet`（`--dry-run`）/ `update-sheet`（改名、隐藏、位置、冻结）/ `freeze --rows 1 --cols 1` |
 | 单范围样式 / 合并 / 保护 | `style` / `merge` / `unmerge` / `protect` / `unprotect`（多范围批量样式走本 skill `batch-set-style`） |
-| 查找 / 替换 / 简单筛选 | `find` / `replace` / `filter`（注意：与 `filter-view` 不同，`filter` 是临时筛选） |
+| 查找 / 替换 / 简单筛选 | `find` / `replace`（`--regex` 正则替换）/ `filter create/update/get/delete`（create/update 需 `--col` + `--filter-type`；与 `filter-view` 不同，`filter` 是子表唯一的临时筛选） |
 | 导出 / Markdown 导入 | `export`（XLSX/CSV/MD）/ `import-md`（用法见 `references/basic-commands.md`） |
 | 浮动图片与单元格写图 | `image add/get/update/list/delete/media-upload/write-image/write-batch`（示例见上文） |
 | 多维表格的视图过滤/排序/分组 | `feishu-cli bitable view view-*-set`（语义更强，能配条件） |
 
 > 速查：`feishu-cli sheet --help`。整表结构化处理优先考虑 `table-get` / `table-put`；只改已知区域时使用范围读写命令。
+> 行列命令的索引口径、`write`/`append` 自动分批、数字精度说明见 `references/basic-commands.md`。
 
 ## 权限要求
 
