@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -146,14 +147,26 @@ func extractBoardNodeIDs(whiteboardID, userAccessToken string) ([]string, error)
 		return nil, fmt.Errorf("获取节点失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
+	return parseBoardNodeIDs(resp.Data.Nodes)
+}
+
+// parseBoardNodeIDs 从 data.nodes 中提取节点 ID。
+// 空画板的响应是 {"code":0,"data":{}}——没有 nodes 字段（官方 483043c8 同样按空处理），
+// 此时 RawMessage 为空，必须直接返回空列表，不能交给 json.Unmarshal（会报 unexpected end of JSON input）。
+func parseBoardNodeIDs(raw json.RawMessage) ([]string, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return []string{}, nil
+	}
+
 	// nodes 可能是 map[string]any 格式（key 就是 node ID）
 	var nodesMap map[string]json.RawMessage
-	if err := json.Unmarshal(resp.Data.Nodes, &nodesMap); err != nil {
+	if err := json.Unmarshal(raw, &nodesMap); err != nil {
 		// 也可能是数组格式，尝试解析为数组
 		var nodesArray []struct {
 			ID string `json:"id"`
 		}
-		if err2 := json.Unmarshal(resp.Data.Nodes, &nodesArray); err2 != nil {
+		if err2 := json.Unmarshal(raw, &nodesArray); err2 != nil {
 			return nil, fmt.Errorf("解析节点数据失败: map 解析=%w, 数组解析=%v", err, err2)
 		}
 		ids := make([]string, 0, len(nodesArray))
