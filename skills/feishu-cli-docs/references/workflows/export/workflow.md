@@ -166,7 +166,11 @@ feishu-cli doc media-download <token> -o large.bin --timeout 30m
 | `--doc-token` + `--doc-type` | 文档内嵌素材所需归属信息 | docx |
 | `--extra` | 原始 extra JSON，优先级高于上两项 | 空 |
 | `--timeout` | 下载超时（支持 `10m` / `30m` / `1h`） | `5m` |
-| `-o, --output` | 输出路径 | token 同名 |
+| `-o, --output` | 输出路径；无扩展名时按下载内容识别类型自动补扩展名（png/jpg/pdf/docx/xlsx/pptx/zip/mp4/txt 等） | token 同名 |
+| `--overwrite` | 目标文件已存在时覆盖；不加时拒绝覆盖并以退出码 2 报错 | false |
+
+下载先写入同目录临时文件，识别类型、检查覆盖后再原子改名，失败不会留下半截文件。
+HTTP 403 时错误信息会提示补 `--doc-token`（文档内嵌素材按文档鉴权）并确认当前身份对文档有下载权限。
 
 Token 已登录优先 User Token，未登录回落 App Token。
 
