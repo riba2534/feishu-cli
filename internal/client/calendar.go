@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkcalendar "github.com/larksuite/oapi-sdk-go/v3/service/calendar/v4"
 )
 
@@ -43,11 +44,45 @@ type CalendarEvent struct {
 	RecurringID string `json:"recurring_event_id,omitempty"`
 	Recurrence  string `json:"recurrence,omitempty"` // 重复日程规则（RFC5545 RRULE）
 	IsException bool   `json:"is_exception,omitempty"`
-	AppLink     string `json:"app_link,omitempty"`
-	Color       int    `json:"color,omitempty"`
-	// IsAllDay 标记全天日程。为 true 时 EndTime 已归一化为**包含端**日期
-	// （服务端 end.date 是排他的次日），否则用户会看到比实际晚一天的结束日。
+	// AppLink 是带**查看者本人** calendarId 的客户端跳转链接，不能用于分享给他人；
+	// 分享日程请用 ShareLink（events/share_info）。保留字段仅为 JSON 兼容。
+	AppLink string `json:"app_link,omitempty"`
+	Color   int    `json:"color,omitempty"`
+	// IsAllDay 标记全天日程。为 true 时 StartTime/EndTime 是 YYYY-MM-DD 日期，
+	// 且 EndTime 已归一化为**包含端**日期（服务端 end.date 是排他的次日），
+	// 否则用户会看到比实际晚一天的结束日。
 	IsAllDay bool `json:"is_all_day,omitempty"`
+
+	FreeBusyStatus  string          `json:"free_busy_status,omitempty"`
+	SelfRSVPStatus  string          `json:"self_rsvp_status,omitempty"` // 当前身份对该日程的答复状态
+	AttendeeAbility string          `json:"attendee_ability,omitempty"`
+	Vchat           *EventVchat     `json:"vchat,omitempty"`
+	Reminders       []EventReminder `json:"reminders,omitempty"`
+	EventOrganizer  *EventOrganizer `json:"event_organizer,omitempty"`
+	ShareLink       string          `json:"share_link,omitempty"` // 日程分享链接（需显式请求，见 GetEventShareLink）
+
+	// 以下为重复日程分类/截断所需的原始时间，不输出到 JSON
+	rawStart *larkcalendar.TimeInfo
+	rawEnd   *larkcalendar.TimeInfo
+}
+
+// EventVchat 日程上的视频会议信息
+type EventVchat struct {
+	VcType      string `json:"vc_type,omitempty"`
+	IconType    string `json:"icon_type,omitempty"`
+	Description string `json:"description,omitempty"`
+	MeetingURL  string `json:"meeting_url,omitempty"`
+}
+
+// EventReminder 日程提醒（开始前 N 分钟；负数表示开始后）
+type EventReminder struct {
+	Minutes int `json:"minutes"`
+}
+
+// EventOrganizer 日程组织者
+type EventOrganizer struct {
+	UserID      string `json:"user_id,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
 }
 
 // ListCalendars 列出日历
@@ -112,6 +147,8 @@ type CreateEventParams struct {
 	TimeZone    string
 	Location    string
 	Recurrence  string // 重复日程规则（RFC5545 RRULE），如 FREQ=WEEKLY;BYDAY=MO
+	// WithVChat 为 true 时同时创建飞书视频会议（vchat.vc_type=vc），日程详情会带会议链接
+	WithVChat bool
 }
 
 // CreateEvent 创建日程
@@ -157,6 +194,10 @@ func CreateEvent(params *CreateEventParams, userAccessToken string) (*CalendarEv
 		eventBuilder.Recurrence(params.Recurrence)
 	}
 
+	if params.WithVChat {
+		eventBuilder.Vchat(larkcalendar.NewVchatBuilder().VcType("vc").Build())
+	}
+
 	req := larkcalendar.NewCreateCalendarEventReqBuilder().
 		CalendarId(params.CalendarID).
 		CalendarEvent(eventBuilder.Build()).
@@ -178,32 +219,77 @@ func CreateEvent(params *CreateEventParams, userAccessToken string) (*CalendarEv
 	return convertEvent(resp.Data.Event), nil
 }
 
-// GetEvent 获取日程详情
+// GetEvent 获取日程详情（GET /calendars/{calendar_id}/events/{event_id}）。
+//
+// 直接走 HTTP 而非 SDK：SDK 结构缺 self_rsvp_status；业务错误（如 193001 日程不存在）
+// 随 HTTP 400 下发时也能先按业务码解析。重复日程的实例 ID（{uid}_{原始时间戳}）同样可读，
+// 返回体带 recurring_event_id / is_exception，供删除/更新前判断重复日程类型。
 func GetEvent(calendarID, eventID string, userAccessToken string) (*CalendarEvent, error) {
-	client, err := GetClient()
+	cli, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
-
-	req := larkcalendar.NewGetCalendarEventReqBuilder().
-		CalendarId(calendarID).
-		EventId(eventID).
-		Build()
-
-	resp, err := client.Calendar.CalendarEvent.Get(Context(), req, UserTokenOption(userAccessToken)...)
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Get(Context(), calendarEventPath(calendarID, eventID), nil, tokenType, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("获取日程详情失败: %w", err)
 	}
-
-	if !resp.Success() {
-		return nil, fmt.Errorf("获取日程详情失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	if err := CheckAPIResponse("获取日程详情", resp); err != nil {
+		return nil, err
 	}
-
-	if resp.Data == nil || resp.Data.Event == nil {
+	var apiResp struct {
+		Data struct {
+			Event *calendarEventWire `json:"event"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析日程详情失败: %w", err)
+	}
+	if apiResp.Data.Event == nil {
 		return nil, fmt.Errorf("日程不存在")
 	}
+	ev := convertEvent(&apiResp.Data.Event.CalendarEvent)
+	ev.SelfRSVPStatus = apiResp.Data.Event.SelfRsvpStatus
+	return ev, nil
+}
 
-	return convertEvent(resp.Data.Event), nil
+// GetEventShareLink 获取日程分享链接（POST /calendars/{calendar_id}/events/{event_id}/share_info）。
+//
+// 分享日程给他人/群/文档要用这个链接；app_link 带查看者本人的 calendarId，不适合分享。
+func GetEventShareLink(calendarID, eventID string, userAccessToken string) (string, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	var resp *larkcore.ApiResp
+	// share_info 实测容易触发 190010（日历操作限流），只读接口，退避重试几次
+	err = withCalendarRateLimitRetry(func() error {
+		r, err := cli.Post(Context(), calendarEventPath(calendarID, eventID)+"/share_info", map[string]any{}, tokenType, opts...)
+		if err != nil {
+			return fmt.Errorf("获取日程分享链接失败: %w", err)
+		}
+		if err := CheckAPIResponse("获取日程分享链接", r); err != nil {
+			return err
+		}
+		resp = r
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	var apiResp struct {
+		Data struct {
+			ShareLink string `json:"share_link"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return "", fmt.Errorf("解析日程分享链接失败: %w", err)
+	}
+	if apiResp.Data.ShareLink == "" {
+		return "", fmt.Errorf("获取日程分享链接失败: 服务端未返回 share_link")
+	}
+	return apiResp.Data.ShareLink, nil
 }
 
 // ListEventsParams 列出日程的参数
@@ -285,6 +371,14 @@ type UpdateEventParams struct {
 	EndTime     string // RFC3339 格式
 	Location    string
 	Recurrence  string // 重复日程规则（RFC5545 RRULE），如 FREQ=WEEKLY;BYDAY=MO
+	// NeedNotification 为 nil 时不传（服务端默认通知参与人）
+	NeedNotification *bool
+}
+
+// HasFields 报告是否至少有一个待更新字段（NeedNotification 不算）。
+func (p *UpdateEventParams) HasFields() bool {
+	return p.Summary != "" || p.Description != "" || p.StartTime != "" || p.EndTime != "" ||
+		p.Location != "" || p.Recurrence != ""
 }
 
 // UpdateEvent 更新日程（使用 Patch 方式）
@@ -337,6 +431,10 @@ func UpdateEvent(params *UpdateEventParams, userAccessToken string) (*CalendarEv
 		eventBuilder.Recurrence(params.Recurrence)
 	}
 
+	if params.NeedNotification != nil {
+		eventBuilder.NeedNotification(*params.NeedNotification)
+	}
+
 	req := larkcalendar.NewPatchCalendarEventReqBuilder().
 		CalendarId(params.CalendarID).
 		EventId(params.EventID).
@@ -359,37 +457,78 @@ func UpdateEvent(params *UpdateEventParams, userAccessToken string) (*CalendarEv
 	return convertEvent(resp.Data.Event), nil
 }
 
-// DeleteEvent 删除日程
+// DeleteEventOptions 删除日程的可选参数
+type DeleteEventOptions struct {
+	// NeedNotification 为 nil 时不传（服务端默认通知参与人）
+	NeedNotification *bool
+	// DeleteException 为 true 时把例外日程彻底销毁（is_deleted=true），而不是留下 cancelled 占位；
+	// 仅用于 --apply-to all / this-and-following 的例外清理。
+	DeleteException bool
+}
+
+// larkErrCalendarEventDeleted 日程已被删除（重复清理时视为成功，保持幂等）
+const larkErrCalendarEventDeleted = 193003
+
+// DeleteEvent 删除日程。
+//
+// 语义（实测）：传主日程 ID（{uid}_0）删除整条重复序列，但**不级联**已单独修改过的例外日程；
+// 传实例 ID（{uid}_{原始时间戳}）只删除这一次（服务端把它标记为 cancelled 例外）。
 func DeleteEvent(calendarID, eventID string, userAccessToken string) error {
-	client, err := GetClient()
+	return DeleteEventWithOptions(calendarID, eventID, DeleteEventOptions{}, userAccessToken)
+}
+
+// DeleteEventWithOptions 删除日程（DELETE /calendars/{calendar_id}/events/{event_id}）。
+// 193003（日程已删除）视为成功，使重复执行/并发清理幂等。
+func DeleteEventWithOptions(calendarID, eventID string, opts DeleteEventOptions, userAccessToken string) error {
+	cli, err := GetClient()
 	if err != nil {
 		return err
 	}
-
-	req := larkcalendar.NewDeleteCalendarEventReqBuilder().
-		CalendarId(calendarID).
-		EventId(eventID).
-		Build()
-
-	resp, err := client.Calendar.CalendarEvent.Delete(Context(), req, UserTokenOption(userAccessToken)...)
-	if err != nil {
-		return fmt.Errorf("删除日程失败: %w", err)
+	q := url.Values{}
+	if opts.NeedNotification != nil {
+		q.Set("need_notification", strconv.FormatBool(*opts.NeedNotification))
 	}
-
-	if !resp.Success() {
-		return fmt.Errorf("删除日程失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	if opts.DeleteException {
+		q.Set("delete_exception", "true")
 	}
-
-	return nil
+	apiPath := calendarEventPath(calendarID, eventID)
+	if len(q) > 0 {
+		apiPath += "?" + q.Encode()
+	}
+	tokenType, reqOpts := resolveTokenOpts(userAccessToken)
+	return withCalendarRateLimitRetry(func() error {
+		resp, err := cli.Delete(Context(), apiPath, nil, tokenType, reqOpts...)
+		if err != nil {
+			return fmt.Errorf("删除日程失败: %w", err)
+		}
+		if err := CheckAPIResponse("删除日程", resp); err != nil {
+			if apiErr, ok := AsAPIError(err); ok && apiErr.Code == larkErrCalendarEventDeleted {
+				return nil
+			}
+			return err
+		}
+		return nil
+	})
 }
 
-// 辅助函数：将 RFC3339 时间格式转换为时间戳字符串
+// 辅助函数：将时间输入转换为秒级时间戳字符串。
+// 支持 RFC3339（推荐，带时区）、不带时区的 "YYYY-MM-DD HH:MM[:SS]" / "YYYY-MM-DDTHH:MM[:SS]"
+// （按本地时区）、YYYY-MM-DD（当天 00:00）以及 Unix 秒/毫秒。
 func parseTimeToTimestamp(timeStr string) (string, error) {
-	t, err := time.Parse(time.RFC3339, timeStr)
+	t, err := ParseTimeInput(timeStr, false)
 	if err != nil {
 		return "", err
 	}
 	return strconv.FormatInt(t.Unix(), 10), nil
+}
+
+// ParseEventTimeToUnix 解析日历写命令的时间参数（规则同 parseTimeToTimestamp），返回 Unix 秒。
+func ParseEventTimeToUnix(timeStr string) (int64, error) {
+	t, err := ParseTimeInput(timeStr, false)
+	if err != nil {
+		return 0, err
+	}
+	return t.Unix(), nil
 }
 
 // 辅助函数：将时间戳字符串转换为 RFC3339 格式
@@ -543,8 +682,8 @@ func MgetInstanceRelationInfo(calendarID string, instanceIDs []string, needNotes
 		return nil, fmt.Errorf("查询日历事件实例关联信息失败: %w", err)
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("查询日历事件实例关联信息失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("查询日历事件实例关联信息", resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -722,8 +861,8 @@ func SearchEventsWithParams(params SearchEventsParams, userAccessToken string) (
 	if err != nil {
 		return nil, fmt.Errorf("搜索日程失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("搜索日程失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("搜索日程", resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -841,6 +980,111 @@ func AddEventAttendees(calendarID, eventID string, attendees []*EventAttendee, u
 	return nil
 }
 
+// AttendeeRef 待添加/移除的参与人（按 ID 前缀识别类型）
+type AttendeeRef struct {
+	Type            string `json:"type"`                        // user / chat / resource / third_party
+	UserID          string `json:"user_id,omitempty"`           // ou_
+	ChatID          string `json:"chat_id,omitempty"`           // oc_
+	RoomID          string `json:"room_id,omitempty"`           // omm_
+	ThirdPartyEmail string `json:"third_party_email,omitempty"` // 外部邮箱
+	AttendeeID      string `json:"-"`                           // attendee list 返回的 attendee_id（仅移除时使用）
+}
+
+// ParseAttendeeRefs 按前缀把 ID 列表解析为参与人：ou_→用户、oc_→群、omm_→会议室、含 @ →外部邮箱。
+// allowAttendeeID 为 true 时，其余 ID 视为 attendee list 返回的 attendee_id（仅移除场景可用）；
+// 否则报错。重复 ID 自动去重。
+func ParseAttendeeRefs(ids []string, allowAttendeeID bool) ([]*AttendeeRef, error) {
+	seen := map[string]bool{}
+	var out []*AttendeeRef
+	for _, raw := range ids {
+		id := strings.TrimSpace(raw)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		switch {
+		case strings.HasPrefix(id, "ou_"):
+			out = append(out, &AttendeeRef{Type: "user", UserID: id})
+		case strings.HasPrefix(id, "oc_"):
+			out = append(out, &AttendeeRef{Type: "chat", ChatID: id})
+		case strings.HasPrefix(id, "omm_"):
+			out = append(out, &AttendeeRef{Type: "resource", RoomID: id})
+		case strings.Contains(id, "@"):
+			out = append(out, &AttendeeRef{Type: "third_party", ThirdPartyEmail: id})
+		case allowAttendeeID:
+			out = append(out, &AttendeeRef{AttendeeID: id})
+		default:
+			return nil, fmt.Errorf("无法识别的参与人 ID %q：用户用 ou_ 开头的 open_id，群用 oc_，会议室用 omm_，外部参与人用邮箱", id)
+		}
+	}
+	return out, nil
+}
+
+// AttendeeRefsToEventAttendees 转为 AddEventAttendees 的入参
+func AttendeeRefsToEventAttendees(refs []*AttendeeRef) []*EventAttendee {
+	out := make([]*EventAttendee, 0, len(refs))
+	for _, r := range refs {
+		if r == nil || r.Type == "" {
+			continue
+		}
+		out = append(out, &EventAttendee{
+			Type:            r.Type,
+			UserID:          r.UserID,
+			ChatID:          r.ChatID,
+			RoomID:          r.RoomID,
+			ThirdPartyEmail: r.ThirdPartyEmail,
+		})
+	}
+	return out
+}
+
+// RemoveEventAttendees 移除日程参与人
+// （POST /calendars/{calendar_id}/events/{event_id}/attendees/batch_delete）。
+// 前缀可识别的 ID 走 delete_ids，其余视为 attendee_id 走 attendee_ids。
+func RemoveEventAttendees(calendarID, eventID string, refs []*AttendeeRef, needNotification bool, userAccessToken string) error {
+	var deleteIDs []map[string]string
+	var attendeeIDs []string
+	for _, r := range refs {
+		if r == nil {
+			continue
+		}
+		switch r.Type {
+		case "user":
+			deleteIDs = append(deleteIDs, map[string]string{"type": "user", "user_id": r.UserID})
+		case "chat":
+			deleteIDs = append(deleteIDs, map[string]string{"type": "chat", "chat_id": r.ChatID})
+		case "resource":
+			deleteIDs = append(deleteIDs, map[string]string{"type": "resource", "room_id": r.RoomID})
+		case "third_party":
+			deleteIDs = append(deleteIDs, map[string]string{"type": "third_party", "third_party_email": r.ThirdPartyEmail})
+		default:
+			if r.AttendeeID != "" {
+				attendeeIDs = append(attendeeIDs, r.AttendeeID)
+			}
+		}
+	}
+	if len(deleteIDs) == 0 && len(attendeeIDs) == 0 {
+		return fmt.Errorf("移除日程参与人失败: 没有可移除的参与人")
+	}
+	body := map[string]any{"need_notification": needNotification}
+	if len(deleteIDs) > 0 {
+		body["delete_ids"] = deleteIDs
+	}
+	if len(attendeeIDs) > 0 {
+		body["attendee_ids"] = attendeeIDs
+	}
+	cli, err := GetClient()
+	if err != nil {
+		return err
+	}
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Post(Context(), calendarEventPath(calendarID, eventID)+"/attendees/batch_delete?user_id_type=open_id", body, tokenType, opts...)
+	if err != nil {
+		return fmt.Errorf("移除日程参与人失败: %w", err)
+	}
+	return CheckAPIResponse("移除日程参与人", resp)
+}
+
 // ListEventAttendees 列出日程参与人
 func ListEventAttendees(calendarID, eventID string, pageSize int, pageToken string, userAccessToken string) ([]*EventAttendee, string, bool, error) {
 	client, err := GetClient()
@@ -871,6 +1115,12 @@ func ListEventAttendees(calendarID, eventID string, pageSize int, pageToken stri
 	var attendees []*EventAttendee
 	if resp.Data != nil && resp.Data.Items != nil {
 		for _, item := range resp.Data.Items {
+			// 群参与人的 rsvp_status 没有语义（服务端恒返回 needs_action，成员各自的答复要查群成员），
+			// 不输出以免被误读为"群未答复"（对齐官方 calendar_list_attendees projectAttendee）。
+			rsvp := StringVal(item.RsvpStatus)
+			if StringVal(item.Type) == "chat" {
+				rsvp = ""
+			}
 			attendees = append(attendees, &EventAttendee{
 				Type:            StringVal(item.Type),
 				AttendeeID:      StringVal(item.AttendeeId),
@@ -879,7 +1129,7 @@ func ListEventAttendees(calendarID, eventID string, pageSize int, pageToken stri
 				RoomID:          StringVal(item.RoomId),
 				ThirdPartyEmail: StringVal(item.ThirdPartyEmail),
 				DisplayName:     StringVal(item.DisplayName),
-				RsvpStatus:      StringVal(item.RsvpStatus),
+				RsvpStatus:      rsvp,
 				IsOptional:      BoolVal(item.IsOptional),
 				IsOrganizer:     BoolVal(item.IsOrganizer),
 				IsExternal:      BoolVal(item.IsExternal),
@@ -897,45 +1147,184 @@ func ListEventAttendees(calendarID, eventID string, pageSize int, pageToken stri
 	return attendees, nextPageToken, hasMore, nil
 }
 
-// ListFreebusy 查询忙闲信息
+// ListFreebusy 查询单个用户的忙闲（已按开始时间排序并合并重叠/相邻区间）。
+// startTime/endTime 为 RFC3339；userID 为 open_id。
 func ListFreebusy(startTime, endTime string, userID string, userAccessToken string) ([]*FreebusyInfo, error) {
-	client, err := GetClient()
+	if strings.TrimSpace(userID) == "" {
+		return nil, fmt.Errorf("查询忙闲信息失败: 缺少用户 ID")
+	}
+	raw, err := ListFreebusyBatch(startTime, endTime, []string{userID}, userAccessToken)
 	if err != nil {
 		return nil, err
 	}
+	return MergeFreebusyIntervals(raw[userID]), nil
+}
 
-	bodyBuilder := larkcalendar.NewListFreebusyReqBodyBuilder().
-		TimeMin(startTime).
-		TimeMax(endTime)
+// FreebusyRawItem 未合并的忙碌时段（含当前用户对该日程的答复状态）
+type FreebusyRawItem struct {
+	StartTime  string `json:"start_time"`
+	EndTime    string `json:"end_time"`
+	RSVPStatus string `json:"rsvp_status,omitempty"`
+}
 
-	if userID != "" {
-		bodyBuilder.UserId(userID)
+// ListFreebusyBatch 批量查询多个用户的忙闲（POST /open-apis/calendar/v4/freebusy/batch）。
+// 返回 user_id → 原始忙碌时段（服务端顺序，未合并，可能重叠）。userIDs 为 open_id。
+func ListFreebusyBatch(startTime, endTime string, userIDs []string, userAccessToken string) (map[string][]*FreebusyRawItem, error) {
+	if len(userIDs) == 0 {
+		return nil, fmt.Errorf("查询忙闲信息失败: 缺少用户 ID")
 	}
-
-	req := larkcalendar.NewListFreebusyReqBuilder().
-		Body(bodyBuilder.Build()).
-		Build()
-
-	resp, err := client.Calendar.Freebusy.List(Context(), req, UserTokenOption(userAccessToken)...)
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	body := map[string]any{
+		"time_min":         startTime,
+		"time_max":         endTime,
+		"user_ids":         userIDs,
+		"need_rsvp_status": true,
+	}
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Post(Context(), "/open-apis/calendar/v4/freebusy/batch?user_id_type=open_id", body, tokenType, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("查询忙闲信息失败: %w", err)
 	}
-
-	if !resp.Success() {
-		return nil, fmt.Errorf("查询忙闲信息失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	if err := CheckAPIResponse("查询忙闲信息", resp); err != nil {
+		return nil, err
 	}
+	var apiResp struct {
+		Data struct {
+			FreebusyLists []struct {
+				UserID        string             `json:"user_id"`
+				FreebusyItems []*FreebusyRawItem `json:"freebusy_items"`
+			} `json:"freebusy_lists"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析忙闲信息失败: %w", err)
+	}
+	out := make(map[string][]*FreebusyRawItem, len(userIDs))
+	for _, u := range userIDs {
+		out[u] = nil
+	}
+	for _, l := range apiResp.Data.FreebusyLists {
+		if l.UserID == "" {
+			continue
+		}
+		items := make([]*FreebusyRawItem, 0, len(l.FreebusyItems))
+		for _, it := range l.FreebusyItems {
+			if it == nil || it.StartTime == "" || it.EndTime == "" {
+				continue
+			}
+			items = append(items, it)
+		}
+		sort.SliceStable(items, func(i, j int) bool { return items[i].StartTime < items[j].StartTime })
+		out[l.UserID] = items
+	}
+	return out, nil
+}
 
-	var result []*FreebusyInfo
-	if resp.Data != nil && resp.Data.FreebusyList != nil {
-		for _, item := range resp.Data.FreebusyList {
-			result = append(result, &FreebusyInfo{
-				StartTime: StringVal(item.StartTime),
-				EndTime:   StringVal(item.EndTime),
-			})
+// MergeFreebusyIntervals 按开始时间排序并合并重叠或首尾相接的忙碌区间。
+// 合并不改变"某一时刻是否忙"的结论，但区间数 != 日程数。无法解析的条目被丢弃。
+func MergeFreebusyIntervals(items []*FreebusyRawItem) []*FreebusyInfo {
+	type span struct{ s, e time.Time }
+	arr := make([]span, 0, len(items))
+	for _, it := range items {
+		if it == nil {
+			continue
+		}
+		s, err1 := time.Parse(time.RFC3339, it.StartTime)
+		e, err2 := time.Parse(time.RFC3339, it.EndTime)
+		if err1 != nil || err2 != nil || !e.After(s) {
+			continue
+		}
+		arr = append(arr, span{s, e})
+	}
+	out := make([]*FreebusyInfo, 0, len(arr))
+	if len(arr) == 0 {
+		return out
+	}
+	sort.SliceStable(arr, func(i, j int) bool {
+		if !arr[i].s.Equal(arr[j].s) {
+			return arr[i].s.Before(arr[j].s)
+		}
+		return arr[i].e.Before(arr[j].e)
+	})
+	loc := arr[0].s.Location()
+	merged := []span{arr[0]}
+	for _, cur := range arr[1:] {
+		last := &merged[len(merged)-1]
+		if !cur.s.After(last.e) {
+			if cur.e.After(last.e) {
+				last.e = cur.e
+			}
+			continue
+		}
+		merged = append(merged, cur)
+	}
+	for _, m := range merged {
+		out = append(out, &FreebusyInfo{
+			StartTime: m.s.In(loc).Format(time.RFC3339),
+			EndTime:   m.e.In(loc).Format(time.RFC3339),
+		})
+	}
+	return out
+}
+
+// FreeSlot 空闲时段
+type FreeSlot struct {
+	StartTime string `json:"start_time"`
+	EndTime   string `json:"end_time"`
+	Duration  string `json:"duration"`
+}
+
+// ComputeFreeSlots 计算 [winStart, winEnd] 内不被任一用户忙碌区间覆盖的空闲时段
+// （传入单个用户即为个人空闲，多个用户即为共同空闲）。短于 minDur 的时段被丢弃。
+func ComputeFreeSlots(usersBusy [][]*FreebusyInfo, winStart, winEnd time.Time, minDur time.Duration) []*FreeSlot {
+	var all []*FreebusyRawItem
+	for _, busy := range usersBusy {
+		for _, b := range busy {
+			if b != nil {
+				all = append(all, &FreebusyRawItem{StartTime: b.StartTime, EndTime: b.EndTime})
+			}
 		}
 	}
-
-	return result, nil
+	merged := MergeFreebusyIntervals(all)
+	loc := winStart.Location()
+	out := make([]*FreeSlot, 0)
+	emit := func(from, to time.Time) {
+		if !to.After(from) {
+			return
+		}
+		d := to.Sub(from)
+		if minDur > 0 && d < minDur {
+			return
+		}
+		out = append(out, &FreeSlot{
+			StartTime: from.In(loc).Format(time.RFC3339),
+			EndTime:   to.In(loc).Format(time.RFC3339),
+			Duration:  d.String(),
+		})
+	}
+	cursor := winStart
+	for _, b := range merged {
+		s, _ := time.Parse(time.RFC3339, b.StartTime)
+		e, _ := time.Parse(time.RFC3339, b.EndTime)
+		if s.Before(winStart) {
+			s = winStart
+		}
+		if e.After(winEnd) {
+			e = winEnd
+		}
+		if !e.After(s) {
+			continue
+		}
+		emit(cursor, s)
+		if e.After(cursor) {
+			cursor = e
+		}
+	}
+	emit(cursor, winEnd)
+	return out
 }
 
 // ReplyEvent 回复日程（接受/拒绝/待定）
@@ -1222,13 +1611,26 @@ func convertEvent(event *larkcalendar.CalendarEvent) *CalendarEvent {
 		tz = *event.StartTime.Timezone
 		result.TimeZone = tz
 	}
+	result.rawStart = event.StartTime
+	result.rawEnd = event.EndTime
 
-	// 时间转换
-	if event.StartTime != nil && event.StartTime.Timestamp != nil {
-		result.StartTime = timestampToRFC3339(*event.StartTime.Timestamp, tz)
+	// 时间转换：普通日程是秒级 timestamp；全天日程只有 date（YYYY-MM-DD，时区固定 UTC），
+	// 且 end.date 是**排他**的次日。此前只处理 timestamp，全天日程（如请假）起止输出为空。
+	if event.StartTime != nil {
+		if ts := StringVal(event.StartTime.Timestamp); ts != "" {
+			result.StartTime = timestampToRFC3339(ts, tz)
+		} else if date := StringVal(event.StartTime.Date); date != "" {
+			result.StartTime = date
+			result.IsAllDay = true
+		}
 	}
-	if event.EndTime != nil && event.EndTime.Timestamp != nil {
-		result.EndTime = timestampToRFC3339(*event.EndTime.Timestamp, tz)
+	if event.EndTime != nil {
+		if ts := StringVal(event.EndTime.Timestamp); ts != "" {
+			result.EndTime = timestampToRFC3339(ts, tz)
+		} else if date := StringVal(event.EndTime.Date); date != "" {
+			result.EndTime = exclusiveAllDayEndDate(date)
+			result.IsAllDay = true
+		}
 	}
 	if event.Location != nil && event.Location.Name != nil {
 		result.Location = *event.Location.Name
@@ -1237,5 +1639,38 @@ func convertEvent(event *larkcalendar.CalendarEvent) *CalendarEvent {
 		result.CreateTime = timestampToRFC3339(*event.CreateTime, tz)
 	}
 
+	result.FreeBusyStatus = StringVal(event.FreeBusyStatus)
+	result.AttendeeAbility = StringVal(event.AttendeeAbility)
+	if v := event.Vchat; v != nil {
+		vc := &EventVchat{
+			VcType:      StringVal(v.VcType),
+			IconType:    StringVal(v.IconType),
+			Description: StringVal(v.Description),
+			MeetingURL:  StringVal(v.MeetingUrl),
+		}
+		if *vc != (EventVchat{}) {
+			result.Vchat = vc
+		}
+	}
+	for _, r := range event.Reminders {
+		if r != nil && r.Minutes != nil {
+			result.Reminders = append(result.Reminders, EventReminder{Minutes: *r.Minutes})
+		}
+	}
+	if o := event.EventOrganizer; o != nil && (StringVal(o.UserId) != "" || StringVal(o.DisplayName) != "") {
+		result.EventOrganizer = &EventOrganizer{UserID: StringVal(o.UserId), DisplayName: StringVal(o.DisplayName)}
+	}
+
 	return result
+}
+
+// calendarEventWire 是 GET /events/{id} 的 data.event：SDK 结构缺 self_rsvp_status，额外补一个字段。
+type calendarEventWire struct {
+	larkcalendar.CalendarEvent
+	SelfRsvpStatus string `json:"self_rsvp_status,omitempty"`
+}
+
+func calendarEventPath(calendarID, eventID string) string {
+	return fmt.Sprintf("/open-apis/calendar/v4/calendars/%s/events/%s",
+		url.PathEscape(calendarID), url.PathEscape(eventID))
 }
