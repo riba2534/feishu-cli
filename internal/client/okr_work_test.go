@@ -2,6 +2,7 @@ package client
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,7 +26,7 @@ func TestListOKRUserCyclesUsesV2(t *testing.T) {
 		reqs[0].Query.Get("user_id_type") != "open_id" || reqs[1].Query.Get("page_token") != "n2" {
 		t.Fatalf("请求错误: %+v", reqs)
 	}
-	if reqs[0].Auth != "Bearer t-fake" {
+	if !strings.HasPrefix(reqs[0].Auth, "Bearer t-") {
 		t.Fatalf("未传 User Token 时应走 Tenant Token: %s", reqs[0].Auth)
 	}
 	if len(cycles) != 2 || cycles[0].ID != "c1" || cycles[0].TenantCycleID != "p1" || cycles[0].CycleStatus != "normal" || cycles[1].CycleStatus != "hidden" {

@@ -79,12 +79,12 @@ func setupWorkCmdTest(t *testing.T, userToken string, handler func(w http.Respon
 	t.Cleanup(restore)
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	t.Setenv("FEISHU_APP_ID", "cli_test")
+	t.Setenv("FEISHU_APP_ID", "cli_work_test")
 	t.Setenv("FEISHU_APP_SECRET", "test_secret")
 	t.Setenv("FEISHU_USER_ACCESS_TOKEN", userToken)
 	t.Setenv("FEISHU_PROFILE", "")
 	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(cfgPath, []byte(fmt.Sprintf("app_id: cli_test\napp_secret: test_secret\nbase_url: %q\n", srv.URL)), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(fmt.Sprintf("app_id: cli_work_test\napp_secret: test_secret\nbase_url: %q\n", srv.URL)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := config.Init(cfgPath); err != nil {
