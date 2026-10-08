@@ -8,7 +8,7 @@
 
 1. [核心概念](#核心概念)
 2. [命令速查](#命令速查)
-3. [cycle list — 查租户 OKR 周期](#cycle-list--查租户-okr-周期)
+3. [cycle list — 查用户 OKR 周期](#cycle-list--查用户-okr-周期)
 4. [progress list — 查进展记录列表](#progress-list--查进展记录列表)
 5. [progress create — 创建进展记录](#progress-create--创建进展记录)
 6. [关键踩坑](#-关键踩坑)
@@ -26,21 +26,23 @@
 
 | 层级 | 对象 | 说明 | 本技能命令 |
 |------|------|------|-----------|
-| 1 | **Period（周期）** | 租户级全局，如 2026-Q1。所有成员看到的周期一致 | `cycle list` |
+| 1 | **Cycle（周期）** | 每个用户有自己的周期（v2 `cycles`，`tenant_cycle_id` 指向租户级周期 period） | `cycle list` |
 | 2 | **Objective（目标 O）** | 一个周期内的目标，归属用户 | 仅做引用（--objective-id） |
 | 3 | **Key Result（关键结果 KR）** | O 下的可量化结果 | 仅做引用（--key-result-id） |
 | 4 | **Progress Record（进展记录）** | O 或 KR 下的一条进展更新 | `progress list/create` |
 
 **关键约束**：
 
-- **周期是租户级的**，`cycle list` **没有 user_id 参数**——所有人看到的周期相同。你不能"查某人的 OKR 周期"，只能"查租户当前都有哪些周期"。
+- **周期 ID 有两种**：v2 **用户周期 ID**（`okr/v2/cycles?user_id=`，`cycle detail` 与创建目标只认它）和 v1 **租户周期 ID**（`okr/v1/periods`，带名称）。
+  `cycle list` 默认返回当前登录用户（或 `--user-id` 指定用户）的用户周期；`--tenant` 才返回租户周期（旧行为，其 ID 不能用于 `cycle detail`）。
 - **Objective ID 和 Key Result ID 二选一**（不是同时）：每条进展记录只能挂在一个目标 *或* 一个关键结果上。
 - **进展记录可以独立于周期**：API 不需要传 period_id，但通常一个 O/KR 都属于一个 period。
 
 ### 身份：默认 Bot（`--as` 可切换）
 
 OKR 命令组默认 **`--as bot`**（App/Tenant Token，无需 `auth login`，cron/无人值守友好）。
-身份墙**按端点分化**（实测）：仅 `cycle list`（v1 periods）只收 Tenant Token；其余端点 user/tenant 双支持，
+身份墙**按端点分化**（实测）：仅 `cycle list --tenant`（v1 periods）只收 Tenant Token（user 报 99991668）；
+`cycle list` 默认走的 v2 cycles 与其余端点 user/tenant 双支持（缺 scope 时分别报 99991672 / 99991679），
 用 `--as user|auto` 可切换（详见下方「身份选择」表）。
 
 - Tenant 路线：在飞书开放平台为应用开通 OKR tenant scopes，本地配置 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`
@@ -50,7 +52,7 @@ OKR 命令组默认 **`--as bot`**（App/Tenant Token，无需 `auth login`，cr
 
 | 子命令 | 说明 | 必填参数 |
 |--------|------|---------|
-| `okr cycle list` | 列出当前租户所有 OKR 周期 | — |
+| `okr cycle list` | 列出用户的 OKR 周期（默认当前登录用户） | — |
 | `okr cycle detail <cycle_id>` | 周期详情：全部目标 + 关键结果（含 ID，便于后续挂进展） | 周期 ID |
 | `okr progress list` | 列出某 O/KR 下的所有进展 | `--objective-id` *或* `--key-result-id` |
 | `okr progress get <progress_id>` | 单条进展详情 | 进展 ID |
@@ -67,26 +69,33 @@ OKR 命令组默认 **`--as bot`**（App/Tenant Token，无需 `auth login`，cr
 | `user` | User Token（登录时需带 okr scope，否则 99991679） |
 | `auto` | User 优先、Tenant 兜底 |
 
-> **身份墙按端点分化（实测）**：`cycle list`（v1 periods）**只收 Tenant Token**（user 身份报 99991668）；
-> `cycle detail` / `progress` 系列同时支持 user/tenant 身份。默认 `bot` 对所有端点都成立。
+> **身份墙按端点分化（实测）**：`cycle list --tenant`（v1 periods）**只收 Tenant Token**（user 身份报 99991668）；
+> `cycle list`（v2 cycles）、`cycle detail` / `progress` 系列同时支持 user/tenant 身份。默认 `bot` 对所有端点都成立。
 
-## cycle list — 查租户 OKR 周期
+## cycle list — 查用户 OKR 周期
 
 ```bash
-# 默认文本输出（带名称 + 时间 + 状态）
+# 查自己的周期（--user-id 默认取当前登录用户，请求身份仍按 --as，默认 bot）
 feishu-cli okr cycle list
 
-# JSON 输出（脚本消费）
-feishu-cli okr cycle list --output json
+# 查某人的周期，只保留与 2026 上半年重叠的
+feishu-cli okr cycle list --user-id ou_xxx --time-range 2026-01--2026-06 --output json
+
+# 租户级周期（v1 periods，带名称；ID 不能用于 cycle detail）
+feishu-cli okr cycle list --tenant
 ```
 
-**输出字段**：
-- `id` — 周期 ID（用于 cycle detail，以及后文创建 O/KR 的 api 配方）
-- `zh_name` / `en_name` — 周期名称（如 "2026-Q1"）
-- `start_time` / `end_time` — 周期起止时间
-- `cycle_status` — 周期状态官方 wire：`default`(0) / `normal`(1) / `invalid`(2) / `hidden`(3)
+**输出字段**（默认 v2 用户周期）：
+- `id` — 用户周期 ID（用于 `cycle detail`，以及后文创建 O/KR 的 api 配方）
+- `tenant_cycle_id` — 对应的租户周期 ID
+- `owner` — 周期所属用户；`score` — 周期得分
+- `start_time` / `end_time` — 周期起止时间（本地时区）
+- `cycle_status` — `default`(0) / `normal`(1) / `invalid`(2) / `hidden`(3)
+- JSON 顶层另有 `user_id` 与 `current_active_cycles`（当前时间落在周期内且状态 default/normal）
+- `--tenant` 时输出 v1 字段：`id` / `zh_name` / `en_name` / 起止 / 状态
 
-**实现细节**：底层走 HTTP 直调 `/open-apis/okr/v1/periods`，自动分页。
+**实现细节**：默认 `GET /open-apis/okr/v2/cycles?user_id=...&user_id_type=open_id`（自动分页）；`--tenant` 走 `GET /open-apis/okr/v1/periods`。
+**行为变更**：此前版本默认走 v1 periods，返回的租户周期 ID 传给 `cycle detail` 查不到目标。
 
 ## progress list — 查进展记录列表
 
@@ -188,16 +197,15 @@ feishu-cli okr progress create \
 
 飞书 OKR `progress_record/create` API 在 source 字段下强制要求 `url`，不传会直接报错。CLI 已经默认填了占位值 `https://www.feishu.cn/okr/progress`，但建议显式覆盖为有意义的 URL（如周报文档地址），这样进展卡片在 OKR 页面才有真正的跳转价值。
 
-### 2. cycle 路径是 `v1/periods` 不是 `v2/cycles`
+### 2. `v2/cycles` 与 `v1/periods` 都存在，ID 不通用
 
-历史上有过混淆——飞书 OKR 周期 OpenAPI 的正确路径是：
+此前文档称 `GET /open-apis/okr/v2/cycles` 不存在（404）——**这是错的**：带上 `user_id` 参数实测返回的是
+99991672（应用缺 `okr:okr.period:readonly`）或 99991679（用户未授权该 scope），即端点存在、只是缺权限。
 
-```
-GET /open-apis/okr/v1/periods   ✅ 真实存在
-GET /open-apis/okr/v2/cycles    ❌ 不存在，404
-```
-
-`cycle list` 命令的 `cycle` 是 CLI 子命令名（更符合用户直觉），实际调用走 `v1/periods`。如果手动拼 HTTP 请求时不要写错。
+| 端点 | 粒度 | 身份 | ID 用途 |
+|------|------|------|---------|
+| `GET /open-apis/okr/v2/cycles?user_id=` | 用户周期 | user / tenant | `cycle detail`、`/v2/cycles/{id}/objectives` |
+| `GET /open-apis/okr/v1/periods` | 租户周期（带名称） | 仅 tenant | 不能用于 v2 接口 |
 
 ### 3. `progress create` 走 SDK，`cycle list` / `progress list` 走 HTTP 直调
 
@@ -206,22 +214,22 @@ GET /open-apis/okr/v2/cycles    ❌ 不存在，404
 | 命令 | 实现方式 |
 |------|---------|
 | `progress create` | 飞书 Open SDK v3.5.3 的 `Okr.ProgressRecord.Create` |
-| `cycle list` | 通用 HTTP client 直调 `/open-apis/okr/v1/periods` |
+| `cycle list` | 通用 HTTP client 直调 `/open-apis/okr/v2/cycles`（`--tenant` 时 `/open-apis/okr/v1/periods`） |
 | `progress list` | 通用 HTTP client 直调（按 target 类型分两条路径）：<br>• OKRTargetObjective: `/open-apis/okr/v2/objectives/{id}/progresses`<br>• OKRTargetKeyResult: `/open-apis/okr/v2/key_results/{id}/progresses` |
 
 CLI 已公开完整的进展 CRUD 与配套命令（见「命令速查」）：`progress create/get/update/delete` 与
 `upload-image` 走 SDK v3.5.3（`ProgressRecord.*` / `Image.Upload`）；SDK 没有适合当前列表语义的
 统一 List，故 `progress list` 按 Objective/KR 类型直调对应 HTTP endpoint，`cycle list` 同为 HTTP 直调。
 
-### 4. cycle 是租户级，没有 user_id 参数
+### 4. 查"某人的周期"用 `--user-id`
 
-不要试图传 `--user-id` 给 `cycle list`——周期是全租户共享的，所有成员看到的都是同一份列表。这点容易被"OKR 是个人目标"的直觉误导。
+`cycle list` 默认查当前登录用户；查别人传 `--user-id`（配合 `--user-id-type`）。只想看租户都有哪些周期名称时用 `--tenant`。
 
 ## 权限要求（应用 Token / Tenant scope）
 
 | 命令 | 所需 scope（任一即可） |
 |------|----------------------|
-| `cycle list` | `okr:okr:readonly` 或 `okr:okr.period:readonly` |
+| `cycle list` | `okr:okr.period:readonly`（`--tenant` 时 `okr:okr:readonly` 亦可） |
 | `cycle detail` | `okr:okr:readonly`（user 身份为 `okr:okr.content:readonly`） |
 | `progress list` / `get` | `okr:okr:readonly` 或 `okr:okr.progress:readonly` |
 | `progress create` / `update` | `okr:okr` 或 `okr:okr.progress:writeonly` |
@@ -230,7 +238,7 @@ CLI 已公开完整的进展 CRUD 与配套命令（见「命令速查」）：`
 
 默认 Bot 路线在应用权限管理页面开通上述 tenant scopes。选择 `--as user` 的端点，
 还需对应的用户 scope 和 OAuth 授权；按服务端返回的 scope 提示预检、增量登录。
-`cycle list` 只收 Tenant Token，不应用用户授权替代。
+`cycle list --tenant` 只收 Tenant Token，不应用用户授权替代。
 
 ## 典型工作流
 
@@ -275,7 +283,7 @@ done
 scope `okr:okr.content:writeonly`；写端点建议 `--as user`（官方对写端点均以 user 身份验证；tenant 身份未实测）。
 
 ```bash
-# 创建 Objective（cycle_id 从 okr cycle list 拿）
+# 创建 Objective（cycle_id 是 okr cycle list 默认返回的用户周期 ID，不是 --tenant 的租户周期 ID）
 feishu-cli api POST /open-apis/okr/v2/cycles/<cycle_id>/objectives --as user --data '{
   "content": {"blocks":[{"type":"paragraph","paragraph":{"elements":[{"type":"textRun","textRun":{"text":"目标内容","style":{}}}]}}]}
 }'
