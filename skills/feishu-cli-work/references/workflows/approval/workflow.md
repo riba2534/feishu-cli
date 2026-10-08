@@ -32,6 +32,8 @@
 | `approval instance create` | `approval:instance:write` | **User Token 必需** |
 | `approval instance {cancel,cc}` | `approval:instance:write` | **User Token 必需** |
 | `approval task {approve,reject,transfer}` | `approval:task:write` | **User Token 必需** |
+| `approval task {rollback,add-sign}` | `approval:task:write` | **User Token 必需** |
+| `approval task remind` | `approval:instance:write` | **User Token 必需** |
 
 ```bash
 feishu-cli auth check --scope "approval:approval:read approval:instance:read approval:instance:write approval:task:read approval:task:write"
@@ -52,6 +54,9 @@ feishu-cli auth login --scope "approval:approval:read approval:instance:read app
 | `approval task approve` | POST | `/open-apis/approval/v4/tasks/pass` |
 | `approval task reject` | POST | `/open-apis/approval/v4/tasks/refuse` |
 | `approval task transfer` | POST | `/open-apis/approval/v4/tasks/forward` |
+| `approval task rollback` | POST | `/open-apis/approval/v4/tasks/rollback` |
+| `approval task add-sign` | POST | `/open-apis/approval/v4/tasks/add_sign` |
+| `approval task remind` | POST | `/open-apis/approval/v4/instances/remind` |
 
 `task query` **不传** `user_id` query。HTTP 200 但业务 `code != 0` 时，包括 `--output raw-json` 也会非零退出。
 
@@ -65,15 +70,16 @@ feishu-cli approval get <approval_code>
 feishu-cli approval get <approval_code> --output raw-json
 
 # 查我的审批任务（topic 仅接受 todo / done / cc-unread / cc-read）
-feishu-cli approval task query --topic todo
+# 稀疏分页：空页 / 不足 page_size 不代表结束，用 --page-all（默认最多 20 页，--page-limit 调整）
+feishu-cli approval task query --topic todo --page-all
 feishu-cli approval task query --topic done
 feishu-cli approval task query --topic cc-unread
 feishu-cli approval task query --topic cc-read
 # 注意：topic=started 已被官方 tasks 接口下线（服务端回 99992402
 # "topic is optional, options: [1,2,17,18]"），查「我发起的」用下面的专用入口
 
-# 查我发起的审批实例（专用入口）
-feishu-cli approval instance initiated
+# 查我发起的审批实例（专用入口，同样是稀疏分页）
+feishu-cli approval instance initiated --page-all
 feishu-cli approval instance initiated --definition-code <code> --output json
 
 # 查单个审批实例详情
@@ -160,9 +166,20 @@ widget 的 `id` / `type` 从 `approval get --output raw-json` 的 `data.form` �
 
 可选幂等键。
 
+### `task query` / `instance initiated` 分页（稀疏分页，必读）
+
+实测同一查询 `page_size` 3/10/50/100 首页分别返回 0/4/18/35 条且 `has_more` 都为 `true`，后续页仍有大量数据。
+**空页或不足 page_size 都不代表"没有了"，只能以 `has_more` 为准**：
+
+- 不带 `--page-all`：只取一页；`has_more=true` 时 stderr 提示 `--page-token`，空页不再误报"没有找到"
+- `--page-all`：按 `has_more` 连续翻页（默认最多 20 页，`--page-limit` 最大 100；游标重复时停止）；
+  JSON 输出合并后的列表 + `pages`，仍有更多时 `has_more=true` 并给出续翻 `page_token`
+- `--page-all` 不能与 `--output raw-json` 同用
+- 服务端 `keyword` 参数实测不生效（任意关键词返回同一列表），CLI 未暴露；按标题筛选请对 JSON 自行过滤
+
 ### `task query` / `instance initiated` 列表字段
 
-- `count`：整数，通常只在第一页返回；≥100 时常返回 99
+- `count`：只在第一页返回且随 `page_size` 变化（≥100 时常返回 99），**不是总数**，不要据此判断数量
 - 任务：`task_id`、`instance_code`、`instance_status`、`initiator`、`initiator_name`、`summaries`、`support_api_operate`
 - 已发起实例：`instance_code`、`definition_code`、`instance_status`、`initiator`、`initiator_name`、`summaries`
 
@@ -206,6 +223,25 @@ feishu-cli approval task approve \
 feishu-cli approval instance get --instance-code 8XY99Z... --output json
 feishu-cli approval instance initiated --output json
 ```
+
+### 例 3：退回 / 加签 / 催办（高风险写，先 dry-run，执行需 --yes）
+
+```bash
+# 退回到发起节点（节点 ID 可从 approval instance get 查；发起节点固定 START）
+feishu-cli approval task rollback --instance-code <ic> --task-id <task> \
+  --node-ids START --comment "请补充附件后重新提交" --dry-run
+
+# 加签：before 前加签 / after 后加签 / parallel 并加签
+#   单人前/后加签省略 --approval-method 时按或签；多人必须指定 or|and|sequential；并加签不能传
+#   "加签后再把我这一环转交"必须用 parallel，确认成功后再 task transfer
+feishu-cli approval task add-sign --instance-code <ic> --task-id <task> \
+  --type parallel --user-ids ou_xxx --comment "请一起审核" --dry-run
+
+# 催办（task_ids 须属于同一实例）
+feishu-cli approval task remind --instance-code <ic> --task-ids <task1>,<task2> --comment "请尽快处理" --dry-run
+```
+
+去掉 `--dry-run` 并加 `--yes` 才真正执行；非交互环境不带 `--yes` 返回退出码 10 且不执行。
 
 ### 例 2：发起后撤回 + 抄送
 
@@ -253,7 +289,6 @@ feishu-cli approval task transfer \
 |------|--------|
 | 审批流可视化设计 | 飞书后台「审批管理」Web UI |
 | 搜可发起定义（`approvals/search_launchable`） | 后续覆盖 lane，当前用已知 `approval_code` + `approval get` |
-| 退回 / 加签 / 催办（`tasks/rollback` / `add_sign` / `remind`） | 后续覆盖 lane |
 | 审批回调订阅 | `feishu-cli event consume approval.instance.status_changed_v4` 等 |
 | 审批结果二次通知到群 | `feishu-cli-messaging` |
 | 给审批文档评论 / 加权限 | `feishu-cli-storage` |
