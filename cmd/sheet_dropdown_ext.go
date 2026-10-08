@@ -13,7 +13,7 @@ var sheetDropdownGetCmd = &cobra.Command{
 	Use:   "get",
 	Short: "获取下拉菜单设置",
 	Long: `获取指定区域的下拉菜单（数据验证）设置。
-range 必须带 sheetId 前缀（如 0b1212!A2:A100）。
+range 前缀可写 sheetId 或子表名（如 0b1212!A2:A100、Sheet1!A2:A100）；不带前缀时用 URL ?sheet= 或唯一子表补全。
 
 示例:
   feishu-cli sheet dropdown get --token shtcnxxxxxx --range "0b1212!A1:A100"`,
@@ -29,7 +29,14 @@ range 必须带 sheetId 前缀（如 0b1212!A2:A100）。
 		}
 		rangeStr = unescapeSheetRange(rangeStr)
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
+		if rangeStr, err = target.qualifyRange(rangeStr, "", ""); err != nil {
+			return err
+		}
 
 		data, err := client.GetDropdown(client.Context(), spreadsheetToken, rangeStr, userAccessToken)
 		if err != nil {
@@ -47,7 +54,7 @@ var sheetDropdownUpdateCmd = &cobra.Command{
 	Short: "更新下拉菜单设置",
 	Long: `更新下拉菜单（list 类型数据验证）。
 
-ranges 可指定多个范围（每个需带 sheetId 前缀）；选项用 --options 逗号分隔，
+ranges 可指定多个范围（前缀可写 sheetId 或子表名，不带前缀时补 --sheet-id）；选项用 --options 逗号分隔，
 或 --options-json 传字符串数组（选项含逗号时使用）。--colors 长度需与选项一致。
 
 示例:
@@ -96,7 +103,14 @@ ranges 可指定多个范围（每个需带 sheetId 前缀）；选项用 --opti
 			colors = splitSheetCSV(colorsCSV)
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
+		if ranges, err = target.qualifyRanges(ranges, sheetID); err != nil {
+			return err
+		}
 
 		if err := client.UpdateDropdown(client.Context(), spreadsheetToken, sheetID, ranges, options, multiple, colors, highlight, userAccessToken); err != nil {
 			return err
@@ -111,7 +125,7 @@ var sheetDropdownDeleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "删除下拉菜单",
 	Long: `删除指定范围的下拉菜单（数据验证）。
-ranges 每个需带 sheetId 前缀，最多 100 个，逗号分隔。
+ranges 前缀可写 sheetId 或子表名（不带前缀时用唯一子表补全），最多 100 个，逗号分隔。
 
 示例:
   feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100"
@@ -132,7 +146,14 @@ ranges 每个需带 sheetId 前缀，最多 100 个，逗号分隔。
 			return fmt.Errorf("--ranges 至少需要一个范围")
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
+		if ranges, err = target.qualifyRanges(ranges, ""); err != nil {
+			return err
+		}
 
 		if err := client.DeleteDropdown(client.Context(), spreadsheetToken, ranges, userAccessToken); err != nil {
 			return err
@@ -162,7 +183,7 @@ func init() {
 	// get
 	sheetDropdownGetCmd.Flags().String("token", "", "电子表格 token（必填）")
 	sheetDropdownGetCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名，与 --token 等价）")
-	sheetDropdownGetCmd.Flags().String("range", "", "单元格范围，必须带 sheetId 前缀（如 0b1212!A1:A100）（必填）")
+	sheetDropdownGetCmd.Flags().String("range", "", "单元格范围，前缀可写 sheetId 或子表名（如 0b1212!A1:A100）（必填）")
 	sheetDropdownGetCmd.Flags().StringP("output", "o", "json", "输出格式: json（默认）")
 	sheetDropdownGetCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 
@@ -170,7 +191,7 @@ func init() {
 	sheetDropdownUpdateCmd.Flags().String("token", "", "电子表格 token（必填）")
 	sheetDropdownUpdateCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名，与 --token 等价）")
 	sheetDropdownUpdateCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
-	sheetDropdownUpdateCmd.Flags().String("ranges", "", "范围，逗号分隔（每个需带 sheetId 前缀）（必填）")
+	sheetDropdownUpdateCmd.Flags().String("ranges", "", "范围，逗号分隔（前缀可写 sheetId 或子表名）（必填）")
 	sheetDropdownUpdateCmd.Flags().String("options", "", "下拉选项，逗号分隔（与 --options-json 二选一）")
 	sheetDropdownUpdateCmd.Flags().String("options-json", "", `下拉选项 JSON 数组，如 '["a","b,c"]'（选项含逗号时使用）`)
 	sheetDropdownUpdateCmd.Flags().Bool("multiple", false, "启用多选（默认 false）")
@@ -181,6 +202,6 @@ func init() {
 	// delete
 	sheetDropdownDeleteCmd.Flags().String("token", "", "电子表格 token（必填）")
 	sheetDropdownDeleteCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名，与 --token 等价）")
-	sheetDropdownDeleteCmd.Flags().String("ranges", "", "范围，逗号分隔（每个需带 sheetId 前缀，最多 100 个）（必填）")
+	sheetDropdownDeleteCmd.Flags().String("ranges", "", "范围，逗号分隔（前缀可写 sheetId 或子表名，最多 100 个）（必填）")
 	sheetDropdownDeleteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

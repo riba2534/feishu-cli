@@ -8,16 +8,18 @@ import (
 )
 
 var sheetListSheetsCmd = &cobra.Command{
-	Use:   "list-sheets <spreadsheet_token>",
+	Use:   "list-sheets <spreadsheet_token|url>",
 	Short: "列出所有工作表",
-	Long:  "列出电子表格中的所有工作表",
+	Long:  "列出电子表格中的所有工作表（含 sheetId、标题、行列数、冻结行列、是否隐藏、子表类型 resource_type）",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
 
-		sheets, err := client.QuerySheets(client.Context(), spreadsheetToken, userAccessToken)
+		sheets, err := client.QuerySheets(client.Context(), target.Token, target.UAT)
 		if err != nil {
 			return err
 		}
@@ -33,8 +35,12 @@ var sheetListSheetsCmd = &cobra.Command{
 				if s.Hidden {
 					hidden = " [隐藏]"
 				}
-				fmt.Printf("  %d. %s (ID: %s, 行: %d, 列: %d)%s\n",
-					i+1, s.Title, s.SheetID, s.RowCount, s.ColCount, hidden)
+				kind := ""
+				if s.ResourceType != "" && s.ResourceType != "sheet" {
+					kind = " [" + s.ResourceType + "]"
+				}
+				fmt.Printf("  %d. %s (ID: %s, 行: %d, 列: %d)%s%s\n",
+					i+1, s.Title, s.SheetID, s.RowCount, s.ColCount, hidden, kind)
 			}
 		}
 

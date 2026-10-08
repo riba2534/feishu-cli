@@ -8,21 +8,26 @@ import (
 )
 
 var sheetUnmergeCmd = &cobra.Command{
-	Use:   "unmerge <spreadsheet_token> <range>",
+	Use:   "unmerge <spreadsheet_token|url> <range>",
 	Short: "取消合并单元格",
 	Long: `取消指定范围的单元格合并。
 
 示例:
-  feishu-cli sheet unmerge shtcnxxxxxx "Sheet1!A1:C3"`,
+  feishu-cli sheet unmerge shtcnxxxxxx "0b12!A1:C3"
+  feishu-cli sheet unmerge shtcnxxxxxx "Sheet1!A1:C3"   # 子表名作前缀，自动换算为 sheetId`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
-		rangeStr := unescapeSheetRange(args[1])
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
-
-		err := client.UnmergeCells(client.Context(), spreadsheetToken, rangeStr, userAccessToken)
+		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {
+			return err
+		}
+		rangeStr, err := target.qualifyRange(args[1], "", "")
+		if err != nil {
+			return err
+		}
+
+		if err := client.UnmergeCells(client.Context(), target.Token, rangeStr, target.UAT); err != nil {
 			return err
 		}
 

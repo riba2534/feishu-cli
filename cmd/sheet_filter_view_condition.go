@@ -147,7 +147,12 @@ func readSheetConditionCommon(cmd *cobra.Command, requireConditionID bool) (toke
 		err = fmt.Errorf("--condition-id 为必填项（列字母，如 E）")
 		return
 	}
-	uat = resolveOptionalUserTokenWithFallback(cmd)
+	target, terr := newSheetTargetNamed(cmd, token, "--token")
+	if terr != nil {
+		err = terr
+		return
+	}
+	token, uat = target.Token, target.UAT
 	return
 }
 

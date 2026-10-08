@@ -8,7 +8,7 @@ import (
 )
 
 var sheetMergeCmd = &cobra.Command{
-	Use:   "merge <spreadsheet_token> <range>",
+	Use:   "merge <spreadsheet_token|url> <range>",
 	Short: "合并单元格",
 	Long: `合并指定范围的单元格。
 
@@ -18,17 +18,22 @@ var sheetMergeCmd = &cobra.Command{
   MERGE_COLUMNS  - 按列合并
 
 示例:
-  feishu-cli sheet merge shtcnxxxxxx "Sheet1!A1:C3" --type MERGE_ALL`,
+  feishu-cli sheet merge shtcnxxxxxx "0b12!A1:C3" --type MERGE_ALL
+  feishu-cli sheet merge shtcnxxxxxx "Sheet1!A1:C3"   # 子表名作前缀，自动换算为 sheetId`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
-		rangeStr := unescapeSheetRange(args[1])
 		mergeType, _ := cmd.Flags().GetString("type")
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
-
-		err := client.MergeCells(client.Context(), spreadsheetToken, rangeStr, mergeType, userAccessToken)
+		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {
+			return err
+		}
+		rangeStr, err := target.qualifyRange(args[1], "", "")
+		if err != nil {
+			return err
+		}
+
+		if err := client.MergeCells(client.Context(), target.Token, rangeStr, mergeType, target.UAT); err != nil {
 			return err
 		}
 

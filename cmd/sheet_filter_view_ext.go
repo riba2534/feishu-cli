@@ -28,7 +28,11 @@ var sheetFilterViewGetCmd = &cobra.Command{
 			return fmt.Errorf("--token、--sheet-id、--filter-view-id 均为必填项")
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
 
 		fv, err := client.GetFilterView(client.Context(), spreadsheetToken, sheetID, filterViewID, userAccessToken)
 		if err != nil {
@@ -75,7 +79,16 @@ var sheetFilterViewUpdateCmd = &cobra.Command{
 
 		rangeStr = unescapeSheetRange(rangeStr)
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
+		if rangeStr != "" {
+			if rangeStr, err = target.qualifyRange(rangeStr, sheetID, ""); err != nil {
+				return err
+			}
+		}
 
 		fv, err := client.UpdateFilterView(client.Context(), spreadsheetToken, sheetID, filterViewID, name, rangeStr, userAccessToken)
 		if err != nil {

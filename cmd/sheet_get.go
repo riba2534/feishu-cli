@@ -8,16 +8,18 @@ import (
 )
 
 var sheetGetCmd = &cobra.Command{
-	Use:   "get <spreadsheet_token>",
+	Use:   "get <spreadsheet_token|url>",
 	Short: "获取电子表格信息",
 	Long:  "获取电子表格的基本信息",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
 
-		info, err := client.GetSpreadsheet(client.Context(), spreadsheetToken, userAccessToken)
+		info, err := client.GetSpreadsheet(client.Context(), target.Token, target.UAT)
 		if err != nil {
 			return err
 		}

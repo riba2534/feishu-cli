@@ -40,6 +40,11 @@ type TableColSpec struct {
 	Name   string
 	Type   TableColType
 	Format string // number_format（如 yyyy-mm-dd / @），命令层写完值后转成 V2 formatter 施加；空则不设
+	// FormatExplicit 表示 Format 来自用户的 formats 映射（而非 dtype 默认值），用户显式格式优先。
+	FormatExplicit bool
+	// HasTime 表示 date 列中至少一个值带非零时分秒；未显式指定格式时据此改用日期时间 formatter，
+	// 否则写入的时分秒虽保留在序列号里，却会被 yyyy/MM/dd 格式隐藏，table-get 也读不回来。
+	HasTime bool
 }
 
 // TableSheetSpec normalize 后的 sheet 规格。
@@ -106,10 +111,12 @@ func normalizeTableSheet(in TableSheetIn, idx int) (TableSheetSpec, error) {
 		}
 		colIdx[c] = i
 		typ, format := dtypeToTypeFormat(in.Dtypes[c])
+		explicit := false
 		if f, ok := in.Formats[c]; ok && strings.TrimSpace(f) != "" {
 			format = strings.TrimSpace(f)
+			explicit = true
 		}
-		cols[i] = TableColSpec{Name: c, Type: typ, Format: format}
+		cols[i] = TableColSpec{Name: c, Type: typ, Format: format, FormatExplicit: explicit}
 	}
 	for k := range in.Dtypes {
 		if _, ok := colIdx[k]; !ok {
@@ -124,6 +131,18 @@ func normalizeTableSheet(in TableSheetIn, idx int) (TableSheetSpec, error) {
 	for i, row := range in.Data {
 		if len(row) != len(in.Columns) {
 			return TableSheetSpec{}, fmt.Errorf("sheets[%d]: data[%d] 列数 %d 与 columns %d 不一致", idx, i, len(row), len(in.Columns))
+		}
+	}
+	for c := range cols {
+		if cols[c].Type != TableColTypeDate {
+			continue
+		}
+		for _, row := range in.Data {
+			var s string
+			if json.Unmarshal(row[c], &s) == nil && isoHasTimeOfDay(s) {
+				cols[c].HasTime = true
+				break
+			}
 		}
 	}
 	return TableSheetSpec{Name: name, Columns: cols, Rows: in.Data}, nil
@@ -166,18 +185,61 @@ func isNumericDtype(lower string) bool {
 // excelEpoch Excel/飞书表格序列日期起点（1899-12-30 = 0）。
 var excelEpoch = time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
 
-// isoDateToSerial 把 ISO 日期（yyyy-mm-dd 或含 T 的 ISO datetime）转 Excel 序列号。
-// 序列号写入后需由命令层给该列设 V2 日期 formatter，才渲染为飞书可识别的「真日期」。
-func isoDateToSerial(s string) (int, error) {
+// isoDateToSerial 把 ISO 日期 / 日期时间转成 Excel 序列号（对齐官方 lark_sheet_table_io.go）。
+//
+// 时分秒作为小数部分保留（如 2024-01-15T08:30:00 → 45306.354166…），保证 table-get 输出的
+// 日期时间经 table-put 写回不丢时间（实测该序列号配合 yyyy/MM/dd HH:mm:ss 渲染为 2024/01/15 08:30:00）。
+// 带时区后缀时保留调用方给出的「墙上时间」：序列号本身不携带时区，按表格本地时间解释。
+// 日期与时间之间接受 "T" 或单个空格。
+func isoDateToSerial(s string) (float64, error) {
 	s = strings.TrimSpace(s)
-	if i := strings.Index(s, "T"); i > 0 {
-		s = s[:i]
+	if s == "" {
+		return 0, fmt.Errorf("date 列的值为空")
 	}
-	t, err := time.Parse("2006-01-02", s)
+	sep := strings.IndexAny(s, "T ")
+	if sep <= 0 {
+		t, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			return 0, fmt.Errorf("date %q 必须是 ISO yyyy-mm-dd 格式: %w", s, err)
+		}
+		return float64(int(math.Round(t.Sub(excelEpoch).Hours() / 24))), nil
+	}
+	base := s[:sep]
+	date, err := time.Parse("2006-01-02", base)
 	if err != nil {
-		return 0, fmt.Errorf("date %q 必须是 ISO yyyy-mm-dd 格式: %w", s, err)
+		return 0, fmt.Errorf("date %q 必须是 ISO yyyy-mm-dd 格式: %w", base, err)
 	}
-	return int(math.Round(t.Sub(excelEpoch).Hours() / 24)), nil
+	norm := base + "T" + strings.TrimSpace(s[sep+1:])
+	clock := norm[len(base):]
+	var parsed time.Time
+	if strings.ContainsAny(clock, "Zz+-") {
+		parsed, err = time.Parse(time.RFC3339Nano, norm)
+	} else {
+		parsed, err = time.Parse("2006-01-02T15:04:05.999999999", norm)
+		if err != nil {
+			parsed, err = time.Parse("2006-01-02T15:04", norm)
+		}
+	}
+	if err != nil {
+		return 0, fmt.Errorf("datetime %q 必须是 ISO 格式（如 2024-01-15T08:30:00）: %w", s, err)
+	}
+	days := math.Round(date.Sub(excelEpoch).Hours() / 24)
+	secs := float64(parsed.Hour()*3600+parsed.Minute()*60+parsed.Second()) + float64(parsed.Nanosecond())/1e9
+	return days + secs/86400, nil
+}
+
+// isoHasTimeOfDay 判断 ISO 日期时间串是否带非零时分秒。
+func isoHasTimeOfDay(s string) bool {
+	serial, err := isoDateToSerial(s)
+	if err != nil {
+		return false
+	}
+	return serial != math.Trunc(serial)
+}
+
+// formatSerial 把序列号渲染为写入 value 元素的十进制串（无指数、最短往返表示）。
+func formatSerial(serial float64) string {
+	return strconv.FormatFloat(serial, 'f', -1, 64)
 }
 
 // emptyTextCell 返回一个空文本单元格元素。V3 写入里空单元格必须用空文本元素占位，
@@ -205,9 +267,13 @@ func BuildTypedCell(col TableColSpec, raw json.RawMessage) (*CellElement, error)
 		}
 		return &CellElement{Type: "text", Text: &TextElement{Text: s}}, nil
 	case TableColTypeNumber:
-		var n json.Number
-		if err := json.Unmarshal(raw, &n); err != nil {
-			return nil, fmt.Errorf("number 列期望数值，得到 %s", describeJSONType(raw))
+		n, blank, err := numberCellLiteral(raw)
+		if err != nil {
+			return nil, err
+		}
+		if blank {
+			// 数字列里的空串等同 null（官方同样处理：合计行/占位空格不应让整批失败）
+			return emptyTextCell(), nil
 		}
 		return &CellElement{Type: "value", Value: &ValueElement{Value: n.String()}}, nil
 	case TableColTypeBool:
@@ -221,14 +287,41 @@ func BuildTypedCell(col TableColSpec, raw json.RawMessage) (*CellElement, error)
 		if err := json.Unmarshal(raw, &s); err != nil {
 			return nil, fmt.Errorf("date 列期望 ISO 日期字符串，得到 %s", describeJSONType(raw))
 		}
+		if strings.TrimSpace(s) == "" {
+			// 日期列里的空串等同 null，写空单元格
+			return emptyTextCell(), nil
+		}
 		serial, err := isoDateToSerial(s)
 		if err != nil {
 			return nil, err
 		}
-		return &CellElement{Type: "value", Value: &ValueElement{Value: strconv.Itoa(serial)}}, nil
+		return &CellElement{Type: "value", Value: &ValueElement{Value: formatSerial(serial)}}, nil
 	default:
 		return nil, fmt.Errorf("不支持的列类型 %q", col.Type)
 	}
+}
+
+// numberCellLiteral 解析数字列的单元格：JSON 数字原样保留；内容恰为 JSON 数字字面量的字符串
+// （如 "100.5"）按数字处理；空白字符串返回 blank=true（写空单元格）；其他值报错。
+// 对齐官方 coerceNumericCellValue：不接受千分位、货币符号、NaN/Inf 等需要猜测语义的写法。
+func numberCellLiteral(raw json.RawMessage) (n json.Number, blank bool, err error) {
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n, false, nil
+	}
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		return "", false, fmt.Errorf("number 列期望数值，得到 %s", describeJSONType(raw))
+	}
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return "", true, nil
+	}
+	var probe json.Number
+	// 字面量 "null" 能无错解码进任何目标且保持零值，需显式排除
+	if json.Unmarshal([]byte(trimmed), &probe) != nil || probe == "" {
+		return "", false, fmt.Errorf("number 列期望数值，得到非数字字符串 %q；空值请写 null，或把该列从 dtypes 中去掉按文本写入", s)
+	}
+	return probe, false, nil
 }
 
 // boolLabel 把布尔渲染为飞书表格的 TRUE/FALSE 文本字面量。
@@ -295,13 +388,35 @@ func describeJSONType(raw json.RawMessage) string {
 //     使序列号渲染为真日期（实测 45306 → 2024/01/15）。Format 已是其它日期样式时原样透传。
 //   - 其它列：原样透传用户在 formats 指定的 number_format（如 #,##0.00）；
 //     文本列的 "@" 也透传（V2 接受，强制按文本显示）。
+//   - date 列带时分秒（HasTime）且未显式指定格式：用 yyyy/MM/dd HH:mm:ss，否则时间被隐藏。
+//     V2 只接受这一种日期时间写法（实测 yyyy-MM-dd HH:mm:ss、yyyy/MM/dd HH:mm 均报 90204 invalid formatter）。
 func FormatterForType(col TableColSpec) string {
 	f := strings.TrimSpace(col.Format)
 	if col.Type == TableColTypeDate {
+		if isISODateTimeFormat(f) {
+			return v2DateTimeFormatter
+		}
 		// 默认 / 等价的 ISO 日期格式统一成 V2 接受的 yyyy/MM/dd。
-		if f == "" || strings.EqualFold(f, "yyyy-mm-dd") {
+		if f == "" || strings.EqualFold(f, "yyyy-mm-dd") || strings.EqualFold(f, "yyyy/mm/dd") {
+			if col.HasTime && !col.FormatExplicit {
+				return v2DateTimeFormatter
+			}
 			return "yyyy/MM/dd"
 		}
 	}
 	return f
+}
+
+// v2DateTimeFormatter 是 V2 style 接口接受的日期时间 formatter。
+const v2DateTimeFormatter = "yyyy/MM/dd HH:mm:ss"
+
+// TableDateTimeFormat 是 table-get 为带时分秒的日期列输出的 formats 值（table-put 映射回 v2DateTimeFormatter）。
+const TableDateTimeFormat = "yyyy-mm-dd hh:mm:ss"
+
+func isISODateTimeFormat(f string) bool {
+	switch strings.ToLower(strings.TrimSpace(f)) {
+	case "yyyy-mm-dd hh:mm:ss", "yyyy/mm/dd hh:mm:ss", "yyyy-mm-dd hh:mm", "yyyy/mm/dd hh:mm":
+		return true
+	}
+	return false
 }
