@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -51,7 +52,7 @@ var getMessageHistoryCmd = &cobra.Command{
 
   --container-id + --container-id-type   传统方式（群聊 oc_xxx / 话题 omt_xxx）
   --user-id                              对方 open_id，自动反查 P2P chat_id
-  --user-email                           对方邮箱，自动搜用户 + 反查 P2P chat_id
+  --user-email                           对方邮箱，精确解析 open_id + 反查 P2P chat_id
 
 通用参数:
   --start-time          起始时间（秒级时间戳）
@@ -139,19 +140,13 @@ var getMessageHistoryCmd = &cobra.Command{
 			}
 		}
 
-		// --user-email：搜索用户 → open_id
+		// --user-email：精确解析 open_id（batch_get_id），避免模糊搜索取第一条认错人
 		if userEmail != "" {
-			res, searchErr := client.SearchUsers(userEmail, 0, "", token)
-			if searchErr != nil {
-				return fmt.Errorf("按邮箱搜索用户失败: %w", searchErr)
+			resolved, resolveErr := resolveOpenIDByEmail(cmd.ErrOrStderr(), userEmail, token)
+			if resolveErr != nil {
+				return resolveErr
 			}
-			if res == nil || len(res.Users) == 0 {
-				return fmt.Errorf("未找到邮箱为 %s 的用户", userEmail)
-			}
-			userID = res.Users[0].OpenID
-			if userID == "" {
-				return fmt.Errorf("搜索结果未返回 open_id（邮箱 %s）", userEmail)
-			}
+			userID = resolved
 		}
 
 		// --user-id：反查 P2P chat_id
@@ -177,30 +172,20 @@ var getMessageHistoryCmd = &cobra.Command{
 			PageSize:        pageSize,
 			PageToken:       pageToken,
 			CardContentType: cardContentType,
+			// 群聊容器只拉话题根消息：话题群里服务端默认把回复与根消息混排返回，
+			// 回复会同时出现在 items 与 thread_replies 中，且翻页额度被回复占用。
+			// 回复统一由下方 ExpandThreadReplies 展开（--expand-threads=false 时只看根消息）。
+			OnlyThreadRootMessages: containerIDType == "chat",
 		}
 
 		result, err := client.ListMessages(containerID, opts, token)
 
-		// 降级判断：有 User Token 时，list API 失败或返回空结果都尝试 search+get
-		needFallback := false
-		if err != nil && token != "" {
-			needFallback = true
-		} else if err != nil {
+		result, err = applyListSearchFallback(cmd.ErrOrStderr(), result, err, listFallbackParams{
+			token: token, chatID: containerID, pageSize: pageSize, pageToken: pageToken,
+			cardContentType: cardContentType, startTime: startTime, endTime: endTime,
+		})
+		if err != nil {
 			return err
-		} else if token != "" && len(result.Items) == 0 && result.HasMore {
-			needFallback = true
-		}
-
-		if needFallback {
-			fmt.Fprintf(cmd.ErrOrStderr(), "[提示] bot 不在此群中，通过搜索方式获取消息...\n")
-			fallbackResult, fallbackErr := listMessagesViaSearch(containerID, pageSize, pageToken, token, cardContentType)
-			if fallbackErr != nil {
-				if err != nil {
-					return err
-				}
-				return fmt.Errorf("搜索降级失败: %w", fallbackErr)
-			}
-			result = fallbackResult
 		}
 
 		// 自动展开线程回复：对每条带 thread_id 的根消息
@@ -224,8 +209,9 @@ var getMessageHistoryCmd = &cobra.Command{
 		// 群聊场景额外拉 chat member list 作为"群通讯录视图"补充信息。
 		// **重要**：外部群下 member_id 跟 message sender_id 是不同 namespace，**不能**用 member 反查 sender 名字。
 		// 所以单独输出到 chat_members 字段，供用户/Agent 知道"群里都有哪些人"，而不是混入 sender_names 误导。
+		// 成员名单只在 JSON 输出里用到：文本模式不拉（大群一次要翻几十页成员接口）。
 		var chatMembers []*client.ChatMemberInfo
-		if containerIDType == "chat" && strings.HasPrefix(containerID, "oc_") {
+		if output == "json" && containerIDType == "chat" && strings.HasPrefix(containerID, "oc_") {
 			chatMembers, _ = client.LoadAllChatMembers(containerID, token) // 静默降级
 		}
 
@@ -333,7 +319,7 @@ func init() {
 	getMessageHistoryCmd.Flags().String("container-id-type", "chat", "容器类型 (chat/thread)")
 	getMessageHistoryCmd.Flags().String("container-id", "", "容器 ID（oc_xxx / omt_xxx），与 --user-id/--user-email 互斥")
 	getMessageHistoryCmd.Flags().String("user-id", "", "对方 open_id（ou_xxx），自动反查 P2P chat_id")
-	getMessageHistoryCmd.Flags().String("user-email", "", "对方邮箱，自动搜用户 + 反查 P2P chat_id")
+	getMessageHistoryCmd.Flags().String("user-email", "", "对方邮箱，精确解析 open_id + 反查 P2P chat_id")
 	getMessageHistoryCmd.Flags().String("start-time", "", "起始时间（秒级时间戳）")
 	getMessageHistoryCmd.Flags().String("end-time", "", "结束时间（秒级时间戳）")
 	getMessageHistoryCmd.Flags().String("sort-type", "ByCreateTimeDesc", "排序方式 (ByCreateTimeAsc/ByCreateTimeDesc)")
@@ -349,3 +335,34 @@ func init() {
 	getMessageHistoryCmd.Flags().Int("threads-total-limit", 500, "所有话题累计拉到的回复总数上限（防止极端话题群打爆 QPS）")
 	addCardContentTypeFlag(getMessageHistoryCmd)
 }
+
+// resolveOpenIDByEmail 按邮箱精确解析 open_id：优先 batch_get_id（App 身份，按邮箱精确匹配）；
+// 失败（如应用缺 contact:user.id:readonly）时退回用户搜索，但只接受唯一结果，多条时报错让用户改用 --user-id。
+func resolveOpenIDByEmail(errOut io.Writer, email, userToken string) (string, error) {
+	infos, batchErr := resolveContactIDs([]string{email}, nil)
+	if batchErr == nil {
+		for _, info := range infos {
+			if strings.EqualFold(strings.TrimSpace(info.Email), strings.TrimSpace(email)) && info.OpenID != "" {
+				return info.OpenID, nil
+			}
+		}
+		return "", fmt.Errorf("未找到邮箱为 %s 的用户（或该用户不在应用可见范围内）", email)
+	}
+	fmt.Fprintf(errOut, "[提示] 按邮箱精确解析用户失败（%v），改用用户搜索（仅接受唯一结果）\n", batchErr)
+	res, searchErr := client.SearchUsers(email, 0, "", userToken)
+	if searchErr != nil {
+		return "", fmt.Errorf("按邮箱解析用户失败: %w", searchErr)
+	}
+	switch {
+	case res == nil || len(res.Users) == 0:
+		return "", fmt.Errorf("未找到邮箱为 %s 的用户", email)
+	case len(res.Users) > 1:
+		return "", fmt.Errorf("按邮箱 %s 搜索命中 %d 个用户，无法精确确定；请改用 --user-id ou_xxx", email, len(res.Users))
+	case res.Users[0].OpenID == "":
+		return "", fmt.Errorf("搜索结果未返回 open_id（邮箱 %s）", email)
+	}
+	return res.Users[0].OpenID, nil
+}
+
+// resolveContactIDs 可在测试中替换。
+var resolveContactIDs = client.BatchGetUserID

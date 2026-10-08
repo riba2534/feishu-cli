@@ -222,12 +222,14 @@ feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
   --text '<at user_id="ou_xxx">Alice</at> 你好'
 ```
 
-**容错（仅 `--text` 模式）**：`msg send` / `msg reply` 在 `--text` 模式下会自动修正 AI 易写错的 @ 标签格式，下列写法都会被规范化为标准 `<at user_id="...">`：
+**容错（text / post 消息）**：`msg send` / `msg reply` 会自动修正 AI 易写错的 @ 标签格式（对齐官方），下列写法都会被规范化为标准 `<at user_id="...">`：
 - `<at id=ou_xxx>`（缺引号 / 用 `id` 而非 `user_id`）
 - `<at open_id="ou_xxx"/>`（自闭合 / 用 `open_id`）
 - `<at user_id=ou_xxx/>`（自闭合无引号）
 
-`--content` / `--content-file` 模式**不做隐式 normalize**（用户自己写的 JSON 自己负责，避免破坏结构）。
+覆盖范围：`--text`、`--markdown`，以及 `msg_type` 为 text / post 时的 `--content` / `--content-file`。
+JSON 消息体按"解码 → 逐个字符串规范化 → 重新编码"处理，插入的双引号会被正确转义，不会破坏 JSON；
+无需修正时原样发送（不改变键顺序与格式）。`interactive` 卡片 JSON 不做处理。
 
 **注意**：text 类型**不支持**富文本样式（加粗、斜体、下划线、删除线、超链接等均不会渲染）。如需格式排版，请使用 `post` 类型。
 
@@ -366,6 +368,25 @@ feishu-cli msg send \
 - 本技能发送：feishu-cli msg send --msg-type interactive --content-file <card.json>。
 - 不要在本技能内新写 v1 elements/action/note 卡片模板；旧 v1 示例仅用于历史兼容排查。
 
+### 统一输入、附件区与编辑
+
+- `--text` / `--markdown` / `--content` 都支持 `@文件路径` 读文件、`-` 读 stdin（三者中只能有一个用 stdin）；
+  长 Markdown 优先用 `@file`，避免 shell 转义 `!`、反引号等字符。字面以 `@` 开头的文本写成 `@@...`；
+  `--text`/`--markdown` 的 `@xxx` 若不是存在的文件，按原文发送（兼容 "@张三 你好"）。
+- `--markdown` 发送前会做样式归一（对齐官方）：H1→H4、H2~H6→H5，连续标题与表格前后补空行；
+  post 的 md 只能渲染 `img_xxx` 图片，其余图片引用会被移除并在 stderr 提示，本地图片加 `--upload-images` 自动上传。
+- `--attachment <file_key 或本地路径>`（可重复/逗号分隔）把文件放进 post 的附件区；可与 `--markdown` 或 post
+  `--content` 同用，单独使用时发送只含附件的 post。音视频文件上传时会自动解析时长。
+- `--text` / `--markdown` / `--content` 中的 `<at>` 标签统一规范化，AI 常写的转义形式不会导致 @ 失效。
+- `msg send/reply` 输出 `message_id`、`chat_id`、`create_time`；`--dry-run` 只打印请求（本地文件不上传，用占位 key）。
+- `msg edit <message_id> --text|--markdown|--content` 编辑已发送的 text/post 消息（PUT，仅能编辑本身份发送的消息）。
+
+```bash
+feishu-cli msg send --receive-id-type email --receive-id user@example.com --markdown @report.md --attachment ./data.csv
+cat note.txt | feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx --text -
+feishu-cli msg edit om_xxx --text "更正后的内容"
+```
+
 ## 执行流程
 
 ### 回复、转发、合并转发与加急
@@ -379,7 +400,8 @@ feishu-cli msg merge-forward --receive-id oc_xxx --receive-id-type chat_id --mes
 feishu-cli msg urgent om_xxx --user-id-type open_id --user-ids ou_xxx,ou_yyy
 ```
 
-`forward` 转发一条原消息；`merge-forward` 把多条 message ID 合并成一条转发消息；`urgent` 针对已经
+`forward` 转发一条原消息；`merge-forward` 把多条 message ID 合并成一条转发消息（接口**只支持 Bot 身份**：
+传入的 User Token 会被忽略并在 stderr 提示，Bot 需能看到这些消息且在目标会话中）；`urgent` 针对已经
 发送的 message ID 发应用内、短信或电话加急。加急前确认用户列表和方式，避免误打扰。
 
 ### 发送消息流程

@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -158,8 +157,8 @@ func CreateFlag(messageID string, itemType, flagType int, userAccessToken string
 	if err != nil {
 		return nil, fmt.Errorf("创建书签失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("创建书签失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("创建书签", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -202,8 +201,8 @@ func ListFlags(pageSize int, pageToken string, userAccessToken string) (*FlagLis
 	if err != nil {
 		return nil, fmt.Errorf("获取书签列表失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("获取书签列表失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("获取书签列表", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -243,8 +242,8 @@ func CancelFlag(messageID string, itemType, flagType int, userAccessToken string
 	if err != nil {
 		return nil, fmt.Errorf("取消书签失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("取消书签失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("取消书签", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {

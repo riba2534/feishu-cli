@@ -29,14 +29,16 @@
 `thread-messages` 的设计早于 `-o json` 通用化，源码里直接 `printJSON`，因此既不接受
 flag 也不能切回文本。脚本里**不要给它传 `-o json`**。
 
-## 3. 时间单位不统一
+## 3. 时间参数
 
-| 命令 | `--start-time` / `--end-time` 单位 |
+| 命令 | `--start-time` / `--end-time` |
 |---|---|
-| `msg history` | **秒**（unix timestamp） |
-| `msg thread-messages` | **毫秒** |
+| `msg history` | **秒**（unix timestamp），服务端过滤 |
+| `msg thread-messages` | **秒**（也兼容毫秒 / RFC3339 / YYYY-MM-DD），**客户端本地过滤当前页** |
 
-写脚本时分别按 `int(time.time())` 和 `int(time.time() * 1000)` 两套传，不要复用。
+历史文档曾写 `thread-messages` 用毫秒：实测服务端对 thread 容器**忽略**时间范围，传什么都不生效。
+现在 CLI 不再把时间发给服务端，而是按消息 `create_time` 在本地过滤（结束时间含整秒边界），
+过滤只作用于当前页；`has_more=true` 时需带 `--page-token` 继续翻页，stderr 会提示。
 
 消息体里的 `create_time` 字段则全部是 **毫秒字符串**（无论哪条命令）。
 

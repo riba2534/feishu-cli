@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -64,27 +66,41 @@ func resolveChatToken(cmd *cobra.Command, asFlag string) (string, error) {
 
 var chatMemberListCmd = &cobra.Command{
 	Use:   "list <chat_id>",
-	Short: "获取群成员列表",
-	Long: `获取指定群聊的成员列表（含群昵称）。
+	Short: "获取群成员列表（含群内机器人）",
+	Long: `获取指定群聊的成员列表（含群昵称），用户与机器人分开返回。
+
+底层走 GET /open-apis/im/v1/chats/{chat_id}/members/list（旧端点拿不到群内机器人）。
 
 参数:
   chat_id             群 ID（必填）
   --member-id-type    成员 ID 类型（open_id/user_id/union_id，默认 open_id）
-  --page-size         每页数量
+  --member-types      只返回某类成员：user / bot / user,bot（默认全部）
+  --page-size         每页数量（1-100）
   --page-token        分页标记
   --page-all          自动翻页拉取全部成员（忽略 --page-token）
   --as                身份选择（auto/user/bot，默认 auto）
 
+输出（JSON）:
+  users[]         用户成员；items[] 与 users[] 相同（兼容旧版字段，仍只含用户）
+  bots[]          群内机器人（member_id / name / app_id）
+  truncations[]   非空表示服务端因群安全设置截断了某类成员名单（名单不完整）
+  user_total / bot_total、has_more / page_token
+
 示例:
   feishu-cli chat member list oc_xxx                # 默认 auto
   feishu-cli chat member list oc_xxx --as bot       # 外部群推荐：用 App Token
+  feishu-cli chat member list oc_xxx --member-types bot
   feishu-cli chat member list oc_xxx --member-id-type user_id --page-size 50
   feishu-cli chat member list oc_xxx --page-all     # 拉全量成员
 
 外部群拉成员推荐用 --as bot（需 App 开了"对外共享能力" + Bot 已加群）。
-若群配置限制了成员可见性，--page-all 会在 stderr 打印截断告警，提示名单不完整。`,
+服务端截断名单时会在 stderr 打印告警，并在 truncations[] 中说明。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		memberTypes, err := normalizeChatMemberTypes(flagString(cmd, "member-types"))
+		if err != nil {
+			return err
+		}
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -101,62 +117,105 @@ var chatMemberListCmd = &cobra.Command{
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		pageAll, _ := cmd.Flags().GetBool("page-all")
 
-		if pageAll {
-			// 自动翻页时若未显式指定每页大小，用最大值 100 减少往返。
-			effectiveSize := pageSize
-			if !cmd.Flags().Changed("page-size") {
-				effectiveSize = 100
-			}
-			result, err := listAllChatMembers(chatID, memberIDType, effectiveSize, token)
-			if err != nil {
-				return translateChatError(err)
-			}
-			return printJSON(result)
+		opts := client.ChatMembersListOptions{
+			MemberIDType: memberIDType,
+			MemberTypes:  memberTypes,
+			PageSize:     pageSize,
+			PageToken:    pageToken,
 		}
 
-		result, err := client.ListChatMembers(chatID, memberIDType, pageSize, pageToken, token)
+		var result *client.ListChatMembersResult
+		if pageAll {
+			// 自动翻页时若未显式指定每页大小，用最大值 100 减少往返。
+			if !cmd.Flags().Changed("page-size") {
+				opts.PageSize = 100
+			}
+			opts.PageToken = ""
+			result, err = listAllChatMembers(chatID, opts, token)
+		} else {
+			result, err = client.ListChatMembersV2(chatID, opts, token)
+		}
 		if err != nil {
 			return translateChatError(err)
 		}
-
+		warnChatMemberTruncations(cmd.ErrOrStderr(), result)
+		if !pageAll && result.HasMore {
+			fmt.Fprintf(cmd.ErrOrStderr(), "[提示] 还有更多成员：带 --page-token %s 继续，或用 --page-all 拉取全部\n", result.PageToken)
+		}
 		return printJSON(result)
 	},
 }
 
-// listAllChatMembers 自动翻页拉取全部群成员，并在服务端因安全设置截断时打印中文告警。
-// 带非递增 token 保护与安全页数上限，防止服务端异常时无限循环。
-func listAllChatMembers(chatID, memberIDType string, pageSize int, token string) (*client.ListChatMembersResult, error) {
-	all := &client.ListChatMembersResult{}
-	pageToken := ""
-	memberTotal := 0
+// normalizeChatMemberTypes 校验 --member-types（user/bot，逗号分隔，去重保序）。
+func normalizeChatMemberTypes(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range splitAndTrim(raw) {
+		p = strings.ToLower(p)
+		if p != "user" && p != "bot" {
+			return "", clierr.Usagef("--member-types 仅支持 user、bot（逗号分隔），得到 %q", p)
+		}
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, ","), nil
+}
+
+// warnChatMemberTruncations 服务端因群安全设置截断某类成员时，在 stderr 明确告警，
+// 避免 Agent 把不完整的名单当成全量。
+func warnChatMemberTruncations(w io.Writer, res *client.ListChatMembersResult) {
+	if res == nil {
+		return
+	}
+	for _, t := range res.Truncations {
+		memberType, _ := t["member_type"].(string)
+		if memberType == "" {
+			memberType = "member"
+		}
+		fmt.Fprintf(w, "警告: 服务端因群安全设置截断了 %s 成员名单（上限 %v），数据不完整（见 truncations）\n", memberType, t["limit"])
+	}
+}
+
+// listAllChatMembers 自动翻页拉取全部群成员（用户 + 机器人）。
+// 带非推进 token 保护与安全页数上限，防止服务端异常时无限循环；
+// truncations / *_total / has_more 取最后一页。
+func listAllChatMembers(chatID string, opts client.ChatMembersListOptions, token string) (*client.ListChatMembersResult, error) {
+	all := &client.ListChatMembersResult{
+		Items:       []*client.ChatMemberInfo{},
+		Users:       []*client.ChatMemberInfo{},
+		Bots:        []*client.ChatBotMemberInfo{},
+		Truncations: []map[string]any{},
+	}
 	for page := 0; page < chatMemberMaxPages; page++ {
-		p, err := client.ListChatMembersPage(chatID, memberIDType, pageSize, pageToken, token)
+		p, err := client.ListChatMembersV2(chatID, opts, token)
 		if err != nil {
 			return nil, err
 		}
-		all.Items = append(all.Items, p.Items...)
-		memberTotal = p.MemberTotal
+		all.AppendPage(p)
 
 		if !p.HasMore || p.PageToken == "" {
 			break
 		}
-		if p.PageToken == pageToken {
+		if p.PageToken == opts.PageToken {
 			// 服务端异常回显相同 token 却仍标记 has_more，停止翻页避免死循环。
 			fmt.Fprintln(os.Stderr, "警告: 服务端返回了不推进的分页标记，停止翻页，成员名单可能不完整")
 			break
 		}
-		pageToken = p.PageToken
+		opts.PageToken = p.PageToken
 		time.Sleep(chatMemberPageDelay)
 	}
 
-	// 安全设置截断：翻页结束后服务端声称的成员总数仍大于已取回条数，
-	// 说明该群配置限制了成员可见性，返回的名单不完整。
-	if memberTotal > len(all.Items) {
+	// 翻页结束后服务端声称的用户总数仍大于已取回条数：名单不完整（兜底，truncations 为主信号）。
+	if all.UserTotal != nil && *all.UserTotal > len(all.Items) && len(all.Truncations) == 0 && !all.HasMore {
 		fmt.Fprintf(os.Stderr,
-			"警告: 该群成员总数为 %d，但仅能取回 %d 条，服务端因群安全设置截断了成员名单，数据可能不完整\n",
-			memberTotal, len(all.Items))
+			"警告: 该群用户成员总数为 %d，但仅能取回 %d 条，成员名单可能不完整\n",
+			*all.UserTotal, len(all.Items))
 	}
-
 	return all, nil
 }
 
@@ -260,7 +319,8 @@ func init() {
 	// list 子命令
 	chatMemberCmd.AddCommand(chatMemberListCmd)
 	chatMemberListCmd.Flags().String("member-id-type", "open_id", "成员 ID 类型（open_id/user_id/union_id）")
-	chatMemberListCmd.Flags().Int("page-size", 0, "每页数量")
+	chatMemberListCmd.Flags().String("member-types", "", "只返回某类成员：user / bot / user,bot（默认全部）")
+	chatMemberListCmd.Flags().Int("page-size", 0, "每页数量（1-100）")
 	chatMemberListCmd.Flags().String("page-token", "", "分页标记")
 	chatMemberListCmd.Flags().Bool("page-all", false, "自动翻页拉取全部成员（忽略 --page-token）")
 	chatMemberListCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")

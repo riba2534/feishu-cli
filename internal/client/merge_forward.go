@@ -61,8 +61,8 @@ func getMessageItemsRaw(messageID, cardContentType, userAccessToken string) ([]*
 	if err != nil {
 		return nil, fmt.Errorf("获取消息详情失败: %w", err)
 	}
-	if apiResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("获取消息详情失败: HTTP %d, body: %s", apiResp.StatusCode, string(apiResp.RawBody))
+	if err := ParseAPIResponse("获取消息详情", apiResp.StatusCode, apiResp.Header, apiResp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var resp listMessagesRawResponse

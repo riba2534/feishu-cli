@@ -48,7 +48,8 @@
 
 被群管理员邀请进群。或群成员通过分享链接邀请（如果群允许）。
 
-> Bot 在不在群里：`feishu-cli chat member list <oc_xxx> --as bot --member-id-type open_id`
+> Bot 在不在群里：`feishu-cli chat member list <oc_xxx> --as user --member-types bot`（看 `bots[].app_id` 里有没有你的 App），
+> 或 `feishu-cli chat member list <oc_xxx> --as bot` 能否成功
 > 失败码不同：232033 = App 没对外共享；232011 = Bot 不在群里
 
 ## 实操工作流

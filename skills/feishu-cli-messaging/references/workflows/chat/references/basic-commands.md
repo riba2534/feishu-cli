@@ -24,8 +24,10 @@ feishu-cli chat create \
 ### 获取群聊信息
 
 ```bash
-feishu-cli chat get <chat_id>
+feishu-cli chat get <chat_id> [--as bot|user|auto]
 ```
+
+`chat get/update/delete` 支持 `--as`：默认 auto（已登录用 User Token，未登录回退 Bot）；`--as bot` 需 Bot 在群内。
 
 ### 更新群聊信息
 
@@ -65,9 +67,13 @@ feishu-cli chat link <chat_id> [--validity-period week|year|permanently]
 ```bash
 feishu-cli chat member list <chat_id> \
   [--member-id-type open_id|user_id|union_id] \
+  [--member-types user|bot|user,bot] \
   [--page-size 20] \
-  [--page-token <token>]
+  [--page-token <token>] [--page-all] [--as bot|user|auto]
 ```
+
+输出 `users[]`（= 旧字段 `items[]`，仅用户）、`bots[]`（群内机器人，含 `app_id`）、`truncations[]`
+（服务端截断名单时非空）、`user_total` / `bot_total`。
 
 ### 添加群成员
 

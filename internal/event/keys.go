@@ -2,15 +2,18 @@
 //
 // 设计要点：
 //   - 静态 EventKey 目录（KeyDefinition）：覆盖 IM/Contact/Calendar/Drive/Approval 等常用事件
-//   - 进程模型：每个 consume 命令 = 一个独立 OS 进程 + 一个 WebSocket 长连接（一个 EventKey）
-//   - 状态文件：~/.feishu-cli/events/<app_id>/bus.json 记录所有 active 进程（PID + EventKey + 启动时间）
-//   - 文件锁：bus.json 读写走 flock，避免多进程同时写入损坏
+//   - 进程模型：每个 consume 命令 = 一个 OS 进程 + 一条 WebSocket 长连接，可同时订阅多个 EventKey
+//     （event consume k1 k2）。飞书按 App 维度把事件随机投递给该 App 的任一条连接，
+//     同 App 多连接会互相抢事件，因此同一 App 同一机器只允许一个 consume 进程（单实例锁，
+//     --force 可绕过但不安全），未订阅的已知事件类型 ACK 后本地丢弃
+//   - 状态文件：~/.feishu-cli/events/<app_id>/bus.json 记录 active 进程（PID + EventKey + 启动时间，
+//     多 key 进程每个 key 一条记录）
+//   - 文件锁：bus.json 读写走 flock，避免多进程同时写入损坏；consume.lock 为单实例锁
 //   - 进程探活：status / stop 通过 PID 信号 0 检测进程是否存活
+//   - 事件去重：按 event_id（TTL 5 分钟）去重，服务端重投不会重复输出
 //
 // 设计取舍：
-//   - 不跑独立 bus 守护进程做事件 fan-out；feishu-cli 简化为
-//     每个 consume 直接连 WebSocket（一个 EventKey 一个连接），不做事件分发——足够覆盖
-//     AI Agent 单 EventKey 订阅的主线场景
+//   - 不跑独立 bus 守护进程做事件 fan-out（官方方案）；feishu-cli 简化为单进程单连接多 key
 //   - 重连策略复用 oapi-sdk-go v3 ws.Client.WithAutoReconnect（默认开启，无限重试）
 package event
 
@@ -455,6 +458,59 @@ func Domains() []string {
 			seen[def.Domain] = true
 			out = append(out, def.Domain)
 		}
+	}
+	return out
+}
+
+// commonAckEventTypes 是官方 catch-all 模式登记的常见事件类型（shortcuts/event/subscribe.go），
+// 与本目录 keyRegistry 取并集后作为"未订阅也 ACK"的集合。
+var commonAckEventTypes = []string{
+	"im.message.receive_v1",
+	"im.message.message_read_v1",
+	"im.message.reaction.created_v1",
+	"im.message.reaction.deleted_v1",
+	"im.chat.member.bot.added_v1",
+	"im.chat.member.bot.deleted_v1",
+	"im.chat.member.user.added_v1",
+	"im.chat.member.user.withdrawn_v1",
+	"im.chat.member.user.deleted_v1",
+	"im.chat.updated_v1",
+	"im.chat.disbanded_v1",
+	"contact.user.created_v3",
+	"contact.user.updated_v3",
+	"contact.user.deleted_v3",
+	"contact.department.created_v3",
+	"contact.department.updated_v3",
+	"contact.department.deleted_v3",
+	"calendar.calendar.acl.created_v4",
+	"calendar.calendar.event.changed_v4",
+	"approval.approval.updated",
+	"application.application.visibility.added_v6",
+	"task.task.update_tenant_v1",
+	"task.task.update_user_access_v2",
+	"task.task.comment_updated_v1",
+	"drive.notice.comment_add_v1",
+}
+
+// ackOnlyEventTypes 返回需要"收到即 ACK"的已知事件类型（不含卡片回调），去重保序。
+func ackOnlyEventTypes() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(et string) {
+		if et == "" || seen[et] {
+			return
+		}
+		seen[et] = true
+		out = append(out, et)
+	}
+	for _, def := range keyRegistry {
+		if def.CardCallback {
+			continue
+		}
+		add(def.EventType)
+	}
+	for _, et := range commonAckEventTypes {
+		add(et)
 	}
 	return out
 }

@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -36,6 +35,8 @@ type SearchMessagesResult struct {
 	MessageIDs []string // 消息 ID 列表
 	PageToken  string   // 分页 token
 	HasMore    bool     // 是否有更多
+	// Notice 服务端提示（如查询词超过 50 字被截断），非空时调用方应透出给用户。
+	Notice string `json:"notice,omitempty"`
 }
 
 const (
@@ -231,8 +232,8 @@ func SearchMessages(opts SearchMessagesOptions, userAccessToken string) (*Search
 	if err != nil {
 		return nil, fmt.Errorf("搜索消息失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("搜索消息失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("搜索消息", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -243,6 +244,7 @@ func SearchMessages(opts SearchMessagesOptions, userAccessToken string) (*Search
 			PageToken     string `json:"page_token"`
 			NextPageToken string `json:"next_page_token"`
 			HasMore       bool   `json:"has_more"`
+			Notice        string `json:"notice"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
@@ -266,6 +268,7 @@ func SearchMessages(opts SearchMessagesOptions, userAccessToken string) (*Search
 		MessageIDs: ids,
 		PageToken:  pageToken,
 		HasMore:    apiResp.Data.HasMore,
+		Notice:     apiResp.Data.Notice,
 	}, nil
 }
 
@@ -413,8 +416,8 @@ func SearchDocWiki(opts SearchDocWikiOptions, userAccessToken string) (*SearchDo
 		return nil, fmt.Errorf("搜索文档失败: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("搜索文档失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("搜索文档", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	// 解析响应
@@ -570,8 +573,8 @@ func DriveSearchV2(opts DriveSearchOptions, userAccessToken string) (*DriveSearc
 	if err != nil {
 		return nil, fmt.Errorf("drive 搜索失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("drive 搜索失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("drive 搜索", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var parsed struct {

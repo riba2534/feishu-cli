@@ -28,8 +28,14 @@ var msgReactionCmd = &cobra.Command{
   FIRE        火
   PARTY       派对
 
+身份:
+  --as bot|user|auto   默认 auto：已登录用 User Token（与旧版一致），未登录回退 Bot；
+                       User Token 已配置但不可用时直接报错，不会静默切 Bot。
+                       --as bot 用应用身份（Bot 需在群内）；remove 只能删除同一身份添加的表情。
+
 示例:
   feishu-cli msg reaction add om_xxx --emoji-type THUMBSUP
+  feishu-cli msg reaction add om_xxx --emoji-type THUMBSUP --as bot
   feishu-cli msg reaction remove om_xxx --reaction-id reaction_xxx
   feishu-cli msg reaction list om_xxx`,
 }
@@ -42,6 +48,7 @@ var msgReactionAddCmd = &cobra.Command{
 参数:
   message_id     消息 ID（必填）
   --emoji-type   emoji 类型（必填，如 THUMBSUP/SMILE/LAUGH 等）
+  --as           身份 bot|user|auto（默认 auto）
 
 示例:
   feishu-cli msg reaction add om_xxx --emoji-type THUMBSUP`,
@@ -51,7 +58,7 @@ var msgReactionAddCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := resolveRequiredUserToken(cmd)
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}
@@ -79,6 +86,7 @@ var msgReactionRemoveCmd = &cobra.Command{
 参数:
   message_id      消息 ID（必填）
   --reaction-id   Reaction ID（必填）
+  --as            身份 bot|user|auto（默认 auto）；只能删除同一身份添加的表情
 
 示例:
   feishu-cli msg reaction remove om_xxx --reaction-id reaction_xxx`,
@@ -88,7 +96,7 @@ var msgReactionRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := resolveRequiredUserToken(cmd)
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}
@@ -116,6 +124,7 @@ var msgReactionListCmd = &cobra.Command{
   --emoji-type   筛选 emoji 类型（可选）
   --page-size    每页数量
   --page-token   分页标记
+  --as           身份 bot|user|auto（默认 auto）
 
 示例:
   feishu-cli msg reaction list om_xxx
@@ -126,7 +135,7 @@ var msgReactionListCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := resolveRequiredUserToken(cmd)
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}
@@ -151,11 +160,13 @@ func init() {
 	msgReactionCmd.AddCommand(msgReactionAddCmd)
 	msgReactionAddCmd.Flags().String("emoji-type", "", "emoji 类型（如 THUMBSUP/SMILE/LAUGH 等）")
 	msgReactionAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addAsFlag(msgReactionAddCmd)
 	mustMarkFlagRequired(msgReactionAddCmd, "emoji-type")
 
 	msgReactionCmd.AddCommand(msgReactionRemoveCmd)
 	msgReactionRemoveCmd.Flags().String("reaction-id", "", "Reaction ID")
 	msgReactionRemoveCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addAsFlag(msgReactionRemoveCmd)
 	mustMarkFlagRequired(msgReactionRemoveCmd, "reaction-id")
 
 	msgReactionCmd.AddCommand(msgReactionListCmd)
@@ -163,4 +174,5 @@ func init() {
 	msgReactionListCmd.Flags().Int("page-size", 0, "每页数量")
 	msgReactionListCmd.Flags().String("page-token", "", "分页标记")
 	msgReactionListCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addAsFlag(msgReactionListCmd)
 }
