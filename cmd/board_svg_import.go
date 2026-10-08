@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +17,10 @@ import (
 var boardSVGImportCmd = &cobra.Command{
 	Use:   "svg-import <whiteboard_id> <source>",
 	Short: "导入 SVG 到画板（落为单个 svg 节点）",
-	Long: `把整段 SVG 代码作为单个画板节点上传，飞书画板的 SVG 解析器会渲染为可编辑的矢量元素。
+	Long: `把整段 SVG 代码作为单个 type=svg 画板节点上传：整张图是一个整体贴图，选中只能整体移动/缩放，
+不能单独改其中某个形状的颜色或文字；复杂 SVG（上千元素）还可能渲染不全。
+适合 < 2KB 的图标、印章、小装饰。需要每个元素都可单独编辑时改用
+board import --syntax svg（服务端把 SVG 拆成原生节点）或 svg_to_board.py 本地管道。
 
 参数:
   <whiteboard_id>   画板唯一标识符（必填）
@@ -25,6 +29,7 @@ var boardSVGImportCmd = &cobra.Command{
 特性:
   - 自动解析 SVG viewBox 推断默认宽高，也可用 --width/--height 覆盖
   - --dry-run 仅打印将创建的节点 JSON，不调用 API
+  - --client-token 幂等键（≥10 字符）：结果未知时用同一个值重跑不会重复建节点
 
 示例:
   # 从文件导入
@@ -50,6 +55,11 @@ var boardSVGImportCmd = &cobra.Command{
 		zIndex, _ := cmd.Flags().GetInt("z-index")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		output, _ := cmd.Flags().GetString("output")
+		clientToken, _ := cmd.Flags().GetString("client-token")
+		clientToken = strings.TrimSpace(clientToken)
+		if err := client.ValidateBoardClientToken(clientToken); err != nil {
+			return clierr.Usage(err)
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		// 读 SVG 内容
@@ -141,6 +151,7 @@ var boardSVGImportCmd = &cobra.Command{
 
 		opts := client.CreateBoardNotesOptions{
 			UserAccessToken: userAccessToken,
+			ClientToken:     clientToken,
 		}
 		nodeIDs, err := client.CreateBoardNodes(whiteboardID, string(nodesBytes), opts)
 		if err != nil {
@@ -148,12 +159,16 @@ var boardSVGImportCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			return printJSON(map[string]any{
+			out := map[string]any{
 				"whiteboard_id": whiteboardID,
 				"node_ids":      nodeIDs,
 				"count":         len(nodeIDs),
 				"x":             x, "y": y, "width": width, "height": height,
-			})
+			}
+			if clientToken != "" {
+				out["client_token"] = clientToken
+			}
+			return printJSON(out)
 		}
 		fmt.Printf("SVG 节点已创建：\n  画板 ID: %s\n  节点 ID: %s\n  位置: (%.0f, %.0f)  尺寸: %.0fx%.0f\n",
 			whiteboardID, firstID(nodeIDs), x, y, width, height)
@@ -282,4 +297,5 @@ func init() {
 	boardSVGImportCmd.Flags().Bool("dry-run", false, "预览节点 JSON 但不调用 API")
 	boardSVGImportCmd.Flags().String("user-access-token", "", "User Access Token")
 	boardSVGImportCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
+	boardSVGImportCmd.Flags().String("client-token", "", "幂等键（≥10 字符；结果未知时用同一个值重跑不会重复建节点）")
 }

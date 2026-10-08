@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -19,6 +20,8 @@ var boardUpdateCmd = &cobra.Command{
 
 --overwrite 模式会通过服务端 overwrite: true 参数原子清空并写入新节点。
 --dry-run 模式仅预览，不实际执行。
+--client-token 幂等键（≥10 字符）：网络超时等结果未知时，用同一个值重跑不会重复建节点
+（服务端对同一 client_token 直接返回首次写入的节点 ID）。
 
 示例:
   # 从文件更新（追加模式）
@@ -28,7 +31,10 @@ var boardUpdateCmd = &cobra.Command{
   cat nodes.json | feishu-cli board update BOARD_ID --stdin --overwrite
 
   # 预览覆盖操作
-  feishu-cli board update BOARD_ID nodes.json --overwrite --dry-run`,
+  feishu-cli board update BOARD_ID nodes.json --overwrite --dry-run
+
+  # 带幂等键写入（结果未知时原样重跑）
+  feishu-cli board update BOARD_ID nodes.json --client-token fp-nodes-20260101-001`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -41,6 +47,11 @@ var boardUpdateCmd = &cobra.Command{
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		snapshotPath, _ := cmd.Flags().GetString("snapshot")
 		output, _ := cmd.Flags().GetString("output")
+		clientToken, _ := cmd.Flags().GetString("client-token")
+		clientToken = strings.TrimSpace(clientToken)
+		if err := client.ValidateBoardClientToken(clientToken); err != nil {
+			return clierr.Usage(err)
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		// 1. 读取节点 JSON（从文件或 stdin）
@@ -91,6 +102,7 @@ var boardUpdateCmd = &cobra.Command{
 		newNodeIDs, err := client.CreateBoardNodes(whiteboardID, nodesJSON, client.CreateBoardNotesOptions{
 			UserAccessToken: userAccessToken,
 			Overwrite:       overwrite,
+			ClientToken:     clientToken,
 		})
 		if err != nil {
 			return fmt.Errorf("更新画板节点失败: %w", err)
@@ -103,6 +115,9 @@ var boardUpdateCmd = &cobra.Command{
 				"new_node_ids":  newNodeIDs,
 				"created_count": len(newNodeIDs),
 				"overwrite":     overwrite,
+			}
+			if clientToken != "" {
+				result["client_token"] = clientToken
 			}
 			return printJSON(result)
 		}
@@ -191,6 +206,7 @@ func init() {
 	boardUpdateCmd.Flags().Bool("overwrite", false, "原子覆盖模式（服务端 overwrite: true）")
 	boardUpdateCmd.Flags().Bool("dry-run", false, "仅预览，不实际执行")
 	boardUpdateCmd.Flags().String("snapshot", "", "执行 --overwrite 前把旧节点导出到此路径（用于本地备份）")
+	boardUpdateCmd.Flags().String("client-token", "", "幂等键（≥10 字符；结果未知时用同一个值重跑不会重复建节点）")
 	boardUpdateCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	boardUpdateCmd.Flags().String("user-access-token", "", "User Access Token")
 }

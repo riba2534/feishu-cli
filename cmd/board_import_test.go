@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -140,5 +141,68 @@ func TestBoardImport_RetryDedupesLandedRequest(t *testing.T) {
 	}
 	if !strings.Contains(out, `"ticket_id": "t1:9"`) {
 		t.Fatalf("应返回新落地的顶层节点 t1:9，实际:\n%s", out)
+	}
+}
+
+// TestBoardExportCodeSource 覆盖 --source：从节点 syntax.code 取回 Mermaid/PlantUML 源码，多块时要求 --node-id。
+func TestBoardExportCodeSource(t *testing.T) {
+	nodes, err := parseBoardExportNodes(json.RawMessage(`[
+		{"id":"t1:4","type":"section","syntax":{"code":"@startuml\nA -> B\n@enduml\n","syntax_type":1}},
+		{"id":"t1:2","type":"section","syntax":{"code":"graph TD\nA-->B\n","syntax_type":2}},
+		{"id":"o1:1","type":"composite_shape"},
+		{"id":"x:1","type":"section","syntax":{"code":"<svg/>","syntax_type":3}}
+	]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := collectBoardSourceBlocks(nodes)
+	if len(blocks) != 2 || blocks[0].NodeID != "t1:2" || blocks[0].Syntax != "mermaid" || blocks[1].Syntax != "plantuml" {
+		t.Fatalf("blocks = %+v", blocks)
+	}
+	if err := exportBoardDiagramSource(nodes, "", ""); err == nil || !clierr.HasKind(err, clierr.KindUsage) || !strings.Contains(err.Error(), "--node-id") {
+		t.Fatalf("多块未指定 --node-id 应用法错误: %v", err)
+	}
+	out, err := captureAppsStdout(t, func() error { return exportBoardDiagramSource(nodes, "t1:2", "") })
+	if err != nil || out != "graph TD\nA-->B\n" {
+		t.Fatalf("stdout = %q, err=%v", out, err)
+	}
+	dir := t.TempDir()
+	if _, err := captureAppsStdout(t, func() error { return exportBoardDiagramSource(nodes, "t1:4", dir+"/diagram") }); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(dir + "/diagram.puml"); err != nil || !strings.Contains(string(b), "@startuml") {
+		t.Fatalf("应按语法补 .puml 扩展名: %v %q", err, b)
+	}
+	if err := exportBoardDiagramSource(nodes[2:3], "", ""); err == nil {
+		t.Fatal("没有源码块应报错")
+	}
+}
+
+// TestBoardUpdate_ClientTokenQuery 验证 board update --client-token 透传为 /nodes 的 query client_token（该端点实测幂等）。
+func TestBoardUpdate_ClientTokenQuery(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if mockAuthHandler(w, r) {
+			return
+		}
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"code":0,"data":{"ids":["o1:1"],"client_token":"fp-token-0001"}}`)
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(setupCmdTestConfig(t, srv.URL))
+	dir := t.TempDir()
+	f := dir + "/nodes.json"
+	_ = os.WriteFile(f, []byte(`[{"type":"composite_shape"}]`), 0o644)
+
+	if _, err := runSlidesCmd(t, boardUpdateCmd, []string{"wb1", f}, map[string]string{"client-token": "short"}); err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+		t.Fatalf("过短 client-token 应用法错误: %v", err)
+	}
+	out, err := runSlidesCmd(t, boardUpdateCmd, []string{"wb1", f}, map[string]string{"client-token": "fp-token-0001", "output": "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gotQuery, "client_token=fp-token-0001") || !strings.Contains(out, `"client_token": "fp-token-0001"`) {
+		t.Fatalf("query=%q out=%s", gotQuery, out)
 	}
 }
