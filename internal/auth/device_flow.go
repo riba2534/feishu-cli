@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 const (
@@ -40,6 +41,9 @@ func resolveDeviceAuthURL(baseURL string) string {
 	return strings.TrimRight(config.ResolveAccountsBase(baseURL), "/") + deviceAuthPath
 }
 
+// deviceAuthURLFunc 解析设备授权端点，测试可替换为 httptest URL。
+var deviceAuthURLFunc = resolveDeviceAuthURL
+
 // RequestDeviceAuthorization 向飞书设备授权端点发起请求（RFC 8628 步骤一）
 //
 // 使用 HTTP Basic 认证（appID:appSecret）发送 form 表单请求。
@@ -51,22 +55,17 @@ func RequestDeviceAuthorization(appID, appSecret, baseURL, scope string) (*Devic
 			"  配置文件: feishu-cli config init")
 	}
 
-	if !strings.Contains(scope, "offline_access") {
-		if scope == "" {
-			scope = "offline_access"
-		} else {
-			scope = scope + " offline_access"
-		}
-	}
+	// 线上格式统一为空格分隔（服务端把 "a,b" 当成一个非法 scope）；按 token 判断是否已含 offline_access
+	scope = JoinScopes(UniqueScopeList(scope), []string{"offline_access"})
 
-	deviceAuthURL := resolveDeviceAuthURL(baseURL)
+	deviceAuthURL := deviceAuthURLFunc(baseURL)
 	basicAuth := base64.StdEncoding.EncodeToString([]byte(appID + ":" + appSecret))
 
 	formBody := url.Values{}
 	formBody.Set("client_id", appID)
 	formBody.Set("scope", scope)
 
-	req, err := http.NewRequest("POST", deviceAuthURL, strings.NewReader(formBody.Encode()))
+	req, err := http.NewRequestWithContext(runctx.Root(), "POST", deviceAuthURL, strings.NewReader(formBody.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("构造设备授权请求失败: %w", err)
 	}
@@ -173,7 +172,7 @@ func PollDeviceToken(appID, appSecret, baseURL, deviceCode string, interval, exp
 		formBody.Set("client_id", appID)
 		formBody.Set("client_secret", appSecret)
 
-		req, err := http.NewRequest("POST", tokenURL, strings.NewReader(formBody.Encode()))
+		req, err := http.NewRequestWithContext(runctx.Root(), "POST", tokenURL, strings.NewReader(formBody.Encode()))
 		if err != nil {
 			currentInterval = min(currentInterval+1, maxPollInterval)
 			continue

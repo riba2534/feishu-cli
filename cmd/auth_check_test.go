@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,5 +144,57 @@ func TestPerformAuthCheck_PartialMissing(t *testing.T) {
 	suggestion, _ := result["suggestion"].(string)
 	if suggestion == "" {
 		t.Errorf("should have suggestion when missing")
+	}
+}
+
+// TestAuthCheck_CommaSeparatedScopes：--scope "a,b" 必须识别为两个 scope，
+// suggestion 里的 auth login 命令统一空格分隔（服务端拒绝 "a,b" 形式）。
+func TestAuthCheck_CommaSeparatedScopes(t *testing.T) {
+	future := time.Now().Add(2 * time.Hour)
+	writeTestToken(t, &auth.TokenStore{
+		AccessToken:      "valid",
+		RefreshToken:     "valid-refresh",
+		ExpiresAt:        future,
+		RefreshExpiresAt: future,
+		Scope:            "search:docs:read",
+	})
+	t.Setenv("FEISHU_APP_ID", "cli_app")
+	t.Setenv("FEISHU_APP_SECRET", "secret_x")
+
+	stdout, _, err := runCLI(t, "auth", "check", "--scope", "search:docs:read,im:message:readonly, vc:note:read,search:docs:read")
+	if err == nil {
+		t.Fatal("缺 scope 时应返回非零")
+	}
+	if got := exitCodeFor(err); got != 3 {
+		t.Fatalf("缺 scope 应为鉴权类退出码 3，得到 %d", got)
+	}
+	var result struct {
+		OK         bool     `json:"ok"`
+		Granted    []string `json:"granted"`
+		Missing    []string `json:"missing"`
+		Suggestion string   `json:"suggestion"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("stdout 不是 JSON: %v\n%s", err, stdout)
+	}
+	if !reflect.DeepEqual(result.Granted, []string{"search:docs:read"}) {
+		t.Fatalf("granted = %v", result.Granted)
+	}
+	if !reflect.DeepEqual(result.Missing, []string{"im:message:readonly", "vc:note:read"}) {
+		t.Fatalf("missing = %v（逗号分隔应拆成多个 scope 并去重）", result.Missing)
+	}
+	if !strings.Contains(result.Suggestion, `--scope "im:message:readonly vc:note:read"`) {
+		t.Fatalf("suggestion 应为空格分隔: %s", result.Suggestion)
+	}
+}
+
+func TestAuthCheck_EmptyScopeIsUsageError(t *testing.T) {
+	writeTestToken(t, nil)
+	_, _, err := runCLI(t, "auth", "check", "--scope", " , ")
+	if err == nil {
+		t.Fatal("空 scope 应报错")
+	}
+	if got := exitCodeFor(err); got != 2 {
+		t.Fatalf("空 scope 应为用法错误 exit 2，得到 %d", got)
 	}
 }
