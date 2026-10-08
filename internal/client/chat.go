@@ -9,48 +9,94 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-// CreateChat 创建群聊
+// CreateChatOptions 创建群聊参数（POST /open-apis/im/v1/chats，仅 Bot/tenant 身份，对齐官方 #2728）。
+type CreateChatOptions struct {
+	Name        string
+	Description string
+	OwnerID     string   // open_id
+	UserIDs     []string // open_id 列表
+	BotIDs      []string // 机器人 app_id（cli_xxx），最多 5 个
+	ChatType    string   // private / public
+	ChatMode    string   // group（默认）/ topic（话题群）
+}
+
+// CreatedChat 创建群聊的返回摘要。
+type CreatedChat struct {
+	ChatID   string `json:"chat_id"`
+	Name     string `json:"name,omitempty"`
+	ChatType string `json:"chat_type,omitempty"`
+	ChatMode string `json:"chat_mode,omitempty"`
+	OwnerID  string `json:"owner_id,omitempty"`
+	External bool   `json:"external"`
+}
+
+// CreateChat 创建群聊（兼容旧签名）。
 func CreateChat(name, description, ownerID string, userIDs []string, chatType string) (string, error) {
-	client, err := GetClient()
+	created, err := CreateChatWithOptions(CreateChatOptions{
+		Name: name, Description: description, OwnerID: ownerID, UserIDs: userIDs, ChatType: chatType,
+	})
 	if err != nil {
 		return "", err
 	}
+	return created.ChatID, nil
+}
+
+// CreateChatWithOptions 创建群聊，支持话题群（chat_mode=topic）与邀请机器人。
+func CreateChatWithOptions(opts CreateChatOptions) (*CreatedChat, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
 
 	bodyBuilder := larkim.NewCreateChatReqBodyBuilder()
-	if name != "" {
-		bodyBuilder.Name(name)
+	if opts.Name != "" {
+		bodyBuilder.Name(opts.Name)
 	}
-	if description != "" {
-		bodyBuilder.Description(description)
+	if opts.Description != "" {
+		bodyBuilder.Description(opts.Description)
 	}
-	if ownerID != "" {
-		bodyBuilder.OwnerId(ownerID)
+	if opts.OwnerID != "" {
+		bodyBuilder.OwnerId(opts.OwnerID)
 	}
-	if len(userIDs) > 0 {
-		bodyBuilder.UserIdList(userIDs)
+	if len(opts.UserIDs) > 0 {
+		bodyBuilder.UserIdList(opts.UserIDs)
 	}
-	if chatType != "" {
-		bodyBuilder.ChatType(chatType)
+	if len(opts.BotIDs) > 0 {
+		bodyBuilder.BotIdList(opts.BotIDs)
+	}
+	if opts.ChatType != "" {
+		bodyBuilder.ChatType(opts.ChatType)
+	}
+	if opts.ChatMode != "" {
+		bodyBuilder.ChatMode(opts.ChatMode)
 	}
 
 	req := larkim.NewCreateChatReqBuilder().
+		UserIdType("open_id").
 		Body(bodyBuilder.Build()).
 		Build()
 
 	resp, err := client.Im.Chat.Create(Context(), req)
 	if err != nil {
-		return "", fmt.Errorf("创建群聊失败: %w", err)
+		return nil, fmt.Errorf("创建群聊失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return "", fmt.Errorf("创建群聊失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, fmt.Errorf("创建群聊失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	if resp.Data.ChatId == nil {
-		return "", fmt.Errorf("群聊已创建但未返回群 ID")
+	if resp.Data == nil || resp.Data.ChatId == nil {
+		return nil, fmt.Errorf("群聊已创建但未返回群 ID")
 	}
 
-	return *resp.Data.ChatId, nil
+	return &CreatedChat{
+		ChatID:   StringVal(resp.Data.ChatId),
+		Name:     StringVal(resp.Data.Name),
+		ChatType: StringVal(resp.Data.ChatType),
+		ChatMode: StringVal(resp.Data.ChatMode),
+		OwnerID:  StringVal(resp.Data.OwnerId),
+		External: BoolVal(resp.Data.External),
+	}, nil
 }
 
 // GetChat 获取群聊信息

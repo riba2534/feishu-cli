@@ -2,10 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -32,6 +35,8 @@ var chatListCmd = &cobra.Command{
   --page-size    每页数量（1-100）
   --page-token   分页标记（手动翻页时用）
   --page-all     自动翻页拉取全部群（忽略 --page-token）
+  --types        会话类型：group（默认）/ p2p / p2p,group；p2p（单聊）仅用户身份可列
+  --exclude-muted 过滤掉你设置了免打扰的会话（仅用户身份生效）
   -o json        以 JSON 输出
 
 示例:
@@ -39,6 +44,8 @@ var chatListCmd = &cobra.Command{
   feishu-cli chat list --page-size 20
   feishu-cli chat list --page-all                     # 拉全量
   feishu-cli chat list --sort-type ByActiveTimeDesc   # 按活跃时间降序
+  feishu-cli chat list --types p2p,group --sort-type ByActiveTimeDesc   # 含单聊
+  feishu-cli chat list --page-all --exclude-muted     # 只看没设免打扰的群
   feishu-cli chat list --page-all -o json | jq '.items[].name'`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -56,28 +63,63 @@ var chatListCmd = &cobra.Command{
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		pageAll, _ := cmd.Flags().GetBool("page-all")
 		output, _ := cmd.Flags().GetString("output")
+		excludeMuted, _ := cmd.Flags().GetBool("exclude-muted")
+		types, err := normalizeChatListTypes(flagString(cmd, "types"))
+		if err != nil {
+			return err
+		}
 
 		// User 优先、Tenant 兜底：已登录列本人加入的群，未登录列 Bot 加入的群。
 		token := resolveOptionalUserTokenWithFallback(cmd)
 
+		// Bot 身份出于隐私不能列单聊（对齐官方 bot_strip_p2p）：只要 p2p 时直接报错，混合时去掉 p2p 并提示。
+		effectiveTypes, err := resolveChatListTypesForIdentity(cmd.ErrOrStderr(), types, token)
+		if err != nil {
+			return err
+		}
+
+		opts := client.ListChatsOptions{
+			UserIDType: userIDType,
+			SortType:   sortType,
+			Types:      strings.Join(effectiveTypes, ","),
+			PageSize:   pageSize,
+			PageToken:  pageToken,
+		}
 		var result *client.ListChatsResult
 		if pageAll {
 			// 自动翻页时若未显式指定每页大小，用最大值 100 减少往返。
-			effectiveSize := pageSize
 			if !cmd.Flags().Changed("page-size") {
-				effectiveSize = 100
+				opts.PageSize = 100
 			}
-			r, err := listAllChats(userIDType, sortType, effectiveSize, token)
+			r, err := listAllChats(opts, token)
 			if err != nil {
 				return translateChatError(err)
 			}
 			result = r
 		} else {
-			r, err := client.ListChats(userIDType, sortType, pageSize, pageToken, token)
+			r, err := client.ListChatsWithOptions(opts, token)
 			if err != nil {
 				return translateChatError(err)
 			}
 			result = r
+		}
+
+		if excludeMuted {
+			ids := make([]string, 0, len(result.Items))
+			for _, c := range result.Items {
+				ids = append(ids, c.ChatID)
+			}
+			if muted := fetchMutedChatSet(cmd.ErrOrStderr(), ids, token); muted != nil {
+				kept := result.Items[:0]
+				for _, c := range result.Items {
+					if !muted[c.ChatID] {
+						kept = append(kept, c)
+					}
+				}
+				filtered := len(result.Items) - len(kept)
+				result.Items = kept
+				printMuteFilterResult(cmd.ErrOrStderr(), filtered, len(kept), result.HasMore)
+			}
 		}
 
 		if output == "json" {
@@ -93,6 +135,12 @@ var chatListCmd = &cobra.Command{
 		for i, c := range result.Items {
 			fmt.Printf("[%d] %s\n", i+1, c.Name)
 			fmt.Printf("    Chat ID: %s\n", c.ChatID)
+			if c.ChatMode != "" {
+				fmt.Printf("    类型: %s\n", c.ChatMode)
+			}
+			if c.P2PTargetID != "" {
+				fmt.Printf("    单聊对象: %s（%s）\n", c.P2PTargetID, c.P2PTargetType)
+			}
 			if c.Description != "" {
 				fmt.Printf("    描述: %s\n", c.Description)
 			}
@@ -116,11 +164,12 @@ var chatListCmd = &cobra.Command{
 }
 
 // listAllChats 自动翻页拉取全部群。带非递增 token 保护与安全页数上限，防止无限循环。
-func listAllChats(userIDType, sortType string, pageSize int, token string) (*client.ListChatsResult, error) {
+func listAllChats(opts client.ListChatsOptions, token string) (*client.ListChatsResult, error) {
 	all := &client.ListChatsResult{}
 	pageToken := ""
 	for page := 0; page < chatListMaxPages; page++ {
-		r, err := client.ListChats(userIDType, sortType, pageSize, pageToken, token)
+		opts.PageToken = pageToken
+		r, err := client.ListChatsWithOptions(opts, token)
 		if err != nil {
 			return nil, err
 		}
@@ -150,4 +199,47 @@ func init() {
 	chatListCmd.Flags().Bool("page-all", false, "自动翻页拉取全部群（忽略 --page-token）")
 	chatListCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	chatListCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	chatListCmd.Flags().String("types", "", "会话类型：group / p2p / p2p,group（默认仅群；p2p 仅用户身份）")
+	chatListCmd.Flags().Bool("exclude-muted", false, "过滤当前用户设置了免打扰的会话（仅用户身份生效）")
+}
+
+// normalizeChatListTypes 校验 --types（group / p2p，逗号分隔，去重保序）。
+func normalizeChatListTypes(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range splitAndTrim(raw) {
+		p = strings.ToLower(p)
+		if p != "group" && p != "p2p" {
+			return nil, clierr.Usagef("--types 仅支持 group、p2p，得到 %q", p)
+		}
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// resolveChatListTypesForIdentity Bot 身份不能列单聊：只要 p2p → 报错；p2p,group → 去掉 p2p 并提示。
+func resolveChatListTypesForIdentity(errOut io.Writer, types []string, userToken string) ([]string, error) {
+	if userToken != "" || len(types) == 0 {
+		return types, nil
+	}
+	var kept []string
+	for _, t := range types {
+		if t != "p2p" {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) == len(types) {
+		return types, nil
+	}
+	if len(kept) == 0 {
+		return nil, clierr.Usagef("--types p2p（单聊）只支持用户身份：为保护隐私，Bot 不能列出单聊。请先 auth login，或在 --types 中包含 group")
+	}
+	fmt.Fprintln(errOut, "[提示] 为保护隐私，Bot 身份不能列出单聊，已从 --types 中去掉 p2p（仅列群）；登录后可列出单聊")
+	return kept, nil
 }
