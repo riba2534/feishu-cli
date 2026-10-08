@@ -68,6 +68,7 @@ var rootCmd = &cobra.Command{
   doctor    环境健康检查（6 项：config / user_token / endpoints / proxy / deps）
   config    配置管理（初始化配置）
   skills    与本版本配套的 AI 技能（list/read/install，内嵌于二进制）
+  update    检查并更新 feishu-cli 到 GitHub 最新 release（--check 只查询）
 
 注意：bitable 命令已切换到 base/v3 API，flag 使用 --base-token。
 

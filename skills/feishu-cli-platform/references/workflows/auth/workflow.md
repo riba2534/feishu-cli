@@ -112,6 +112,7 @@ feishu-cli config create-app --save
 feishu-cli doctor --json
 feishu-cli profile current
 feishu-cli skills install --dry-run
+feishu-cli update --check
 ```
 
 ### `auth token` 导出 Token 给外部工具用（v1.29+）
@@ -364,6 +365,17 @@ feishu-cli skills install --dir /tmp/skills-test     # 指定目录（FEISHU_CLI
 - 技能目录本身是符号链接（例如指向仓库开发目录）时视为外部管理，任何参数下都不写入、不删除。
 - 旧版 29 个技能目录默认只列出；`--prune-legacy` 仅删除 SKILL.md `name` 与旧技能名一致的普通目录。
 - 未安装技能的环境可直接用 `skills read` 读取当前版本的工作流，不必先安装。
+
+CLI 自身升级：
+
+```bash
+feishu-cli update --check                            # 当前版本 vs GitHub 最新 release
+feishu-cli update --dry-run                          # 预览下载地址、校验文件、目标路径与写权限
+feishu-cli update                                    # 下载 → sha256 校验 → 新二进制 --version 自检 → 原子替换
+```
+
+`update` 只在显式运行时联网；release 缺少 `checksums.txt` 或校验不匹配时拒绝替换；目标目录不可写时给出
+`sudo` / `install.sh` / `--target` 建议，不自动提权。更新后运行 `feishu-cli skills install` 同步技能。
 
 ## Agent 约定
 
