@@ -34,3 +34,5 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 
 改动色板或底色后运行本 Skill 的 dataviz 校验脚本；原样使用已校验色板无需重复验证。
 主题和风格是默认选项，优先满足用户指定的品牌色、明暗主题和载体，并验证可读性。
+
+遇到 Token、身份或 scope 报错（如 99991663/99991668/99991672/99991679）时，读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md` 确认应使用的身份与预检方式，排错表见 `../feishu-cli-platform/references/workflows/auth/workflow.md`。

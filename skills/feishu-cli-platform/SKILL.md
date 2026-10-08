@@ -31,7 +31,7 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 | 搜索文档、消息或应用 | `references/workflows/search/workflow.md` |
 | 查询用户、邮箱、手机号、部门 | `references/workflows/directory/workflow.md` |
 
-涉及身份选择时读取 `references/workflows/auth/references/identity.md`；`auth check` 不是 Bot 权限检查。
+涉及身份选择，或遇到 Token、身份、scope 报错（如 99991663/99991668/99991672/99991679）时读取 `references/workflows/auth/references/identity.md`，排错表见 `references/workflows/auth/workflow.md`；`auth check` 不是 Bot 权限检查。
 
 Schema 只负责发现接口；API 负责执行请求。通常先查 schema，再调用 api。
 

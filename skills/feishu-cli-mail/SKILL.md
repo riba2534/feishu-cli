@@ -21,3 +21,5 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 2. 用户只要求草稿或尚未明确发送时保存草稿；已明确授权发送且收件人、主题、正文齐备时直接使用 `--confirm-send`，不重复索取确认。普通附件暂不支持，不要承诺发送未支持的附件。
 3. 回复和转发前先读取原邮件，避免选错 message ID 或 thread ID。
 4. 不在日志或结果中回显邮件正文里的敏感信息。
+
+遇到 Token、身份或 scope 报错（如 99991663/99991668/99991672/99991679）时，读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md` 确认应使用的身份与预检方式，排错表见 `../feishu-cli-platform/references/workflows/auth/workflow.md`。

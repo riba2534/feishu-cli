@@ -43,3 +43,5 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 2. 写入前确认目标、更新模式和影响范围；优先 dry-run 或测试文档。
 3. 导入前读取 `references/workflows/import/references/doc-guide.md`。
 4. 用户明确指定接收人时按其要求授权；其余按 write 工作流读取生效的 `owner_email` / `transfer_ownership`，仅在已配置 owner 时处理。未要求通知时在当前会话返回文档链接。
+
+遇到 Token、身份或 scope 报错（如 99991663/99991668/99991672/99991679）时，读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md` 确认应使用的身份与预检方式，排错表见 `../feishu-cli-platform/references/workflows/auth/workflow.md`。

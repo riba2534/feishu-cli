@@ -32,3 +32,5 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 2. 删除、移动、覆盖、转移所有权和删除知识空间属于高风险操作，先确认目标并使用命令提供的确认参数。
 3. 评论常需 User Token；perm 命令组仅 App 身份（无 user-token 参数），`drive apply-permission` 才需 User Token。以工作流和实际帮助为准。
 4. wiki node token 与普通 document/file token 不可混用。
+
+遇到 Token、身份或 scope 报错（如 99991663/99991668/99991672/99991679）时，读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md` 确认应使用的身份与预检方式，排错表见 `../feishu-cli-platform/references/workflows/auth/workflow.md`。
