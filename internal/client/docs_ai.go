@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 )
 
 // DocsAIResultError 表示 docs_ai 接口 HTTP/业务码都成功（code=0），但 data.result 不是 success：
@@ -191,4 +193,32 @@ func DocsAIDocumentContent(data map[string]any) (string, int) {
 		rev = v
 	}
 	return content, rev
+}
+
+// DocsAIRequest 通用 docs_ai 请求（历史版本等）：先解析业务信封再看 HTTP 状态，返回 data（附 log_id）。
+func DocsAIRequest(method, apiPath string, params map[string]any, body any, action, userAccessToken string) (map[string]any, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	req := &larkcore.ApiReq{
+		HttpMethod:                strings.ToUpper(method),
+		ApiPath:                   apiPath,
+		Body:                      body,
+		QueryParams:               BuildQueryParams(params),
+		SupportedAccessTokenTypes: []larkcore.AccessTokenType{tokenType},
+	}
+	resp, err := cli.Do(Context(), req, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("%s失败: %w", action, err)
+	}
+	data, logID, err := decodeDocsAIData(action, resp.StatusCode, resp.Header, resp.RawBody)
+	if err != nil {
+		return nil, err
+	}
+	if logID != "" {
+		data["log_id"] = logID
+	}
+	return data, nil
 }

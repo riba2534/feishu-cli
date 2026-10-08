@@ -2,6 +2,18 @@
 
 本技能负责创建和编辑飞书 docx。Markdown 文件导入创建文档见 `../import/workflow.md`；只读/导出走 `../read/workflow.md` / `../export/workflow.md`。
 
+## 目录
+
+- [新建文档](#新建文档)（含 docs_ai 带内容建文档）
+- [用 Markdown 创建文档](#用-markdown-创建文档)
+- [编辑已有文档](#编辑已有文档)（content-update 文本级 / 块级 / 方言转换 / 本地资源）
+- [历史版本与回滚](#历史版本与回滚doc-history)
+- [Markdown 图片](#markdown-图片)
+- [低层块操作](#低层块操作)
+- [表格](#表格)
+- [扩展语法](#扩展语法)
+- [验证](#验证)
+
 ## 新建文档
 
 ```bash
@@ -124,6 +136,25 @@ feishu-cli doc content-update <doc> --mode append --doc-format xml --content '<p
 - 用户说"修改/替换/更新某段"时用 replace_range / replace_all / str_replace，不要 append 导致重复。
 
 `--table-column-width`：**`content-update` 不支持自定义列宽**（原子更新协议限制），传非 `auto` 值或内容中含 `<!-- feishu-colwidth: ... -->` 注释都会 fail-closed 报错；需要控制列宽请改用 `feishu-cli doc import`。`doc add` 仍支持该 flag，取值与注释的完整规则（单位/优先级/clamp）以 `../import/references/doc-guide.md` 表格章节为权威。
+
+## 历史版本与回滚（doc history）
+
+```bash
+# 列出历史版本（每页 1-20；has_more 时 stderr 提示 page_token；--page-all 自动翻页）
+feishu-cli doc history list <doc> [--page-size 20] [--page-token TOKEN] [--page-all] [-o json]
+
+# 回滚到 history_version_id（写操作：非交互需 --yes；--dry-run 只打印请求）
+feishu-cli doc history revert <doc> --history-version-id 5120 --yes
+feishu-cli doc history revert <doc> --history-version-id 5120 --wait-timeout-ms 0 --yes   # 只发起不等待
+
+# 查询回滚任务
+feishu-cli doc history revert-status <doc> --task-id <task_id>
+```
+
+- 回滚接口只接受 `history_version_id`（list 返回），**不要传 `revision_id`**；按 revision_id 或时间点回滚时先在 list 中定位记录
+  （`edit_time` 为 RFC3339），同一 revision_id 命中多条时请用户确认。
+- `status=done` 才是成功；`running` 时用 revert-status 继续查询；`partial_failed` / `failed` 以退出码 1 结束并输出 `failed_block_tokens`。
+- 回滚以历史内容替换当前正文（当前内容仍在历史中，可再回滚）；回滚后 block id 可能变化，继续编辑前重新 `doc read --with-ids`。
 
 ## Markdown 图片
 
