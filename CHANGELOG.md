@@ -24,7 +24,7 @@
 - **`api` 命令**：业务错误时 stdout 为空，错误与诊断写 stderr（`--raw` 仍原样输出响应体）。
 - **认证**：`--scope` 与 `--domain/--recommend` 可叠加（原报错）；批量申请一律剔除 `im:message.send_as_user`；`--device-code` 续轮询上限 600 秒；token.json 可能新增 `refresh_failure` 标记。
 - **OKR**：`okr cycle list` 默认查询 v2 用户周期（与 `cycle detail`、目标创建使用的 ID 一致），旧的租户周期用 `--tenant`。
-- **IM**：<!-- IM 合入后补充 -->
+- **IM**：`msg history` 在话题群只返回根消息（回复在 `thread_replies` 中，不再重复出现在 `items`）；`msg thread-messages` 的时间范围改为按秒在客户端过滤；`msg reaction/pin`、`chat get/update/delete` 新增 `--as`（默认 auto，未登录时可用 Bot）；`msg merge-forward` 固定使用应用身份；`chat member list` 新增 `users/bots/truncations` 字段（`items` 仍只含用户）；`user search --query` 改走 `contact/v3/users/search`，不再返回 `user_id`（需要时用 `--email/--mobile`）；`user search --email/--mobile` 的 `user_id` 字段改为真实 user_id（此前填的是 open_id）；`event consume` 同一应用单进程单连接并加单实例锁。
 
 ### 新增
 
@@ -72,8 +72,11 @@
 - `apps get`、`apps release get/list`、`apps html-publish --wait`；`apps list --keyword`。
 - `board export-code --source`；`board update/svg-import/import --client-token`。
 
-**IM**
-<!-- IM 合入后补充 -->
+**IM 与通讯录**
+- `--text/--markdown/--content` 支持 `@文件` 与 `-`（stdin）；`--markdown` 发送前做样式归一（标题降级、表格补空行）；`--attachment` 附件区；音视频上传自动解析时长；`msg edit`；`msg send/reply` 输出 `chat_id/create_time` 并支持 `--dry-run`。
+- `chat create --chat-mode topic --bots`（返回分享链接）；`chat list --types p2p --exclude-muted`；`msg search-chats --member-ids/--chat-modes/--sort/--exclude-muted`。
+- `user search` 关键词搜索支持 `--has-chatted` 等过滤；`user search-bot`；`user info --as user`。
+- `event consume` 按 event_id 去重，启动前探测远端已有连接。
 
 ### 修复
 
@@ -103,7 +106,8 @@
 - 画板与 Slides：`board import --syntax svg` 不再被当作 PlantUML（改走服务端 SVG 解析，生成可编辑节点）；空画板 `delete --all` 不再报错；`slides get` 接受 URL，`--revision-id 0` 明确拒绝。
 - 认证：scope 支持逗号分隔；`auth status --verify` 改为加锁刷新并校验 App 绑定；刷新失败按错误码分类（终态记录标记，不再每条命令重复刷新）；时间输出使用真实时区（RFC3339）；`create-app` 对齐注册协议（`expire_in`、Lark 租户品牌）。
 - 运行时：限流等待只向上抖动并支持 Retry-After；手写请求统一走共享连接池与受控客户端；Ctrl-C 可中断进行中的请求；拼错子命令给出建议；错误预览与落盘文件名按 UTF-8 字符边界截断。
-- IM：<!-- IM 合入后补充 -->
+- IM：话题群 `msg history` 线程回复重复输出、翻页被回复占用；`--markdown/--content` 的 @ 标签未规范化导致 @ 失效；`chat member list` 拿不到群内机器人；事件订阅按事件类型各开一条连接、与同应用其他连接争抢事件；设了 `--timeout/--max-events` 时 stdin EOF 仍提前退出；`msg history` 文本模式也全量拉取群成员；User 身份降级到搜索时提示语与身份不符且静默丢弃时间参数；`--user-email` 模糊匹配可能定位到错误的人；`search messages/chats` 丢弃服务端 notice；资源下载默认文件名改为服务端文件名。
+- 集成阶段：SDK token 缓存改为随 client 实例重建而丢弃（同一 app_id 切换 base_url 或轮换 secret 后不再复用旧 token）；异步删除任务失败时按身份提示原因；`table-put` 数值列写入前重置残留的文本格式。
 
 ### 技能与验证
 

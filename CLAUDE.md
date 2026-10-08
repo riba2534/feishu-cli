@@ -179,6 +179,15 @@ export FEISHU_APP_SECRET=xxx
 - JSON 输出顶层新增 `thread_replies` / `thread_has_more` / `thread_replies_card_texts`
 - **发送者名字解析（v1.36+）**：所有读消息请求带 `with_sender_name=true`，服务端直接回填显示名（含 **Bot** 与**外部租户用户**，无需通讯录权限，实测内部群解析率 ~100%）；mentions 与 contact basic_batch 仍作兜底（`internal/client/sender_names.go` 进程级注册表 + `ResolveSenderNames` 三步解析）
 - 关闭：`--expand-threads=false`；调规模：`--threads-per-page` / `--threads-total-limit`
+- **只取根消息（v1.42+）**：群消息列表请求带 `only_thread_root_messages=true`（对齐官方），回复只出现在 `thread_replies`，
+  不再与 `items` 重复、也不再占用翻页额度；普通群不受影响
+- 成员名单只在 JSON 输出需要时才拉取；User 身份 list 失败降级到搜索时，stderr 会说明时间范围/排序在搜索模式不生效
+
+### 事件订阅单连接（v1.42+）
+
+服务端会把同一 App 的事件随机分发给该 App 的所有长连接。`event consume` 在同一进程内只建一条连接、注册全部
+所需事件类型并在本地过滤；同一 App 在本机加单实例锁（第二个进程报错退出，`--force` 跳过但会拆分事件），
+启动前探测远端已有连接并告警；按 event_id 去重。设了 `--timeout` / `--max-events` 时忽略 stdin EOF。
 
 ## 命令速查
 
