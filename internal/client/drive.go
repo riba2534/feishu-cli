@@ -377,58 +377,56 @@ func GetMediaTempURL(fileToken string, opts ...DownloadMediaOptions) (string, er
 	return *resp.Data.TmpDownloadUrls[0].TmpDownloadUrl, nil
 }
 
-// DownloadFromURL downloads a file from a URL with size limit
+// DownloadFromURL 从（预签名/公开）URL 下载文件，限制最大 100MB。
+//
+// 请求 context 派生自进程根 context（Ctrl-C 可中断）；timeout > 0 时为总时长上限，
+// 默认 5 分钟；单次等待另受空闲超时约束，断流时按分片有界重试并从断点续传（服务端支持 Range 时）。
+// 写盘为同目录临时文件 + rename，失败不留半截文件、不破坏已存在的同名文件。
 func DownloadFromURL(url string, outputPath string, timeout ...time.Duration) error {
 	if err := validatePath(outputPath); err != nil {
 		return err
 	}
-
-	httpClient := &http.Client{
-		Timeout: resolveTimeout(downloadTimeout, timeout),
-	}
-
-	resp, err := httpClient.Get(url)
-	if err != nil {
-		return fmt.Errorf("从 URL 下载失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("下载失败: HTTP 状态码 %d", resp.StatusCode)
-	}
-
-	if resp.ContentLength > maxDownloadSize {
-		return fmt.Errorf("文件超过大小限制: %d MB (限制 %d MB)",
-			resp.ContentLength/(1024*1024), maxDownloadSize/(1024*1024))
-	}
-
-	return saveToFile(resp.Body, outputPath)
+	_, _, err := downloadStreamToFile(downloadStreamSpec{
+		Action:     "从 URL 下载",
+		URL:        url,
+		HTTPClient: publicDownloadHTTPClient(nil),
+		MaxBytes:   maxDownloadSize,
+	}, outputPath, resolveTimeout(downloadTimeout, timeout))
+	return err
 }
 
-// saveToFile 将 reader 内容写入文件，限制最大大小 (maxDownloadSize)
-// 恰好 100MB 允许写入；严格大于 100MB 则报错并删除不完整文件
+// saveToFile 将 reader 内容原子写入文件，限制最大大小 (maxDownloadSize)。
+// 恰好 100MB 允许写入；严格大于 100MB 则报错，且不会留下不完整文件、不会改动已存在的同名文件。
 func saveToFile(reader io.Reader, outputPath string) error {
-	outFile, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("创建输出文件失败: %w", err)
-	}
-	defer outFile.Close()
-
-	limitedReader := io.LimitReader(reader, maxDownloadSize+1)
-	written, err := io.Copy(outFile, limitedReader)
-	if err != nil {
-		outFile.Close()
-		os.Remove(outputPath)
+	limited := &maxSizeReader{r: reader, max: maxDownloadSize}
+	if _, err := safefile.AtomicWriteFrom(outputPath, limited, 0o644); err != nil {
+		if limited.exceeded {
+			return fmt.Errorf("文件超过大小限制 (%d MB)", maxDownloadSize/(1024*1024))
+		}
 		return fmt.Errorf("写入文件失败: %w", err)
 	}
-
-	if written > maxDownloadSize {
-		outFile.Close()
-		os.Remove(outputPath)
-		return fmt.Errorf("文件超过大小限制 (%d MB)", maxDownloadSize/(1024*1024))
-	}
-
 	return nil
+}
+
+// errDownloadTooLarge 由 maxSizeReader 在超过上限时返回，使原子写中止。
+var errDownloadTooLarge = fmt.Errorf("文件超过大小限制 (%d MB)", maxDownloadSize/(1024*1024))
+
+// maxSizeReader 读取超过 max 字节时返回错误（恰好 max 字节允许）。
+type maxSizeReader struct {
+	r        io.Reader
+	max      int64
+	n        int64
+	exceeded bool
+}
+
+func (m *maxSizeReader) Read(p []byte) (int, error) {
+	n, err := m.r.Read(p)
+	m.n += int64(n)
+	if m.n > m.max {
+		m.exceeded = true
+		return 0, errDownloadTooLarge
+	}
+	return n, err
 }
 
 // validatePath 验证路径安全性，防止路径遍历攻击
@@ -503,26 +501,47 @@ func ListFiles(folderToken string, pageSize int, pageToken string, userAccessTok
 	return files, nextPageToken, hasMore, nil
 }
 
-// DriveRemoteEntry 是 ListFolderRecursive 返回的单个云盘条目。
+// DriveRemoteEntry 是 ListFolderRecursive / ListFolderEntries 返回的单个云盘条目。
 // 与 DriveFile 相比，附带递归基础上的 RelPath（用 "/" 分隔）。
 type DriveRemoteEntry struct {
-	FileToken string
-	Type      string // file / folder / docx / sheet / bitable / mindnote / slides / shortcut
-	RelPath   string
+	FileToken    string
+	Type         string // file / folder / docx / sheet / bitable / mindnote / slides / shortcut
+	RelPath      string
+	Name         string
+	CreatedTime  string // 服务端 epoch 字符串（秒/毫秒）
+	ModifiedTime string
 }
 
 // ListFolderRecursive 递归列出 folderToken 下的所有条目（每个 type 都收，包括 folder/docx/...）。
 // 返回 map 的 key 是相对 listing 根的路径，分隔符固定为 "/"。
-// 调用方按 Type 过滤需要的子集（pull/status 只看 type=file，push 把 file 上传、folder 用作 cache）。
+// 远端存在重复相对路径时 fail closed（需要按策略处理重名时改用 ListFolderEntries）。
 func ListFolderRecursive(folderToken, userAccessToken string) (map[string]DriveRemoteEntry, error) {
-	out := make(map[string]DriveRemoteEntry)
-	if err := listFolderRecursiveInner(folderToken, "", userAccessToken, out); err != nil {
+	entries, err := ListFolderEntries(folderToken, userAccessToken)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]DriveRemoteEntry, len(entries))
+	for _, e := range entries {
+		if existing, exists := out[e.RelPath]; exists {
+			return nil, fmt.Errorf("远端存在重复相对路径 %q: 发现多个条目 (token %s[%s] 与 token %s[%s])，为防止静默覆盖导致数据丢失，已中止操作",
+				e.RelPath, existing.FileToken, existing.Type, e.FileToken, e.Type)
+		}
+		out[e.RelPath] = e
+	}
+	return out, nil
+}
+
+// ListFolderEntries 递归列出 folderToken 下的所有条目（含重名条目，按服务端返回顺序），
+// 每层完整翻页，遇到"has_more 但无游标/游标不前进"立即报错。
+func ListFolderEntries(folderToken, userAccessToken string) ([]DriveRemoteEntry, error) {
+	var out []DriveRemoteEntry
+	if err := listFolderEntriesInner(folderToken, "", userAccessToken, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func listFolderRecursiveInner(folderToken, relBase, userAccessToken string, out map[string]DriveRemoteEntry) error {
+func listFolderEntriesInner(folderToken, relBase, userAccessToken string, out *[]DriveRemoteEntry) error {
 	pageToken := ""
 	for {
 		files, nextPageToken, hasMore, err := ListFiles(folderToken, 200, pageToken, userAccessToken)
@@ -537,49 +556,30 @@ func listFolderRecursiveInner(folderToken, relBase, userAccessToken string, out 
 			if relBase != "" {
 				rel = relBase + "/" + f.Name
 			}
-			if existing, exists := out[rel]; exists {
-				return fmt.Errorf("远端存在重复相对路径 %q: 发现多个条目 (token %s[%s] 与 token %s[%s])，为防止静默覆盖导致数据丢失，已中止操作",
-					rel, existing.FileToken, existing.Type, f.Token, f.Type)
-			}
-			out[rel] = DriveRemoteEntry{FileToken: f.Token, Type: f.Type, RelPath: rel}
+			*out = append(*out, DriveRemoteEntry{
+				FileToken:    f.Token,
+				Type:         f.Type,
+				RelPath:      rel,
+				Name:         f.Name,
+				CreatedTime:  f.CreatedTime,
+				ModifiedTime: f.ModifiedTime,
+			})
 			if f.Type == "folder" {
-				if err := listFolderRecursiveInner(f.Token, rel, userAccessToken, out); err != nil {
+				if err := listFolderEntriesInner(f.Token, rel, userAccessToken, out); err != nil {
 					return err
 				}
 			}
 		}
-		if !hasMore || nextPageToken == "" {
+		more, cursor, perr := PaginationCursor(hasMore, "", nextPageToken, pageToken)
+		if perr != nil {
+			return perr
+		}
+		if !more {
 			break
 		}
-		pageToken = nextPageToken
+		pageToken = cursor
 	}
 	return nil
-}
-
-// HashRemoteFile 流式下载远端文件并计算 SHA-256。
-// 覆盖完整远端内容（流式读取使内存峰值保持在 O(64KB)，避免大文件 OOM），
-// 在下载或读取失败时显式 fail closed，绝不静默只 hash 前缀。
-func HashRemoteFile(fileToken, userAccessToken string) (string, error) {
-	c, err := GetClient()
-	if err != nil {
-		return "", err
-	}
-	req := larkdrive.NewDownloadFileReqBuilder().FileToken(fileToken).Build()
-	resp, err := c.Drive.File.Download(ContextWithTimeout(downloadTimeout), req, UserTokenOption(userAccessToken)...)
-	if err != nil {
-		return "", fmt.Errorf("下载远端文件以计算哈希失败 (token=%s): %w", fileToken, err)
-	}
-	if !resp.Success() {
-		return "", fmt.Errorf("下载远端文件以计算哈希失败 (token=%s): code=%d, msg=%s", fileToken, resp.Code, resp.Msg)
-	}
-	if resp.File == nil {
-		return "", fmt.Errorf("下载远端文件以计算哈希失败 (token=%s): 响应内容为空", fileToken)
-	}
-	h := sha256.New()
-	if _, err := io.Copy(h, resp.File); err != nil {
-		return "", fmt.Errorf("读取远端文件流以计算哈希失败 (token=%s): %w", fileToken, err)
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // HashLocalFile 计算本地文件的 SHA-256。
@@ -825,83 +825,26 @@ func DownloadFile(fileToken string, outputPath string, timeout ...time.Duration)
 	return DownloadFileWithToken(fileToken, outputPath, "", timeout...)
 }
 
-// DownloadFileWithToken 下载云盘文件，支持 User Access Token
+// DownloadFileWithToken 下载云盘文件，支持 User Access Token（为空时使用 Bot/Tenant 身份）。
+//
+// 两种身份都走流式下载（不再把整个文件读进内存、无 100MB 上限）：遇到"文件超过下载大小限制"
+// 自动切换 HTTP Range 分片；每个分片有界重试并断点续传；空闲超时替代总时长（timeout > 0 时额外
+// 作为总时长上限）；写盘为同目录临时文件 + rename。
 func DownloadFileWithToken(fileToken, outputPath, userAccessToken string, timeout ...time.Duration) error {
 	if err := validatePath(outputPath); err != nil {
 		return err
 	}
-
-	t := resolveTimeout(downloadTimeout, timeout)
-	if userAccessToken != "" {
-		return downloadDriveFileWithUserTokenRaw(fileToken, outputPath, userAccessToken, t)
+	var t time.Duration
+	if len(timeout) > 0 {
+		t = timeout[0]
 	}
-
-	client, err := GetClient()
+	d, err := OpenDriveFileDownload(fileToken, "", userAccessToken, t)
 	if err != nil {
 		return err
 	}
-
-	req := larkdrive.NewDownloadFileReqBuilder().
-		FileToken(fileToken).
-		Build()
-
-	resp, err := client.Drive.File.Download(ContextWithTimeout(t), req, UserTokenOption(userAccessToken)...)
-	if err != nil {
-		return fmt.Errorf("下载文件失败: %w", err)
-	}
-
-	if !resp.Success() {
-		return fmt.Errorf("下载文件失败: code=%d, msg=%s", resp.Code, resp.Msg)
-	}
-
-	// Bot/Tenant（SDK）下载路径保留 100MB 客户端上限（saveToFile 内含 LimitReader + 超限删盘）。
-	// user-token raw 路径（上面 downloadDriveFileWithUserTokenRaw）才刻意去掉上限——它用 Range 分片
-	// 正是为突破 100MB；两条路径上限策略不同，此处不要退化成无上限的 writeStreamToFile。
-	return saveToFile(resp.File, outputPath)
-}
-
-func downloadDriveFileWithUserTokenRaw(fileToken, outputPath, userAccessToken string, timeout time.Duration) error {
-	reqURL := buildDriveFileDownloadURL(fileToken)
-	// 带 Bearer 的请求必须走 config.NewHTTPClient：它在重定向时校验 host
-	// 并剥离 Authorization，裸 client 会把 User Token 重放给重定向目标
-	httpClient := config.NewHTTPClient(timeout)
-	req, err := newBearerDownloadRequest(reqURL, userAccessToken, "")
-	if err != nil {
-		return fmt.Errorf("下载文件失败: %w", err)
-	}
-
-	httpResp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("下载文件失败: %w", err)
-	}
-	defer httpResp.Body.Close()
-
-	if httpResp.StatusCode != http.StatusOK {
-		apiErr, parseErr := parseDownloadAPIError("下载文件", httpResp)
-		if parseErr != nil {
-			return parseErr
-		}
-		if isDownloadFileSizeLimitError(apiErr.Code, apiErr.Msg, nil) {
-			return downloadBearerURLByRange("下载文件", reqURL, outputPath, userAccessToken, timeout)
-		}
-		return fmt.Errorf("下载文件失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
-	}
-
-	bodyReader, apiErr, inspectErr := inspectDownloadAPIErrorResponse(httpResp)
-	if inspectErr != nil {
-		return fmt.Errorf("下载文件失败: 读取响应失败: %w", inspectErr)
-	}
-	if apiErr != nil {
-		if isDownloadFileSizeLimitError(apiErr.Code, apiErr.Msg, nil) {
-			return downloadBearerURLByRange("下载文件", reqURL, outputPath, userAccessToken, timeout)
-		}
-		return fmt.Errorf("下载文件失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
-	}
-
-	if err := writeStreamToFile(bodyReader, outputPath); err != nil {
-		return fmt.Errorf("保存文件失败: %w", err)
-	}
-	return nil
+	defer d.Close()
+	_, err = d.SaveTo(outputPath)
+	return err
 }
 
 func buildDriveFileDownloadURL(fileToken string) string {
@@ -930,8 +873,7 @@ func isDownloadFileSizeLimitError(code int, msg string, err error) bool {
 // 远端版本下载 = GET /open-apis/drive/v1/files/{file_token}/download?version=N，
 // 即同一个 file_token + version 查询参数，不会产生新 token（lark dry-run 实证）。
 // SDK v3.5.3 的 NewDownloadFileReqBuilder.Build() 只拷贝 PathParams、丢弃 QueryParams，
-// 无法表达 version 查询参数，因此这里用 raw larkcore.ApiReq + client.Do 直接构造请求，
-// 二进制响应体取自 resp.RawBody。
+// 因此这里直接拼 URL 走 Bearer 流式下载（不再把整个版本内容读进内存）。
 func DownloadFileVersion(fileToken, version, outputPath, userAccessToken string, timeout ...time.Duration) error {
 	if err := validatePath(outputPath); err != nil {
 		return err
@@ -942,44 +884,18 @@ func DownloadFileVersion(fileToken, version, outputPath, userAccessToken string,
 	if version == "" {
 		return fmt.Errorf("version 不能为空")
 	}
-
-	cli, err := GetClient()
+	var t time.Duration
+	if len(timeout) > 0 {
+		t = timeout[0]
+	}
+	// 与最新版本下载同一条流式链路：业务错误（含 HTTP 200 + JSON 信封）在打开时返回，不会落盘
+	d, err := OpenDriveFileDownload(fileToken, version, userAccessToken, t)
 	if err != nil {
 		return err
 	}
-
-	tokenType, opts := resolveTokenOpts(userAccessToken)
-	req := &larkcore.ApiReq{
-		HttpMethod:                http.MethodGet,
-		ApiPath:                   "/open-apis/drive/v1/files/:file_token/download",
-		PathParams:                larkcore.PathParams{},
-		QueryParams:               larkcore.QueryParams{},
-		SupportedAccessTokenTypes: []larkcore.AccessTokenType{tokenType},
-	}
-	req.PathParams.Set("file_token", fileToken)
-	req.QueryParams.Set("version", version)
-
-	resp, err := cli.Do(ContextWithTimeout(resolveTimeout(downloadTimeout, timeout)), req, opts...)
-	if err != nil {
-		return fmt.Errorf("下载文件版本失败: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("下载文件版本失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
-	}
-	// 飞书在权限不足/版本不存在时常返 HTTP 200 + JSON 业务错误体 {code,msg}，
-	// 不拦截会被当成正常二进制写盘。优先用 Content-Type 判定是否为 JSON 错误体，
-	// 缺失/不明确时再以 RawBody 是否以 '{' 开头作辅助（正常二进制 JSON 文件也可能以 '{' 开头，
-	// 故必须能成功 parse 出非零 code 字段才算业务错误）。
-	if code, msg, isErr := parseDownloadJSONError(resp.Header, resp.RawBody); isErr {
-		return fmt.Errorf("下载版本失败: code=%d, msg=%s", code, msg)
-	}
-	// cli.Do 返回完整 RawBody（SDK v3.5.3 不支持流式），size 检查在内存载入后仅防超大文件写盘；
-	// 飞书 markdown/附件通常不大，可接受。
-	if len(resp.RawBody) > maxDownloadSize {
-		return fmt.Errorf("文件超过大小限制 (%d MB)", maxDownloadSize/(1024*1024))
-	}
-
-	return saveToFile(bytes.NewReader(resp.RawBody), outputPath)
+	defer d.Close()
+	_, err = d.SaveTo(outputPath)
+	return err
 }
 
 // parseDownloadJSONError 判断 download 的 HTTP 200 响应是否为飞书业务错误体 {code,msg}。
@@ -1192,6 +1108,174 @@ func uploadFileMultipart(filePath, parentToken, fileName string, fileSize int, u
 	}
 
 	return *finishResp.Data.FileToken, nil
+}
+
+// DriveOverwriteResult 原地覆盖上传的结果。
+type DriveOverwriteResult struct {
+	FileToken string `json:"file_token"`
+	Version   string `json:"version,omitempty"`
+}
+
+// OverwriteDriveFileFromPath 用本地文件原地覆盖已有云盘文件（file_token 不变，产生新版本）。
+//
+// 官方协议（与 lark-cli drive +push --if-exists=overwrite 一致）：
+//   - ≤20MB：POST /open-apis/drive/v1/files/upload_all，multipart 表单携带 file_token；
+//   - >20MB：upload_prepare 携带 file_token → upload_part（每片有界重试）→ upload_finish。
+//
+// 覆盖保留原 file_token，因此链接、协作者、评论、历史版本都不会断开；任何一步失败都直接返回错误，
+// 绝不回退为"先删后传"（那样删除成功、上传失败就会丢文件）。服务端若未返回 version
+// （租户未灰度覆盖字段），视为失败而不是虚报成功。
+func OverwriteDriveFileFromPath(filePath, parentToken, fileName, fileToken, userAccessToken string) (*DriveOverwriteResult, error) {
+	if strings.TrimSpace(fileToken) == "" {
+		return nil, fmt.Errorf("覆盖上传需要已有文件的 file_token")
+	}
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("打开文件失败: %w", err)
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("获取文件信息失败: %w", err)
+	}
+	if fileName == "" {
+		fileName = filepath.Base(filePath)
+	}
+	size := stat.Size()
+	if DriveNeedsMultipart(size) {
+		return overwriteDriveFileMultipart(f, parentToken, fileName, fileToken, size, userAccessToken)
+	}
+	return overwriteDriveFileAll(f, parentToken, fileName, fileToken, size, userAccessToken)
+}
+
+func overwriteDriveFileAll(file io.Reader, parentToken, fileName, fileToken string, size int64, userAccessToken string) (*DriveOverwriteResult, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	fd := larkcore.NewFormdata().
+		AddField("file_name", fileName).
+		AddField("parent_type", "explorer").
+		AddField("parent_node", parentToken).
+		AddField("size", fmt.Sprintf("%d", size)).
+		AddField("file_token", fileToken).
+		AddFile("file", file)
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Post(ContextWithTimeout(downloadTimeout), "/open-apis/drive/v1/files/upload_all", fd, tokenType, append(opts, larkcore.WithFileUpload())...)
+	if err != nil {
+		return nil, fmt.Errorf("覆盖上传文件失败: %w", err)
+	}
+	if err := CheckAPIResponse("覆盖上传文件", resp); err != nil {
+		return nil, err
+	}
+	return parseDriveOverwriteResponse(resp.RawBody, fileToken)
+}
+
+func overwriteDriveFileMultipart(file io.ReaderAt, parentToken, fileName, fileToken string, size int64, userAccessToken string) (*DriveOverwriteResult, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	prepareResp, err := cli.Post(Context(), "/open-apis/drive/v1/files/upload_prepare", map[string]any{
+		"file_name":   fileName,
+		"parent_type": "explorer",
+		"parent_node": parentToken,
+		"size":        size,
+		"file_token":  fileToken,
+	}, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("覆盖上传（分片准备）失败: %w", err)
+	}
+	if err := CheckAPIResponse("覆盖上传（分片准备）", prepareResp); err != nil {
+		return nil, err
+	}
+	session, err := parseMultipartSessionFromAPI(prepareResp.RawBody, size)
+	if err != nil {
+		return nil, fmt.Errorf("覆盖上传（分片准备）失败: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "覆盖分片上传: 文件大小 %s, 分片大小 %s, 共 %d 个分片\n",
+		formatSize(int(size)), formatSize(int(session.BlockSize)), session.BlockNum)
+
+	const maxPartRetries = 3
+	for seq := int64(0); seq < session.BlockNum; seq++ {
+		offset := seq * session.BlockSize
+		partSize := session.BlockSize
+		if remaining := size - offset; partSize > remaining {
+			partSize = remaining
+		}
+		var lastErr error
+		for attempt := 1; attempt <= maxPartRetries; attempt++ {
+			fd := larkcore.NewFormdata().
+				AddField("upload_id", session.UploadID).
+				AddField("seq", fmt.Sprintf("%d", seq)).
+				AddField("size", fmt.Sprintf("%d", partSize)).
+				AddFile("file", io.NewSectionReader(file, offset, partSize))
+			partResp, perr := cli.Post(ContextWithTimeout(downloadTimeout), "/open-apis/drive/v1/files/upload_part", fd, tokenType, append(opts, larkcore.WithFileUpload())...)
+			if perr == nil {
+				perr = CheckAPIResponse(fmt.Sprintf("上传分片 %d/%d", seq+1, session.BlockNum), partResp)
+			} else {
+				perr = fmt.Errorf("上传分片 %d/%d 失败: %w", seq+1, session.BlockNum, perr)
+			}
+			if perr == nil {
+				lastErr = nil
+				break
+			}
+			lastErr = perr
+			// 参数类错误（如 1062009 大小不一致）重试无意义，直接失败
+			if apiErr, ok := AsAPIError(perr); ok && apiErr.HTTPStatus >= 400 && apiErr.HTTPStatus < 500 && apiErr.HTTPStatus != http.StatusTooManyRequests && apiErr.Code != 99991400 {
+				break
+			}
+			if attempt < maxPartRetries {
+				fmt.Fprintf(os.Stderr, "  第 %d/%d 片上传失败，重试 (%d/%d)...\n", seq+1, session.BlockNum, attempt, maxPartRetries)
+				time.Sleep(time.Duration(attempt) * time.Second)
+			}
+		}
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		fmt.Fprintf(os.Stderr, "  分片 %d/%d 上传完成 (%s)\n", seq+1, session.BlockNum, formatSize(int(partSize)))
+	}
+
+	finishResp, err := cli.Post(Context(), "/open-apis/drive/v1/files/upload_finish", map[string]any{
+		"upload_id": session.UploadID,
+		"block_num": session.BlockNum,
+	}, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("完成覆盖分片上传失败: %w", err)
+	}
+	if err := CheckAPIResponse("完成覆盖分片上传", finishResp); err != nil {
+		return nil, err
+	}
+	return parseDriveOverwriteResponse(finishResp.RawBody, fileToken)
+}
+
+func parseDriveOverwriteResponse(raw []byte, wantToken string) (*DriveOverwriteResult, error) {
+	var apiResp struct {
+		Data struct {
+			FileToken   string `json:"file_token"`
+			Version     string `json:"version"`
+			DataVersion string `json:"data_version"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析覆盖上传响应失败: %w", err)
+	}
+	res := &DriveOverwriteResult{FileToken: apiResp.Data.FileToken, Version: apiResp.Data.Version}
+	if res.Version == "" {
+		res.Version = apiResp.Data.DataVersion
+	}
+	if res.FileToken == "" {
+		return nil, fmt.Errorf("覆盖上传失败: 未返回 file_token")
+	}
+	if res.Version == "" {
+		// 协议保证覆盖会返回新版本号；缺失说明租户尚未灰度该字段，不能当作成功
+		return res, fmt.Errorf("覆盖上传后服务端未返回 version（租户可能尚未支持原地覆盖），请暂时改用 --if-exists skip")
+	}
+	if wantToken != "" && res.FileToken != wantToken {
+		return res, fmt.Errorf("覆盖上传返回的 file_token %s 与原文件 %s 不一致，请在云盘中核对", res.FileToken, wantToken)
+	}
+	return res, nil
 }
 
 // formatSize 将字节数格式化为可读字符串
