@@ -225,22 +225,28 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 	markdownFile, _ := flags.GetString("markdown-file")
 	contentStr, _ := flags.GetString("content")
 	contentFile, _ := flags.GetString("content-file")
-	setCount := 0
-	for _, name := range []string{"markdown", "markdown-file", "content", "content-file"} {
-		if flags.Changed(name) {
-			setCount++
+	// 冲突只看非空值（--markdown "" 可显式表示 str_replace 删除文本）
+	nonEmpty, changed := 0, 0
+	for _, kv := range []struct{ name, val string }{
+		{"markdown", markdownStr}, {"markdown-file", markdownFile}, {"content", contentStr}, {"content-file", contentFile},
+	} {
+		if kv.val != "" {
+			nonEmpty++
+		}
+		if flags.Changed(kv.name) {
+			changed++
 		}
 	}
-	if setCount > 1 {
+	if nonEmpty > 1 {
 		return clierr.Usagef("--markdown、--markdown-file、--content、--content-file 只能使用其中一个")
 	}
-	if flags.Changed("content") {
+	if contentStr != "" {
 		markdownStr = contentStr
 	}
-	if flags.Changed("content-file") {
+	if contentFile != "" {
 		markdownFile = contentFile
 	}
-	p.contentSet = setCount == 1
+	p.contentSet = changed > 0
 	content, err := resolveMarkdownContent(markdownStr, markdownFile)
 	if err != nil && contentUpdateModeNeedsContent(p.mode) {
 		return err
