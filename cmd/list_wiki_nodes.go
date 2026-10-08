@@ -34,7 +34,13 @@ var listWikiNodesCmd = &cobra.Command{
   feishu-cli wiki nodes 7012345678901234567 --parent Ad8Iw0oz3iSp4kkIi7Q
 
   # JSON 格式输出
-  feishu-cli wiki nodes 7012345678901234567 --output json`,
+  feishu-cli wiki nodes 7012345678901234567 --output json
+
+  # 自动翻页拉取全部子节点（默认只取一页；has_more 时 stderr 会提示 page_token）
+  feishu-cli wiki nodes 7012345678901234567 --page-all -o json
+
+  # 按上一次提示的 page_token 续翻
+  feishu-cli wiki nodes 7012345678901234567 --page-token <page_token>`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -45,14 +51,24 @@ var listWikiNodesCmd = &cobra.Command{
 		parentToken, _ := cmd.Flags().GetString("parent")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		output, _ := cmd.Flags().GetString("output")
-
-		nodes, _, _, err := client.ListWikiNodes(spaceID, parentToken, pageSize, "", resolveOptionalUserTokenWithFallback(cmd))
+		pageOpts, err := readListPageOptions(cmd)
 		if err != nil {
 			return err
 		}
 
+		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		res, err := collectListPages(pageOpts, func(pageToken string) ([]*client.WikiNode, string, bool, error) {
+			return client.ListWikiNodes(spaceID, parentToken, pageSize, pageToken, userToken)
+		})
+		if err != nil {
+			return err
+		}
+		nodes := res.Items
+		// has_more 时把续翻 page_token 打到 stderr（stdout 保持原有 JSON 数组形状，管道安全）
+		defer printListPageHint(cmd.ErrOrStderr(), res)
+
 		if output == "json" {
-			if err := printJSON(nodes); err != nil {
+			if err := printJSON(emptyOrSlice(nodes)); err != nil {
 				return err
 			}
 		} else {
@@ -82,6 +98,7 @@ func init() {
 	wikiCmd.AddCommand(listWikiNodesCmd)
 	listWikiNodesCmd.Flags().String("parent", "", "父节点 Token（不指定则列出根节点）")
 	listWikiNodesCmd.Flags().Int("page-size", 50, "每页数量")
+	addListPageFlags(listWikiNodesCmd)
 	listWikiNodesCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	listWikiNodesCmd.Flags().String("user-access-token", "", "User Access Token（可选；默认优先使用 auth login 登录态，失败时回退 App Token）")
 }

@@ -16,7 +16,7 @@ var moveDocsToWikiCmd = &cobra.Command{
 移动后：
   - 文档从云空间相关入口（快速访问、我的空间、共享空间）消失
   - 文档权限默认继承父页面
-  - 大文档会异步执行，返回 task_id 供查询
+  - 大文档会异步执行，返回 task_id；用 feishu-cli drive task-result --scenario wiki_move --task-id <task_id> 续查
   - 无权限但 --apply 时会提交迁入申请
 
 参数:
@@ -64,9 +64,14 @@ var moveDocsToWikiCmd = &cobra.Command{
 		apply, _ := cmd.Flags().GetBool("apply")
 		output, _ := cmd.Flags().GetString("output")
 
+		userToken := resolveOptionalUserToken(cmd)
+		moveDocsIdentity := "bot"
+		if userToken != "" {
+			moveDocsIdentity = "user"
+		}
 		result, err := client.MoveDocsToWiki(
 			spaceID, objType, objToken, parentNode, apply,
-			resolveOptionalUserToken(cmd),
+			userToken,
 		)
 		if err != nil {
 			return err
@@ -89,7 +94,7 @@ var moveDocsToWikiCmd = &cobra.Command{
 		case result.TaskID != "":
 			fmt.Printf("文档较大，已提交异步任务。\n")
 			fmt.Printf("  Task ID:      %s\n", result.TaskID)
-			fmt.Printf("  说明:         可通过飞书开放平台任务查询接口轮询执行结果\n")
+			fmt.Printf("  续查:         feishu-cli drive task-result --scenario wiki_move --task-id %s --as %s\n", quotePOSIXShell(result.TaskID), moveDocsIdentity)
 		case result.Applied:
 			fmt.Printf("权限不足，已提交迁入申请。\n")
 			fmt.Printf("  说明:         等待知识空间管理员审批\n")

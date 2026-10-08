@@ -16,7 +16,7 @@
 
 ## 前置条件
 
-- **认证**：多数 drive 命令必需 User Token（先 `feishu-cli auth login`）。`drive import/export/export-download/move` 支持 `--as bot|user|auto`（默认 auto：User 优先；未配置回退 Bot；已配置但刷新失败 fail-closed）。各命令的 Token 策略以「[权限要求](#权限要求)」表为唯一权威。
+- **认证**：多数 drive 命令必需 User Token（先 `feishu-cli auth login`）。`drive import/export/export-download/move/update-title/version-history/version-get/task-result` 支持 `--as bot|user|auto`（默认 auto：User 优先；未配置回退 Bot；已配置但刷新失败 fail-closed）。`drive download/upload/pull/push/status` 与 `file list` 也支持 `--as`，**不传时保持各自旧默认**（download/upload 必须 User；pull/push/status/file list 为 User 优先、不可用时告警回退 Bot；`--delete-local/--delete-remote` 下 fail-closed）。User Token 缺 `drive:drive`/`space:document:retrieve` 等 scope 时（99991679），可显式 `--as bot` 走应用身份。各命令的 Token 策略以「[权限要求](#权限要求)」表为唯一权威。
 - **预检**：`feishu-cli auth check --scope "drive:file:upload"` 可验证 scope
 
 ## 命令速查
@@ -47,29 +47,44 @@ feishu-cli drive apply-permission --token <url> --perm view --dry-run    # 预�
 - `--type` / `--doc-type` 与 URL 推断的类型冲突时直接报错（旧版本会静默以 `--type` 覆盖）；
   唯一例外是 wiki URL 配合需要解包的命令（如 `drive export`、`drive inspect`），此时 `--type` 表示期望的底层文档类型。
 
-### 1. 上传 / 下载
+### 1. 上传 / 下载 / 重命名 / 版本
 
 ```bash
 # 上传（>20MB 自动走 3 段式分块 upload_prepare/upload_part/upload_finish）
 feishu-cli drive upload --file /tmp/report.pdf
 feishu-cli drive upload --file /tmp/big.zip --folder-token fldxxx --name "年度报告.zip"
+feishu-cli drive upload --file /tmp/report.pdf --folder-token fldxxx --as bot   # Bot 上传，自动给当前用户授 full_access
 
-# 原地覆盖：把已有文件更新为新版本（file_token 不变、刷新 version/size，权限设置保持不变）
+# 原地覆盖：把已有文件更新为新版本（file_token 不变、返回新 version，权限设置保持不变；>20MB 走分片覆盖）
 feishu-cli drive upload --file /tmp/report.pdf --file-token boxcnxxxx
 
-# 下载（流式 + 路径校验 + --overwrite + --timeout，大文件自动 Range 分片兜底）
+# 下载（流式写盘，无 100MB 上限；分片失败有界重试并断点续传；60s 空闲超时；临时文件 + rename）
 feishu-cli drive download --file-token boxcnxxxx --output ./report.pdf
-feishu-cli drive download --file-token boxcnxxxx --output ./downloads/ --overwrite
-feishu-cli drive download --file-token boxcnxxxx --output ./big.zip --timeout 30m
-feishu-cli drive download --file-token boxcnxxxx --output ./report.pdf --output-format json
+feishu-cli drive download --file-token boxcnxxxx --output ./downloads/ --overwrite   # 目录：按服务端文件名保存
+feishu-cli drive download --file-token "https://xxx.feishu.cn/file/boxcnxxxx"       # 接受 URL；wiki 包装的文件自动解包
+feishu-cli drive download --file-token boxcnxxxx --output ./big.zip --timeout 30m    # 可选：总时长上限
+feishu-cli drive download --file-token boxcnxxxx --as bot --output-format json
+
+# 重命名（文件/文件夹/在线文档/wiki 节点；--type file 默认保留原扩展名）
+feishu-cli drive update-title --url "https://xxx.feishu.cn/docx/doxcnxxx" --title "季度复盘"
+feishu-cli drive update-title --token boxcnxxx --type file --title "报告-v2"          # → 报告-v2.pdf
+feishu-cli drive update-title --token boxcnxxx --type file --title "x.md" --on-extension-mismatch allow
+feishu-cli drive update-title --token fldcnxxx --type folder --title "归档" --dry-run
+
+# 上传文件的版本历史与按版本下载（version 不是 tag）
+feishu-cli drive version-history --file-token boxcnxxx -o json          # has_more 时带 next_cursor，用 --cursor 续翻
+feishu-cli drive version-get --file-token boxcnxxx --version 7694404069074407133 --output ./old/
+feishu-cli file version revert boxcnxxx 7694404069074407133              # 回滚到该版本
 ```
 
 **关键点**：
 - `drive upload` 分块上传每片独立重试 3 次，使用 `io.SectionReader` 外层只打开文件一次
-- `drive upload --file-token`：把本地文件覆盖为该文件的新版本，file_token 不变；**不会改变文件已有权限设置**（协作者、公开范围等保持原样）。仅支持 ≤ 20MB（单次上传上限），与 `--folder-token` 互斥
-- `drive download` 的 `--output` 可以是文件路径（直接用）或目录（**文件名用 `file_token` 本身**，暂不从响应头解析）
-- `drive download` 使用用户身份下载时，如果服务端返回大文件限制，会自动使用 HTTP Range 分片下载并合并
-- 如果需要自定义文件名，请显式传完整路径：`--output ./downloads/report.pdf`
+- `drive upload --file-token`：把本地文件覆盖为该文件的新版本，file_token 不变；**不会改变文件已有权限设置**（协作者、公开范围等保持原样）。≤20MB 走 upload_all、>20MB 走 upload_prepare（均携带 file_token）；服务端未返回 version 时视为失败。与 `--folder-token` 互斥
+- `drive download` 下载前先调 query_by_token 识别 token：wiki 节点自动解包为底层文件；在线文档（docx/sheet/bitable/slides…）直接提示改用 `drive export`；识别失败（权限/网络）只在 stderr 告警并按原 token 继续
+- `drive download` 的 `--output` 可以是文件路径（直接用）或已存在的目录；省略或为目录时文件名按 **响应头 Content-Disposition → 云盘标题 → file_token** 依次决定（文件名含 `..` 子串如 `report..v2.pdf` 合法）
+- User/Bot 两种身份都走同一条流式链路：遇"文件超出下载大小限制"自动切 HTTP Range 分片（8MB/片，每片最多重试 3 次并从断点续传）；默认不设总时长，只要持续有数据就不会超时，`--timeout` 仅作为显式总时长上限
+- 下载失败、超时或 Ctrl-C 时不会留下半截文件，也不会删除/破坏本地已有的同名文件
+- `drive update-title`：`--type` 必须是真实类型（不符与不存在同样返回 981003）；wiki 节点用 `/wiki/` 里的节点 token + `--type wiki`；doc/mindnote 服务端不支持（本地直接拒绝）；981004 是缺编辑权限而非缺 scope
 
 ### 2. 文档导出（含 markdown 快捷路径）
 
@@ -146,7 +161,8 @@ feishu-cli drive move --file-token boxxxx --type file
 
 **关键点**：
 - **文件夹移动自动轮询**，不再是"发出去就不管了"
-- 超时会返回 `task_id`，可用 `drive task-result --scenario task_check` 接力
+- 超时会返回 `task_id` 与带 `--as` 的 `next_command`，可用 `drive task-result --scenario task_check` 接力
+- 轮询期间单次查询失败视为瞬时错误继续轮询；遇限流（99991400）立即停止并在错误里给出续查命令；每次查询都失败时报错（任务已创建，续查即可，不要重复创建）
 
 ### 6. 富文本评论（最强命令）
 
@@ -213,32 +229,51 @@ feishu-cli drive task-result --scenario import --ticket abcxxx
 # 查询导出任务（需要额外传 file-token 作为原始文档 token）
 feishu-cli drive task-result --scenario export --ticket abcxxx --file-token docxxxx
 
-# 查询 folder move 等通用任务
+# 查询 folder move / file delete 等通用任务
 feishu-cli drive task-result --scenario task_check --task-id taskxxx
+
+# wiki 异步任务（wiki move-docs / move-to-drive / delete-space / delete 超时提示的续查命令）
+feishu-cli drive task-result --scenario wiki_move --task-id taskxxx --as user
+feishu-cli drive task-result --scenario wiki_move_to_drive --task-id taskxxx --as user
+feishu-cli drive task-result --scenario wiki_delete_space --task-id taskxxx --as user
+feishu-cli drive task-result --scenario wiki_delete_node --task-id taskxxx --as bot
 ```
 
-三种 scenario：`import` / `export` / `task_check`。用于 `drive export` / `drive import` / `drive move` 超时后的接力完成。
+七种 scenario：`import` / `export` / `task_check` / `wiki_move` / `wiki_move_to_drive` / `wiki_delete_space` / `wiki_delete_node`。
+输出统一带 `ready` / `failed` / `pending`；`task_check` 的失败终态同时识别 `failed` 与删除任务返回的 `fail`。
+续查时请带上原命令输出的 `--as`，避免以另一身份查询导致"任务不存在/无权限"。
 
 ### 8. 本地 ↔ 云盘单向镜像（pull/push/status）
 
 把云盘文件夹与本地目录做单向镜像，含 SHA-256 内容比对和 `--delete-* --yes` 双确认安全开关。**只镜像 type=file 条目**，docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不参与（没有等价本地二进制）。
 
 ```bash
-# status：双向 SHA-256 对照，只读，不动文件
+# status：双向 SHA-256 对照，只读，不动文件（只对两边都有的文件流式计算哈希）
 feishu-cli drive status --folder-token fldxxx --local-dir ./mirror
-# 输出 4 个桶：new_local / new_remote / modified / unchanged
+feishu-cli drive status --folder-token fldxxx --local-dir ./mirror --quick    # 只比修改时间，不下载远端（近似结果）
+# 输出 4 个桶：new_local / new_remote / modified / unchanged，以及 detection=exact|quick
 
-# pull：云盘 → 本地，递归下载
+# pull：云盘 → 本地，递归流式下载（无 100MB 上限），下载后本地 mtime 对齐远端 modified_time
 feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror
+feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --if-exists smart   # 推荐的增量模式
 feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --if-exists skip
 feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --workers 8
+feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --on-duplicate-remote rename
 feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --delete-local --yes
+feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --as bot     # User 缺 drive scope 时
 
 # push：本地 → 云盘，递归上传，自动 create_folder 镜像目录结构
 feishu-cli drive push --folder-token fldxxx --local-dir ./mirror              # 默认 --if-exists=skip
-feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --if-exists overwrite
+feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --if-exists overwrite   # 原地覆盖，file_token 不变
+feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --if-exists smart       # 远端不旧于本地时跳过
 feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --delete-remote --yes
 ```
+
+**覆盖与增量**：
+- `push --if-exists overwrite` 走 `upload_all`（>20MB 走 `upload_prepare`）**携带 file_token 原地覆盖**：file_token 不变、生成新版本（items 带 `version`），链接/协作者/评论/历史版本全部保留；覆盖失败直接报错，**绝不"先删后传"**；租户未返回 version 时视为失败（改用 `--if-exists skip`）
+- `--if-exists smart`：pull 在本地 mtime ≥ 远端 modified_time 时跳过；push 在远端 modified_time ≥ 本地 mtime 时跳过，否则按 overwrite 原地覆盖
+- push 上传前复核扫描时的本地快照（大小 + mtime），扫描后被修改的文件标记 `local_file_changed` 失败
+- `--on-duplicate-remote`：远端同一路径有多个**文件**时的处理，`fail`（默认，保持旧行为）/ `newest` / `oldest`（pull 还支持 `rename`：最旧的保留原名，其余以 `__lark_<哈希>` 后缀另存）；folder/在线文档与文件重名始终报错
 
 **安全语义**：
 - `--local-dir` 走 `filepath.EvalSymlinks` + 限定在 cwd 子树内，防 symlink 越界
@@ -246,6 +281,8 @@ feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --delete-remote
 - **带 `--delete-*` 时身份 fail-closed**：若已配置 User Token 但不可用（token.json 未绑定 app_id、app_id 不匹配、刷新失败），命令**直接报错而非降级 Bot 身份**。原因是身份决定「远端有哪些文件」，Bot 视角的远端条目更少、差集更大，`--delete-local` 会把本地文件当作"远端已不存在"而删掉。不带 `--delete-*` 的普通同步仍按 User 优先 + App 兜底（降级时 stderr 告警）。修复办法：`feishu-cli auth token --bind-legacy-app --as user` 或重新 `auth login`
 - 上传/下载阶段有失败时**自动跳过 `--delete-*` 阶段**，避免「已删孤儿但部分文件没传成功」的半同步状态
 - pull 默认 `--if-exists=overwrite`（保持本地 = 远端），push 默认 `--if-exists=skip`（不动远端已有文件，更安全）
+- pull 按**路径段**校验远端名：`report..v2.pdf` 这类文件名正常下载；整段为 `..`/`.`/空段或经本地符号链接目录指向 `--local-dir` 之外的目标会被拒绝（`error_class=unsafe_path`）
+- **批量失败分级**：缺 scope（99991672/99991679）、无权限（1061004/403）、限流（99991400）、参数错误（1061002/99992402）、父目录不存在（1061044）、服务端错误等"重跑同一批也不会成功"的错误会**终止整批**（JSON `summary.aborted=true`、`abort_reason`、`not_attempted`，并在 stderr 给分类提示）；items 带 `error_class`/`code`。push 额外把冲突（1061045）、配额、网络错误视为终止
 - **1062507 按目录隔离**：push 过程中若上传/建文件夹命中错误码 `1062507`（父目录直接子节点超 1500 上限——该上限是**单个父文件夹**级的），会把该目录标记为已满，其下（含子树）条目全部跳过标记失败，**其余未满目录继续正常镜像**；收尾汇总列出已满目录清单与中文清理建议——先在这些文件夹清理/归档腾出空间，或把本地文件拆分到更细子目录，再重跑
 
 ### 9. v2 端点搜索（drive search，扁平 filter）
@@ -425,7 +462,7 @@ feishu-cli drive export --token $DOC_TOKEN --doc-type docx --file-extension mark
 | 老命令 | 新 drive 命令 | 差异 |
 |---|---|---|
 | `file upload` | `drive upload` | drive 支持 User Token + 分块 + 每片重试 |
-| `file download` | `drive download` | drive 支持 User Token + `--overwrite` + `--timeout` + 路径校验 |
+| `file download` | `drive download` | 两者都是流式 + 分片重试 + 原子写；drive 额外支持 URL/wiki 解包、在线文档识别、默认文件名、`--overwrite`、`--as` |
 | `file move` | `drive move` | drive 文件夹移动自动轮询 task_check |
 | `doc export-file --type pdf` | `drive export --doc-type docx --file-extension pdf` | drive 增加 markdown 快捷路径 + sub-id + resume |
 | `doc import-file --type docx` | `drive import --type docx` | drive 走 `/medias/upload_all`（不留中间文件） |
@@ -437,18 +474,20 @@ feishu-cli drive export --token $DOC_TOKEN --doc-type docx --file-extension mark
 
 | 命令 | Token 策略 | 所需 scope |
 |---|---|---|
-| `drive upload` | 必需 User Token | `drive:file:upload` |
-| `drive download` | 必需 User Token | `drive:file:download` |
+| `drive upload` | 默认必需 User Token；`--as bot\|user\|auto` 可切换（Bot 新建后自动给当前用户授 full_access） | `drive:file:upload` |
+| `drive download` | 默认必需 User Token；`--as bot\|user\|auto` 可切换 | `drive:file:download`（query_by_token 识别另需 `drive:drive.metadata:readonly`，缺失只告警） |
+| `drive update-title` | `--as bot\|user\|auto`（默认 auto） | `drive:file:upload` 或对应类型的编辑 scope；`--type file` 的扩展名保护另需 `drive:drive.metadata:readonly` |
+| `drive version-history` / `version-get` | `--as bot\|user\|auto`（默认 auto） | `drive:file:download` |
 | `drive export` | `--as bot\|user\|auto`（默认 auto；已配置 User 刷新失败 fail-closed） | `docs:document:export`、`drive:drive.metadata:readonly`（导出 markdown 还需 `docs:document.content:read`） |
 | `drive export-download` | `--as bot\|user\|auto`（默认 auto） | `drive:file:download` |
 | `drive import` | `--as bot\|user\|auto`（默认 auto） | `docs:document:import`、`drive:file:upload` |
 | `drive move` | `--as bot\|user\|auto`（默认 auto） | `drive:file:write` [^1] |
 | `drive add-comment` | 必需 User Token | `docs:document.comment:create`、`docs:document.comment:write_only`；wiki URL 还需 `wiki:node:read`；docx 局部评论还需 `docx:document:readonly` |
-| `drive task-result` | `--as bot\|user\|auto`（默认 auto） | `drive:drive.metadata:readonly`（具体依 scenario：`import` 还需 `docs:document:import`；`export` 还需 `docs:document:export`） |
-| `drive pull` / `status` | User 优先 + App 兜底；带 `--delete-local` 时 fail-closed（不降级 Bot） | `drive:drive.metadata:readonly`、`drive:file:download`；带 `--delete-local` 还需本地删除权限 |
-| `drive push` | User 优先 + App 兜底；带 `--delete-remote` 时 fail-closed（不降级 Bot） | `drive:drive.metadata:readonly`、`drive:file:upload`、`space:folder:create`；带 `--delete-remote` 还需 `drive:file:delete` |
+| `drive task-result` | `--as bot\|user\|auto`（默认 auto） | `drive:drive.metadata:readonly`（具体依 scenario：`import` 还需 `docs:document:import`；`export` 还需 `docs:document:export`；`wiki_*` 需 `wiki:space:read` 或 `wiki:wiki`） |
+| `drive pull` / `status` | 不传 `--as`：User 优先 + App 兜底；带 `--delete-local` 时 fail-closed（不降级 Bot）；`--as bot\|user\|auto` 显式指定 | `drive:drive.metadata:readonly`、`drive:file:download`（`status --quick` 不需要）；带 `--delete-local` 还需本地删除权限 |
+| `drive push` | 不传 `--as`：User 优先 + App 兜底；带 `--delete-remote` 时 fail-closed（不降级 Bot）；`--as bot\|user\|auto` 显式指定 | `drive:drive.metadata:readonly`、`drive:file:upload`、`space:folder:create`；带 `--delete-remote` 还需 `space:document:delete` |
 | `drive search` | 必需 User Token | `search:docs:read` |
-| `drive upload --file-token`（覆盖） | 必需 User Token | `drive:file:upload`（覆盖不改变已有权限设置） |
+| `drive upload --file-token`（覆盖） | 默认必需 User Token；`--as` 可切换 | `drive:file:upload`（覆盖不改变已有权限设置） |
 | `drive secure-label list` | 必需 User Token | `docs:secure_label:readonly` |
 | `drive secure-label set` | 必需 User Token | `docs:secure_label:write_only` |
 | `drive inspect` | User 优先 + App 兜底（不强制 User Token） | `drive:drive.metadata:readonly`；wiki URL 还需 `wiki:node:read` |
@@ -458,17 +497,18 @@ feishu-cli drive export --token $DOC_TOKEN --doc-type docx --file-extension mark
 
 ## 注意事项
 
-- **Token 策略**：以「权限要求」表为唯一权威（多数命令必需 User Token；`import/export/export-download/move` 走 `--as`，默认 auto 且刷新失败 fail-closed；`pull/push/status/inspect` 未登录可回落 App Token）。
+- **Token 策略**：以「权限要求」表为唯一权威（`download/upload` 默认必需 User Token、可 `--as` 切换；`import/export/export-download/move/update-title/version-*/task-result` 走 `--as`，默认 auto 且刷新失败 fail-closed；`pull/push/status/inspect` 未登录可回落 App Token）。
 - **SSRF 防护**：下载 URL 会被校验，拒绝 localhost / 回环 IP / 内网段 / 链路本地
 - **重定向策略**：下载 HTTP 重定向最多 5 次，禁止 HTTPS → HTTP 降级
 - **大文件分块阈值**：固定 20MB，超过自动切分片
 - **导出有界轮询**：10 次 × 5 秒（总共 50 秒），超时**不报错**而是返回 `next_command`
 - **导入有界轮询**：30 次 × 2 秒（总共 60 秒），超时同上
 - **文件夹移动轮询**：30 次 × 2 秒
+- **轮询容错**：查询瞬时失败继续轮询；限流立即停止并在错误中给出带 `--as` 的续查命令；全部查询失败时报错（任务已创建，续查即可）
 - **格式特定大小限制**（import）：按源扩展名，见上方矩阵（不再是笼统的 docx/sheet 20MB）
 - **drive move 省略 --folder-token**：先取真实根目录 token，不会把空字符串交给 move API
 - **add-comment 的 wiki 解析**：支持 obj_type 为 docx/doc/sheet/slides/bitable/file 的 wiki 节点；mindnote 等其他类型会报错
 - **局部评论**：docx 用 `--block-id <block_id>`；sheet/slides/bitable 必须带对应格式的 `--block-id`；doc（旧版文档）与 file 只支持全文评论
 - **文件名规则**：
-  - **`drive download`**：`--output` 为目录时使用 `file_token` 作为文件名（不从响应头解析）；要自定义名字请显式传文件路径
+  - **`drive download`**：`--output` 省略或为目录时按 `Content-Disposition` → 云盘标题 → `file_token` 依次决定文件名；要自定义名字请显式传文件路径
   - **`minutes download`**（参见 feishu-cli-meetings）：从响应头按 `Content-Disposition > filename* > Content-Type 推导扩展名 > {token}.media` 优先级解析

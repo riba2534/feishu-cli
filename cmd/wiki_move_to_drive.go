@@ -52,8 +52,9 @@ wiki move-docs（云盘 → 知识库）的反向操作。
   # 移动到个人空间根目录（用户身份）
   feishu-cli wiki move-to-drive --node-token wikcnXXXX --user-access-token u-xxx
 
-  # 只提交不等待，拿到 task_id 后自行查询
-  feishu-cli wiki move-to-drive --node-token wikcnXXXX --folder-token fldcnYYYY --wait=false`,
+  # 只提交不等待，拿到 task_id 后用 drive task-result 续查
+  feishu-cli wiki move-to-drive --node-token wikcnXXXX --folder-token fldcnYYYY --wait=false
+  feishu-cli drive task-result --scenario wiki_move_to_drive --task-id <task_id> --as bot`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -74,6 +75,10 @@ wiki move-docs（云盘 → 知识库）的反向操作。
 		}
 
 		userToken := resolveOptionalUserToken(cmd)
+		identity := "bot"
+		if userToken != "" {
+			identity = "user"
+		}
 
 		folderLabel := "个人空间根目录"
 		if folderToken != "" {
@@ -95,8 +100,10 @@ wiki move-docs（云盘 → 知识库）的反向操作。
 			"status":       client.WikiMoveToDriveStatusProcessing,
 		}
 
+		resumeCmd := buildWikiMoveToDriveResumeCmd(taskID, identity)
 		if !wait {
 			result["status_msg"] = "processing"
+			result["resume_command"] = resumeCmd
 			fmt.Fprintf(os.Stderr, "已提交异步任务 task_id=%s（--wait=false，未等待）\n", taskID)
 			return printWikiMoveToDriveResult(result, output)
 		}
@@ -108,7 +115,7 @@ wiki move-docs（云盘 → 知识库）的反向操作。
 		}
 		status, ready, err := pollWikiMoveToDriveTask(ctx, taskID, userToken, timeout)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w\n可通过以下命令继续查询: %s", err, resumeCmd)
 		}
 		result["ready"] = ready
 		result["failed"] = status.Failed()
@@ -119,6 +126,7 @@ wiki move-docs（云盘 → 知识库）的反向操作。
 		result["url"] = status.URL
 		if !ready {
 			result["timed_out"] = true
+			result["resume_command"] = resumeCmd
 		}
 		return printWikiMoveToDriveResult(result, output)
 	},
@@ -126,14 +134,25 @@ wiki move-docs（云盘 → 知识库）的反向操作。
 
 // pollWikiMoveToDriveTask 在 timeoutSeconds 秒内轮询任务状态，直至成功 / 失败 / 超时。
 // 至少查询一次；超时后返回最后一次已知状态且 ready=false。
+// buildWikiMoveToDriveResumeCmd 生成 move_wiki_to_docs 任务的续查命令（drive task-result 的 wiki_move_to_drive 场景）。
+func buildWikiMoveToDriveResumeCmd(taskID, identity string) string {
+	return fmt.Sprintf("feishu-cli drive task-result --scenario wiki_move_to_drive --task-id %s --as %s", quotePOSIXShell(taskID), identity)
+}
+
 func pollWikiMoveToDriveTask(ctx context.Context, taskID, userToken string, timeoutSeconds int) (*client.WikiMoveToDriveTaskStatus, bool, error) {
 	deadline := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
 	var last *client.WikiMoveToDriveTaskStatus
+	var lastErr error
 	attempt := 0
 	for {
 		attempt++
 		st, err := client.GetMoveWikiToDriveTask(taskID, userToken)
 		if err != nil {
+			// 单次查询失败视为瞬时错误继续轮询；限流时立即停止，避免继续加压
+			if client.IsRateLimitError(err) {
+				return last, false, fmt.Errorf("查询 move_wiki_to_docs 任务被限流 (task_id=%s): %w", taskID, err)
+			}
+			lastErr = err
 			fmt.Fprintf(os.Stderr, "  [%d] 查询失败: %v\n", attempt, err)
 		} else {
 			last = st
@@ -156,6 +175,10 @@ func pollWikiMoveToDriveTask(ctx context.Context, taskID, userToken string, time
 		}
 	}
 	if last == nil {
+		if lastErr != nil {
+			return &client.WikiMoveToDriveTaskStatus{TaskID: taskID, Status: client.WikiMoveToDriveStatusProcessing}, false,
+				fmt.Errorf("移动任务已提交，但状态查询全部失败 (task_id=%s): %w", taskID, lastErr)
+		}
 		last = &client.WikiMoveToDriveTaskStatus{TaskID: taskID, Status: client.WikiMoveToDriveStatusProcessing}
 	}
 	return last, false, nil
@@ -185,7 +208,7 @@ func printWikiMoveToDriveResult(result map[string]any, output string) error {
 	}
 	if v, ok := result["timed_out"]; ok {
 		if b, _ := v.(bool); b {
-			fmt.Printf("⚠ 轮询超时，任务可能仍在执行，可稍后凭 task_id 重新查询状态\n")
+			fmt.Printf("⚠ 轮询超时，任务可能仍在执行，请勿重复提交；续查: %v\n", result["resume_command"])
 		}
 	}
 	return nil

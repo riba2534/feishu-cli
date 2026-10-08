@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -168,7 +169,7 @@ URL 输入（/wiki/, /docx/, /sheets/ 等）自动推断文档类型；裸 token
   node_token    节点 Token 或知识库完整 URL（必填）
 
 可选参数:
-  --space-id            知识空间 ID（可选，未指定时自动通过 node_by_token 解析）
+  --space-id            知识空间 ID（可选；无论是否指定都会通过 node_by_token 解析节点并核对，不一致则拒绝删除）
   --obj-type            文档类型（裸 token 必填，URL 输入自动推断；可选: wiki, doc, docx, sheet, bitable, mindnote, slides, file）
   --include-children    是否级联删除子节点（默认 true）
   --force, -f           跳过确认直接删除
@@ -223,22 +224,19 @@ URL 输入（/wiki/, /docx/, /sheets/ 等）自动推断文档类型；裸 token
 			identity = "user"
 		}
 
-		nodeTitle := ""
-		if spaceID == "" {
-			// 未指定 space-id 时通过 node_by_token 解析 space_id（服务端自动识别 node_token / obj_token，无需 obj_type）
-			node, err := client.ResolveWikiNode(nodeToken, token)
-			if err != nil {
-				return fmt.Errorf("获取节点信息失败: %w", err)
-			}
-			spaceID = strings.TrimSpace(node.SpaceID)
-			if spaceID == "" {
-				return fmt.Errorf("未能通过 node_by_token 获取 space_id，请通过 --space-id 显式指定")
-			}
-			if err := validateResourceIdentifier(spaceID, "从节点解析出的 space_id"); err != nil {
-				return fmt.Errorf("节点所属 space_id 非法: %w", err)
-			}
-			nodeTitle = node.Title
+		// 无论是否传了 --space-id，都先通过 node_by_token 解析节点（服务端自动识别 node_token / obj_token）：
+		// 删除是不可逆操作，必须核对 --space-id 与节点实际所属空间一致，并把输入换算成删除接口要求的 token，
+		// 避免"信任调用方给的 space_id"在空间/类型写错时删到别处或得到难懂的服务端错误（对齐官方 +node-delete）。
+		node, err := client.ResolveWikiNode(nodeToken, token)
+		if err != nil {
+			return fmt.Errorf("获取节点信息失败: %w", err)
 		}
+		mutationToken, resolvedSpaceID, err := resolveWikiDeleteTarget(node, spaceID, objType)
+		if err != nil {
+			return err
+		}
+		spaceID = resolvedSpaceID
+		nodeTitle := node.Title
 
 		// 危险操作确认
 		if !force {
@@ -259,10 +257,10 @@ URL 输入（/wiki/, /docx/, /sheets/ 等）自动推断文档类型；裸 token
 			}
 		}
 
-		fmt.Fprintf(os.Stderr, "提交删除知识库节点请求 space_id=%s, node_token=%s ...\n", spaceID, nodeToken)
-		taskID, err := client.DeleteWikiNode(spaceID, nodeToken, objType, includeChildren, token)
+		fmt.Fprintf(os.Stderr, "提交删除知识库节点请求 space_id=%s, token=%s, obj_type=%s ...\n", spaceID, mutationToken, objType)
+		taskID, err := client.DeleteWikiNode(spaceID, mutationToken, objType, includeChildren, token)
 		if err != nil {
-			return err
+			return withWikiNodeDeleteHint(err)
 		}
 
 		result := map[string]any{
@@ -310,6 +308,65 @@ URL 输入（/wiki/, /docx/, /sheets/ 等）自动推断文档类型；裸 token
 		}
 		return printDeleteWikiNodeResult(result, output)
 	},
+}
+
+// 删除知识库节点的领域错误码（对齐官方 +node-delete 的提示）。
+const (
+	wikiDeleteNodeErrCodeSubtreeTooLarge  = 131003
+	wikiDeleteNodeErrCodeApprovalRequired = 131011
+)
+
+// resolveWikiDeleteTarget 根据 node_by_token 的解析结果核对 --space-id，并换算删除接口要求的 token：
+//   - obj_type=wiki：删除节点本身，使用响应里的 node_token（输入可能是 obj_token）；
+//   - 其他类型：使用文档 obj_token，且必须与节点实际 obj_type 一致；
+//     快捷方式节点的 obj_token 属于源文档，换算会把删除目标从快捷方式变成源文档，必须用 --obj-type wiki。
+func resolveWikiDeleteTarget(node *client.WikiNode, explicitSpaceID, objType string) (mutationToken, spaceID string, err error) {
+	if node == nil {
+		return "", "", fmt.Errorf("node_by_token 未返回节点信息")
+	}
+	spaceID = strings.TrimSpace(node.SpaceID)
+	if spaceID == "" {
+		return "", "", fmt.Errorf("未能通过 node_by_token 获取节点所属 space_id，已中止删除")
+	}
+	if err := validateResourceIdentifier(spaceID, "从节点解析出的 space_id"); err != nil {
+		return "", "", fmt.Errorf("节点所属 space_id 非法: %w", err)
+	}
+	if explicitSpaceID != "" && explicitSpaceID != spaceID {
+		return "", "", clierr.Usagef("--space-id %q 与节点实际所属空间 %q 不一致，已拒绝删除；请核对后重试（可省略 --space-id 由 node_by_token 自动解析）", explicitSpaceID, spaceID)
+	}
+	if objType == "wiki" {
+		mutationToken = strings.TrimSpace(node.NodeToken)
+		if mutationToken == "" {
+			return "", "", fmt.Errorf("node_by_token 未返回 node_token，已中止删除")
+		}
+		return mutationToken, spaceID, nil
+	}
+	if strings.EqualFold(node.NodeType, "shortcut") {
+		return "", "", clierr.Usagef("目标是知识库快捷方式节点，删除快捷方式本身需使用 --obj-type wiki（按文档类型删除会删到源文档）")
+	}
+	if node.ObjType != "" && node.ObjType != objType {
+		return "", "", clierr.Usagef("--obj-type %q 与节点实际文档类型 %q 不一致，已拒绝删除", objType, node.ObjType)
+	}
+	mutationToken = strings.TrimSpace(node.ObjToken)
+	if mutationToken == "" {
+		return "", "", fmt.Errorf("node_by_token 未返回 obj_token，已中止删除")
+	}
+	return mutationToken, spaceID, nil
+}
+
+// withWikiNodeDeleteHint 为需要在 CLI 之外处理的删除错误码追加可执行提示，保留原错误链（code/log_id）。
+func withWikiNodeDeleteHint(err error) error {
+	apiErr, ok := client.AsAPIError(err)
+	if !ok {
+		return err
+	}
+	switch apiErr.Code {
+	case wikiDeleteNodeErrCodeApprovalRequired:
+		return fmt.Errorf("%w\n提示：该知识库节点开启了删除审批，CLI 无法绕过，请在飞书知识库页面发起删除申请", err)
+	case wikiDeleteNodeErrCodeSubtreeTooLarge:
+		return fmt.Errorf("%w\n提示：子树过大无法一次级联删除；可传 --include-children=false（子节点上移到父节点）或先分批删除子树", err)
+	}
+	return err
 }
 
 // quotePOSIXShell 为字符串生成 POSIX shell 单引号包裹格式，确保 $()、反引号、美元变量均作为字面量且可安全无损还原
@@ -380,7 +437,7 @@ func printDeleteWikiNodeResult(result map[string]any, output string) error {
 
 func init() {
 	wikiCmd.AddCommand(deleteWikiNodeCmd)
-	deleteWikiNodeCmd.Flags().String("space-id", "", "知识空间 ID（可选，未指定时自动解析）")
+	deleteWikiNodeCmd.Flags().String("space-id", "", "知识空间 ID（可选；始终经 node_by_token 核对，不一致则拒绝）")
 	deleteWikiNodeCmd.Flags().String("obj-type", "", "文档类型（裸 token 必填，URL 输入自动推断；可选: wiki, doc, docx, sheet, bitable, mindnote, slides, file）")
 	deleteWikiNodeCmd.Flags().String("as", "auto", "操作身份：bot|user|auto（默认 auto: User 优先，回退 Bot）")
 	deleteWikiNodeCmd.Flags().Bool("include-children", true, "是否级联删除子节点（默认 true）")

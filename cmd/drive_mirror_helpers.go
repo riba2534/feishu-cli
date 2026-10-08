@@ -5,8 +5,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/safefile"
+	"github.com/spf13/cobra"
 )
 
 // resolveSafeLocalDir 把用户传入的 --local-dir 解为「完全解析符号链接 + 限定在 cwd 子树」的绝对路径。
@@ -108,4 +111,45 @@ func remoteFilesOnly(entries map[string]client.DriveRemoteEntry) map[string]stri
 		}
 	}
 	return out
+}
+
+// safeMirrorTarget 把远端相对路径（"/" 分隔）映射为 root 下的本地路径。
+//
+// 按路径段判断而不是子串：report..v2.pdf、a..b/c.txt 合法；"..", ".", 空段、含反斜杠或 NUL 的段拒绝
+// （远端名字理论上不会出现这些，但镜像必须防御被构造的名字把文件写出 --local-dir）。
+// 还会解析已存在部分的符号链接，拒绝经本地符号链接目录逃逸到 root 之外的目标。
+func safeMirrorTarget(root, rel string) (string, error) {
+	if rel == "" {
+		return "", fmt.Errorf("远端相对路径为空")
+	}
+	for _, seg := range strings.Split(rel, "/") {
+		if seg == "" || seg == "." || seg == ".." || strings.ContainsAny(seg, "\\\x00") {
+			return "", fmt.Errorf("远端路径 %q 含非法路径段 %q，已拒绝写入本地（防止越出 --local-dir）", rel, seg)
+		}
+	}
+	target := filepath.Join(root, filepath.FromSlash(rel))
+	if !safefile.IsWithin(target, root) {
+		return "", fmt.Errorf("远端路径 %q 解析后越出 --local-dir，已拒绝", rel)
+	}
+	within, err := safefile.IsWithinResolved(target, root)
+	if err != nil {
+		return "", fmt.Errorf("校验本地目标路径失败 (%s): %w", rel, err)
+	}
+	if !within {
+		return "", fmt.Errorf("本地目标 %q 经符号链接指向 --local-dir 之外，已拒绝写入", rel)
+	}
+	return target, nil
+}
+
+// resolveMirrorIdentity 解析 drive pull/push/status 的身份：
+//   - 显式 --as：走 resolveIdentityToken（auto 已配置 User 但不可用时 fail-closed）；
+//   - 未传 --as 且为破坏性模式（--delete-local / --delete-remote）：fail-closed，拒绝静默降级 Bot；
+//   - 未传 --as 的普通模式：保持旧行为，User 优先、不可用时 stderr 告警后回退 Bot。
+func resolveMirrorIdentity(cmd *cobra.Command, destructive bool, opName string) (string, error) {
+	return resolveIdentityWithLegacyDefault(cmd, func(c *cobra.Command) (string, error) {
+		if destructive {
+			return resolveOptionalUserTokenForDestructive(c, opName)
+		}
+		return resolveOptionalUserTokenWithFallback(c), nil
+	})
 }

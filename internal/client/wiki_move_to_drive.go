@@ -3,7 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
+	"net/url"
 )
 
 // wikiMoveToDriveTaskType 是查询 move_wiki_to_docs 异步任务状态时固定的 task_type。
@@ -44,7 +44,7 @@ func MoveWikiNodeToDrive(nodeToken, folderToken, userAccessToken string) (string
 		return "", err
 	}
 	tokenType, opts := resolveTokenOpts(userAccessToken)
-	apiPath := fmt.Sprintf("/open-apis/wiki/v2/nodes/%s/move_wiki_to_docs", nodeToken)
+	apiPath := fmt.Sprintf("/open-apis/wiki/v2/nodes/%s/move_wiki_to_docs", url.PathEscape(nodeToken))
 	body := map[string]interface{}{}
 	if folderToken != "" {
 		body["folder_token"] = folderToken
@@ -53,8 +53,9 @@ func MoveWikiNodeToDrive(nodeToken, folderToken, userAccessToken string) (string
 	if err != nil {
 		return "", fmt.Errorf("移动知识库节点到云盘失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("移动知识库节点到云盘失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	// 业务错误常随 HTTP 400/403 下发：先解析飞书信封里的 code，再看 HTTP 状态
+	if err := CheckAPIResponse("移动知识库节点到云盘", resp); err != nil {
+		return "", err
 	}
 	var parsed struct {
 		Code int    `json:"code"`
@@ -85,13 +86,13 @@ func GetMoveWikiToDriveTask(taskID, userAccessToken string) (*WikiMoveToDriveTas
 		return nil, err
 	}
 	tokenType, opts := resolveTokenOpts(userAccessToken)
-	apiPath := fmt.Sprintf("/open-apis/wiki/v2/tasks/%s?task_type=%s", taskID, wikiMoveToDriveTaskType)
+	apiPath := fmt.Sprintf("/open-apis/wiki/v2/tasks/%s?task_type=%s", url.PathEscape(taskID), wikiMoveToDriveTaskType)
 	resp, err := c.Get(Context(), apiPath, nil, tokenType, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("查询 move_wiki_to_docs 任务失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询 move_wiki_to_docs 任务失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("查询 move_wiki_to_docs 任务", resp); err != nil {
+		return nil, err
 	}
 	var parsed struct {
 		Code int    `json:"code"`

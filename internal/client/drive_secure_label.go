@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 )
 
@@ -36,8 +35,9 @@ func ListSecureLabels(pageSize int, pageToken, lang, userAccessToken string) ([]
 	if err != nil {
 		return nil, "", false, fmt.Errorf("查询密级标签失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", false, fmt.Errorf("查询密级标签失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	// 业务错误常随 HTTP 400/403 下发：先解析飞书信封里的 code，按业务码给出专门提示
+	if err := CheckAPIResponse("查询密级标签", resp); err != nil {
+		return nil, "", false, withSecureLabelHint(err, false)
 	}
 	var parsed struct {
 		Code int    `json:"code"`
@@ -76,8 +76,8 @@ func SetSecureLabel(fileToken, docType, labelID, userAccessToken string) error {
 	if err != nil {
 		return fmt.Errorf("设置密级标签失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("设置密级标签失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("设置密级标签", resp); err != nil {
+		return withSecureLabelHint(err, true)
 	}
 	var parsed struct {
 		Code int    `json:"code"`
@@ -94,4 +94,37 @@ func SetSecureLabel(fileToken, docType, labelID, userAccessToken string) error {
 		return fmt.Errorf("设置密级标签失败: code=%d, msg=%s", parsed.Code, parsed.Msg)
 	}
 	return nil
+}
+
+// withSecureLabelHint 按业务码为密级标签错误附加处理建议（错误链保留 *APIError，HasAPICode 仍可用）。
+func withSecureLabelHint(err error, update bool) error {
+	apiErr, ok := AsAPIError(err)
+	if !ok {
+		return err
+	}
+	hint := ""
+	switch apiErr.Code {
+	case 1063013:
+		if update {
+			hint = "密级降级需要审批，请在文档界面完成密级降级审批，或选择非降级的标签；重试 API 不会绕过审批"
+		}
+	case 1063002:
+		if update {
+			hint = "当前用户无权修改该文件的密级标签，请使用对文件和密级标签都有权限的用户"
+		} else {
+			hint = "当前用户无权查询密级标签，请使用有密级标签读取权限的用户"
+		}
+	case 1063001, 99992402, 9499:
+		if update {
+			hint = "检查 --file-token/--type，并传入 `drive secure-label list` 返回的标签 ID（不是标签名称）"
+		} else {
+			hint = "检查 --page-size（1-10）、--page-token、--lang 等参数"
+		}
+	case 99991400:
+		hint = "密级标签接口被限流，请稍后带退避重试；批量修改请串行执行"
+	}
+	if hint == "" {
+		return err
+	}
+	return fmt.Errorf("%w（%s）", err, hint)
 }

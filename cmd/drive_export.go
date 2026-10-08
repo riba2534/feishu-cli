@@ -236,13 +236,13 @@ var driveExportCmd = &cobra.Command{
 		}
 		fmt.Fprintf(os.Stderr, "创建导出任务: %s\n", ticket)
 
+		nextCmd := fmt.Sprintf("feishu-cli drive task-result --scenario export --ticket %s --file-token %s --as %s", quotePOSIXShell(ticket), quotePOSIXShell(sourceToken), resumeIdentity(cmd))
 		status, timedOut, err := client.WaitDriveExportWithBound(ticket, sourceToken, token)
 		if err != nil {
-			return err
+			return withDrivePollResume(err, nextCmd)
 		}
 
 		if timedOut {
-			nextCmd := fmt.Sprintf("feishu-cli drive task-result --scenario export --ticket %s --file-token %s", ticket, sourceToken)
 			result := annotateWiki(map[string]any{
 				"ticket":         ticket,
 				"token":          sourceToken,

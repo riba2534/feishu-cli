@@ -128,13 +128,13 @@ var driveMoveCmd = &cobra.Command{
 		result["task_id"] = taskID
 		fmt.Fprintf(os.Stderr, "文件夹移动任务: %s，开始轮询...\n", taskID)
 
+		nextCmd := fmt.Sprintf("feishu-cli drive task-result --scenario task_check --task-id %s --as %s", quotePOSIXShell(taskID), resumeIdentity(cmd))
 		status, timedOut, err := client.WaitDriveTaskCheckWithBound(taskID, token)
 		if err != nil {
-			return err
+			return withDrivePollResume(err, nextCmd)
 		}
 
 		if timedOut {
-			nextCmd := fmt.Sprintf("feishu-cli drive task-result --scenario task_check --task-id %s", taskID)
 			result["ready"] = false
 			result["timed_out"] = true
 			result["next_command"] = nextCmd
