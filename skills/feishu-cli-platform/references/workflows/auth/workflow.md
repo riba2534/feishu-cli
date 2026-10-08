@@ -28,11 +28,16 @@ feishu-cli auth login --domain search --recommend
 # 2b. 一次授全：对全部业务域申请推荐 scope（单独用 --recommend，不带 --domain）
 feishu-cli auth login --recommend
 
-# 2c. 精确控制：显式指定 scope（与 --domain/--recommend 互斥）
-feishu-cli auth login --scope "search:docs:read search:message"
+# 2c. 精确控制：显式指定 scope（空格或逗号分隔均可，线上统一转为空格分隔）
+feishu-cli auth login --scope "search:docs:read,search:message"
+
+# 2d. 叠加与排除：业务域 + 额外 scope，再剔除不想申请的
+feishu-cli auth login --domain docs --scope "drive:file:download" --exclude docx:document:write_only
 ```
 
-`--recommend` 三种用法：单独用 = 全部 20 个业务域的推荐 scope；配 `--domain X` = 仅该域推荐 scope；都不传且在交互终端下 = 弹出选择提示。**非交互环境（无 tty）必须显式指定范围**，否则报错。
+`--recommend` 三种用法：单独用 = 全部业务域的推荐 scope；配 `--domain X` = 仅该域推荐 scope；都不传且在交互终端下 = 弹出选择提示。**非交互环境（无 tty）必须显式指定范围**，否则报用法错误（退出码 2）。
+
+`--scope`、`--domain`、`--recommend` 可以叠加（取并集）；`--exclude`（可重复或逗号分隔）在最终集合上剔除，写错的 scope（不在所选范围内）报用法错误。批量申请（`--domain` / `--recommend`）一律不含 `im:message.send_as_user`（部分租户需管理员审核，会卡住整次授权），确需时用 `--scope` 显式申请。
 
 > 💡 `auth login` 是**增量授权**：多次登录申请的 scope 在飞书服务端累积，补授新 scope 不会丢掉之前已授的。（本地 `token.json` 虽被新 token 覆盖，但其 `scope` 是服务端返回的累积值。）
 
@@ -51,7 +56,7 @@ feishu-cli auth login --device-code <device_code> --json
 
 要点：
 - **scope 自动恢复**：第二步从 device_code 缓存读回第一步申请的 scope，**不用也不能**再传 `--scope/--domain/--recommend`（重传会报错）。
-- **device_code 有效期以服务端返回的 `expires_in` 为准（CLI 兜底 240s）**，超时需从第一步重来；每次重新跑第一步都会作废上一个链接。
+- **device_code 有效期以服务端返回的 `expires_in` 为准（第一步缺省兜底 240s）**；第二步续轮询本地最多等 600s，由服务端 `expired_token` 决定何时结束。过期需从第一步重来；每次重新跑第一步都会作废上一个链接。
 - **不要用短 timeout 反复重试**第一步——每次重启都会让上一个授权链接失效。
 
 若 harness 支持后台任务，也可一步阻塞 + 后台运行：
@@ -81,7 +86,7 @@ feishu-cli auth login --recommend --json
 {"event":"authorization_complete","expires_at":"...","scope":"...","refresh_token_present":true,"granted_scopes":["..."],"missing_scopes":["..."],"requested_scopes":["..."]}
 ```
 
-→ 上述 6 个字段常驻（`scope` 即落盘 `token.json` 的累积 scope 值）；`refresh_expires_at`（拿到 refresh token 时）、`warnings`/`hints`（refresh 缺失或 scope 未授予时）为条件字段，无对应情况时 key 不出现——解析勿假设必存。
+→ 上述 6 个字段常驻（`scope` 即落盘 `token.json` 的累积 scope 值；时间字段为带真实时区的 RFC3339）；`refresh_expires_at`（拿到 refresh token 时）、`warnings`/`hints`（refresh 缺失或 scope 未授予时）、`status_message`（服务端附带的提示，如部分 scope 被裁剪）为条件字段，无对应情况时 key 不出现——解析勿假设必存。
 
 ## 授权结果判读
 
@@ -101,12 +106,14 @@ feishu-cli auth login --recommend --json
 feishu-cli auth status
 feishu-cli auth status -o json --verify
 feishu-cli auth check --scope "REQ_SCOPES"
+feishu-cli auth scopes --scope "REQ_SCOPES" -o json   # 应用侧是否开通（区分 99991672 / 99991679）
 feishu-cli auth login --domain <domain> --recommend
 feishu-cli auth refresh
 feishu-cli auth logout
 feishu-cli auth token --as user|bot|auto    # v1.29+ 导出 token 给 curl/Python 用
 feishu-cli auth token --bind-legacy-app --as user  # 把旧版未绑定 app_id 的 token.json 绑到当前应用
 feishu-cli config init
+printf '%s' "$SECRET" | feishu-cli config init --app-id cli_xxx --app-secret-stdin --probe
 feishu-cli config get app_id
 feishu-cli config create-app --save
 feishu-cli doctor --json
@@ -172,18 +179,19 @@ feishu-cli auth check --scope "search:docs:read" && feishu-cli search docs --que
 |---|---|
 | `access_token` | 脱敏后的 access token（前 6 + 末 6） |
 | `access_token_valid` | access token 是否还在有效期内 |
-| `expires_at` | access token 过期时间（RFC3339） |
+| `expires_at` | access token 过期时间（RFC3339，带真实时区） |
 | `health` | `healthy` / `missing_refresh_token`（没拿到 refresh，对应未开 `offline_access`）/ `needs_relogin`（refresh 也过期） |
 | `identity` | `user`（User Token 可用）/ `bot`（仅剩 App Token 可用） |
 | `logged_in` | 是否登录 |
 | `refresh_expires_at` | refresh token 过期时间（有 refresh 时出现） |
 | `refresh_token_present` | 是否拿到 refresh token |
-| `refresh_token_valid` | refresh token 是否还在有效期内 |
+| `refresh_token_valid` | refresh token 是否还在有效期内（有 `refresh_failure` 时恒为 false） |
+| `refresh_failure` | 仅当上次刷新被服务端判定 refresh_token 终态失效（20026/20037/20064/20073）时出现：`code`/`error`/`description`/`at`。CLI 不会再自动刷新，需重新 `auth login`（新 token 不带该字段） |
 | `scope` | 当前 token 已授权 scope 列表（空格分隔） |
 | `token_status` | `valid` / `needs_refresh`（access 过期但 refresh 可用，下次调用自动刷新）/ `expired` |
 | `cached_user.open_id` / `.name` | **当前登录的是谁**——需要本人 open_id（发消息给自己、查自己任务）时从这里取（仅当本地有 user cache 时出现） |
 | `note` | 健康度提示文案（如 `missing_refresh_token` / `expired` 场景出现） |
-| `verified` / `verify_error` | 仅 `--verify`：在线调 `user_info` 核验 token 是否仍被服务端接受 |
+| `verified` / `verify_error` | 仅 `--verify`：在线调 `user_info` 核验 token 是否仍被服务端接受。access 过期时与业务命令同样走跨进程加锁刷新，并先校验 token 已绑定当前 App（未绑定的旧 token 直接校验失败，不会被静默绑定）；输出展示刷新后的状态 |
 | `profile` / `profile_source` | 当前选中的 profile 及其选择来源（flag/env/pointer/fallback/legacy/none） |
 | `app_id` | 叠加 `--bot-app-*` / `FEISHU_APP_*` 后的生效 App ID |
 | `token_from_profile` | `token.json` 的候选目录（**不是**本次实际用的 token，见下） |
@@ -203,12 +211,16 @@ feishu-cli auth check --scope "search:docs:read" && feishu-cli search docs --que
 
 `auth check --scope` 读取本次 profile 的本地 User Token，不验证 Tenant Token、App 权限，
 也不验证 `--user-access-token` / `FEISHU_USER_ACCESS_TOKEN` 的授权范围。
+应用侧开通情况用 `auth scopes`：以应用身份读取开放平台已开通的 scope（区分 User / Tenant），
+`--scope` 逐项给出 `ok` / `user_not_granted` / `not_logged_in` / `app_not_enabled` / `tenant_only`，
+据此区分"应用没开通"（99991672，需开发者后台开通并发布）与"用户没授权"（99991679，需 `auth login --scope`）。
+`auth scopes` 只做诊断，退出码恒为 0（接口失败除外）。
 Bot-only 任务不能因为没有 User 登录而被阻断；先用 `doctor --only bot_identity` 检查应用身份，
 再根据目标 API 的实际结果判断资源权限。`--dry-run` 只验证本地请求，不证明线上权限。
 
 ## 业务域登录
 
-`--domain` 可重复或逗号分隔。可选域：`approval attendance bitable calendar chat contact doc_access docs drive event im mail minutes search sheets slides task vc whiteboard wiki`，或 `all`。
+`--domain` 可重复或逗号分隔。可选域：`approval apps attendance bitable calendar chat contact doc_access docs drive event im mail markdown minutes okr search sheets slides task vc whiteboard wiki`，或 `all`（运行时 catalog 缓存可能追加个别域，以 `auth login --help` 为准）。`okr` 用于 `okr --as user`，`apps` 为妙搭（spark），`markdown` 为云盘原生 .md 文件。
 
 ```bash
 feishu-cli auth login --domain search --recommend                # 单域
@@ -216,7 +228,7 @@ feishu-cli auth login --domain vc --domain minutes --recommend   # 多域
 feishu-cli auth login --recommend                                # 全部域（等价 --domain all --recommend）
 ```
 
-`--scope` 与 `--domain/--recommend` 互斥；最终以 `auth check --scope` 结果为准。
+`--scope` 与 `--domain/--recommend` 叠加；`--exclude` 剔除；最终以 `auth check --scope` 结果为准。
 
 ## 排错
 
@@ -229,8 +241,13 @@ feishu-cli auth login --recommend                                # 全部域（�
 | `99991663` | access token 无效（通用码）：先确认本次实际身份；User 用 `auth status --verify` 或重新登录，Bot 用 `doctor --only bot_identity` 检查 App 凭证 |
 | `99991668` + `not support` | 该接口不支持 User Token（如 OKR `cycle list`），改用 `--as bot` |
 | `99991668` + `Invalid access token` | User Access Token 无效或已过期：`auth status --verify` 或重新登录 |
-| `99991672` | **应用**未开通所需 scope：重新登录修不好，按错误附带的开放平台链接为应用开通并发布版本 |
+| `99991672` | **应用**未开通所需 scope：重新登录修不好，按错误附带的开放平台链接为应用开通并发布版本（`auth scopes --scope "<scope>"` 可确认） |
 | `99991679` | **用户**未授权所需 scope：应用侧已开通后执行 `auth login --scope "<错误提示的 scope>"` 增量补授 |
+| 刷新报 `20026/20037/20064/20073`，或 `auth status` 出现 `refresh_failure` | refresh_token 已终态失效（旧格式/过期/吊销/已被使用）。CLI 已在 token.json 记录标记、不再重复刷新；重新 `auth login` |
+| 刷新报 `20050` | 刷新服务临时错误，CLI 已自动重试一次；稍后重试 |
+| `refresh_token 可能已被服务端消耗` | 刷新请求发出后断网/响应损坏（退出码 4）。网络恢复后重试；若随后报 20073/20064 再重新登录 |
+| `invalid_client`（`code=20002` secret 错误 / `20048` 应用不存在） | App 凭证错误（退出码 3）：检查 `--bot-app-*`、`FEISHU_APP_*` 或 config.yaml |
+| `解析 token 文件失败 ... 可能已损坏` | `auth login` 重新登录覆盖，或 `auth logout` 清理后再登录 |
 | 退出码 `3` / `4` / `10` | `3` 鉴权或权限问题（按上几行处理）；`4` 网络错误（可重试）；`10` 危险操作需确认，获得用户同意后追加 `--yes` |
 | `token.json 未绑定 app_id` | 执行 `auth token --bind-legacy-app` 或重新 `auth login`，不要手改 token 文件把别的 App 填进去 |
 | `token.json 绑定的 app_id 与当前应用不一致` | 切回匹配的 `--profile` / `--bot-app-id`，或对该应用重新登录 |
@@ -295,6 +312,7 @@ CI 用法：`feishu-cli doctor --offline --json | jq -e '.ok == true'`。
 **发现入口（Agent 必跑）**：`feishu-cli profile list --json`。这是 Bot 清单，不是目录清单。即使还没 `profile add`，也会给出 `effective`（环境变量 / 旧布局正在用的那一套），不要把空的 `profiles[]` 理解成「没有 Bot」。
 
 ```bash
+printf '%s' "$SECRET" | feishu-cli profile add work --app-id cli_xxx --app-secret-stdin --probe --use  # 推荐：secret 不进 shell 历史/ps
 feishu-cli profile add work --app-id cli_xxx --app-secret secret_xxx --use
 feishu-cli profile list --json
 feishu-cli profile current --json
@@ -334,6 +352,13 @@ feishu-cli profile migrate --name work
 - `app_id` 与 `app_secret` 落在不同层（例如只传了 `--bot-app-secret`），两半凭证可能不属于同一应用。
 
 单应用 `export FEISHU_APP_ID/FEISHU_APP_SECRET`（没有 profile，或与所选 profile 是同一个应用）不会有任何 stderr 输出——不要把「没有警告」理解成「没在用环境变量」，要判断覆盖关系一律读 `profile list --json` 的 `env_overrides` / `effective`。
+
+`--app-secret-stdin` 从 stdin 读第一行（终端下不回显），与 `--app-secret` 互斥；`--probe` 在写盘前换一次
+tenant_access_token：服务端明确拒绝（secret 错误、应用不存在）时退出码 3 且不创建 profile，网络/临时错误只告警
+（`--json` 输出 `probe: ok|skipped`）。`config init` 同样支持 `--app-id` / `--app-secret-stdin` / `--base-url` / `--probe`。
+
+`config create-app`：注册请求始终在飞书端发起，`--brand lark` 只决定确认页域名；扫码用户属于 Lark 租户时，
+CLI 按服务端 `tenant_brand` 自动切换轮询域，`--save` 写入 `base_url: https://open.larksuite.com`，JSON 的 `brand` 为实际品牌。
 
 踩坑（违反直觉、可能丢数据，逐条留意）：
 
