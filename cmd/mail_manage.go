@@ -243,9 +243,8 @@ var mailMessageTrashCmd = &cobra.Command{
 
 		if !skipConfirm {
 			prompt := fmt.Sprintf("将把 %d 封邮件移入废纸篓，确认?", len(messageIDs))
-			if !confirmAction(prompt) {
-				fmt.Println("已取消")
-				return nil
+			if err := confirmDangerousAction(cmd, prompt); err != nil {
+				return err
 			}
 		}
 

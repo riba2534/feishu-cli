@@ -44,7 +44,7 @@ feishu-cli chat update <chat_id> \
 feishu-cli chat delete <chat_id>
 ```
 
-操作不可逆，会有确认提示。
+操作不可逆，会有确认提示；非交互环境（Agent/脚本）未带 `--yes` 时不执行并以退出码 10 失败，获得用户同意后追加 `--yes` 重试。
 
 ### 获取群分享链接
 

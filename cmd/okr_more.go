@@ -175,11 +175,8 @@ var okrProgressDeleteCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		if yes, _ := cmd.Flags().GetBool("yes"); !yes {
-			if !confirmAction(fmt.Sprintf("确认删除进展记录 %s？此操作不可恢复", args[0])) {
-				fmt.Println("已取消")
-				return nil
-			}
+		if err := confirmDangerousAction(cmd, fmt.Sprintf("确认删除进展记录 %s？此操作不可恢复", args[0])); err != nil {
+			return err
 		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {

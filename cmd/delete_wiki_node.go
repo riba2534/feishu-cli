@@ -254,9 +254,8 @@ URL 输入（/wiki/, /docx/, /sheets/ 等）自动推断文档类型；裸 token
 			} else {
 				scope = "仅删除该节点本身（--include-children=false），此操作不可恢复"
 			}
-			if !confirmAction(fmt.Sprintf("确定要删除知识库节点 %s 吗？%s", target, scope)) {
-				fmt.Println("操作已取消")
-				return nil
+			if err := confirmDangerousAction(cmd, fmt.Sprintf("确定要删除知识库节点 %s 吗？%s", target, scope)); err != nil {
+				return err
 			}
 		}
 

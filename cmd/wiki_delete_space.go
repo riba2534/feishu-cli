@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -48,7 +49,7 @@ var wikiDeleteSpaceCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if !yes {
-			return fmt.Errorf("delete-space 是高危且不可逆操作，请加 --yes 确认")
+			return clierr.ConfirmationRequiredf("delete-space 是高危且不可逆操作，请加 --yes 确认")
 		}
 
 		userToken := resolveOptionalUserTokenWithFallback(cmd)

@@ -18,6 +18,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 	_ "golang.org/x/image/bmp"
@@ -359,17 +360,53 @@ func printJSONLine(v any) error {
 	return nil
 }
 
-// confirmAction 在执行危险操作前请求用户确认
-// 返回 true 表示用户确认执行，false 表示取消
-func confirmAction(prompt string) bool {
-	fmt.Printf("%s (y/N): ", prompt)
-	reader := bufio.NewReader(os.Stdin)
-	response, err := reader.ReadString('\n')
-	if err != nil {
+// 确认门禁的输入源与交互判定，供测试注入。
+var (
+	confirmInput         io.Reader = os.Stdin
+	confirmPromptOut     io.Writer = os.Stderr
+	confirmIsInteractive           = func() bool { return isTerminal(os.Stdin) }
+)
+
+// confirmDangerousAction 危险操作（删除等不可逆写）的确认门禁。返回 nil 表示可以继续执行。
+//
+//   - 带 --yes（根命令全局 flag，或命令自身的同名 flag）或 --force → 直接放行；
+//     仅用于 --force 语义就是"跳过确认"的命令。
+//   - stdin 不是终端（AI Agent / 管道 / cron）→ 不读 stdin，返回"需要确认"错误（退出码 10）。
+//     过去这里读到 EOF 就打印"操作已取消"并 exit 0，调用方会把"什么都没做"误判为删除成功。
+//   - 交互式终端：提示写 stderr（不污染 stdout），仅输入 y/yes 放行，否则返回"已取消"错误（退出码 1）。
+//
+// 调用方必须在 --dry-run 提前返回之后再调用：预览不执行写操作，不需要确认。
+func confirmDangerousAction(cmd *cobra.Command, prompt string) error {
+	if confirmationBypassed(cmd) {
+		return nil
+	}
+	if !confirmIsInteractive() {
+		return clierr.ConfirmationRequiredf("需要确认：%s\n当前为非交互环境（stdin 不是终端），未执行任何操作。确认执行请追加 --yes 后重新运行", prompt)
+	}
+	fmt.Fprintf(confirmPromptOut, "%s (y/N): ", prompt)
+	// 读到 EOF 也按已读内容判断：只有明确输入 y/yes 才放行
+	response, _ := bufio.NewReader(confirmInput).ReadString('\n')
+	response = strings.TrimSpace(strings.ToLower(response))
+	if response == "y" || response == "yes" {
+		return nil
+	}
+	return clierr.Cancelledf("操作已取消，未执行任何操作")
+}
+
+// confirmationBypassed 报告本次调用是否已显式确认（--yes 或 --force）。
+func confirmationBypassed(cmd *cobra.Command) bool {
+	if assumeYes {
+		return true
+	}
+	if cmd == nil {
 		return false
 	}
-	response = strings.TrimSpace(strings.ToLower(response))
-	return response == "y" || response == "yes"
+	for _, name := range []string{"yes", "force"} {
+		if f := cmd.Flags().Lookup(name); f != nil && f.Value.Type() == "bool" && f.Value.String() == "true" {
+			return true
+		}
+	}
+	return false
 }
 
 // validateOutputPath 验证输出路径是否安全

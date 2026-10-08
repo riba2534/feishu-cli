@@ -15,6 +15,7 @@ var (
 	botAppIDFlag     string
 	botAppSecretFlag string
 	debug            bool
+	assumeYes        bool
 	version          = "dev"
 	buildTime        = "unknown"
 )
@@ -193,6 +194,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&botAppIDFlag, "bot-app-id", "", "本次命令使用的 Bot app_id（优先于环境变量和配置文件，不写盘）")
 	rootCmd.PersistentFlags().StringVar(&botAppSecretFlag, "bot-app-secret", "", "本次命令使用的 Bot app_secret（优先于环境变量和配置文件，不写盘；会进入 shell 历史与 ps 输出，共享机器慎用）")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "启用调试模式")
+	rootCmd.PersistentFlags().BoolVar(&assumeYes, "yes", false, "跳过危险操作（删除等）的确认；非交互环境执行这类操作时必须显式指定")
 	// R1 review fix: RunE 返回 error 时不再打印整页 usage 淹没真错误（11/13 PR 未单独设此 flag → root 统一处理）
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true
