@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"bytes"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -75,5 +78,35 @@ func TestSearchMessagesDefaultJSONSchema(t *testing.T) {
 		if strings.Contains(got, bad) {
 			t.Errorf("默认 JSON 输出不应含 %s（那是 enrich/旧 map 形态），实际:\n%s", bad, got)
 		}
+	}
+}
+
+// TestCollectMessageIDsKeepsFirstPageNotice notice 通常只在首页下发，--page-all 翻页后仍需保留并透出。
+func TestCollectMessageIDsKeepsFirstPageNotice(t *testing.T) {
+	isolateMsgTokenTestEnv(t)
+	cleanup := stubCmdFeishuServer(t, tenantTokenHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("page_token") == "" {
+			_, _ = fmt.Fprint(w, `{"code":0,"data":{"items":[{"meta_data":{"message_id":"om_1"}}],"has_more":true,"page_token":"p2","notice":"truncated to 50"}}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"code":0,"data":{"items":[{"meta_data":{"message_id":"om_2"}}],"has_more":false}}`)
+	}))
+	defer cleanup()
+
+	ids, last, err := collectMessageIDs(client.SearchMessagesOptions{Query: "x"}, "", true, 5)
+	if err != nil {
+		t.Fatalf("collectMessageIDs() error = %v", err)
+	}
+	if strings.Join(ids, ",") != "om_1,om_2" {
+		t.Fatalf("ids = %v", ids)
+	}
+	if last.Notice != "truncated to 50" {
+		t.Fatalf("翻页后 notice 丢失: %+v", last)
+	}
+	var buf bytes.Buffer
+	printSearchNotice(&buf, last.Notice)
+	if !strings.Contains(buf.String(), "truncated to 50") {
+		t.Fatalf("stderr 提示缺失: %q", buf.String())
 	}
 }

@@ -798,6 +798,8 @@ type SearchChatsResult struct {
 	Items     []*ChatInfo
 	PageToken string
 	HasMore   bool
+	// Notice 服务端提示（如查询词超过 50 字被截断），非空时调用方应透出给用户。
+	Notice string `json:"notice,omitempty"`
 }
 
 const (
@@ -897,6 +899,7 @@ func searchChatsWithSearchAPI(client *lark.Client, opts SearchChatsOptions, user
 			PageToken     string           `json:"page_token"`
 			NextPageToken string           `json:"next_page_token"`
 			HasMore       bool             `json:"has_more"`
+			Notice        string           `json:"notice"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
@@ -913,6 +916,7 @@ func searchChatsWithSearchAPI(client *lark.Client, opts SearchChatsOptions, user
 	result := &SearchChatsResult{
 		PageToken: pageToken,
 		HasMore:   apiResp.Data.HasMore,
+		Notice:    apiResp.Data.Notice,
 	}
 	for _, item := range apiResp.Data.Items {
 		if info := chatInfoFromSearchItem(item); info != nil {

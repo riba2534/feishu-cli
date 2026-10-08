@@ -73,6 +73,7 @@ var searchChatsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		printSearchNotice(cmd.ErrOrStderr(), result.Notice)
 
 		if output == "json" {
 			if err := printJSON(result); err != nil {
@@ -103,6 +104,7 @@ var searchChatsCmd = &cobra.Command{
 func collectSearchChats(opts client.SearchChatsOptions, token string, pageAll bool, pageLimit int) (*client.SearchChatsResult, error) {
 	var all []*client.ChatInfo
 	var last *client.SearchChatsResult
+	notice := ""
 	pages := 0
 	for {
 		res, err := client.SearchChats(opts, token)
@@ -110,6 +112,9 @@ func collectSearchChats(opts client.SearchChatsOptions, token string, pageAll bo
 			return nil, err
 		}
 		last = res
+		if notice == "" {
+			notice = res.Notice
+		}
 		all = append(all, res.Items...)
 		pages++
 		more, next, err := client.PaginationCursor(res.HasMore, res.PageToken, "", opts.PageToken)
@@ -125,6 +130,9 @@ func collectSearchChats(opts client.SearchChatsOptions, token string, pageAll bo
 		return &client.SearchChatsResult{}, nil
 	}
 	last.Items = all
+	if last.Notice == "" {
+		last.Notice = notice
+	}
 	return last, nil
 }
 

@@ -35,6 +35,8 @@ type SearchMessagesResult struct {
 	MessageIDs []string // 消息 ID 列表
 	PageToken  string   // 分页 token
 	HasMore    bool     // 是否有更多
+	// Notice 服务端提示（如查询词超过 50 字被截断），非空时调用方应透出给用户。
+	Notice string `json:"notice,omitempty"`
 }
 
 const (
@@ -242,6 +244,7 @@ func SearchMessages(opts SearchMessagesOptions, userAccessToken string) (*Search
 			PageToken     string `json:"page_token"`
 			NextPageToken string `json:"next_page_token"`
 			HasMore       bool   `json:"has_more"`
+			Notice        string `json:"notice"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
@@ -265,6 +268,7 @@ func SearchMessages(opts SearchMessagesOptions, userAccessToken string) (*Search
 		MessageIDs: ids,
 		PageToken:  pageToken,
 		HasMore:    apiResp.Data.HasMore,
+		Notice:     apiResp.Data.Notice,
 	}, nil
 }
 
