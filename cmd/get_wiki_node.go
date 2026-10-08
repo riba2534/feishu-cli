@@ -51,7 +51,7 @@ URL 格式示例:
 			return err
 		}
 
-		node, err := client.GetWikiNode(nodeToken, resolveOptionalUserTokenWithFallback(cmd))
+		node, err := client.ResolveWikiNode(nodeToken, resolveOptionalUserTokenWithFallback(cmd))
 		if err != nil {
 			return err
 		}

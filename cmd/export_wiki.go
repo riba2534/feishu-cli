@@ -63,7 +63,7 @@ var exportWikiCmd = &cobra.Command{
 
 		// 1. 获取节点信息
 		fmt.Printf("正在获取节点信息: %s\n", nodeToken)
-		node, err := client.GetWikiNode(nodeToken, userAccessToken)
+		node, err := client.ResolveWikiNode(nodeToken, userAccessToken)
 		if err != nil {
 			return err
 		}

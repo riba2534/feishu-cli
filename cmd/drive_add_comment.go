@@ -211,7 +211,7 @@ func resolveCommentDoc(input, userAccessToken string) (string, string, string, e
 	// URL 形式
 	if strings.Contains(raw, "://") {
 		if wikiToken, ok := extractURLSegmentToken(raw, "/wiki/"); ok {
-			node, err := client.GetWikiNode(wikiToken, userAccessToken)
+			node, err := client.ResolveWikiNode(wikiToken, userAccessToken)
 			if err != nil {
 				return "", "", "", err
 			}

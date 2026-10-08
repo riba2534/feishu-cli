@@ -134,7 +134,7 @@ func TestDriveImportDryRunPointAndUploadAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run import: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "/open-apis/wiki/v2/spaces/get_node") {
+	if !strings.Contains(out, "/open-apis/wiki/v2/spaces/node_by_token") {
 		t.Fatalf("missing wiki probe: %s", out)
 	}
 	if !strings.Contains(out, "/open-apis/drive/v1/medias/upload_all") {

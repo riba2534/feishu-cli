@@ -85,7 +85,7 @@ var exportWikiTreeCmd = &cobra.Command{
 
 		// 1. 取根节点信息（自动得到 SpaceID，无需用户传）
 		fmt.Printf("正在解析根节点: %s\n", rootToken)
-		root, err := client.GetWikiNode(rootToken, userAccessToken)
+		root, err := client.ResolveWikiNode(rootToken, userAccessToken)
 		if err != nil {
 			return err
 		}

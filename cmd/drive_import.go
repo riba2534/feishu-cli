@@ -98,7 +98,7 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
 			if folderToken != "" {
 				steps = append(steps, dryRunStep{
 					Method: "GET",
-					URL:    "/open-apis/wiki/v2/spaces/get_node",
+					URL:    client.WikiNodeByTokenPath,
 					Desc:   "Validate whether --folder-token is a wiki node",
 					Params: map[string]any{"token": folderToken},
 				})
@@ -226,12 +226,15 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
 	},
 }
 
+// rejectDriveImportWikiFolderToken 拒绝把 wiki 节点当作导入挂载目录。
+// node_by_token 对 Drive 文件夹 token 返回 131013/131014 等错误，任何查询失败都视为「不是 wiki 节点」放行，
+// 只有成功解析出节点时才报错（与官方 drive_import_common.go 一致）。
 func rejectDriveImportWikiFolderToken(folderToken, userToken string) error {
 	folderToken = strings.TrimSpace(folderToken)
 	if folderToken == "" {
 		return nil
 	}
-	node, err := client.GetWikiNode(folderToken, userToken)
+	node, err := client.ResolveWikiNode(folderToken, userToken)
 	if err != nil {
 		return nil
 	}

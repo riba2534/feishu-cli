@@ -40,7 +40,7 @@ func TestDriveInspectWikiDoesNotSendObjTypeWiki(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
-		case r.URL.Path == "/open-apis/wiki/v2/spaces/get_node":
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
 			getNodeCalled = true
 			gotTokenQuery = r.URL.Query().Get("token")
 			hasObjTypeQuery = r.URL.Query().Has("obj_type")
@@ -90,7 +90,7 @@ func TestDriveInspectWikiDoesNotSendObjTypeWiki(t *testing.T) {
 	}
 
 	if !getNodeCalled {
-		t.Fatal("未调用 /open-apis/wiki/v2/spaces/get_node")
+		t.Fatal("未调用 /open-apis/wiki/v2/spaces/node_by_token")
 	}
 	if gotTokenQuery != "wikcnInspect123" {
 		t.Fatalf("Query token = %q, 期望 wikcnInspect123", gotTokenQuery)

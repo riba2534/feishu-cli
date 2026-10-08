@@ -168,7 +168,7 @@ URL 输入（/wiki/, /docx/, /sheets/ 等）自动推断文档类型；裸 token
   node_token    节点 Token 或知识库完整 URL（必填）
 
 可选参数:
-  --space-id            知识空间 ID（可选，未指定时自动通过 get_node 解析）
+  --space-id            知识空间 ID（可选，未指定时自动通过 node_by_token 解析）
   --obj-type            文档类型（裸 token 必填，URL 输入自动推断；可选: wiki, doc, docx, sheet, bitable, mindnote, slides, file）
   --include-children    是否级联删除子节点（默认 true）
   --force, -f           跳过确认直接删除
@@ -225,14 +225,14 @@ URL 输入（/wiki/, /docx/, /sheets/ 等）自动推断文档类型；裸 token
 
 		nodeTitle := ""
 		if spaceID == "" {
-			// 未指定 space-id 时通过 get_node 解析 space_id（对 wiki token 省略 obj_type，对 non-wiki token 传 obj_type）
-			node, err := client.GetWikiNodeWithOptions(nodeToken, objType, token)
+			// 未指定 space-id 时通过 node_by_token 解析 space_id（服务端自动识别 node_token / obj_token，无需 obj_type）
+			node, err := client.ResolveWikiNode(nodeToken, token)
 			if err != nil {
 				return fmt.Errorf("获取节点信息失败: %w", err)
 			}
 			spaceID = strings.TrimSpace(node.SpaceID)
 			if spaceID == "" {
-				return fmt.Errorf("未能通过 get_node 获取 space_id，请通过 --space-id 显式指定")
+				return fmt.Errorf("未能通过 node_by_token 获取 space_id，请通过 --space-id 显式指定")
 			}
 			if err := validateResourceIdentifier(spaceID, "从节点解析出的 space_id"); err != nil {
 				return fmt.Errorf("节点所属 space_id 非法: %w", err)

@@ -2,6 +2,11 @@
 
 wiki 使用 node token；普通文档使用 document ID。先解析 URL 再选择命令。
 
+节点解析统一走 `GET /wiki/v2/spaces/node_by_token`：`wiki get/update/move/export/export-tree/delete` 的
+`<node_token>` 也可以直接传挂载在知识库中的文档 obj_token，服务端自动识别类型并返回真实 node_token
+（旧 `get_node` 对 obj_token 一律报 131005）。常见错误码：131012 节点已删除、131013/131016 token 无效或被截断、
+131014 文档不在知识库、131006 当前身份无权读取——均为终态，不要原样重试。
+
 ## 查询与导出
 
 ```bash

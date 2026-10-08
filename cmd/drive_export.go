@@ -18,7 +18,7 @@ var driveExportCmd = &cobra.Command{
 
 - markdown 导出走 POST /open-apis/docs_ai/v1/documents/{token}/fetch（format=markdown）
 - 其他格式走 export_tasks 异步任务：创建 → 有界轮询（最多 10 次，每次 5s） → 下载
-- wiki URL/token 先 get_node 再导出底层文档
+- wiki URL/token 先 node_by_token 再导出底层文档
 - 超时未完成时返回 next_command
 
 类型/格式矩阵:
@@ -109,7 +109,7 @@ var driveExportCmd = &cobra.Command{
 			if sourceType == "wiki" {
 				steps = append(steps, dryRunStep{
 					Method: "GET",
-					URL:    "/open-apis/wiki/v2/spaces/get_node",
+					URL:    client.WikiNodeByTokenPath,
 					Desc:   "Resolve wiki node to underlying document token",
 					Params: map[string]any{"token": sourceToken},
 				})
@@ -165,7 +165,7 @@ var driveExportCmd = &cobra.Command{
 		var wikiToken, wikiObjToken, wikiObjType string
 		if sourceType == "wiki" {
 			fmt.Fprintf(os.Stderr, "解析 wiki 节点: %s\n", sourceToken)
-			node, err := client.GetWikiNode(sourceToken, token)
+			node, err := client.ResolveWikiNode(sourceToken, token)
 			if err != nil {
 				return err
 			}

@@ -107,40 +107,14 @@ func driveAPICall(method, path string, query map[string]string, body any, userTo
 	return resp.RawBody, resp.StatusCode, nil
 }
 
-// inspectFetchWikiNode 调 wiki/v2/spaces/get_node 拆出 obj_type/obj_token
+// inspectFetchWikiNode 调 wiki/v2/spaces/node_by_token 拆出 obj_type/obj_token。
+// node_by_token 同时接受 wiki node_token 与挂载在知识库中的文档 obj_token。
 func inspectFetchWikiNode(token, userToken string) (objType, objToken, spaceID, nodeToken string, err error) {
-	body, status, err := driveAPICall(http.MethodGet,
-		"/open-apis/wiki/v2/spaces/get_node",
-		map[string]string{"token": token},
-		nil, userToken)
+	node, err := client.ResolveWikiNode(token, userToken)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("wiki get_node 失败: %w", err)
+		return "", "", "", "", err
 	}
-	if status < 200 || status >= 300 {
-		return "", "", "", "", fmt.Errorf("wiki get_node HTTP %d: %s", status, string(body))
-	}
-	var resp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-		Data struct {
-			Node struct {
-				ObjType   string `json:"obj_type"`
-				ObjToken  string `json:"obj_token"`
-				SpaceID   string `json:"space_id"`
-				NodeToken string `json:"node_token"`
-			} `json:"node"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return "", "", "", "", fmt.Errorf("解析 wiki get_node 响应失败: %w", err)
-	}
-	if resp.Code != 0 {
-		return "", "", "", "", fmt.Errorf("wiki get_node code=%d msg=%s", resp.Code, resp.Msg)
-	}
-	if resp.Data.Node.ObjToken == "" {
-		return "", "", "", "", fmt.Errorf("wiki get_node 返回 obj_token 为空")
-	}
-	return resp.Data.Node.ObjType, resp.Data.Node.ObjToken, resp.Data.Node.SpaceID, resp.Data.Node.NodeToken, nil
+	return node.ObjType, node.ObjToken, node.SpaceID, node.NodeToken, nil
 }
 
 // inspectFetchTitle 调 drive/v1/metas/batch_query 拿 title
@@ -199,7 +173,7 @@ var driveInspectCmd = &cobra.Command{
 	Long: `给定文档 URL 或裸 token + type，统一输出 type / title / token / canonical URL。
 
 特别功能：
-  - URL 中带 /wiki/ 时，自动调 wiki get_node 拆出底层文档的 obj_type/obj_token
+  - URL 中带 /wiki/ 时，自动调 wiki node_by_token 拆出底层文档的 obj_type/obj_token
   - 自动检测无权限、不存在等异常
   - 默认 auto Token（User 优先，回退 Bot）
 
