@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 // vcBatchLimit VC / Minutes 命令批量入参上限
@@ -195,4 +197,18 @@ func formatVCTime(ts string) string {
 		return parsed.In(time.Local).Format("2006-01-02 15:04:05")
 	}
 	return ts
+}
+
+// vcReadAsFlagHelp 会议 / 纪要 / 妙记读命令的 --as 帮助。默认 user 保持历史行为（这些命令原先只收 User Token）。
+const vcReadAsFlagHelp = "身份: user(默认，User Token) | bot(App Token，需应用开通对应权限) | auto(User 优先；未配置回退 Bot；已配置但解析/刷新失败 fail-closed)"
+
+// addVCReadAsFlag 给会议 / 纪要 / 妙记读命令注册 --as，默认 user（不改变既有默认身份）。
+func addVCReadAsFlag(cmd *cobra.Command) {
+	cmd.Flags().String("as", "user", vcReadAsFlagHelp)
+}
+
+// resolveVCReadIdentity 按 --as 解析会议 / 纪要 / 妙记读命令的身份；空串表示 Bot（App Token）。
+// 复用 resolveIdentityToken：auto = User 优先、未配置回退 Bot、已配置但不可用 fail-closed。
+func resolveVCReadIdentity(cmd *cobra.Command) (string, error) {
+	return resolveIdentityToken(cmd)
 }
