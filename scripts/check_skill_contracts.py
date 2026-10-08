@@ -85,10 +85,10 @@ def run_contracts(binary: Path) -> list[dict]:
                 assert not requests, f"本地验证/dry-run 不应发请求: {requests}"
 
             def content_update_rejects_uploads():
-                proc = run(["doc", "content-update", "doccn_fixture", "--mode", "append", "--markdown", "测试", "--upload-images"], 1)
+                proc = run(["doc", "content-update", "doccn_fixture", "--mode", "append", "--markdown", "测试", "--upload-images"], 2)
                 assert "不支持 --upload-images" in proc.stderr, proc.stderr
                 no_requests()
-                proc = run(["doc", "content-update", "doccn_fixture", "--mode", "append", "--markdown-file", str(DOC_FIXTURES / "local-image.md")], 1)
+                proc = run(["doc", "content-update", "doccn_fixture", "--mode", "append", "--markdown-file", str(DOC_FIXTURES / "local-image.md")], 2)
                 assert "本地" in proc.stderr, proc.stderr
                 no_requests()
 
