@@ -298,8 +298,12 @@ func TestResolveCommentDoc(t *testing.T) {
 	if err != nil || tok != "DocObjTok" || typ != "docx" || by != "wiki" {
 		t.Fatalf("wiki URL: %q %q %q %v", tok, typ, by, err)
 	}
-	if _, _, _, err := resolveCommentDoc("https://example.feishu.cn/sheets/ShtA", "u-test"); err == nil {
-		t.Fatal("sheet URL 应被拒绝（当前仅支持 doc/docx）")
+	// sheet/slides/base/file 支持锚点评论后，sheet URL 解析为 sheet 目标
+	if tok, typ, _, err := resolveCommentDoc("https://example.feishu.cn/sheets/ShtA", "u-test"); err != nil || tok != "ShtA" || typ != "sheet" {
+		t.Fatalf("sheet URL: %q %q %v", tok, typ, err)
+	}
+	if _, _, _, err := resolveCommentDoc("https://example.feishu.cn/mindnote/MndA", "u-test"); err == nil {
+		t.Fatal("mindnote URL 应被拒绝（评论仅支持 doc/docx/sheet/slides/bitable/file）")
 	}
 }
 
