@@ -48,18 +48,9 @@ func GetBoardImage(whiteboardID string, outputPath string, userAccessToken ...st
 		return "", fmt.Errorf("获取画板图片失败: %w", err)
 	}
 
-	// Check response
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("获取画板图片失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
-	}
-
-	// 检查是否是 JSON 格式的业务错误（防止 HTTP 200 返回 JSON 错误体）
-	var apiErrResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-	}
-	if err := json.Unmarshal(resp.RawBody, &apiErrResp); err == nil && apiErrResp.Code != 0 {
-		return "", fmt.Errorf("获取画板图片失败: code=%d, msg=%s", apiErrResp.Code, apiErrResp.Msg)
+	// 先解析 JSON 业务错误信封（含随 HTTP 4xx 下发的业务码、HTTP 200 返回 JSON 错误体），再看 HTTP 状态
+	if err := checkBoardResponse("获取画板图片", resp); err != nil {
+		return "", err
 	}
 
 	ext, err := boardImageExt(resp.Header.Get("Content-Type"), resp.RawBody)
@@ -83,6 +74,20 @@ func GetBoardImage(whiteboardID string, outputPath string, userAccessToken ...st
 	}
 
 	return savePath, nil
+}
+
+// checkBoardResponse 先按飞书业务信封解析响应、再看 HTTP 状态（飞书大量业务错误随 HTTP 400 下发）。
+// HTTP 非 2xx 且是业务信封时，在错误末尾补 "（HTTP <status>）"：重试分类（IsRetryableError）
+// 依赖 HTTP 状态区分 4xx 永久错误与 5xx 临时错误，补上后与旧的 "HTTP 500, body: ..." 分类结果一致。
+func checkBoardResponse(action string, resp *larkcore.ApiResp) error {
+	err := CheckAPIResponse(action, resp)
+	if err == nil {
+		return nil
+	}
+	if _, ok := AsAPIError(err); ok && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+		return fmt.Errorf("%w（HTTP %d）", err, resp.StatusCode)
+	}
+	return err
 }
 
 // boardImageExt 由响应 Content-Type 决定扩展名；header 缺失或不认识时按文件头嗅探兜底。
@@ -158,8 +163,8 @@ func ExportWhiteboardSVG(whiteboardID string, userAccessToken ...string) (*Expor
 	if err != nil {
 		return nil, fmt.Errorf("导出画板 SVG 失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("导出画板 SVG 失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := checkBoardResponse("导出画板 SVG", resp); err != nil {
+		return nil, err
 	}
 	return parseExportWhiteboardSVGResponse(resp.RawBody)
 }
@@ -197,41 +202,139 @@ func parseExportWhiteboardSVGResponse(rawBody []byte) (*ExportWhiteboardSVGResul
 // ImportDiagramOptions contains options for importing diagram to whiteboard
 type ImportDiagramOptions struct {
 	SourceType      string // file or content
-	Syntax          string // plantuml or mermaid
+	Syntax          string // plantuml / mermaid / svg
 	DiagramType     string // auto, mindmap, sequence, activity, class, er, flowchart, state, component
 	Style           string // board or classic
 	ParseMode       int    // 解析模式，默认 1
 	Overwrite       bool   // 是否覆盖画板内容：true=覆盖，false=不覆盖
+	ClientToken     string // 幂等键（≥10 字符）；同一次逻辑写入的重试复用同一个值，避免超时重试产生重复图
 	UserAccessToken string // optional user access token
 }
 
 // ImportDiagramResult contains the result of importing diagram
 type ImportDiagramResult struct {
 	TicketID string `json:"ticket_id"`
+	// DegradedAttributes 服务端解析时降级/忽略的属性（data.extra.degradedAttributes），
+	// SVG 路线常见：fill=url(#id) 渐变、自定义 stroke-dasharray 等。非空表示画面与源码有出入。
+	DegradedAttributes []string `json:"degraded_attributes,omitempty"`
+}
+
+// 画板图表导入（POST /nodes/plantuml）的枚举白名单。
+// syntax_type 对齐官方 whiteboard_update.go 的 formatCodeMap：plantuml=1、mermaid=2、svg=3。
+// 过去 switch 的 default 分支把未知语法（含 svg）静默当成 PlantUML 发出去，服务端解析失败或画出错图，
+// 现在未知取值一律报错。
+var (
+	boardSyntaxTypes = map[string]int{"plantuml": 1, "mermaid": 2, "svg": 3}
+	boardStyleTypes  = map[string]int{"board": 1, "classic": 2}
+	// diagram_type: auto=0, mindmap=1, sequence=2, activity=3, class=4, er=5, flowchart=6, state=7, component=8
+	boardDiagramTypes = map[string]int{
+		"auto": 0, "mindmap": 1, "sequence": 2, "activity": 3, "class": 4,
+		"er": 5, "flowchart": 6, "state": 7, "component": 8,
+	}
+)
+
+// BoardSyntaxNames / BoardStyleNames / BoardDiagramTypeNames 供命令帮助与报错列出合法取值。
+const (
+	BoardSyntaxNames      = "plantuml / mermaid / svg"
+	BoardStyleNames       = "board / classic"
+	BoardDiagramTypeNames = "auto / mindmap / sequence / activity / class / er / flowchart / state / component"
+)
+
+func lookupBoardEnum(table map[string]int, value, defaultValue, flag, names string) (int, error) {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if v == "" {
+		v = defaultValue
+	}
+	code, ok := table[v]
+	if !ok {
+		return 0, fmt.Errorf("%s 取值 %q 不受支持，可选值: %s", flag, value, names)
+	}
+	return code, nil
+}
+
+// BoardSyntaxType 把 --syntax 映射为画板 API 的 syntax_type（空值按 plantuml）。
+func BoardSyntaxType(syntax string) (int, error) {
+	return lookupBoardEnum(boardSyntaxTypes, syntax, "plantuml", "--syntax", BoardSyntaxNames)
+}
+
+// BoardStyleType 把 --style 映射为 style_type（空值按 board）。
+func BoardStyleType(style string) (int, error) {
+	return lookupBoardEnum(boardStyleTypes, style, "board", "--style", BoardStyleNames)
+}
+
+// BoardDiagramType 把 --diagram-type 映射为 diagram_type（空值按 auto）。
+func BoardDiagramType(diagramType string) (int, error) {
+	return lookupBoardEnum(boardDiagramTypes, diagramType, "auto", "--diagram-type", BoardDiagramTypeNames)
+}
+
+// ValidateImportDiagramOptions 在发请求（以及 dry-run）之前校验枚举取值。
+func ValidateImportDiagramOptions(opts ImportDiagramOptions) error {
+	if _, err := BoardSyntaxType(opts.Syntax); err != nil {
+		return err
+	}
+	if _, err := BoardStyleType(opts.Style); err != nil {
+		return err
+	}
+	if _, err := BoardDiagramType(opts.DiagramType); err != nil {
+		return err
+	}
+	return ValidateBoardClientToken(opts.ClientToken)
+}
+
+// ValidateBoardClientToken 校验画板写接口的 client_token（飞书要求 ≥10 字符；空值表示不带幂等键）。
+func ValidateBoardClientToken(token string) error {
+	if token != "" && len(token) < 10 {
+		return fmt.Errorf("client_token 长度至少为 10 个字符: %s", token)
+	}
+	return nil
+}
+
+// BuildImportDiagramBody 构造 POST /nodes/plantuml 的请求体（dry-run 与实调共用，保证两者一致）。
+// svg（syntax_type=3）对齐官方只发 plant_uml_code/syntax_type/parse_mode/overwrite：
+// style_type / diagram_type 是 PlantUML/Mermaid 的排版参数，对 SVG 没有意义。
+func BuildImportDiagramBody(content string, opts ImportDiagramOptions) (map[string]any, error) {
+	syntaxType, err := BoardSyntaxType(opts.Syntax)
+	if err != nil {
+		return nil, err
+	}
+	styleType, err := BoardStyleType(opts.Style)
+	if err != nil {
+		return nil, err
+	}
+	diagramType, err := BoardDiagramType(opts.DiagramType)
+	if err != nil {
+		return nil, err
+	}
+	parseMode := opts.ParseMode
+	if parseMode <= 0 {
+		parseMode = 1
+	}
+	body := map[string]any{
+		"plant_uml_code": content,
+		"syntax_type":    syntaxType,
+		"parse_mode":     parseMode,
+	}
+	if syntaxType != boardSyntaxTypes["svg"] {
+		body["style_type"] = styleType
+		body["diagram_type"] = diagramType
+	}
+	if opts.Overwrite {
+		body["overwrite"] = true
+	}
+	return body, nil
 }
 
 // ImportDiagram imports a diagram to whiteboard
+// API: POST /open-apis/board/v1/whiteboards/{id}/nodes/plantuml（syntax_type: 1=PlantUML 2=Mermaid 3=SVG）
+// opts.ClientToken 非空时作为 query 参数 client_token 下发（官方 whiteboard_update.go 同款幂等键）。
 func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions) (*ImportDiagramResult, http.Header, error) {
-	client, err := GetClient()
-	if err != nil {
+	if err := ValidateBoardClientToken(opts.ClientToken); err != nil {
 		return nil, nil, err
-	}
-
-	// Default values
-	if opts.Syntax == "" {
-		opts.Syntax = "plantuml"
-	}
-	if opts.DiagramType == "" {
-		opts.DiagramType = "auto"
-	}
-	if opts.Style == "" {
-		opts.Style = "board"
 	}
 
 	// Get content
 	var content string
 	if opts.SourceType == "file" || opts.SourceType == "" {
-		// Read from file
 		data, err := os.ReadFile(source)
 		if err != nil {
 			return nil, nil, fmt.Errorf("读取图表文件失败: %w", err)
@@ -241,72 +344,20 @@ func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions
 		content = source
 	}
 
-	// Map syntax to API value
-	var syntaxType int
-	switch strings.ToLower(opts.Syntax) {
-	case "plantuml":
-		syntaxType = 1
-	case "mermaid":
-		syntaxType = 2
-	default:
-		syntaxType = 1
+	reqBody, err := BuildImportDiagramBody(content, opts)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	// Map style to API value
-	var styleType int
-	switch strings.ToLower(opts.Style) {
-	case "board":
-		styleType = 1
-	case "classic":
-		styleType = 2
-	default:
-		styleType = 1
+	client, err := GetClient()
+	if err != nil {
+		return nil, nil, err
 	}
 
-	// Map diagram type to API value (integer)
-	// Options: [0,1,2,3,4,5,6,7,8,101,102,201]
-	// auto=0, mindmap=1, sequence=2, activity=3, class=4, er=5, flowchart=6, state=7, component=8
-	var diagramType int
-	switch strings.ToLower(opts.DiagramType) {
-	case "mindmap":
-		diagramType = 1
-	case "sequence":
-		diagramType = 2
-	case "activity":
-		diagramType = 3
-	case "class":
-		diagramType = 4
-	case "er":
-		diagramType = 5
-	case "flowchart":
-		diagramType = 6
-	case "state":
-		diagramType = 7
-	case "component":
-		diagramType = 8
-	default:
-		diagramType = 0 // auto
-	}
-
-	parseMode := opts.ParseMode
-	if parseMode <= 0 {
-		parseMode = 1
-	}
-
-	// Build request body for Feishu board PlantUML/Mermaid import endpoint
-	reqBody := map[string]any{
-		"plant_uml_code": content,
-		"syntax_type":    syntaxType,
-		"style_type":     styleType,
-		"diagram_type":   diagramType,
-		"parse_mode":     parseMode,
-	}
-	if opts.Overwrite {
-		reqBody["overwrite"] = true
-	}
-
-	// 正确的 API 路径是 /nodes/plantuml
 	apiPath := fmt.Sprintf("/open-apis/board/v1/whiteboards/%s/nodes/plantuml", url.PathEscape(whiteboardID))
+	if opts.ClientToken != "" {
+		apiPath += "?" + url.Values{"client_token": []string{opts.ClientToken}}.Encode()
+	}
 
 	tokenType := larkcore.AccessTokenTypeTenant
 	var reqOpts []larkcore.RequestOptionFunc
@@ -322,27 +373,22 @@ func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions
 
 	headers := resp.Header
 
-	// 检查 HTTP 状态码
-	if resp.StatusCode != http.StatusOK {
-		return nil, headers, fmt.Errorf("导入图表失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	// 先解析业务信封再看 HTTP 状态：飞书大量业务错误随 HTTP 400 下发
+	if err := checkBoardResponse("导入图表", resp); err != nil {
+		return nil, headers, err
 	}
 
-	// Parse response
 	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
 		Data struct {
 			TicketID string `json:"ticket_id"`
 			NodeID   string `json:"node_id"`
+			Extra    struct {
+				DegradedAttributes []string `json:"degradedAttributes"`
+			} `json:"extra"`
 		} `json:"data"`
 	}
-
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
 		return nil, headers, fmt.Errorf("解析响应失败: %w", err)
-	}
-
-	if apiResp.Code != 0 {
-		return nil, headers, fmt.Errorf("导入图表失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
 	}
 
 	nodeID := apiResp.Data.NodeID
@@ -351,7 +397,8 @@ func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions
 	}
 
 	return &ImportDiagramResult{
-		TicketID: nodeID,
+		TicketID:           nodeID,
+		DegradedAttributes: apiResp.Data.Extra.DegradedAttributes,
 	}, headers, nil
 }
 
@@ -415,15 +462,12 @@ func CreateBoardNodes(whiteboardID string, nodesJSON string, opts CreateBoardNot
 		return nil, fmt.Errorf("创建画板节点失败: %w", err)
 	}
 
-	// 检查 HTTP 状态码
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("创建画板节点失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := checkBoardResponse("创建画板节点", resp); err != nil {
+		return nil, err
 	}
 
 	// Parse response — API returns {"data": {"ids": ["id1", "id2", ...]}}
 	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
 		Data struct {
 			IDs []string `json:"ids"`
 		} `json:"data"`
@@ -431,10 +475,6 @@ func CreateBoardNodes(whiteboardID string, nodesJSON string, opts CreateBoardNot
 
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)
-	}
-
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("创建画板节点失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
 	}
 
 	return apiResp.Data.IDs, nil
@@ -461,20 +501,15 @@ func GetBoardNodes(whiteboardID string, userAccessToken ...string) (json.RawMess
 		return nil, fmt.Errorf("获取画板节点失败: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("获取画板节点失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
-	}
-
 	// 检查业务错误 code != 0（确保 fail closed）
+	if err := checkBoardResponse("获取画板节点", resp); err != nil {
+		return nil, err
+	}
 	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
+		Code int `json:"code"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("解析画板节点响应失败: %w", err)
-	}
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("获取画板节点失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
 	}
 
 	return resp.RawBody, nil
@@ -518,20 +553,9 @@ func DeleteBoardNodes(whiteboardID string, nodeIDs []string, userAccessToken ...
 			return fmt.Errorf("删除画板节点失败: %w", err)
 		}
 
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("删除画板节点失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
-		}
-
-		// 解析响应检查业务错误
-		var apiResp struct {
-			Code int    `json:"code"`
-			Msg  string `json:"msg"`
-		}
-		if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
-			return fmt.Errorf("解析响应失败: %w", err)
-		}
-		if apiResp.Code != 0 {
-			return fmt.Errorf("删除画板节点失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+		// 解析响应检查业务错误（先业务码、后 HTTP 状态）
+		if err := checkBoardResponse("删除画板节点", resp); err != nil {
+			return err
 		}
 
 		// 多批次时间隔 1s 避免限流
