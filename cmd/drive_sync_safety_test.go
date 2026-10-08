@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -369,13 +370,20 @@ func TestDriveStatus_DifferenceBeyond100MB(t *testing.T) {
 	}
 }
 
-// TestDrivePull_100MBBoundary_Safety 验证 pull 100MB-1、恰好 100MB 成功下载，100MB+1 拦截且不触发 delete-local
-func TestDrivePull_100MBBoundary_Safety(t *testing.T) {
+// TestDrivePull_BotStreamingBeyond100MB_Safety 验证 Bot 身份 pull 走流式下载：
+// 旧实现经 SDK 把整个文件读进内存并对 Bot 路径设 100MB 上限（100MB+1 直接失败）；
+// 现在恰好 100MB 与 100MB+1 都应完整落盘。同时验证任一文件下载失败（403 业务错误）时
+// --delete-local 被跳过、本地孤儿文件保留，且失败文件不残留半截内容。
+func TestDrivePull_BotStreamingBeyond100MB_Safety(t *testing.T) {
 	const MB = 1024 * 1024
 
+	var tenantAuth sync.Map
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if mockAuthHandler(w, r) {
 			return
+		}
+		if strings.Contains(r.URL.Path, "/download") {
+			tenantAuth.Store(r.Header.Get("Authorization"), true)
 		}
 		if strings.Contains(r.URL.Path, "/open-apis/drive/v1/files/boxcn_100m_exact/download") {
 			w.WriteHeader(http.StatusOK)
@@ -387,6 +395,12 @@ func TestDrivePull_100MBBoundary_Safety(t *testing.T) {
 			_, _ = io.Copy(w, newTestPatternReader([]byte("Y"), 100*MB+1))
 			return
 		}
+		if strings.Contains(r.URL.Path, "/open-apis/drive/v1/files/boxcn_forbidden/download") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"code":1061004,"msg":"forbidden"}`)
+			return
+		}
 		if strings.Contains(r.URL.Path, "/open-apis/drive/v1/files") {
 			respData := map[string]any{
 				"code": 0,
@@ -395,16 +409,9 @@ func TestDrivePull_100MBBoundary_Safety(t *testing.T) {
 					"has_more":        false,
 					"next_page_token": "",
 					"files": []map[string]any{
-						{
-							"token": "boxcn_100m_exact",
-							"name":  "exact_100m.bin",
-							"type":  "file",
-						},
-						{
-							"token": "boxcn_100m_plus",
-							"name":  "plus_100m.bin",
-							"type":  "file",
-						},
+						{"token": "boxcn_100m_exact", "name": "exact_100m.bin", "type": "file"},
+						{"token": "boxcn_100m_plus", "name": "plus_100m.bin", "type": "file"},
+						{"token": "boxcn_forbidden", "name": "forbidden.bin", "type": "file"},
 					},
 				},
 			}
@@ -424,9 +431,12 @@ func TestDrivePull_100MBBoundary_Safety(t *testing.T) {
 	_ = os.MkdirAll(tmpDir, 0755)
 	defer os.RemoveAll(tmpDir)
 
-	// 在本地放一个孤儿文件 orphan.txt，若 pull 有任何下载失败，--delete-local 不应删除它
+	// 本地孤儿文件：pull 有任何下载失败时 --delete-local 不应删除它
 	orphanPath := filepath.Join(tmpDir, "orphan.txt")
 	_ = os.WriteFile(orphanPath, []byte("preserve me"), 0644)
+	// 失败文件的本地旧版本：下载失败时必须保持原样（原子写，不删用户原文件）
+	forbiddenPath := filepath.Join(tmpDir, "forbidden.bin")
+	_ = os.WriteFile(forbiddenPath, []byte("old local copy"), 0644)
 
 	cmd := drivePullCmd
 	cmd.Flags().Set("folder-token", "fld_test_root")
@@ -434,31 +444,42 @@ func TestDrivePull_100MBBoundary_Safety(t *testing.T) {
 	cmd.Flags().Set("user-access-token", "")
 	cmd.Flags().Set("delete-local", "true")
 	cmd.Flags().Set("yes", "true")
+	defer func() {
+		cmd.Flags().Set("delete-local", "false")
+		cmd.Flags().Set("yes", "false")
+	}()
 
 	err := cmd.RunE(cmd, []string{})
 	if err == nil {
-		t.Fatalf("因为存在 100MB+1 的超限文件，pull 应当返回失败错误")
+		t.Fatalf("存在 403 下载失败，pull 应当返回失败错误")
 	}
 
-	// 验证恰好 100MB 的文件被成功保存
-	exactPath := filepath.Join(tmpDir, "exact_100m.bin")
-	stat, statErr := os.Stat(exactPath)
-	if statErr != nil {
-		t.Fatalf("恰好 100MB 的文件应下载成功: %v", statErr)
-	}
-	if stat.Size() != 100*MB {
-		t.Errorf("100MB 文件大小不匹配: got %d, want %d", stat.Size(), 100*MB)
-	}
-
-	// 验证 100MB+1 的文件未残留在本地
-	plusPath := filepath.Join(tmpDir, "plus_100m.bin")
-	if _, err := os.Stat(plusPath); !os.IsNotExist(err) {
-		t.Errorf("100MB+1 超限文件不应残留在本地")
+	for name, want := range map[string]int64{"exact_100m.bin": 100 * MB, "plus_100m.bin": 100*MB + 1} {
+		stat, statErr := os.Stat(filepath.Join(tmpDir, name))
+		if statErr != nil {
+			t.Fatalf("%s 应流式下载成功（Bot 路径不再有 100MB 上限）: %v", name, statErr)
+		}
+		if stat.Size() != want {
+			t.Errorf("%s 大小不匹配: got %d, want %d", name, stat.Size(), want)
+		}
 	}
 
-	// 验证由于下载阶段失败，delete-local 被跳过，orphan.txt 完好无损
+	if got, _ := os.ReadFile(forbiddenPath); string(got) != "old local copy" {
+		t.Errorf("下载失败时本地同名文件必须保持原样，got %q", got)
+	}
 	if _, err := os.Stat(orphanPath); err != nil {
 		t.Errorf("由于存在下载失败，delete-local 应当跳过，orphan.txt 应当保留: %v", err)
+	}
+	// Bot 下载必须携带 tenant token 走流式 Bearer 请求
+	sawTenant := false
+	tenantAuth.Range(func(k, _ any) bool {
+		if k.(string) == "Bearer t-mock-token" {
+			sawTenant = true
+		}
+		return true
+	})
+	if !sawTenant {
+		t.Errorf("Bot 下载请求应携带 Bearer tenant token")
 	}
 }
 
