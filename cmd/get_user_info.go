@@ -18,6 +18,9 @@ var getUserInfoCmd = &cobra.Command{
   --user-id-type         用户 ID 类型 (open_id/union_id/user_id)，默认 open_id
   --department-id-type   部门 ID 类型 (department_id/open_department_id)
   --output, -o           输出格式 (json)
+  --as                   身份：bot（默认，contact/v3/users/:id，字段最全，需应用通讯录权限）
+                         | user（basic_batch，只返回姓名/英文名，权限更轻，适合应用通讯录范围外的同事）
+                         | auto（已登录走 user，否则 bot）
 
 用户 ID 类型:
   open_id     Open ID（默认）
@@ -32,7 +35,10 @@ var getUserInfoCmd = &cobra.Command{
   feishu-cli user info xxx --user-id-type user_id
 
   # JSON 格式输出
-  feishu-cli user info ou_xxx -o json`,
+  feishu-cli user info ou_xxx -o json
+
+  # 以用户身份查姓名（应用通讯录权限不足时）
+  feishu-cli user info ou_xxx --as user`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -44,12 +50,21 @@ var getUserInfoCmd = &cobra.Command{
 		departmentIDType, _ := cmd.Flags().GetString("department-id-type")
 		output, _ := cmd.Flags().GetString("output")
 
-		opts := client.GetUserInfoOptions{
-			UserIDType:       userIDType,
-			DepartmentIDType: departmentIDType,
+		token, err := resolveIdentityToken(cmd)
+		if err != nil {
+			return err
 		}
 
-		info, err := client.GetUserInfo(userID, opts)
+		var info *client.UserInfo
+		if token != "" {
+			// User 身份：basic_batch，权限更轻（contact:user.basic_profile:readonly），只有姓名类字段。
+			info, err = client.GetUserBasicInfo(userID, userIDType, token)
+		} else {
+			info, err = client.GetUserInfo(userID, client.GetUserInfoOptions{
+				UserIDType:       userIDType,
+				DepartmentIDType: departmentIDType,
+			})
+		}
 		if err != nil {
 			return err
 		}
@@ -120,4 +135,7 @@ func init() {
 	getUserInfoCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型 (open_id/union_id/user_id)")
 	getUserInfoCmd.Flags().String("department-id-type", "", "部门 ID 类型 (department_id/open_department_id)")
 	getUserInfoCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
+	getUserInfoCmd.Flags().String("user-access-token", "", "User Access Token（--as user/auto 时使用）")
+	// 默认 bot 保持旧行为（应用身份、字段最全）；--as user 走 basic_batch。
+	getUserInfoCmd.Flags().String("as", "bot", "身份: bot（默认）| user（basic_batch，仅姓名）| auto")
 }
