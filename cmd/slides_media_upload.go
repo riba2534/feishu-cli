@@ -22,7 +22,7 @@ var slidesMediaUploadCmd = &cobra.Command{
 
 参数:
   --file                本地图片路径（必填，≤ 20 MB）
-  --presentation-token  目标演示文稿的 xml_presentation_id（必填）
+  --presentation-token  目标演示文稿的 xml_presentation_id、/slides/ URL 或 /wiki/ URL（必填）
   --output, -o          输出格式，可选 json
 
 注意:
@@ -48,6 +48,12 @@ var slidesMediaUploadCmd = &cobra.Command{
 		if presentationToken == "" {
 			return fmt.Errorf("--presentation-token 不能为空")
 		}
+		// 与其他 slides 命令一致：接受 URL / wiki URL；图片必须上传到真实演示文稿（parent_node 不能是 wiki 节点 token）
+		resolved, err := resolvePresentationArg(presentationToken, userAccessToken)
+		if err != nil {
+			return err
+		}
+		presentationToken = resolved
 
 		stat, err := os.Stat(filePath)
 		if err != nil {

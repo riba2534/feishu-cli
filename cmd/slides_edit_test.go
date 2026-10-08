@@ -609,3 +609,24 @@ func TestGetSlides_ZeroNotRewritten(t *testing.T) {
 		t.Fatalf("client 不应把 0 改写成 -1，got %q", got)
 	}
 }
+
+// TestSlidesMediaUpload_AcceptsSlidesURL --presentation-token 接受 /slides/ URL，docx URL 本地拒绝。
+func TestSlidesMediaUpload_AcceptsSlidesURL(t *testing.T) {
+	m, srv := newSlidesMockServer(t)
+	t.Cleanup(setupCmdTestConfig(t, srv.URL))
+	m.on("POST", "/medias/upload_all", func(*http.Request, map[string]any) (int, string) {
+		return 200, `{"code":0,"data":{"file_token":"boxcnX"}}`
+	})
+	f := filepath.Join(t.TempDir(), "a.png")
+	_ = os.WriteFile(f, []byte("png"), 0o644)
+	out, err := runSlidesCmd(t, slidesMediaUploadCmd, nil, map[string]string{"file": f, "presentation-token": "https://xxx.feishu.cn/slides/pres_url", "output": "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"presentation_id": "pres_url"`) {
+		t.Fatalf("应解析 URL 中的演示文稿 ID:\n%s", out)
+	}
+	if _, err := runSlidesCmd(t, slidesMediaUploadCmd, nil, map[string]string{"file": f, "presentation-token": "https://xxx.feishu.cn/docx/doc1"}); err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+		t.Fatalf("docx URL 应用法错误: %v", err)
+	}
+}
