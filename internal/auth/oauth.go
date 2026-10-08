@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 const maxAuthResponseBytes = 1 << 20
@@ -53,7 +54,7 @@ func RefreshAccessToken(oldStore *TokenStore, appID, appSecret, baseURL string) 
 	form.Set("client_id", appID)
 	form.Set("client_secret", appSecret)
 
-	req, err := http.NewRequest("POST", tokenURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(runctx.Root(), "POST", tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("构造 token 请求失败: %w", err)
 	}

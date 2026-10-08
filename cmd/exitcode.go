@@ -75,11 +75,15 @@ var networkErrorPhrases = []string{
 
 // exitCodeFor 把命令返回的错误映射为进程退出码（见 clierr 包的常量说明）。
 //
-// 优先级：需要确认(10) > 用户取消(1) > 用法(2) > 网络(4) > 鉴权(3) > 一般(1)。
+// 优先级：信号中断(130) > 需要确认(10) > 用户取消(1) > 用法(2) > 网络(4) > 鉴权(3) > 一般(1)。
 // 网络先于鉴权：token 刷新因断网失败时，重试网络即可恢复，不应提示重新登录。
 func exitCodeFor(err error) int {
 	if err == nil {
 		return clierr.ExitOK
+	}
+	// 收到 SIGINT/SIGTERM 后命令因 context 取消而失败：沿用 shell 约定 130
+	if rootInterrupted() {
+		return clierr.ExitInterrupted
 	}
 	kinds := clierr.Kinds(err)
 	has := func(k clierr.Kind) bool {

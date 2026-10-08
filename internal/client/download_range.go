@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 var rangeDownloadChunkSize int64 = 8 * 1024 * 1024
@@ -19,7 +21,7 @@ var rangeDownloadChunkSize int64 = 8 * 1024 * 1024
 const maxDownloadAPIErrorProbeBytes int64 = 1 << 20
 
 func newBearerDownloadRequest(reqURL, bearerToken, byteRange string) (*http.Request, error) {
-	return newBearerDownloadRequestWithContext(context.Background(), reqURL, bearerToken, byteRange)
+	return newBearerDownloadRequestWithContext(runctx.Root(), reqURL, bearerToken, byteRange)
 }
 
 func newBearerDownloadRequestWithContext(ctx context.Context, reqURL, bearerToken, byteRange string) (*http.Request, error) {
@@ -117,7 +119,7 @@ func downloadBearerURLByRange(action, reqURL, outputPath, bearerToken string, ti
 		return fmt.Errorf("%s失败: Range 分片大小非法: %d", action, rangeDownloadChunkSize)
 	}
 
-	ctx := context.Background()
+	ctx := runctx.Root()
 	var cancel context.CancelFunc
 	if timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, timeout)

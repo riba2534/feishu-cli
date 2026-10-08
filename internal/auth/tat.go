@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 const (
@@ -53,7 +54,7 @@ func DefaultTATEndpoint(baseURL string) string {
 
 // FetchTenantAccessToken 用 client_credentials 向官方 Accounts OAuth v3 换取 tenant access token。
 func FetchTenantAccessToken(appID, appSecret, baseURL string) (string, error) {
-	tok, err := FetchTenantAccessTokenResult(context.Background(), appID, appSecret, baseURL)
+	tok, err := FetchTenantAccessTokenResult(runctx.Root(), appID, appSecret, baseURL)
 	if err != nil {
 		return "", err
 	}
@@ -72,7 +73,7 @@ func FetchTenantAccessTokenContext(ctx context.Context, appID, appSecret, baseUR
 // FetchTenantAccessTokenResult 返回已校验的 token 与 expires_in（秒）。
 func FetchTenantAccessTokenResult(ctx context.Context, appID, appSecret, baseURL string) (*TenantAccessToken, error) {
 	if ctx == nil {
-		ctx = context.Background()
+		ctx = runctx.Root()
 	}
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc

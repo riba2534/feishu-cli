@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 // 限流重置 header 名称
@@ -32,7 +34,7 @@ type RetryConfig struct {
 	IsPermanent func(error) bool
 	// OnRetry 每次重试前的回调，可用于日志输出。attempt 从 1 开始。
 	OnRetry func(attempt int, err error, wait time.Duration)
-	// Context 用于支持外部取消。为 nil 时不检查取消。
+	// Context 用于支持外部取消。为 nil 时使用进程根 context（runctx.Root()，Ctrl-C 时取消）。
 	Context context.Context
 }
 
@@ -173,23 +175,27 @@ func DoWithRetry[T any](fn func() (T, http.Header, error), cfg RetryConfig) Retr
 		isPermanent = IsPermanentError
 	}
 
+	// 未指定 Context 时使用进程根 context：Ctrl-C 能打断退避等待，而不是睡满整个间隔
+	ctx := cfg.Context
+	if ctx == nil {
+		ctx = runctx.Root()
+	}
+
 	var zero T
 	failureCount := 0
 	rateLimitHits := 0
 
 	for attempt := 0; attempt < cfg.MaxTotalAttempts; attempt++ {
 		// 检查 context 是否已取消
-		if cfg.Context != nil {
-			select {
-			case <-cfg.Context.Done():
-				return RetryResult[T]{
-					Value:         zero,
-					Err:           fmt.Errorf("重试被取消: %w", cfg.Context.Err()),
-					Attempts:      attempt,
-					RateLimitHits: rateLimitHits,
-				}
-			default:
+		select {
+		case <-ctx.Done():
+			return RetryResult[T]{
+				Value:         zero,
+				Err:           fmt.Errorf("重试被取消: %w", ctx.Err()),
+				Attempts:      attempt,
+				RateLimitHits: rateLimitHits,
 			}
+		default:
 		}
 
 		value, headers, err := fn()
@@ -248,21 +254,17 @@ func DoWithRetry[T any](fn func() (T, http.Header, error), cfg RetryConfig) Retr
 			cfg.OnRetry(attempt+1, err, wait)
 		}
 
-		if cfg.Context != nil {
-			timer := time.NewTimer(wait)
-			select {
-			case <-cfg.Context.Done():
-				timer.Stop()
-				return RetryResult[T]{
-					Value:         zero,
-					Err:           fmt.Errorf("重试等待被取消: %w", cfg.Context.Err()),
-					Attempts:      attempt + 1,
-					RateLimitHits: rateLimitHits,
-				}
-			case <-timer.C:
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return RetryResult[T]{
+				Value:         zero,
+				Err:           fmt.Errorf("重试等待被取消: %w", ctx.Err()),
+				Attempts:      attempt + 1,
+				RateLimitHits: rateLimitHits,
 			}
-		} else {
-			time.Sleep(wait)
+		case <-timer.C:
 		}
 	}
 

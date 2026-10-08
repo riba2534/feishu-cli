@@ -11,6 +11,7 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 // 默认 API 调用超时时间
@@ -75,10 +76,10 @@ func GetClient() (*lark.Client, error) {
 }
 
 // Context returns a context with timeout for API calls.
-// 默认超时时间为 30 秒，防止 API 调用无限阻塞。
+// 默认超时时间为 30 秒，防止 API 调用无限阻塞；派生自进程根 context（runctx），Ctrl-C 时立即取消。
 // 通过 goroutine 等待 ctx.Done 后调用 cancel，释放关联的计时器资源。
 func Context() context.Context {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	ctx, cancel := context.WithTimeout(runctx.Root(), defaultTimeout)
 	go func() {
 		<-ctx.Done()
 		cancel()
@@ -88,7 +89,7 @@ func Context() context.Context {
 
 // ContextWithTimeout returns a context with custom timeout.
 func ContextWithTimeout(timeout time.Duration) context.Context {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(runctx.Root(), timeout)
 	go func() {
 		<-ctx.Done()
 		cancel()

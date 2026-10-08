@@ -19,6 +19,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
@@ -234,7 +235,7 @@ func invokeAPI(method, apiPath string, queryParams larkcore.QueryParams, body an
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(apiTimeoutSec)*time.Second)
+	ctx, cancel := context.WithTimeout(runctx.Root(), time.Duration(apiTimeoutSec)*time.Second)
 	defer cancel()
 	var opts []larkcore.RequestOptionFunc
 	if userToken != "" {

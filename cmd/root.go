@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/profile"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 	"github.com/spf13/cobra"
 )
 
@@ -178,7 +180,14 @@ func Execute() {
 	// 所有 init() 注册完成后统一安装：嵌套命令组的未知子命令守卫 + flag 拼写建议
 	installUnknownSubcommandGuard(rootCmd)
 	rootCmd.SetFlagErrorFunc(flagSuggestionErrorFunc)
-	if err := rootCmd.Execute(); err != nil {
+
+	// 根 context 接 SIGINT/SIGTERM：cmd.Context() 与 client.Context() 等都从它派生，
+	// Ctrl-C 时进行中的请求与等待立即取消。
+	ctx, stopSignals := newSignalContext(context.Background(), interruptGracePeriod, os.Stderr)
+	runctx.Set(ctx)
+	err := rootCmd.ExecuteContext(ctx)
+	stopSignals()
+	if err != nil {
 		if msg := err.Error(); msg != "" {
 			fmt.Fprintln(os.Stderr, msg)
 		}
@@ -186,7 +195,7 @@ func Execute() {
 		for _, line := range renderErrorDiagnostics(err) {
 			fmt.Fprintln(os.Stderr, line)
 		}
-		// 按错误分类退出（0 成功 / 1 一般 / 2 用法 / 3 鉴权 / 4 网络 / 10 需确认），
+		// 按错误分类退出（0 成功 / 1 一般 / 2 用法 / 3 鉴权 / 4 网络 / 10 需确认 / 130 中断），
 		// 供脚本与 AI Agent 区分失败类型；错误文本保持不变。
 		os.Exit(exitCodeFor(err))
 	}
