@@ -100,7 +100,7 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
-		if deleteRemote && !yes {
+		if deleteRemote && !yes && !confirmationBypassed(cmd) {
 			return clierr.ConfirmationRequiredf("--delete-remote 是高危操作，必须同时加 --yes 才执行")
 		}
 

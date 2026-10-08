@@ -97,7 +97,7 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
-		if deleteLocal && !yes {
+		if deleteLocal && !yes && !confirmationBypassed(cmd) {
 			return clierr.ConfirmationRequiredf("--delete-local 是高危操作，必须同时加 --yes 才执行")
 		}
 
