@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -40,9 +40,12 @@ var mailMessagesCmd = &cobra.Command{
 必填:
   --message-ids  邮件 ID 列表（逗号分隔）
 
+正文字段默认从 base64url 解码为明文（--raw-body 保留原始编码）。
+
 可选:
   --mailbox    默认 me（Bot 身份需显式指定具体邮箱地址）
   --format     full / plain_text_full（默认 full）
+  --raw-body   保留 API 原始 base64url 正文（不解码）
   --as         身份选择: bot | user | auto（默认 auto）
   -o json      JSON 格式
 
@@ -56,6 +59,7 @@ var mailMessagesCmd = &cobra.Command{
 		raw, _ := cmd.Flags().GetString("message-ids")
 		format, _ := cmd.Flags().GetString("format")
 		output, _ := cmd.Flags().GetString("output")
+		rawBody, _ := cmd.Flags().GetBool("raw-body")
 
 		// 1. 本地参数校验前置（在身份解析与任何网络请求前执行）
 		ids, err := parseMailMessageIDs(raw)
@@ -85,10 +89,14 @@ var mailMessagesCmd = &cobra.Command{
 			return err
 		}
 
-		if output == "json" {
-			return printJSON(json.RawMessage(data))
+		payload, err := decodeMailPayloadBodies(data, rawBody)
+		if err != nil {
+			return err
 		}
-		fmt.Println(string(data))
+		if output == "json" {
+			return printJSON(payload)
+		}
+		renderMailPayloadText(os.Stdout, payload)
 		return nil
 	},
 }
@@ -100,6 +108,7 @@ func init() {
 	mailMessagesCmd.Flags().String("format", "full", "格式: full/plain_text_full")
 	mailMessagesCmd.Flags().String("as", "auto", "身份选择: bot | user | auto（默认 auto）")
 	mailMessagesCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	mailMessagesCmd.Flags().Bool("raw-body", false, "保留 API 原始 base64url 编码的正文字段（默认解码为明文）")
 	mailMessagesCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(mailMessagesCmd, "message-ids")
 }
