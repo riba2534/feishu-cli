@@ -640,7 +640,7 @@ func TestDeleteDropdown_APIErrorCode(t *testing.T) {
 }
 
 // TestSheetMediaParentType 覆盖上传图片到电子表格时的 parent_type 选择：
-// 原生飞书表格用 sheet_image；导入型 office 表格（token 以 fake_office_ 开头）用
+// 原生飞书表格用 sheet_image；导入型 office 表格（IsLocalOfficeToken 判定）用
 // office_sheet_file。
 func TestSheetMediaParentType(t *testing.T) {
 	cases := []struct {
@@ -652,6 +652,9 @@ func TestSheetMediaParentType(t *testing.T) {
 		{"导入 office 表格 token", "fake_office_abc123", "office_sheet_file"},
 		{"仅 fake_office_ 前缀本身", "fake_office_", "office_sheet_file"},
 		{"前缀出现在中间不匹配", "shtfake_office_abc", "sheet_image"},
+		{"local_office_ 前缀", "local_office_abc123", "office_sheet_file"},
+		{"27 字符交织 OFL0X 导入表格", "aaaaOaaaaFaaaaLaaaa0aaaaXaa", "office_sheet_file"},
+		{"同长度原生 shtcn 交织 token", "abcdsefghhijkltmnopcqrstnuv", "sheet_image"},
 		{"空 token 回落 sheet_image", "", "sheet_image"},
 	}
 	for _, c := range cases {

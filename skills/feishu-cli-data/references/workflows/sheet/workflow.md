@@ -152,7 +152,7 @@ feishu-cli sheet image delete shtcnxxxxxx 0b1212 ScDmuyHm
 > 3. 网络图片仅接受 HTTPS，默认单张 ≤20 MiB；内部环境（如企业私有 CDN/TOS）可加 `--allow-private-net`。
 > 4. JPEG/PNG/GIF 直接写入；BMP/TIFF/WebP 自动转 PNG，原文件不变。HEIC/BPG 原样提交，能否写入取决于服务端支持。文件名缺少有效图片后缀时按实际格式补齐，转码图片统一使用 `.png` 后缀。`--workers` 控制下载与预处理并发，写入同一表格时串行执行。
 > 5. 单张场景用 `write-image --range "A1" --image <url|path>`；多张场景统一用 `write-batch --manifest <file|-|json>`。
-> 6. 命令写入后均自动通过 V3 `read-rich` 回读验证原生 `image_token`，校验失败即返回非零退出码。`media-upload` 的 parent_type 固定 `sheet_image`。
+> 6. 命令写入后均自动通过 V3 `read-rich` 回读验证原生 `image_token`，校验失败即返回非零退出码。`sheet image media-upload` 的 parent_type 自动选择：原生表格用 `sheet_image`，导入型 Office 表格（token 以 `fake_office_`/`local_office_` 开头，或长度 ≥25 且第 5/10/15/20/25 位依次为 `OFL0X`）用 `office_sheet_file`。
 
 ### 批量样式 batch-set-style（1 命令）
 

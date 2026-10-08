@@ -123,16 +123,17 @@ func sheetFloatImageToLocal(src *larksheets.FloatImage, dst *FloatImage) {
 }
 
 // sheetMediaParentType 返回上传图片到电子表格时应该使用的 parent_type。
-// 对于以 "fake_office_" 前缀的导入表格，使用 "office_sheet_file"，否则使用 "sheet_image"。
+// 导入型 Office 表格（IsLocalOfficeToken：fake_office_/local_office_ 前缀或固定偏移 OFL0X 标记）
+// 使用 "office_sheet_file"，否则使用 "sheet_image"。
 func sheetMediaParentType(spreadsheetToken string) string {
-	if strings.HasPrefix(spreadsheetToken, "fake_office_") {
+	if IsLocalOfficeToken(spreadsheetToken) {
 		return "office_sheet_file"
 	}
 	return "sheet_image"
 }
 
 // UploadSheetImageMedia 上传本地图片作为浮动图片素材，返回 file_token (drive medias/upload_all)。
-// parent_type 根据 spreadsheetToken 前缀自动选择："fake_office_" 前缀使用 "office_sheet_file"，否则使用 "sheet_image"。
+// parent_type 根据 spreadsheetToken 自动选择：导入型 Office 表格使用 "office_sheet_file"，否则使用 "sheet_image"。
 func UploadSheetImageMedia(filePath, spreadsheetToken, fileName string, userAccessToken ...string) (string, error) {
 	parentType := sheetMediaParentType(spreadsheetToken)
 	token, _, err := UploadMedia(filePath, parentType, spreadsheetToken, fileName, firstString(userAccessToken))
