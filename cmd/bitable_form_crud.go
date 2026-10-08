@@ -3,9 +3,11 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/spf13/cobra"
@@ -93,30 +95,26 @@ form_id 即表单视图 view_id。删除表单为不可逆操作。`,
 
 var bitableFormListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "列出表单",
+	Short: "列出表单（自动翻页）",
 	Long: `GET /open-apis/base/v3/bases/{base_token}/tables/{table_id}/forms
 
 列出指定数据表下的所有表单（form 类型视图），与 form create（POST 同路径）成对。
 
 分页:
+  默认自动按 page_token 翻页取全部，输出 {"forms":[...],"total":N,"has_more":false}
   --page-size    每页数量（≤100）
-  --page-token   翻页游标（从上一页返回的 page_token 取）`,
+  --page-token   只取指定页（兼容旧用法；还有下一页时 stderr 提示续翻 token）`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		if tableID == "" {
 			return fmt.Errorf("--table-id 必填")
 		}
 		pageSize, _ := cmd.Flags().GetInt("page-size")
-		pageToken, _ := cmd.Flags().GetString("page-token")
-		params := map[string]any{}
-		if pageSize > 0 {
-			params["page_size"] = pageSize
+		if pageSize < 0 || pageSize > 100 {
+			return clierr.Usagef("--page-size 范围 1-100，当前 %d", pageSize)
 		}
-		if pageToken != "" {
-			params["page_token"] = pageToken
-		}
-		return bitableRun(cmd, func(bt string) bitableReq {
-			return bitableReq{method: "GET", path: client.BaseV3Path("bases", bt, "tables", tableID, "forms"), params: params}
+		return runBitablePageTokenList(cmd, func(bt string) bitablePageTokenList {
+			return bitablePageTokenList{Method: "GET", Path: client.BaseV3Path("bases", bt, "tables", tableID, "forms"), Key: "forms", PageSize: pageSize}
 		})
 	},
 }
@@ -286,12 +284,25 @@ func buildFormQuestionsCreateBody(cmd *cobra.Command) (any, error) {
 
 var bitableFormQuestionsDeleteCmd = &cobra.Command{
 	Use:   "delete",
-	Short: "批量删除表单问题（单次≤10）",
+	Short: "批量删除表单问题（单次≤10；默认连同底层字段与整列数据一起删除）",
 	Long: `DELETE /open-apis/base/v3/bases/{base_token}/tables/{table_id}/forms/{form_id}/questions
 
 批量删除表单问题（collection 端点，单次最多 10 个），body 字段为 question_ids。
-用 --question-ids 传逗号分隔的问题 ID，或 --config/--config-file 传完整请求体。
-示例: --question-ids fld001,fld002`,
+用 --question-ids 传逗号分隔或 JSON 数组的问题 ID，或 --config/--config-file 传完整请求体。
+
+⚠️ 问题 ID 就是字段 ID。默认行为会**同时删除数据表中的底层字段及该列全部记录数据**（不可恢复），
+属于危险操作：交互终端会要求确认，非交互环境（AI Agent / 管道 / cron）必须追加 --yes。
+
+  --keep-field   只把问题从表单中移除，保留底层字段与已有数据（可之后用 form field create
+                 以 use_existing_field=true + field_id 重新加回）；不需要确认
+
+示例:
+  # 只从表单移除问题，保留字段和数据（推荐）
+  feishu-cli bitable form field delete --base-token <bt> --table-id <tid> --form-id <fid> \
+    --question-ids fld001,fld002 --keep-field
+  # 连同字段与整列数据一起删除（不可恢复）
+  feishu-cli bitable form field delete --base-token <bt> --table-id <tid> --form-id <fid> \
+    --question-ids fld001 --yes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		formID, _ := cmd.Flags().GetString("form-id")
@@ -302,15 +313,52 @@ var bitableFormQuestionsDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// 默认（不保留字段）会删除底层字段与整列数据：dry-run 预览之外都要过确认门禁
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); !dryRun && !formQuestionsDeleteKeepsField(body) {
+			ids := formQuestionIDsForPrompt(body)
+			fmt.Fprintf(os.Stderr, "⚠️  删除表单问题 %s 将同时删除数据表中对应的字段及该列全部记录数据，且不可恢复；只想从表单移除请改用 --keep-field\n", ids)
+			if err := confirmDangerousAction(cmd, fmt.Sprintf("确认删除表单问题 %s 及其底层字段和整列数据？", ids)); err != nil {
+				return err
+			}
+		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "DELETE", path: formPath(bt, tableID, formID, "questions"), body: body}
 		})
 	},
 }
 
-// buildFormQuestionsDeleteBody 构造删除请求体 {"question_ids":[...]}。
+// formQuestionsDeleteKeepsField 判断请求体是否带 keep_field=true（只移除题目、保留字段数据）。
+func formQuestionsDeleteKeepsField(body any) bool {
+	m, ok := body.(map[string]any)
+	if !ok {
+		return false
+	}
+	keep, _ := m["keep_field"].(bool)
+	return keep
+}
+
+// formQuestionIDsForPrompt 取请求体中的 question_ids 用于确认提示。
+func formQuestionIDsForPrompt(body any) string {
+	if m, ok := body.(map[string]any); ok {
+		switch ids := m["question_ids"].(type) {
+		case []string:
+			return strings.Join(ids, ",")
+		case []any:
+			parts := make([]string, 0, len(ids))
+			for _, id := range ids {
+				parts = append(parts, fmt.Sprint(id))
+			}
+			return strings.Join(parts, ",")
+		}
+	}
+	return "(见请求体)"
+}
+
+// buildFormQuestionsDeleteBody 构造删除请求体 {"question_ids":[...],"keep_field":true?}。
 // 优先 --config/--config-file；否则用 --question-ids（逗号分隔，单次≤10）。
+// --keep-field 对两种输入都生效（写入 keep_field=true）。
 func buildFormQuestionsDeleteBody(cmd *cobra.Command) (any, error) {
+	keepField, _ := cmd.Flags().GetBool("keep-field")
 	configJSON, _ := cmd.Flags().GetString("config")
 	configFile, _ := cmd.Flags().GetString("config-file")
 	if configJSON != "" || configFile != "" {
@@ -321,6 +369,13 @@ func buildFormQuestionsDeleteBody(cmd *cobra.Command) (any, error) {
 		var body any
 		if err := json.Unmarshal([]byte(raw), &body); err != nil {
 			return nil, fmt.Errorf("解析 --config 失败: %w", err)
+		}
+		if keepField {
+			m, ok := body.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("--config 必须是 JSON 对象才能与 --keep-field 一起使用")
+			}
+			m["keep_field"] = true
 		}
 		return body, nil
 	}
@@ -335,7 +390,11 @@ func buildFormQuestionsDeleteBody(cmd *cobra.Command) (any, error) {
 	if len(ids) > 10 {
 		return nil, fmt.Errorf("单次最多 10 个，当前传入 %d 个", len(ids))
 	}
-	return map[string]any{"question_ids": ids}, nil
+	body := map[string]any{"question_ids": ids}
+	if keepField {
+		body["keep_field"] = true
+	}
+	return body, nil
 }
 
 // parseQuestionIDs 兼容两种 --question-ids 输入：
@@ -414,4 +473,5 @@ func init() {
 	bitableFormQuestionsDeleteCmd.Flags().String("question-ids", "", "问题 ID 列表（逗号分隔，单次≤10）")
 	bitableFormQuestionsDeleteCmd.Flags().String("config", "", "完整 JSON 请求体 {\"question_ids\":[...]}（与 --question-ids 二选一）")
 	bitableFormQuestionsDeleteCmd.Flags().String("config-file", "", "JSON 请求体文件")
+	bitableFormQuestionsDeleteCmd.Flags().Bool("keep-field", false, "只从表单移除问题，保留底层字段与整列数据（不带时会删除字段及其数据，需确认）")
 }

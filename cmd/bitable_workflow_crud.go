@@ -3,8 +3,10 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +29,93 @@ func bitableWorkflowConfigBody(cmd *cobra.Command) (any, error) {
 	if err := json.Unmarshal([]byte(raw), &body); err != nil {
 		return nil, fmt.Errorf("解析 --config 失败: %w", err)
 	}
+	if m, ok := body.(map[string]any); ok {
+		if err := validateWorkflowAISteps(m); err != nil {
+			return nil, err
+		}
+	}
 	return body, nil
+}
+
+// validateWorkflowAISteps 本地校验 AI 步骤里最常写错的结构（对齐官方 workflow_json_validation.go 的轻量子集），
+// 在服务端报晦涩的校验错误之前给出明确提示：
+//   - AIAnalysisAction：data.analysis_table_names 必须是字符串数组；data.identity_type ∈ maker|triggerPersonal
+//   - AIClassificationBranch：data 必须是对象、不支持 data.mode（只有互斥模式）、data.classes 至少 2 项，
+//     每项 name 非空不重复不含换行、desc 为字符串
+func validateWorkflowAISteps(body map[string]any) error {
+	steps, ok := body["steps"].([]any)
+	if !ok {
+		return nil
+	}
+	for i, raw := range steps {
+		step, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		stepType, _ := step["type"].(string)
+		path := fmt.Sprintf("steps[%d].data", i)
+		switch stepType {
+		case "AIAnalysisAction":
+			data, ok := step["data"].(map[string]any)
+			if !ok {
+				continue
+			}
+			if v, exists := data["analysis_table_names"]; exists {
+				items, ok := v.([]any)
+				if !ok {
+					return clierr.Usagef("%s.analysis_table_names 必须是字符串数组", path)
+				}
+				for j, item := range items {
+					if _, ok := item.(string); !ok {
+						return clierr.Usagef("%s.analysis_table_names[%d] 必须是字符串", path, j)
+					}
+				}
+			}
+			if v, exists := data["identity_type"]; exists {
+				if s, _ := v.(string); s != "maker" && s != "triggerPersonal" {
+					return clierr.Usagef("%s.identity_type 只能是 maker 或 triggerPersonal", path)
+				}
+			}
+		case "AIClassificationBranch":
+			data, ok := step["data"].(map[string]any)
+			if !ok || data == nil {
+				return clierr.Usagef("%s 必须是对象（AIClassificationBranch）", path)
+			}
+			if _, exists := data["mode"]; exists {
+				return clierr.Usagef("%s.mode 不受支持：AI 分类只有互斥模式，请去掉 mode", path)
+			}
+			classes, ok := data["classes"].([]any)
+			if !ok {
+				return clierr.Usagef("%s.classes 必须是数组", path)
+			}
+			if len(classes) < 2 {
+				return clierr.Usagef("%s.classes 至少需要 2 个分类", path)
+			}
+			seen := map[string]int{}
+			for j, rc := range classes {
+				item, ok := rc.(map[string]any)
+				if !ok {
+					return clierr.Usagef("%s.classes[%d] 必须是对象", path, j)
+				}
+				name, _ := item["name"].(string)
+				name = strings.TrimSpace(name)
+				if name == "" {
+					return clierr.Usagef("%s.classes[%d].name 不能为空", path, j)
+				}
+				if strings.ContainsAny(name, "\r\n") {
+					return clierr.Usagef("%s.classes[%d].name 不能包含换行", path, j)
+				}
+				if prev, dup := seen[name]; dup {
+					return clierr.Usagef("%s.classes[%d].name 与 classes[%d] 重复: %q", path, j, prev, name)
+				}
+				if _, ok := item["desc"].(string); !ok {
+					return clierr.Usagef("%s.classes[%d].desc 必须是字符串", path, j)
+				}
+				seen[name] = j
+			}
+		}
+	}
+	return nil
 }
 
 var bitableWorkflowCreateCmd = &cobra.Command{
@@ -35,7 +123,11 @@ var bitableWorkflowCreateCmd = &cobra.Command{
 	Short: "创建工作流",
 	Long: `POST /open-apis/base/v3/bases/{base_token}/workflows
 
-用 --config/--config-file 传完整 workflow 定义，形如 {"title":"My Workflow","steps":[...]}。`,
+用 --config/--config-file 传完整 workflow 定义，形如 {"title":"My Workflow","steps":[...]}。
+
+本地预检 AI 步骤：AIAnalysisAction 的 analysis_table_names / identity_type，
+AIClassificationBranch 的 classes（≥2 个、名称唯一）与不支持的 mode。
+提醒触发器 ReminderTrigger 的 offset：触发时间 = 日期字段 + offset × unit，负数=提前、正数=延后。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		body, err := bitableWorkflowConfigBody(cmd)
 		if err != nil {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -15,24 +16,21 @@ var bitableDashboardCmd = &cobra.Command{
 
 var bitableDashboardListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "列出仪表盘",
+	Short: "列出仪表盘（自动翻页）",
 	Long: `GET /open-apis/base/v3/bases/{base_token}/dashboards
+
+默认自动按 page_token 翻页取全部，输出 {"items":[...],"total":N,"has_more":false}。
 
 可选:
   --page-size    分页大小（≤100）
-  --page-token   下一页 token`,
+  --page-token   只取指定页（兼容旧用法；还有下一页时 stderr 提示续翻 token）`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pageSize, _ := cmd.Flags().GetInt("page-size")
-		pageToken, _ := cmd.Flags().GetString("page-token")
-		params := map[string]any{}
-		if pageSize > 0 {
-			params["page_size"] = pageSize
+		if pageSize < 0 || pageSize > 100 {
+			return clierr.Usagef("--page-size 范围 1-100，当前 %d", pageSize)
 		}
-		if pageToken != "" {
-			params["page_token"] = pageToken
-		}
-		return bitableRun(cmd, func(bt string) bitableReq {
-			return bitableReq{method: "GET", path: client.BaseV3Path("bases", bt, "dashboards"), params: params}
+		return runBitablePageTokenList(cmd, func(bt string) bitablePageTokenList {
+			return bitablePageTokenList{Method: "GET", Path: client.BaseV3Path("bases", bt, "dashboards"), Key: "items", PageSize: pageSize}
 		})
 	},
 }

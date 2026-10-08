@@ -2,13 +2,16 @@
 
 通过 **base/v3 API** 操作飞书多维表格。`bitable` 也支持 `base` 别名。
 
-> **API 切换**：此技能已从旧的 `bitable/v1` 切换到新的 `base/v3`。字段名 `app_token` 和 `base_token` 在飞书文档里是同一个值的两种叫法（老 v1 叫 app_token，新 v3 叫 base_token），CLI 只认 **`--base-token`**（`--app-token` 已删除）。从多维表格 URL 里 `/base/<token>` 或 `/bitable/<token>` 片段里取 token 即可。
+> **API 切换**：此技能已从旧的 `bitable/v1` 切换到新的 `base/v3`。字段名 `app_token` 和 `base_token` 在飞书文档里是同一个值的两种叫法（老 v1 叫 app_token，新 v3 叫 base_token），CLI 只认 **`--base-token`**（`--app-token` 已删除）。`--base-token` 既接受裸 token，也接受多维表格链接（`/base/<token>`、`/bitable/<token>`）与挂在知识库里的多维表格链接（`/wiki/<node_token>`，自动经 `node_by_token` 换出底层 base_token 并校验类型）。记录分享（`/record/`）、表单分享链接以及 URL 中的 `?table=` 选中块，先用 [`bitable resolve`](#链接解析-resolve--顶层块-block2-命令) 解析。
+
+> **表 / 字段 / 视图可以直接用名称寻址（实测）**：`--table-id`、`--field-id`、`--view-id` 都可以传名称（如 `--table-id 订单 --view-id 进行中 --field-id 金额`），不必先查 ID；名称有重复时改用 ID。
 
 ## 目录
 
 - [前置条件](#前置条件)
 - [身份选择](#身份选择---as命令组-persistent-flag所有子命令通用)
 - [命令速查](#命令速查)
+- [链接解析 resolve / 顶层块 block](#链接解析-resolve--顶层块-block2-命令)
 - [典型工作流](#典型工作流)
 - [权限要求](#权限要求)
 - [filter DSL](#filter-dslrecord-list--record-search-结构化过滤实测验证)
@@ -43,6 +46,24 @@ feishu-cli bitable record upsert --base-token bscnxxxx --table-id tblxxx \
 
 ## 命令速查
 
+### 链接解析 resolve / 顶层块 block（2 命令）
+
+```bash
+# 把链接解析成坐标（对齐官方 base +url-resolve）
+feishu-cli bitable resolve --url "https://xxx.feishu.cn/base/bascnxxx?table=tblxxx&view=vewxxx"
+feishu-cli bitable resolve --url "https://xxx.feishu.cn/wiki/wikcnxxx"       # 知识库中的多维表格
+feishu-cli bitable resolve --url "https://xxx.feishu.cn/record/xxxx"          # 记录分享链接 → base/table/record
+feishu-cli bitable resolve --url "https://xxx.feishu.cn/share/base/shrxxx"    # 表单分享链接 → share_token
+
+# 列出顶层块：数据表 / 仪表盘 / 工作流 / 文件夹 / 文档（服务端一次返回全量）
+feishu-cli bitable block list --base-token bscnxxxx
+feishu-cli bitable block list --base-token bscnxxxx --type dashboard --jq '.blocks[] | {id, name}'
+feishu-cli bitable block list --base-token bscnxxxx --parent-id <folder_block_id>
+```
+
+> **URL 里的 `?table=` 不一定是数据表**：它是"当前选中的顶层块"，可能是数据表、仪表盘、工作流、文件夹或文档。`resolve` 会调 `blocks/list` 判型：只有 `block_type=table` 才输出 `table_id`（以及 `view_id`/`record_id`），仪表盘输出 `dashboard_id`、工作流输出 `workflow_id`、文档输出 `docx_token`。不要把 `table=` 的值直接当 `--table-id`。
+> 视图分享、仪表盘分享、工作区、新增记录、BaseApp 链接 CLI 无法解析，会以用法错误（退出码 2）明确提示。
+
 ### 基础（4 命令）
 
 ```bash
@@ -50,6 +71,9 @@ feishu-cli bitable record upsert --base-token bscnxxxx --table-id tblxxx \
 # 输出新增 permission_grant 字段；bitable copy 同理）
 feishu-cli bitable create --name "项目管理" --time-zone Asia/Shanghai
 feishu-cli bitable create --name "销售" --folder-token fldxxx
+# 建表时直接定好第一张数据表：--fields 按 schema 新建该表并删除平台默认表；只给 --table-name 则重命名默认表
+feishu-cli bitable create --name "任务跟踪" --table-name "任务" \
+  --fields '[{"name":"标题","type":"text"},{"name":"状态","type":"select","options":[{"name":"Todo"},{"name":"Done"}]}]'
 
 # 获取多维表格信息
 feishu-cli bitable get --base-token bscnxxxx
@@ -64,22 +88,28 @@ feishu-cli bitable update --base-token bscnxxxx --is-advanced true   # 开启高
 ```
 
 > `update` 走 `bitable/v1`（`PUT apps/{app_token}`，base/v3 无更新本体端点；app_token 即 base_token），仅支持云空间文件夹内的多维表格。`--is-advanced true/false` 等价于 `advperm enable/disable` 的高级权限开关。
+> `create/copy` 的 `-o json` 输出是**平铺**结构：`{"base_token","name","url","folder_token",...}`（实测，不是 `{"base":{...}}`），取 token 用 `jq -r '.base_token'`；带 `--fields/--table-name` 时额外输出 `table`、`fields`、`default_table_deleted`/`default_table_renamed`。
 
 ### 数据表 table（5 命令）
 
 ```bash
-feishu-cli bitable table list   --base-token bscnxxxx
+feishu-cli bitable table list   --base-token bscnxxxx                         # 自动翻页取全部
 feishu-cli bitable table get    --base-token bscnxxxx --table-id tblxxx
 feishu-cli bitable table create --base-token bscnxxxx --name "任务表"
+feishu-cli bitable table create --base-token bscnxxxx --name "任务表" \
+  --fields '[{"name":"标题","type":"text"},{"name":"金额","type":"number"}]'   # 建表时一次带上字段
 feishu-cli bitable table create --base-token bscnxxxx --config-file table.json
 feishu-cli bitable table update --base-token bscnxxxx --table-id tblxxx --name "新名字"
 feishu-cli bitable table delete --base-token bscnxxxx --table-id tblxxx
 ```
 
+> **列表分页（table / field / view list）**：服务端按 offset/limit 分页、只返回 `total`（不返回 has_more），不传 limit 时只给 20 条。CLI 默认按 `total` 自动取完（每页 500），输出 `{"tables|fields|views":[...],"total":N}`。实测**字段列表每次请求的顺序不稳定**，跨页拼接会重复/遗漏，因此 CLI 用服务端最大页一次取完并按 id 去重。`table list` 显式传 `--offset/--limit` 时只取单页，还有剩余时输出 `has_more`/`next_offset` 并在 stderr 提示。
+> `table create` 的响应是平铺的表对象 `{"id","name","fields","views"}`，取 ID 用 `jq -r '.id'`（不是 `.table.table_id`）。
+
 ### 字段 field（6 命令）
 
 ```bash
-feishu-cli bitable field list           --base-token xxx --table-id tblxxx
+feishu-cli bitable field list           --base-token xxx --table-id tblxxx     # 自动翻页取全部
 feishu-cli bitable field get            --base-token xxx --table-id tblxxx --field-id fldxxx
 feishu-cli bitable field create         --base-token xxx --table-id tblxxx --config-file field.json
 feishu-cli bitable field update         --base-token xxx --table-id tblxxx --field-id fldxxx --config '...'
@@ -96,12 +126,17 @@ feishu-cli bitable field search-options --base-token xxx --table-id tblxxx --fie
 > 建字段后**存量记录自动获得编号**；用同一 `PUT /fields/:field_id` 提交新 `style.rules` 即可改规则，
 > 无需 `auto_serial` / `reformat_existing_records` 等参数（不存在，不要臆造），也不要绕道 bitable/v1。
 > 改规则后**新记录用新格式，存量记录的 API 值保持旧编号不重排**（计数器延续，如旧 1-5、新 TASK-006）。
+> 2026-10 复测确认：建字段时已有的 3 条记录拿到 `1/2/3`（未按 `length` 补零）；改为 `TASK-`+3 位后新记录为 `TASK-004`，
+> 再改为 `BUG-`+4 位后存量仍是 `1/2/3/TASK-004`、新记录为 `BUG-0005`。官方技能"改规则后存量重排"的说法与 API 实测不符。
 > 改字段类型或计算型字段（formula/lookup/link/auto_number）后用 `field get` 读回验证，必要时抽样记录值。
 
 ### 记录 record（14 命令）
 
 ```bash
 feishu-cli bitable record list        --base-token xxx --table-id tblxxx --view-id viewxxx --limit 100
+# 默认每页 100 条（服务端不传 limit 只给 20 条）；has_more=true 时输出 next_offset 并在 stderr 提示
+feishu-cli bitable record list        --base-token xxx --table-id tblxxx --offset 100   # 续翻
+feishu-cli bitable record list        --base-token xxx --table-id tblxxx --page-all     # 自动翻页取全部
 # list 支持结构化过滤/排序（无需关键词，纯条件筛选首选；DSL 语法见下方「filter DSL」节）
 feishu-cli bitable record list        --base-token xxx --table-id tblxxx \
   --filter-json '{"logic":"and","conditions":[["状态","==",["Doing"]],["分数",">=",70]]}' \
@@ -147,7 +182,9 @@ feishu-cli bitable record batch-create --base-token xxx --table-id tblxxx --conf
 feishu-cli bitable record batch-update --base-token xxx --table-id tblxxx --config-file records.json
 feishu-cli bitable record delete      --base-token xxx --table-id tblxxx --record-id recxxx
 
-# batch-delete：POST /records/batch_delete，单次最多 500 条；--record-ids CSV 或 --from-file 任选其一
+# batch-delete：POST /records/batch_delete，服务端单次最多 200 条（实测 201 报 800010701）；
+# 超过 200 条 CLI 自动按 200 条一批**串行**提交（同表并发写会触发 1254291），某批失败即停并报告已删除条数
+# --record-ids CSV 或 --from-file 任选其一；服务端不校验 record_id 是否存在，需要确认时读回
 feishu-cli bitable record batch-delete --base-token xxx --table-id tblxxx --record-ids rec_1,rec_2,rec_3
 feishu-cli bitable record batch-delete --base-token xxx --table-id tblxxx --from-file ids.txt   # 每行一个 record_id
 
@@ -158,9 +195,11 @@ feishu-cli bitable record share-link  --base-token xxx --table-id tblxxx --recor
 feishu-cli bitable record history-list --base-token xxx --table-id tblxxx --record-id recxxx
 feishu-cli bitable record history-list --base-token xxx --table-id tblxxx --record-id recxxx --page-size 50 --max-version 20
 
-# 附件：upload/download 为 2 步编排（medias/upload_all + append/get_attachments），单次 ≤50 个
+# 附件：upload 为 3 步编排（校验附件字段 → medias 上传 → append_attachments），单次 ≤50 个文件；
+# 单文件 >20MB 自动走 upload_prepare/upload_part/upload_finish 分片上传（上限 2GB）；
+# --field-id 可传字段名，非附件字段会在上传前直接报错
 feishu-cli bitable record upload-attachment   --base-token xxx --table-id tblxxx \
-  --record-id recxxx --field-id fldxxx --file ./report.pdf --file ./shot.png   # --file 可重复
+  --record-id recxxx --field-id 附件 --file ./report.pdf --file ./shot.png     # --file 可重复
 feishu-cli bitable record download-attachment --base-token xxx --table-id tblxxx \
   --record-id recxxx --output ./downloads/                                     # 省略 --file-token 下全部
 feishu-cli bitable record download-attachment --base-token xxx --table-id tblxxx \
@@ -169,6 +208,7 @@ feishu-cli bitable record remove-attachment   --base-token xxx --table-id tblxxx
   --record-id recxxx --field-id fldxxx --file-token boxcnxxxx                   # --file-token 可重复
 ```
 
+> **record list 分页（实测）**：服务端 limit 范围 1-2000，响应是矩阵结构（`fields`/`field_id_list`/`field_type_list`/`record_id_list`/`data`/`has_more`/`rev`），不返回 total 与 next_offset。`--page-all` 未指定 `--limit` 时每页 500 条、最多 1000 页，合并为同一矩阵输出（`has_more=false`）；分页期间表数据被改动（`rev` 变化）会在 stderr 告警并输出 `rev_changed: true`，表结构被改动则报错退出（列不同无法合并）。带 `--view-id` 时只返回该视图筛选后的记录与可见字段（`query_context` 标明范围）。
 > 附件文件名：`download-attachment` 用附件**原始文件名**保存（不再用 file_token 命名）；目标已存在会直接报错，加 `--overwrite` 覆盖。三个附件命令均支持 `--dry-run`（写前预览请求体）；`upload/remove-attachment` 支持 `--format/--jq`，`download-attachment` 不支持（仅打印 JSON）。
 
 ### 视图 view（5 命令 + 12 配置命令）
@@ -181,75 +221,67 @@ feishu-cli bitable view create --base-token xxx --table-id tblxxx --name "看板
 feishu-cli bitable view delete --base-token xxx --table-id tblxxx --view-id viewxxx
 feishu-cli bitable view rename --base-token xxx --table-id tblxxx --view-id viewxxx --name "新名字"
 
-# 视图配置 get/set（6 种 × 2 = 12 命令）— set 方法是 PUT（全量替换）
+# 视图配置 get/set（6 种 × 2 = 12 命令）— set 方法是 PUT（全量替换），请求体是 base/v3 结构（实测）
+# 字段一律可用字段名或字段 ID；get 输出 data 本体（group/sort/visible-fields 为数组）
 feishu-cli bitable view view-filter-get        --base-token xxx --table-id tblxxx --view-id viewxxx
 feishu-cli bitable view view-filter-set        --base-token xxx --table-id tblxxx --view-id viewxxx \
-  --config '{"filter_info":{"conjunction":"and","conditions":[{"field_id":"fld1","operator":"is","value":["进行中"]}]}}'
+  --config '{"logic":"and","conditions":[["状态","intersects",["进行中"]],["截止","empty"]]}'
 
 feishu-cli bitable view view-sort-get          --base-token xxx --table-id tblxxx --view-id viewxxx
-# sort/group 的 --config 可传数组，自动包装为 {"sort_config":[...]} / {"group_config":[...]}
+# sort/group/visible-fields 的 --config 可传数组，自动包装为 {"sort_config":[...]} / {"group_config":[...]} / {"visible_fields":[...]}
 feishu-cli bitable view view-sort-set          --base-token xxx --table-id tblxxx --view-id viewxxx \
-  --config '[{"field_id":"fld1","desc":false}]'
+  --config '[{"field":"截止时间","desc":false}]'
 
 feishu-cli bitable view view-group-get         --base-token xxx --table-id tblxxx --view-id viewxxx
 feishu-cli bitable view view-group-set         --base-token xxx --table-id tblxxx --view-id viewxxx \
-  --config '[{"field_id":"fld1"}]'
+  --config '[{"field":"状态","desc":false}]'
 
 feishu-cli bitable view view-visible-fields-get --base-token xxx --table-id tblxxx --view-id viewxxx
-# visible-fields 必须传完整对象（不会自动包装）
+# 完整有序列表：未列出的字段被隐藏（不删除数据）
 feishu-cli bitable view view-visible-fields-set --base-token xxx --table-id tblxxx --view-id viewxxx \
-  --config '{"view_field":[{"field_id":"fld1","visible":true},{"field_id":"fld2","visible":true}]}'
+  --config '["任务名称","负责人","截止时间"]'
 
+# timebar 仅 gantt / calendar 视图支持
 feishu-cli bitable view view-timebar-get       --base-token xxx --table-id tblxxx --view-id viewxxx
 feishu-cli bitable view view-timebar-set       --base-token xxx --table-id tblxxx --view-id viewxxx \
-  --config '{"timebar":{"start_field_id":"fld_start","end_field_id":"fld_end","title_field_id":"fld_title"}}'
+  --config '{"start_time":"开始时间","end_time":"结束时间","title":"任务名称"}'
 
+# card 仅 gallery / kanban 视图支持
 feishu-cli bitable view view-card-get          --base-token xxx --table-id tblxxx --view-id viewxxx
 feishu-cli bitable view view-card-set          --base-token xxx --table-id tblxxx --view-id viewxxx \
-  --config '{"card":{"cover_field_id":"fld1","display_fields":["fld2","fld3"]}}'
+  --config '{"cover_field":"产品图片"}'
 ```
 
 > **视图配置自动包装规则**（减少用户样板）：
-> - `view-sort-set` 可直接传 `[{...}]` 数组，自动包成 `{"sort_config":[...]}`
-> - `view-group-set` 可直接传 `[{...}]` 数组，自动包成 `{"group_config":[...]}`
-> - 其他配置（filter/visible-fields/timebar/card）必须传完整对象
+> - `view-sort-set` 可直接传 `[{...}]` 数组，自动包成 `{"sort_config":[...]}`（最多 10 条，本地校验）
+> - `view-group-set` 可直接传 `[{...}]` 数组，自动包成 `{"group_config":[...]}`（最多 3 条）
+> - `view-visible-fields-set` 可直接传字段名数组，自动包成 `{"visible_fields":[...]}`
+> - filter / timebar / card 传对象
+> - 旧版 v1 结构（`filter_info`/`conjunction`、`field_id` 键、`view_field`、`timebar.start_field_id`、`card.cover_field_id`）在 base/v3 会报 800010701（Unrecognized key / Required），不要再用
 
-**视图配置 JSON Schema 速查**：
+**视图配置 JSON Schema 速查（base/v3，实测）**：
 
 ```jsonc
-// view-filter（过滤条件）
-{
-  "filter_info": {
-    "conjunction": "and",
-    "conditions": [
-      {"field_id": "fldxxx", "operator": "is", "value": ["进行中"]}
-    ]
-  }
-}
+// view-filter（与 record list --filter-json 同一套 tuple DSL）；清空传 {"conditions":[]}
+{"logic": "and", "conditions": [["状态", "intersects", ["进行中"]], ["截止", "empty"]]}
 
-// view-sort（排序）
-{
-  "sort_config": [
-    {"field_id": "fldxxx", "desc": false}
-  ]
-}
+// view-sort（数组顺序即优先级，最多 10 条；空数组清除）
+{"sort_config": [{"field": "截止时间", "desc": false}]}
 
-// view-group（分组）
-{
-  "group_config": [{"field_id": "fldxxx"}]
-}
+// view-group（最多 3 条；空数组清除；支持 grid/kanban/gantt）
+{"group_config": [{"field": "状态", "desc": false}]}
 
-// view-visible-fields（可见字段）
-{
-  "view_field": [{"field_id": "fld1", "visible": true}, {"field_id": "fld2", "visible": false}]
-}
+// view-visible-fields（有序完整列表）
+{"visible_fields": ["任务名称", "负责人", "截止时间"]}
 
-// view-timebar（甘特图时间轴）
-{"timebar": {"start_field_id": "fld1", "end_field_id": "fld2", "title_field_id": "fld3"}}
+// view-timebar（gantt / calendar）
+{"start_time": "开始时间", "end_time": "结束时间", "title": "任务名称"}
 
-// view-card（卡片/画册视图）
-{"card": {"cover_field_id": "fld1", "display_fields": ["fld2", "fld3"]}}
+// view-card（gallery / kanban；cover_field 用附件字段，null 清除封面）
+{"cover_field": "产品图片"}
 ```
+
+> 新建视图后立即写配置偶发 `800030501 not_found`（写后读延迟），等 1-2 秒重试即可；连续写视图配置偶发 `800004135 ... limited`（按接口方法限流），CLI 已按 1s/2s/4s 自动重试。
 
 ### 角色 role（5 命令 + 协作者 member 5 命令）
 
@@ -290,24 +322,38 @@ feishu-cli bitable advperm disable --base-token xxx
 
 ```bash
 feishu-cli bitable data-query --base-token xxx --config-file query.json
-feishu-cli bitable data-query --base-token xxx --config '{"dimensions":[{"field_id":"fld_cat"}],"measures":[{"field_id":"fld_amt","type":"sum"}]}'
+feishu-cli bitable data-query --base-token xxx --config '{
+  "datasource": {"type": "table", "table": {"tableId": "tblxxx"}},
+  "dimensions": [{"field_name": "状态", "alias": "status"}],
+  "measures":   [{"field_name": "金额", "aggregation": "sum", "alias": "total"}],
+  "sort":       [{"field_name": "total", "order": "desc"}],
+  "shaper":     {"format": "flat"}
+}'
 ```
 
 底层调用：`POST /open-apis/base/v3/bases/{base_token}/data/query`
 
-查询 body 示例（LiteQuery DSL：`dimensions` / `measures` / `filters`，与上面 `--config` 一致）：
-```json
-{
-  "dimensions": [{"field_id": "fld_category"}],
-  "measures": [{"field_id": "fld_amount", "type": "sum"}]
-}
-```
+DSL 要点（官方 LiteQuery 协议，实测可用；旧示例 `{"dimensions":[{"field_id":...}],"measures":[{"type":"sum"}]}` 实测报 800004006 `datasource.table is required`）：
+
+| 字段 | 说明 |
+|---|---|
+| `datasource` | **必填**，`{"type":"table","table":{"tableId":"tbl..."}}` 或 `{"tableName":"表名"}` |
+| `dimensions` | 分组维度 `[{"field_name","alias"}]`；与 `measures` 至少一个 |
+| `measures` | 度量 `[{"field_name","aggregation","alias"}]`，aggregation: `sum/avg/min/max/count/count_all/distinct_count` |
+| `filters` | `{"type":1,"conjunction":"and","conditions":[{"field_name","operator","value":[...]}]}`，operator: `is/isNot/contains/doesNotContain/isEmpty/isNotEmpty/isGreater/isGreaterEqual/isLess/isLessEqual`（与 record list 的 tuple DSL 不同） |
+| `sort` | `[{"field_name":"字段名或 alias","order":"asc|desc"}]` |
+| `pagination` | `{"limit":N}`，最大 5000，不支持 offset |
+| `shaper` | 固定 `{"format":"flat"}` |
+
+- 字段用 **`field_name`（字段名，区分大小写）**，不是 field_id；`alias` 只能用英文且全局唯一
+- 结果在 `main_data` 数组，每格形如 `{"value": ...}`
+- CLI 本地校验 `datasource` 与 `dimensions/measures` 是否存在；高级权限多维表格需要完全访问（FA）权限
 
 ### 工作流 workflow（6 命令）
 
 ```bash
-feishu-cli bitable workflow list   --base-token xxx --page-size 50 --status enabled
-feishu-cli bitable workflow list   --base-token xxx --page-token TOKEN
+feishu-cli bitable workflow list   --base-token xxx --status enabled           # 自动翻页取全部
+feishu-cli bitable workflow list   --base-token xxx --page-size 50 --page-token TOKEN   # 只取指定页
 feishu-cli bitable workflow get    --base-token xxx --workflow-id wkfxxxx          # 含 steps
 feishu-cli bitable workflow create --base-token xxx --config '{"title":"My Workflow","steps":[...]}'
 feishu-cli bitable workflow update --base-token xxx --workflow-id wkfxxxx --config-file wf.json  # PUT 整体替换
@@ -316,13 +362,15 @@ feishu-cli bitable workflow disable --base-token xxx --workflow-id wkfxxxx
 ```
 
 > `update` 是 PUT 整体替换，未提供的字段不保留；`workflow_id` 为 `wkf` 前缀。
+> `create/update` 会本地预检 AI 步骤：`AIAnalysisAction` 的 `analysis_table_names` 必须是字符串数组、`identity_type` 只能是 `maker|triggerPersonal`；`AIClassificationBranch` 不支持 `mode`（只有互斥模式），`classes` 至少 2 个、`name` 非空不重复、`desc` 为字符串。
+> 提醒触发器 `ReminderTrigger` 的 `offset`：触发时间 = 日期字段时间 + `offset` × `unit`，**负数 = 提前、正数 = 延后**（如 `{"offset":-1,"unit":"DAY","hour":9}` 是截止前一天 9 点）。
 > **私有端点**：公开 OpenAPI 仅文档化 `workflow list`（只读），`create/get/update/enable/disable` 走 base/v3 私有扩展端点（如撞限制可用 `feishu-cli api` 裸调兜底）。写命令（create/update/enable/disable）均支持 `--dry-run/--format/--jq`。
 
-### 仪表盘 dashboard（7 命令 + 仪表盘块 block 5 命令）
+### 仪表盘 dashboard（7 命令 + 仪表盘块 block 6 命令 + 分享 share 2 命令）
 
 ```bash
 # 仪表盘 CRUD（原有 list/copy）；create/update 支持便捷字段 --name/--theme-style 或 --config/--config-file
-feishu-cli bitable dashboard list    --base-token xxx
+feishu-cli bitable dashboard list    --base-token xxx                              # 自动翻页取全部
 feishu-cli bitable dashboard copy    --base-token xxx --dashboard-id dsbxxxx --name "副本"
 feishu-cli bitable dashboard create  --base-token xxx --name "运营看板"
 feishu-cli bitable dashboard get     --base-token xxx --dashboard-id dsbxxxx
@@ -332,23 +380,39 @@ feishu-cli bitable dashboard arrange --base-token xxx --dashboard-id dsbxxxx    
 
 # 仪表盘块 block CRUD；create --type 取值见下
 feishu-cli bitable dashboard block create --base-token xxx --dashboard-id dsbxxxx \
-  --type column --name "按月统计" --data-config '{"table_name":"任务","group_by":[{"field_id":"fld_month"}]}'
+  --type column --name "按状态统计" --data-config '{"table_name":"任务","count_all":true,"group_by":[{"field_name":"状态","mode":"integrated"}]}'
+# --position：12 列栅格中的位置与大小，x/y/w/h 必须同时给出且为数字；省略则服务端自动布局
+feishu-cli bitable dashboard block create --base-token xxx --dashboard-id dsbxxxx \
+  --type statistics --name "记录数" --data-config '{"table_name":"任务","count_all":true}' --position '{"x":0,"y":0,"w":6,"h":4}'
+# 排行榜 ranking / NPS 图 nps 必须带 --data-config；nps 的 group_by 必须是评分（rating）字段
+feishu-cli bitable dashboard block create --base-token xxx --dashboard-id dsbxxxx --type ranking --name "Top 负责人" \
+  --data-config '{"table_name":"订单","group_by":[{"field_name":"负责人"}],"series":[{"field_name":"金额","rollup":"SUM"}]}'
+feishu-cli bitable dashboard block create --base-token xxx --dashboard-id dsbxxxx --type nps --name "满意度" \
+  --data-config '{"table_name":"问卷","group_by":[{"field_name":"评分"}],"category_range":[0,6,8,10]}'
 feishu-cli bitable dashboard block list   --base-token xxx --dashboard-id dsbxxxx
 feishu-cli bitable dashboard block get    --base-token xxx --dashboard-id dsbxxxx --block-id blkxxxx
+feishu-cli bitable dashboard block get-data --base-token xxx --block-id blkxxxx         # 读取图表计算结果（不需要 dashboard-id）
 feishu-cli bitable dashboard block update --base-token xxx --dashboard-id dsbxxxx --block-id blkxxxx --name "新块名"
+feishu-cli bitable dashboard block update --base-token xxx --dashboard-id dsbxxxx --block-id blkxxxx --position '{"x":0,"y":4,"w":12,"h":4}'
 feishu-cli bitable dashboard block delete --base-token xxx --dashboard-id dsbxxxx --block-id blkxxxx
+
+# 仪表盘分享（base/v3 share；update 每次只改一个字段，布尔值用 =false 显式关闭）
+feishu-cli bitable dashboard share get    --base-token xxx --dashboard-id dsbxxxx
+feishu-cli bitable dashboard share update --base-token xxx --dashboard-id dsbxxxx --enabled
+feishu-cli bitable dashboard share update --base-token xxx --dashboard-id dsbxxxx --access-scope tenant   # invite|tenant|anyone
+feishu-cli bitable dashboard share update --base-token xxx --dashboard-id dsbxxxx --show-source=false
 ```
 
-> block `--type` 取值：`column|bar|line|pie|ring|area|combo|scatter|funnel|wordCloud|radar|statistics|text`；图表块 `--data-config` 传 `table_name`/`series|count_all`/`group_by`/`filter`，文本块传 `text`。`--data-config` 的内部结构由飞书图表 schema 定义、本地无离线校验（`--dry-run` 也不校验内部字段），建议用 `block get` 先取一个已有图表块的结构作模板再改。
+> block `--type` 取值：`column|bar|line|pie|ring|area|combo|scatter|funnel|wordCloud|radar|ranking|statistics|nps|text`；图表块 `--data-config` 传 `table_name`/`series|count_all`/`group_by`（用 `field_name` 字段名）/`filter`，文本块传 `text`。NPS 的 `group_by` 用非评分字段时服务端报 `code=1 NPS 快照包含无法公开表达的兼容配置`（实测）。`block get-data` 返回图表协议 JSON（`dimensions`/`measures`/`main_data`），不支持计算数据的图表类型改用 `data-query` 按同样的表、维度、度量查询。`--data-config` 的内部结构由飞书图表 schema 定义、本地无离线校验（`--dry-run` 也不校验内部字段），建议用 `block get` 先取一个已有图表块的结构作模板再改。
 > `--theme-style` 写入 `theme.theme_style`，合法取值由飞书仪表盘主题 schema 定义（CLI 不做枚举校验）；不确定时省略此字段用默认主题，或 `dashboard get` 一个已配好主题的看板看其真实取值。
-> dashboard / block 全部写命令（create/update/delete/copy/arrange）均支持 `--dry-run` 预览请求体；全部命令支持 `--format json|pretty|table|ndjson|csv` 与 `--jq`。
+> dashboard / block / share 全部写命令（create/update/delete/copy/arrange、share update）均支持 `--dry-run` 预览请求体；全部命令支持 `--format json|pretty|table|ndjson|csv` 与 `--jq`。
 
-### 表单 form（7 命令 + 表单问题 field 4 命令）
+### 表单 form（7 命令 + 表单问题 field 4 命令 + 分享 share 2 命令）
 
 ```bash
 # 表单 CRUD（原有 get/patch）
 feishu-cli bitable form create --base-token xxx --table-id tblxxx --name "报名表" --description "活动报名"
-feishu-cli bitable form list   --base-token xxx --table-id tblxxx                    # 列出表下所有表单，支持 --page-size(≤100)/--page-token
+feishu-cli bitable form list   --base-token xxx --table-id tblxxx                    # 自动翻页列出全部表单；--page-token 只取指定页
 feishu-cli bitable form get    --base-token xxx --table-id tblxxx --form-id vewxxx
 feishu-cli bitable form patch  --base-token xxx --table-id tblxxx --form-id vewxxx --name "新名字"
 # patch 一键开启共享（走 bitable/v1，shared 系字段才生效）
@@ -365,13 +429,24 @@ feishu-cli bitable form field list   --base-token xxx --table-id tblxxx --form-i
 feishu-cli bitable form field create --base-token xxx --table-id tblxxx --form-id vewxxx \
   --questions '[{"type":"text","title":"你的名字","required":true}]'
 feishu-cli bitable form field patch  --base-token xxx --table-id tblxxx --form-id vewxxx --config-file q.json
-feishu-cli bitable form field delete --base-token xxx --table-id tblxxx --form-id vewxxx --question-ids fld001,fld002
+# ⚠️ 删除题目默认会同时删除底层字段及该列全部记录数据（问题 ID 就是字段 ID，不可恢复）：
+#    只想从表单移除题目用 --keep-field（保留字段与数据，可之后以 use_existing_field=true + field_id 加回）；
+#    不带 --keep-field 时为危险操作，交互终端需确认，非交互（Agent/管道/cron）必须加 --yes，否则退出码 10 且不执行
+feishu-cli bitable form field delete --base-token xxx --table-id tblxxx --form-id vewxxx --question-ids fld001,fld002 --keep-field
+feishu-cli bitable form field delete --base-token xxx --table-id tblxxx --form-id vewxxx --question-ids fld001 --yes
+
+# 表单分享（base/v3 share；update 每次只改一个字段）
+feishu-cli bitable form share get    --base-token xxx --table-id tblxxx --form-id vewxxx
+feishu-cli bitable form share update --base-token xxx --table-id tblxxx --form-id vewxxx --enabled
+feishu-cli bitable form share update --base-token xxx --table-id tblxxx --form-id vewxxx --access-scope anyone   # invite|tenant|anyone
+feishu-cli bitable form share update --base-token xxx --table-id tblxxx --form-id vewxxx --require-login=false   # 另有 --allow-anonymous
 ```
 
 > 表单问题字段：`title`(必填)/`type`(text/number/select/datetime/user/attachment/location)/`description`/`required`/`multiple`/`options` 等；`submit` 如需附件先用 `record upload-attachment` 思路拿 file_token 再写进 `--content`。
 > **form patch 走 `bitable/v1`**（不同于其它 form 命令的 base/v3）：因 `--shared`/`--shared-limit`/`--submit-limit-once` 是 bitable/v1 字段，整体路由到 bitable/v1 让分享相关字段一次生效。`--shared-limit` 取值：`off | tenant_editable | anyone_editable`；仅显式设置的便捷字段才提交，复杂场景可用 `--config/--config-file` 裸传完整请求体。
 > **form submit 的 `--content` 是裸字段 map**（如 `{"评分":5}`），**不要**外包 `{"fields":{...}}`——CLI 不再自动解包，多套一层会丢数据。
-> form/field 全部写命令（create/patch/delete、field create/patch/delete、detail/submit）支持 `--dry-run` 预览；全部 form 命令支持 `--format/--jq`；`form create/patch`、`field create/delete` 均支持 `--config/--config-file` 裸传完整请求体作为便捷字段的逃生通道。
+> 开启分享后 `share_url` 形如 `https://xxx.feishu.cn/share/base/shrxxx`，其中 `shr...` 即 `form detail/submit` 的 `--share-token`（也可用 `bitable resolve --url` 取出）。
+> form/field 全部写命令（create/patch/delete、field create/patch/delete、share update、detail/submit）支持 `--dry-run` 预览；全部 form 命令支持 `--format/--jq`；`form create/patch`、`field create/delete` 均支持 `--config/--config-file` 裸传完整请求体作为便捷字段的逃生通道。
 
 ## 典型工作流
 
@@ -379,10 +454,10 @@ feishu-cli bitable form field delete --base-token xxx --table-id tblxxx --form-i
 
 ```bash
 # 1. 创建多维表格
-BASE_TOKEN=$(feishu-cli bitable create --name "任务跟踪" -o json | jq -r '.base.base_token')
+BASE_TOKEN=$(feishu-cli bitable create --name "任务跟踪" -o json | jq -r '.base_token')   # 响应是平铺结构
 
-# 2. 创建数据表
-TABLE_ID=$(feishu-cli bitable table create --base-token $BASE_TOKEN --name "待办" | jq -r '.table.table_id')
+# 2. 创建数据表（响应是平铺的表对象，ID 键为 id）
+TABLE_ID=$(feishu-cli bitable table create --base-token $BASE_TOKEN --name "待办" | jq -r '.id')
 
 # 3. 添加字段
 feishu-cli bitable field create --base-token $BASE_TOKEN --table-id $TABLE_ID --config '{
@@ -395,20 +470,18 @@ feishu-cli bitable field create --base-token $BASE_TOKEN --table-id $TABLE_ID --
 feishu-cli bitable record batch-create --base-token $BASE_TOKEN --table-id $TABLE_ID --config-file records.json
 
 # 5. 创建自定义视图
-VIEW_ID=$(feishu-cli bitable view create --base-token $BASE_TOKEN --table-id $TABLE_ID --name "进行中" --view-type grid | jq -r '.view.view_id')
+VIEW_ID=$(feishu-cli bitable view create --base-token $BASE_TOKEN --table-id $TABLE_ID --name "进行中" --view-type grid | jq -r '.id')
 
-# 6. 配置视图过滤
-feishu-cli bitable view view-filter-set --base-token $BASE_TOKEN --table-id $TABLE_ID --view-id $VIEW_ID --config '{
-  "filter_info": {
-    "conjunction": "and",
-    "conditions": [{"field_id": "fld_status", "operator": "is", "value": ["进行中"]}]
-  }
-}'
+# 6. 配置视图过滤（base/v3 tuple DSL；新建视图偶发写后读延迟，not_found 时等 1-2 秒重试）
+feishu-cli bitable view view-filter-set --base-token $BASE_TOKEN --table-id $TABLE_ID --view-id $VIEW_ID \
+  --config '{"logic":"and","conditions":[["状态","intersects",["进行中"]]]}'
 
-# 7. 配置排序（按创建时间降序）
-feishu-cli bitable view view-sort-set --base-token $BASE_TOKEN --table-id $TABLE_ID --view-id $VIEW_ID --config '{
-  "sort_config": [{"field_id": "fld_create_time", "desc": true}]
-}'
+# 7. 配置排序（按截止时间升序；字段可用名称）
+feishu-cli bitable view view-sort-set --base-token $BASE_TOKEN --table-id $TABLE_ID --view-id $VIEW_ID \
+  --config '{"sort_config":[{"field":"截止时间","desc":false}]}'
+
+# 8. 读取全部记录（自动翻页）
+feishu-cli bitable record list --base-token $BASE_TOKEN --table-id $TABLE_ID --page-all
 ```
 
 ## 权限要求
@@ -421,7 +494,10 @@ feishu-cli bitable view view-sort-set --base-token $BASE_TOKEN --table-id $TABLE
 | 角色协作者（role member） | `bitable:app:readonly` / `bitable:app` / `base:collaborator:read`（走 bitable/v1 协作者端点，**不是** `base:role`） |
 | 高级权限 | `base:app_permission` |
 | 工作流 | 读 `base:workflow:readonly` / 写 `base:workflow` |
-| 仪表盘 / 表单 | 读 `base:dashboard:readonly` / `base:form:readonly`，写 `base:dashboard` / `base:form` |
+| 仪表盘 / 表单 | 读 `base:dashboard:readonly` / `base:form:readonly`，写 `base:dashboard` / `base:form`；`dashboard/form share get` 也需要 `base:dashboard:update` / `base:form:update` |
+| 顶层块（block list、resolve 判型） | `base:block:read`；resolve 的 /wiki/ 链接另需 `wiki:node:retrieve`，/record/ 链接需 `base:record:read` |
+| 附件上传 | `base:record:update`、`base:field:read`（字段类型预检）、`docs:document.media:upload` |
+| data-query | 普通多维表格有阅读权限即可；开启高级权限的多维表格需要完全访问（FA） |
 
 ## filter DSL（record list / record search 结构化过滤，实测验证）
 
@@ -442,7 +518,7 @@ feishu-cli bitable view view-sort-set --base-token $BASE_TOKEN --table-id $TABLE
 | 单选 / 多选 | **选项名数组（filter 条件里单选也必须数组；与写入 CellValue 不同——写入时单选字符串/数组均可）** | `["状态","==",["Doing"]]` |
 | 复选框 | 布尔 | `["完成","==",true]` |
 | 人员 / 群 / 关联记录 | 对象数组 | `["负责人","intersects",[{"id":"ou_xxx"}]]` |
-| 日期 | `"ExactDate(2026-01-01)"` 或 `"Today"`/`"Yesterday"`/`"Tomorrow"` | `["截止","==","Today"]` |
+| 日期 | `"ExactDate(2026-01-01)"` 或 `"Today"`/`"Yesterday"`/`"Tomorrow"`；**只支持 `==` `>` `<` `empty` `non_empty`，不支持 `>=` `<=`**（实测 800010506），范围用 `>` + `<` 组合 | `["截止","==","Today"]` |
 
 排序 `--sort-json`：`[{"field":"分数","desc":true}]`，数组顺序即优先级，最多 10 条。
 
@@ -460,9 +536,12 @@ feishu-cli bitable view view-sort-set --base-token $BASE_TOKEN --table-id $TABLE
 - **base/v3 需要 X-App-Id header**：命令自动注入，无需手动设置
 - **base_token / app_token 是同一个值**：飞书新旧文档用两种叫法，CLI 只认 `--base-token`（`--app-token` 已删除）
 - **--config / --config-file 两种输入**：所有写操作支持 inline JSON 或文件路径
-- **--dry-run 预览（仅部分写命令支持）**：`--dry-run` 仅以下写命令可用——`dashboard`/`block` 写、`form`/`form field` 写、`workflow create/update/enable/disable`、`role member` 写、`record upload/download/remove-attachment`、`bitable update`。**其余写命令不支持**（`record batch-create/batch-update/upsert/delete`、`table/field/view/role create·update·delete`、`advperm enable/disable`、`bitable create/copy` 等传 `--dry-run` 会报 `unknown flag`）。支持 dry-run 的命令也尊重 `--format/--jq`（download-attachment 的 dry-run 始终打 stdout，不写 `--output`）。
-- **--format / --jq 输出控制（约 4 成命令支持）**：支持 `--format json|pretty|table|ndjson|csv`（默认 json）+ `--jq`（内置 gojq）的主要是 `record batch-get`、`bitable update`、`dashboard`/`form`/`role member`/`workflow` 各命令等，可 `--jq '.items[].name'` 提取或 `--format table` 表格化。**其余大量命令不支持**：`record list/get/search/批量写`、`table/field/view/role list·CRUD`、`view-*-get/set`、`bitable create/copy/data-query/advperm`、`record download-attachment` 等——这些直接打印 JSON（部分用旧式 `-o json`），需要过滤时改用 `feishu-cli api ... --jq` 或外部 jq。
-- **批量上限**：`record batch-create` / `batch-update` 单批 ≤200 条（官方契约）；`batch-delete` 单批 ≤500 条
+- **--dry-run 预览（仅部分写命令支持）**：`--dry-run` 仅以下命令可用——`dashboard`/`block` 写与 `block get-data`、`dashboard share update`、`form`/`form field` 写与 `form share update`、`workflow create/get/update/enable/disable`、`role member` 写、`record upload/download/remove-attachment`、`bitable update`、`bitable resolve`。传 `/wiki/` 链接作 `--base-token` 时 dry-run 不解析（路径里以 `<wiki:token>` 占位）。**其余写命令不支持**（`record batch-create/batch-update/upsert/delete`、`table/field/view/role create·update·delete`、`advperm enable/disable`、`bitable create/copy` 等传 `--dry-run` 会报 `unknown flag`）。支持 dry-run 的命令也尊重 `--format/--jq`（download-attachment 的 dry-run 始终打 stdout，不写 `--output`）。
+- **--format / --jq 输出控制（约 4 成命令支持）**：支持 `--format json|pretty|table|ndjson|csv`（默认 json）+ `--jq`（内置 gojq）的主要是 `record batch-get`、`bitable update`、`bitable resolve`、`block list`、`dashboard`/`form`/`role member`/`workflow` 各命令（含 share）等，可 `--jq '.items[].name'` 提取或 `--format table` 表格化。**其余大量命令不支持**：`record list/get/search/批量写`、`table/field/view/role list·CRUD`、`view-*-get/set`、`bitable create/copy/data-query/advperm`、`record download-attachment` 等——这些直接打印 JSON（部分用旧式 `-o json`），需要过滤时改用 `feishu-cli api ... --jq` 或外部 jq。
+- **批量上限**：`record batch-create` / `batch-update` 单批 ≤200 条（官方契约）；`batch-delete` 服务端单批 ≤200 条，CLI 超出时自动按 200 条串行分批
+- **同一张表的写操作要串行**：并发写会触发 1254291 写冲突；视图配置等接口连续调用偶发 800004135 按方法限流，CLI 自动重试
+- **列表命令默认取全**：`table/field/view list` 按 total 取完；`form/workflow/dashboard list` 未传 `--page-token` 时按 page_token 自动翻页；`record list` 默认 100 条，`--page-all` 取全部
+- **角色接口输出已解包**：`role list/get/create` 直接输出角色对象（服务端响应外层 data 里套着二次序列化的 data，`base_roles` 每项又是 JSON 字符串，CLI 统一解开；内层 code≠0 时报错）
 - **视图类型**：`view create --view-type` 可选值：`grid / kanban / gallery / gantt / calendar`
 - **附件命令为编排命令**：upload 走 `medias/upload_all` + `append_attachments`，download 走 `get_attachments` + `medias/{ft}/download`，单次 ≤50 个
 - **form_id = view_id**：表单的 form_id 即表单视图的 view_id；`detail`/`submit` 用 `share-token`（shr 前缀，从分享链接提取）无需 base_token
