@@ -163,12 +163,14 @@ feishu-cli doc add-board <document_id> --parent-id <block_id> --index 0
 
 | `--callout-type` | 背景色 | 视觉含义 |
 |---|---|---|
-| `info`（默认） | 蓝色（6） | 信息提示，灯泡图标 |
-| `warning` | 黄色（4） | 警告提示 |
-| `error` | 红色（2） | 错误提示 |
-| `success` | 绿色（5） | 成功提示 |
+| `info`（默认） | 浅蓝（5） | 信息提示，灯泡图标 |
+| `warning` | 浅黄（3） | 警告提示 |
+| `error` | 浅红（1） | 错误提示 |
+| `success` | 浅绿（4） | 成功提示 |
 
-> 注：CLI 当前仅暴露 4 种 type；如需 CAUTION（橙=3）/IMPORTANT（紫=7）等其他 6 色 Callout，请用 Markdown `<callout type="CAUTION">...</callout>` 走 `doc import` / `content-update`。
+> 注：括号内是飞书 Callout 背景色枚举（1 浅红、2 浅橙、3 浅黄、4 浅绿、5 浅蓝、6 浅紫、7 中灰，经 docs_ai 读写实测校准）。
+> CLI 当前仅暴露 4 种 type；如需 CAUTION（浅橙）/IMPORTANT（浅紫）等其他颜色，请用 Markdown `> [!CAUTION]` 或
+> `<callout type="CAUTION">...</callout>` 走 `doc import` / `content-update`。
 
 | flag | 说明 | 默认 |
 |---|---|---|

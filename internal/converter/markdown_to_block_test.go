@@ -922,13 +922,14 @@ func TestConvert_Callout(t *testing.T) {
 		markdown string
 		bgColor  int
 	}{
-		{"NOTE", "> [!NOTE]\n> 这是一个提示", 6},       // Blue
-		{"INFO", "> [!INFO]\n> 这是信息", 6},         // Blue
-		{"WARNING", "> [!WARNING]\n> 这是警告", 2},   // Red
-		{"CAUTION", "> [!CAUTION]\n> 这是警示", 3},   // Orange
-		{"TIP", "> [!TIP]\n> 这是技巧", 4},           // Yellow
-		{"SUCCESS", "> [!SUCCESS]\n> 这是成功", 5},   // Green
-		{"IMPORTANT", "> [!IMPORTANT]\n> 重要", 7}, // Purple
+		// 飞书背景色枚举：1 浅红 2 浅橙 3 浅黄 4 浅绿 5 浅蓝 6 浅紫（docs_ai 读写实测）
+		{"NOTE", "> [!NOTE]\n> 这是一个提示", 5},       // Blue
+		{"INFO", "> [!INFO]\n> 这是信息", 5},         // Blue
+		{"WARNING", "> [!WARNING]\n> 这是警告", 1},   // Red
+		{"CAUTION", "> [!CAUTION]\n> 这是警示", 2},   // Orange
+		{"TIP", "> [!TIP]\n> 这是技巧", 3},           // Yellow
+		{"SUCCESS", "> [!SUCCESS]\n> 这是成功", 4},   // Green
+		{"IMPORTANT", "> [!IMPORTANT]\n> 重要", 6}, // Purple
 	}
 
 	for _, tt := range tests {

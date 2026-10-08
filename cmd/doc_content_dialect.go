@@ -72,8 +72,11 @@ var calloutDocsAIColors = map[string]string{
 	"IMPORTANT": "purple",
 }
 
-// calloutColorByIndex 对应本地 <callout color="N">（飞书 Callout.BackgroundColor 2-7）。
-var calloutColorByIndex = map[int]string{2: "red", 3: "orange", 4: "yellow", 5: "green", 6: "blue", 7: "purple"}
+// calloutColorByIndex 对应本地 <callout color="N">（飞书 Callout 背景色枚举：1 红 2 橙 3 黄 4 绿 5 蓝 6 紫 7 灰，8-14 为同色相深色）。
+var calloutColorByIndex = map[int]string{
+	1: "red", 2: "orange", 3: "yellow", 4: "green", 5: "blue", 6: "purple", 7: "gray",
+	8: "red", 9: "orange", 10: "yellow", 11: "green", 12: "blue", 13: "purple", 14: "gray",
+}
 
 // textColorByHex / bgColorByHex 是本地导出 wrapHighlightSpan 所用 CSS 颜色（converter.fontColorMap /
 // fontBgColorMap）到 docs_ai 颜色名的反向映射。

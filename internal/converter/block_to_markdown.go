@@ -1205,20 +1205,7 @@ func (c *BlockToMarkdown) convertCalloutWithDepth(block *larkdocx.Block, depth i
 	// Determine callout type based on background color or emoji
 	calloutType := "NOTE"
 	if block.Callout.BackgroundColor != nil {
-		switch *block.Callout.BackgroundColor {
-		case 2: // Red
-			calloutType = "WARNING"
-		case 3: // Orange
-			calloutType = "CAUTION"
-		case 4: // Yellow
-			calloutType = "TIP"
-		case 5: // Green
-			calloutType = "SUCCESS"
-		case 6: // Blue
-			calloutType = "NOTE"
-		case 7: // Purple
-			calloutType = "IMPORTANT"
-		}
+		calloutType = CalloutTypeForColor(*block.Callout.BackgroundColor)
 	}
 
 	var sb strings.Builder

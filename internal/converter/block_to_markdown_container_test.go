@@ -515,7 +515,22 @@ func TestConvertCallout(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "callout type WARNING (bgColor 2)",
+			name: "callout type WARNING (bgColor 1)",
+			blocks: []*larkdocx.Block{
+				{
+					BlockId:   strPtr("callout1"),
+					BlockType: intPtr(int(BlockTypeCallout)),
+					Callout: &larkdocx.Callout{
+						BackgroundColor: intPtr(1),
+					},
+					Children: []string{"text1"},
+				},
+				createTextBlock("text1", "This is a warning"),
+			},
+			want: "> [!WARNING]\n> This is a warning",
+		},
+		{
+			name: "callout type CAUTION (bgColor 2)",
 			blocks: []*larkdocx.Block{
 				{
 					BlockId:   strPtr("callout1"),
@@ -525,12 +540,12 @@ func TestConvertCallout(t *testing.T) {
 					},
 					Children: []string{"text1"},
 				},
-				createTextBlock("text1", "This is a warning"),
+				createTextBlock("text1", "Be cautious"),
 			},
-			want: "> [!WARNING]\n> This is a warning",
+			want: "> [!CAUTION]\n> Be cautious",
 		},
 		{
-			name: "callout type CAUTION (bgColor 3)",
+			name: "callout type TIP (bgColor 3)",
 			blocks: []*larkdocx.Block{
 				{
 					BlockId:   strPtr("callout1"),
@@ -540,12 +555,12 @@ func TestConvertCallout(t *testing.T) {
 					},
 					Children: []string{"text1"},
 				},
-				createTextBlock("text1", "Be cautious"),
+				createTextBlock("text1", "Helpful tip"),
 			},
-			want: "> [!CAUTION]\n> Be cautious",
+			want: "> [!TIP]\n> Helpful tip",
 		},
 		{
-			name: "callout type TIP (bgColor 4)",
+			name: "callout type SUCCESS (bgColor 4)",
 			blocks: []*larkdocx.Block{
 				{
 					BlockId:   strPtr("callout1"),
@@ -555,12 +570,12 @@ func TestConvertCallout(t *testing.T) {
 					},
 					Children: []string{"text1"},
 				},
-				createTextBlock("text1", "Helpful tip"),
+				createTextBlock("text1", "Success message"),
 			},
-			want: "> [!TIP]\n> Helpful tip",
+			want: "> [!SUCCESS]\n> Success message",
 		},
 		{
-			name: "callout type SUCCESS (bgColor 5)",
+			name: "callout type NOTE (bgColor 5)",
 			blocks: []*larkdocx.Block{
 				{
 					BlockId:   strPtr("callout1"),
@@ -570,33 +585,18 @@ func TestConvertCallout(t *testing.T) {
 					},
 					Children: []string{"text1"},
 				},
-				createTextBlock("text1", "Success message"),
+				createTextBlock("text1", "Note this"),
 			},
-			want: "> [!SUCCESS]\n> Success message",
+			want: "> [!NOTE]\n> Note this",
 		},
 		{
-			name: "callout type NOTE (bgColor 6)",
+			name: "callout type IMPORTANT (bgColor 6)",
 			blocks: []*larkdocx.Block{
 				{
 					BlockId:   strPtr("callout1"),
 					BlockType: intPtr(int(BlockTypeCallout)),
 					Callout: &larkdocx.Callout{
 						BackgroundColor: intPtr(6),
-					},
-					Children: []string{"text1"},
-				},
-				createTextBlock("text1", "Note this"),
-			},
-			want: "> [!NOTE]\n> Note this",
-		},
-		{
-			name: "callout type IMPORTANT (bgColor 7)",
-			blocks: []*larkdocx.Block{
-				{
-					BlockId:   strPtr("callout1"),
-					BlockType: intPtr(int(BlockTypeCallout)),
-					Callout: &larkdocx.Callout{
-						BackgroundColor: intPtr(7),
 					},
 					Children: []string{"text1"},
 				},
@@ -641,7 +641,7 @@ func TestConvertCallout(t *testing.T) {
 					BlockId:   strPtr("callout1"),
 					BlockType: intPtr(int(BlockTypeCallout)),
 					Callout: &larkdocx.Callout{
-						BackgroundColor: intPtr(6),
+						BackgroundColor: intPtr(5),
 					},
 					Children: []string{},
 				},
@@ -655,7 +655,7 @@ func TestConvertCallout(t *testing.T) {
 					BlockId:   strPtr("callout1"),
 					BlockType: intPtr(int(BlockTypeCallout)),
 					Callout: &larkdocx.Callout{
-						BackgroundColor: intPtr(6),
+						BackgroundColor: intPtr(5),
 					},
 					Children: []string{"text1"},
 				},
@@ -670,7 +670,7 @@ func TestConvertCallout(t *testing.T) {
 					BlockId:   strPtr("callout1"),
 					BlockType: intPtr(int(BlockTypeCallout)),
 					Callout: &larkdocx.Callout{
-						BackgroundColor: intPtr(6),
+						BackgroundColor: intPtr(5),
 					},
 					Children: []string{"text1", "text2", "text3"},
 				},
@@ -687,7 +687,7 @@ func TestConvertCallout(t *testing.T) {
 					BlockId:   strPtr("callout1"),
 					BlockType: intPtr(int(BlockTypeCallout)),
 					Callout: &larkdocx.Callout{
-						BackgroundColor: intPtr(6),
+						BackgroundColor: intPtr(5),
 					},
 					Children: []string{"text1", "text2"},
 				},

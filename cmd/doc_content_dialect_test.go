@@ -33,7 +33,7 @@ func TestConvertLocalDialectCalloutTypes(t *testing.T) {
 		}
 	}
 	// 本地导入语法 <callout type="X">：type/color 改写为 docs_ai 属性，内容保持
-	got, _, err := convertLocalDialectForDocsAI(`<callout type="WARNING">本地 **加粗**</callout>` + "\n" + `<callout color="5">绿</callout>`)
+	got, _, err := convertLocalDialectForDocsAI(`<callout type="WARNING">本地 **加粗**</callout>` + "\n" + `<callout color="4">绿</callout>`)
 	if err != nil {
 		t.Fatal(err)
 	}
