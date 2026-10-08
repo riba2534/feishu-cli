@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -72,6 +73,49 @@ func TestVCMinutesClientParsesBizCodeOnHTTPError(t *testing.T) {
 				t.Fatalf("不应再以 HTTP 状态码短路: %v", err)
 			}
 		})
+	}
+}
+
+// TestSearchMinutesFixedSorter 锁住官方 #2714：妙记搜索请求体固定 sorter=create_time_desc，
+// 否则服务端相关度排序在翻页时会漏条（实测每页 6 条漏 2 条）。
+func TestSearchMinutesFixedSorter(t *testing.T) {
+	var body map[string]any
+	var query string
+	_, cleanup := stubFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/open-apis/minutes/v1/minutes/search" {
+			http.Error(w, "unexpected "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		query = r.URL.RawQuery
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"items":[],"has_more":false}}`)
+	})
+	defer cleanup()
+
+	_, err := SearchMinutes(SearchMinutesReq{
+		Query:          "周会",
+		OwnerIDs:       []string{"ou_a"},
+		ParticipantIDs: []string{"ou_b"},
+		PageSize:       15,
+		PageToken:      "pt",
+	}, vcTestUserToken)
+	if err != nil {
+		t.Fatalf("SearchMinutes: %v", err)
+	}
+	if body["sorter"] != "create_time_desc" {
+		t.Fatalf("sorter = %v, want create_time_desc（body=%v）", body["sorter"], body)
+	}
+	filter, _ := body["filter"].(map[string]any)
+	if got := fmt.Sprint(filter["participant_ids"]); got != "[ou_b]" {
+		t.Fatalf("filter.participant_ids = %v", filter["participant_ids"])
+	}
+	if got := fmt.Sprint(filter["owner_ids"]); got != "[ou_a]" {
+		t.Fatalf("filter.owner_ids = %v", filter["owner_ids"])
+	}
+	if !strings.Contains(query, "page_token=pt") || !strings.Contains(query, "page_size=15") {
+		t.Fatalf("分页参数应走 query，实际 %q", query)
 	}
 }
 

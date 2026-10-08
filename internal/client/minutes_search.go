@@ -8,6 +8,9 @@ import (
 	"strconv"
 )
 
+// minutesSearchSorter 妙记搜索固定排序（create_time 倒序），保证分页确定性
+const minutesSearchSorter = "create_time_desc"
+
 // SearchMinutesReq 妙记搜索请求参数
 // Query 为空表示不按关键词过滤；OwnerIDs / 时间范围为空表示不加对应过滤条件。
 // StartRFC3339 / EndRFC3339 使用 RFC3339 时间字符串（create_time 过滤）。
@@ -23,7 +26,7 @@ type SearchMinutesReq struct {
 
 // SearchMinutes 搜索妙记列表
 // API: POST /open-apis/minutes/v1/minutes/search
-// body: { query, filter:{ owner_ids[], participant_ids[], create_time:{start_time,end_time} } }
+// body: { query, filter:{ owner_ids[], participant_ids[], create_time:{start_time,end_time} }, sorter }
 // 分页通过 query 参数 page_size / page_token 控制。
 // 至少一个过滤条件由调用方保证。
 func SearchMinutes(req SearchMinutesReq, userAccessToken string) (json.RawMessage, error) {
@@ -52,6 +55,9 @@ func SearchMinutes(req SearchMinutesReq, userAccessToken string) (json.RawMessag
 	if len(filter) > 0 {
 		body["filter"] = filter
 	}
+	// 固定排序：服务端默认按相关度排序且不稳定，翻页时会漏条/重复（实测每页 6 条漏 2 条）。
+	// 对齐官方 #2714，始终按创建时间倒序，保证 page_token 翻页结果确定。
+	body["sorter"] = minutesSearchSorter
 
 	apiPath := fmt.Sprintf("%s/minutes/search", minutesBase)
 	params := url.Values{}
