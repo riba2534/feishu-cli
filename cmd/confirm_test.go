@@ -101,6 +101,9 @@ func TestFileDeleteNonInteractiveDoesNotDelete(t *testing.T) {
 		case r.Method == http.MethodDelete && r.URL.Path == "/open-apis/drive/v1/files/doxcnFAKE":
 			atomic.AddInt32(&deleteHits, 1)
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"task_id":"task_1"}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/open-apis/drive/v1/files/task_check":
+			// file delete 返回 task_id 后会轮询 task_check
+			_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"status":"success"}}`)
 		default:
 			http.Error(w, "unexpected "+r.URL.Path, http.StatusNotFound)
 		}

@@ -17,15 +17,17 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// resetDriveCmdFlags 在测试结束时把命令 flag 恢复为默认值（cobra 命令是包级全局，flag 状态会串到其他用例）。
+// resetDriveCmdFlags 立即并在测试结束时把命令 flag 恢复为默认值（cobra 命令是包级全局，flag 状态会串到其他调用/用例）。
 func resetDriveCmdFlags(t *testing.T, c *cobra.Command) {
 	t.Helper()
-	t.Cleanup(func() {
+	reset := func() {
 		c.Flags().VisitAll(func(f *pflag.Flag) {
 			_ = f.Value.Set(f.DefValue)
 			f.Changed = false
 		})
-	})
+	}
+	reset()
+	t.Cleanup(reset)
 }
 
 // pushMockServer 模拟 drive push 所需端点：列举（一个已存在文件 a.txt）、upload_all、DELETE。

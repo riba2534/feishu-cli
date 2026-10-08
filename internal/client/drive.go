@@ -771,6 +771,53 @@ func DeleteFile(fileToken string, fileType string, userAccessToken ...string) (s
 	return "", nil
 }
 
+// DeleteDriveFileAsync 以异步模式删除云盘文件/文件夹：DELETE /open-apis/drive/v1/files/{token}?type=&async=true。
+// 返回 task_id 非空时需用 task_check 轮询（文件夹删除等）；为空表示已同步删除完成。
+// 业务错误随 HTTP 400/403 下发时先解析业务码。
+func DeleteDriveFileAsync(fileToken, fileType, userAccessToken string) (string, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+	q := url.Values{}
+	q.Set("type", fileType)
+	q.Set("async", "true")
+	apiPath := "/open-apis/drive/v1/files/" + url.PathEscape(fileToken) + "?" + q.Encode()
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Delete(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return "", fmt.Errorf("删除文件失败: %w", err)
+	}
+	if err := CheckAPIResponse("删除文件", resp); err != nil {
+		return "", err
+	}
+	var parsed struct {
+		Data struct {
+			TaskID string `json:"task_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &parsed); err != nil {
+		return "", fmt.Errorf("解析删除响应失败: %w", err)
+	}
+	return parsed.Data.TaskID, nil
+}
+
+// UpdateDriveTitle 重命名云盘文件/文件夹/在线文档/wiki 节点：
+// PATCH /open-apis/drive/v1/files/{token}?type=<type>，body {"new_title": title}。
+func UpdateDriveTitle(token, docType, title, userAccessToken string) error {
+	cli, err := GetClient()
+	if err != nil {
+		return err
+	}
+	apiPath := "/open-apis/drive/v1/files/" + url.PathEscape(token) + "?type=" + url.QueryEscape(docType)
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Patch(Context(), apiPath, map[string]any{"new_title": title}, tokenType, opts...)
+	if err != nil {
+		return fmt.Errorf("修改标题失败: %w", err)
+	}
+	return CheckAPIResponse("修改标题", resp)
+}
+
 // ShortcutInfo 快捷方式信息
 type ShortcutInfo struct {
 	Token       string `json:"token"`
