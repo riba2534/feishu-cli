@@ -33,7 +33,7 @@
 | `room-find` | 给定时段找可用会议室 | 排会议第二步：定地点 |
 | `rsvp` | 接受/拒绝/待定 已收到的邀请 | 被邀方处理邀请 |
 
-典型组合：先 `suggestion` 拿到推荐时段 → `room-find` 在该时段筛会议室 → `calendar create-event` 创建日程并邀请参与人和会议室。
+典型组合：先 `suggestion` 拿到推荐时段 → `room-find` 在该时段筛会议室 → `calendar create-event --attendee-ids ou_...,omm_...` 创建日程并邀请参与人和会议室（参与人添加失败自动回滚删除日程）。
 
 ### 底层实现 & 重试
 
@@ -48,7 +48,9 @@
 |------|-----------|
 | `suggestion` / `room-find` | User Token 优先 + App Token 兜底：已 `auth login` 时用 User Token（查私人忙闲），未登录回落 App Token（查公开忙闲、公司可订会议室）。`--user-access-token` 可显式指定。 |
 | `agenda` / `event-search` | `--as bot\|user\|auto`（默认 auto）。`primary` 跟当前身份；已配置 User 但刷新失败 fail-closed，禁止静默切 Bot。 |
-| `rsvp` | **必需 User Token**（以本人身份答复邀请），未登录直接报错。 |
+| `create-event` / `update-event` / `delete-event` / `attendee add\|remove` / `event-share` / `event-transfer` | `--as bot\|user\|auto`，**默认 auto**（行为变更：此前默认 Bot）。已登录即以本人身份操作本人日程；操作应用日历时显式 `--as bot`。 |
+| `freebusy` | User Token 优先 + App Token 兜底；不传 `--user-id` 时默认当前登录用户，Bot 身份必须显式指定。 |
+| `rsvp` / `event-reply` | **必需 User Token**（以本人身份答复邀请），未登录直接报错。 |
 
 权限：`calendar:calendar.free_busy:read`（suggestion / room-find）、`calendar:calendar.event:reply`（rsvp）。
 
@@ -184,13 +186,13 @@ feishu-cli calendar room-find \
   -o json | jq '.time_slots[0].meeting_rooms[0]'
 # 假设拿到 room_id=omm_xxx
 
-# 3. 创建日程，随后按本工作流添加参与人和会议室
+# 3. 创建日程并邀请参与人与会议室（omm_ 前缀为会议室；添加失败会自动删除日程回滚）
 feishu-cli calendar create-event \
-  --calendar-id <主日历> \
   --summary "三方对齐" \
   --start 2024-01-22T09:30:00+08:00 \
-  --end   2024-01-22T10:00:00+08:00
-# 后续 attendee add 把人和 room 加进去
+  --end   2024-01-22T10:00:00+08:00 \
+  --attendee-ids ou_alice,ou_bob,ou_carol,omm_xxx --vchat
+# 已有日程补人/补会议室：attendee add <cal_id> <event_id> --user-ids ... --room-ids omm_xxx
 ```
 
 ### 工作流 B：批量答复邀请
@@ -222,25 +224,59 @@ feishu-cli calendar create-event \
   --rrule "FREQ=WEEKLY;BYDAY=MO"
 ```
 
-### 修改重复规则
+### 先分清四种日程（event_id 形如 `{uid}_{原始时间戳}`）
+
+| 类型 | event_id | 判别 |
+|------|----------|------|
+| 普通日程 | `{uid}_0` | 无 `recurrence` |
+| 重复日程主体 | `{uid}_0` | 有 `recurrence` |
+| 实例 | `{uid}_{ts>0}` | `is_exception=false`（`agenda` / `event-search` 返回的就是实例 ID） |
+| 例外 | `{uid}_{ts>0}` | `is_exception=true`（单独改过/删过的那一次） |
+
+`update-event` / `delete-event` 会先 `GET` 日程判型，并在 stderr 说明影响范围（`-o json` 有 `kind` / `scope`）。
+
+### 不传 `--apply-to`：服务端原生语义（实测，兼容旧行为）
+
+| 传入 ID | delete-event | update-event |
+|---------|--------------|--------------|
+| 主体 `{uid}_0` | 删整条序列，但**不级联**已单独修改过的例外（例外仍留在日历上） | 改整条序列，已存在的例外不受影响 |
+| 实例/例外 | 只删这一次 | 只改这一次（实例被物化为例外） |
+
+### `--apply-to` 显式范围（对齐官方 lark-calendar-recurring）
+
+| 值 | 适用 | 语义 |
+|----|------|------|
+| `single` | 实例 / 例外 / 普通日程 | 只操作这一次；主体 ID 传 single 报错（应传实例 ID） |
+| `all` | 主体 / 实例 / 例外 | 整条序列含全部例外：delete 先销毁例外再删主体；update 改了时间先删例外再改主体，未改时间把本次字段同步到每个例外再改主体 |
+| `this-and-following` | 仅实例（例外/主体报错） | 从该次起：删除该次及之后的例外，主体 RRULE 截断到前一天（UNTIL）；update 还会以该次时间新建一条继承原设置（标题/描述/地点/提醒/视频会议/参与人）的新序列，原规则带 `COUNT` 时换算成原序列最后一次的 `UNTIL`，总次数不变 |
+
+`all` / `this-and-following` 需要确认（非交互环境加 `--yes`，否则 exit 10 且不执行）；批量清理例外时不通知参与人。
+用户没说清范围时先问，不要替用户选。
 
 ```bash
-# 把日程改成每个工作日重复（作用于整个序列）
-feishu-cli calendar update-event <calendar_id> <event_id> \
+# 只删某一次（agenda 拿到的实例 ID）
+feishu-cli calendar delete-event <instance_event_id> --apply-to single
+
+# 删除整条重复序列（含例外）
+feishu-cli calendar delete-event <任意实例或主体 ID> --apply-to all --yes
+
+# 从某次起不再重复
+feishu-cli calendar delete-event <instance_event_id> --apply-to this-and-following --yes
+
+# 整条序列改名（例外一并改）
+feishu-cli calendar update-event <instance_event_id> --summary "新周会" --apply-to all --yes
+
+# 从某次起改时间（截断 + 新序列）
+feishu-cli calendar update-event <instance_event_id> --apply-to this-and-following \
+  --start 2026-08-03T15:00:00+08:00 --end 2026-08-03T16:00:00+08:00 --yes
+
+# 把日程改成每个工作日重复（主体 ID，作用于序列；例外不受影响）
+feishu-cli calendar update-event <calendar_id> <master_event_id> \
   --rrule "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
 ```
 
-`update-event` 至少要提供一个可更新字段，`--rrule` 也算。改 `--rrule` 会覆盖整个重复序列的规则。
-
-### 删除整个重复序列
-
-```bash
-# 用现有 delete-event 即可删除整个重复日程序列
-feishu-cli calendar delete-event <calendar_id> <event_id>
-```
-
-删除后服务端保留一个 `status=cancelled` 的 tombstone：`get-event` 仍能查到该 event_id，但它已不是活动日程，
-`agenda` / `list-events` 里不再作为有效实例出现。**没有单独的“删除某一次实例”命令**，`delete-event` 删的是整条序列。
+先 `--dry-run` 预览请求（不联网）。删除后服务端保留 `status=cancelled` 的记录：`get-event` 仍能查到，但
+`agenda` / `list-events` 不再作为有效实例出现（instance_view 有数秒缓存延迟）。
 
 ### 常用 RRULE 速查
 
@@ -258,9 +294,9 @@ feishu-cli calendar delete-event <calendar_id> <event_id>
 
 ### 身份提示
 
-`create-event` / `update-event` / `delete-event` 属**写类**命令，默认 Bot（App Token）身份。
-若 App 未开通 tenant 级 `calendar:calendar.event:create/update/delete`，会报 99991672，
-需显式传 `--user-access-token` 或设 `FEISHU_USER_ACCESS_TOKEN` 切到 User 身份。
+`create-event` / `update-event` / `delete-event` 等写命令支持 `--as`，**默认 auto**：已 `auth login` 时以本人身份
+操作本人日历（**行为变更**：此前默认 Bot），未配置 User Token 时回落 Bot。要在应用日历上操作显式传 `--as bot`；
+若 App 未开通 tenant 级 `calendar:calendar.event:*`，Bot 身份会报 99991672。
 
 Bot 身份建的日程 **Bot 自己不在参会人列表里**（用户身份建则自动入会）。如需 Bot 出现在
 参会人列表（例如后续要以 Bot 身份收会议事件），先取 Bot 自身 open_id 再随 attendee add 加入：
@@ -333,8 +369,9 @@ feishu-cli calendar attendee add <cal_id> <event_id> --user-ids "$BOT_ID,ou_其�
 |------|------|
 | 创建/修改/删除日程、agenda、event-search | 本工作流的 `references/basic-commands.md` |
 | 朴素 freebusy 查询单人/单时段 | 本工作流的 `references/basic-commands.md` |
-| 加/删 attendee、查 attendee 列表 | 本工作流的 `references/basic-commands.md` |
-| event-reply 老接口（位置参数版） | 本工作流的 `references/basic-commands.md` |
+| 加/删 attendee（含会议室）、查 attendee 列表 | 本工作流的 `references/basic-commands.md` |
+| 日程分享链接、转让组织者 | 本工作流的 `references/basic-commands.md`（`event-share` / `event-transfer`） |
+| event-reply 老接口（位置参数版，同样必需 User Token） | 本工作流的 `references/basic-commands.md` |
 | 给参会人发会议提醒消息 | `feishu-cli-messaging`（msg + card 工作流） |
 | 拿 `ou_xxx` open_id（email/user_id → open_id 转换） | `feishu-cli-platform` 的 directory 工作流 |
 
