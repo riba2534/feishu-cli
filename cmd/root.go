@@ -70,6 +70,8 @@ var rootCmd = &cobra.Command{
   profile   多 App 配置切换（add/list/use/current/rename/remove/migrate）
   doctor    环境健康检查（6 项：config / user_token / endpoints / proxy / deps）
   config    配置管理（初始化配置）
+  skills    与本版本配套的 AI 技能（list/read/install，内嵌于二进制）
+  update    检查并更新 feishu-cli 到 GitHub 最新 release（--check 只查询）
 
 注意：bitable 命令已切换到 base/v3 API，flag 使用 --base-token。
 
@@ -162,6 +164,9 @@ func configInitOptional(cmd *cobra.Command) bool {
 // shouldSkipConfigInit 只跳过纯本地元数据/配置管理命令。
 // auth status --verify 与 auth logout 需要当前 profile 的 App 凭证做刷新/吊销，必须返回 false。
 func shouldSkipConfigInit(cmd *cobra.Command) bool {
+	if cmd.Annotations[skipConfigInitAnnotation] == "1" {
+		return true
+	}
 	if cmd.HasSubCommands() && (cmd.RunE == nil && cmd.Run == nil || cmd.Annotations[groupGuardAnnotation] == "1") {
 		return true
 	}
@@ -179,6 +184,8 @@ func Execute() {
 	rootCmd.InitDefaultCompletionCmd()
 	// 所有 init() 注册完成后统一安装：嵌套命令组的未知子命令守卫 + flag 拼写建议
 	installUnknownSubcommandGuard(rootCmd)
+	// --help 末尾追加 manifest owners 声明的相关技能指针（见 skills_help.go）
+	installSkillHelpPointers(rootCmd)
 	rootCmd.SetFlagErrorFunc(flagSuggestionErrorFunc)
 
 	// 根 context 接 SIGINT/SIGTERM：cmd.Context() 与 client.Context() 等都从它派生，

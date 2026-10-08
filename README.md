@@ -1101,13 +1101,29 @@ Skill 入口使用 Agent Skills 标准 frontmatter；按需加载的工作流和
 
 **安装方法**：
 
-```bash
-# 一键安装全部技能（推荐）
-npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
+技能随二进制内嵌，内容与当前 `feishu-cli` 版本严格配套，推荐用内置命令安装：
 
-# 或手动复制
-# 将 skills/ 目录复制到 ~/.claude/skills/
+```bash
+# 先预览，再安装到 ~/.claude/skills（--dir 或 FEISHU_CLI_SKILLS_DIR 可指定其他目录）
+feishu-cli skills install --dry-run
+feishu-cli skills install
+
+# 升级 CLI 后同步技能；doctor 会检查本地技能是否与 CLI 版本漂移
+feishu-cli update
+feishu-cli skills install
+feishu-cli doctor --only skills
+
+# 不安装也可以直接读取当前版本的技能内容
+feishu-cli skills list
+feishu-cli skills read feishu-cli-docs
 ```
+
+`skills install` 写入前会解析符号链接并打印真实路径；只覆盖上次由它写入且未被修改的文件，
+发现本地修改（或目录来自 npx/手动复制且内容不同）时不带 `--force` 拒绝写入；旧版 29 个技能目录默认只列出，
+加 `--prune-legacy` 才删除确认属于 feishu-cli 的旧目录。
+
+备选：`npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy` 拉取的是 GitHub main 分支的技能，
+可能与本地 CLI 版本不一致；或手动把 `skills/` 下 9 个领域目录复制到 `~/.claude/skills/`。
 
 ## 块类型映射
 

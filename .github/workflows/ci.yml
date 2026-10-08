@@ -1,0 +1,64 @@
+name: CI
+
+# 最小 CI：只做离线检查，不使用任何飞书凭证、不调用线上 API。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # 测试与 Skill 检查全部走内嵌 OpenAPI catalog，不拉远端 overlay
+  FEISHU_CLI_REMOTE_META: "off"
+
+jobs:
+  go:
+    name: gofmt / vet / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            echo "::error::存在未格式化的 Go 文件，请运行 gofmt -w 后提交"
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -count=1 ./...
+
+  skills-privacy:
+    name: check-skills / check-privacy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+      # Skill 检查与脚本回归只用 Python 标准库（YAML 由 go run ./scripts/skillmeta 解析），无需 pip 依赖
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+      - name: 隐私扫描
+        run: make check-privacy
+      - name: Skill 结构、命令归属与离线契约
+        run: make check-skills

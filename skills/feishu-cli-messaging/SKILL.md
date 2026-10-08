@@ -39,3 +39,5 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
    接收者和卡片引用必须来自本次请求、已授权上下文或配置，不能把示例值当默认值。
 8. 用户点名卡片风格时使用 card workflow 内置的 19 个预设；使用本地头图或图标素材时，
    lint 与实际的 `msg send` / `msg reply` 都传 `--upload-images`，不要固化跨租户 `img_key`。
+
+遇到 Token、身份或 scope 报错（如 99991663/99991668/99991672/99991679）时，读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md` 确认应使用的身份与预检方式，排错表见 `../feishu-cli-platform/references/workflows/auth/workflow.md`。

@@ -65,7 +65,7 @@
     {"legacy_skill": "feishu-cli-write", "skill": "feishu-cli-docs", "workflow": "write"}
   ],
   "owners": [
-    {"skill": "feishu-cli-platform", "workflow": "auth", "prefixes": [["auth"], ["config"], ["doctor"], ["profile"]]},
+    {"skill": "feishu-cli-platform", "workflow": "auth", "prefixes": [["auth"], ["config"], ["doctor"], ["profile"], ["skills"], ["update"]]},
     {"skill": "feishu-cli-platform", "workflow": "api", "prefixes": [["api"]]},
     {"skill": "feishu-cli-platform", "workflow": "schema", "prefixes": [["schema"]]},
     {"skill": "feishu-cli-platform", "workflow": "search", "prefixes": [["search"]]},

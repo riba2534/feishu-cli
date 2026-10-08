@@ -33,3 +33,5 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 2. `task my`、`task search`、**全部**审批命令（`approval get` / `instance get|initiated|create|cancel|cc` / `task query|approve|reject|transfer`）和 `calendar rsvp` 必须使用 User Token；其他命令按各工作流说明选择身份。
 3. 时间格式以命令帮助为准：日历时间点优先带时区的 RFC3339，考勤日期用 `YYYY-MM-DD` / `YYYYMMDD`；不要把全天事件和具体时段混用。
 4. 任务清单添加/移除任务使用 `task-add` / `task-remove`，不存在 `add-task` / `remove-task`。
+
+遇到 Token、身份或 scope 报错（如 99991663/99991668/99991672/99991679）时，读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md` 确认应使用的身份与预检方式，排错表见 `../feishu-cli-platform/references/workflows/auth/workflow.md`。

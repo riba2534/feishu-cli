@@ -28,8 +28,9 @@ vendor/
 .DS_Store
 Thumbs.db
 
-# GitHub 临时文件（PR 截图等）
-.github/
+# GitHub 临时文件（PR 截图等）；CI 工作流需要入库
+.github/*
+!.github/workflows/
 
 # 配置文件（包含敏感信息）
 .env
