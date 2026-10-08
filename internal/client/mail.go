@@ -60,7 +60,7 @@ func callMailAPI(method, apiPath string, body any, userAccessToken string) (json
 
 	// 先按飞书业务信封解析再看 HTTP 状态：邮箱的大量业务错误（如 4038 folder 非法、权限不足）随 HTTP 400 下发，
 	// 先判状态码会丢掉业务码与 log_id，按 HasAPICode 分支的提示也走不到。
-	if err := CheckAPIResponse("mail API "+method+" "+apiPathWithoutQuery(apiPath), resp); err != nil {
+	if err := CheckAPIResponse("mail API "+method+" "+apiPathWithoutQuery(apiPath)+" ", resp); err != nil {
 		return nil, err
 	}
 

@@ -291,7 +291,13 @@ func renderMailPayloadText(w io.Writer, payload any) {
 	}
 	if th, ok := root["thread"].(map[string]any); ok {
 		msgs, _ := th["messages"].([]any)
-		fmt.Fprintf(w, "线程 %s（共 %d 封，按时间升序）\n\n", mailAnyString(th["thread_id"]), len(msgs))
+		threadID := mailAnyString(th["thread_id"])
+		if threadID == "" && len(msgs) > 0 {
+			if first, ok := msgs[0].(map[string]any); ok {
+				threadID = mailAnyString(first["thread_id"])
+			}
+		}
+		fmt.Fprintf(w, "线程 %s（共 %d 封，按时间升序）\n\n", threadID, len(msgs))
 		renderMailMessageList(w, msgs)
 		return
 	}
