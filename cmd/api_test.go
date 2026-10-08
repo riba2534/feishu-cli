@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -817,5 +818,41 @@ func TestParseQueryParams_RejectsTrailingJSON(t *testing.T) {
 	}
 	if got := q.Get("flag"); got != "true" {
 		t.Errorf("flag = %q, want true", got)
+	}
+}
+
+// TestRunAPI_DataKeepsLargeIntegerPrecision 验证 --data 中的大整数按原始字面量发出，
+// 不经 float64 往返舍入（19 位 ID 是飞书常见字段）。
+func TestRunAPI_DataKeepsLargeIntegerPrecision(t *testing.T) {
+	isolateAPITestEnv(t)
+	defer resetAPIFlags()
+
+	var gotBody string
+	cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/open-apis/auth/v3/tenant_access_token/internal") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-fake","expire":7200}`)
+			return
+		}
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{}}`)
+	})
+	defer cleanup()
+
+	cmd := newTestAPICmd()
+	apiAs = "bot"
+	apiData = `{"id":1234567890123456789,"ratio":0.1,"n":1000000}`
+	if err := cmd.RunE(cmd, []string{"POST", "/open-apis/im/v1/messages"}); err != nil {
+		t.Fatalf("非预期错误: %v", err)
+	}
+	for _, want := range []string{"1234567890123456789", "0.1", "1000000"} {
+		if !strings.Contains(gotBody, want) {
+			t.Errorf("请求体 %q 缺少原始数字字面量 %q", gotBody, want)
+		}
+	}
+	if strings.Contains(gotBody, "e+") {
+		t.Errorf("请求体不应出现科学计数法: %q", gotBody)
 	}
 }

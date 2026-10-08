@@ -182,7 +182,13 @@ func runAPI(cmd *cobra.Command, args []string) error {
 		if err := json.Unmarshal(bodyBytes, &probe); err != nil {
 			return clierr.Usagef("--data/--data-file 不是合法 JSON: %w", err)
 		}
-		body = probe
+		// 校验通过后用 UseNumber 重新解码：数字保持原始字面量，
+		// 否则 19 位 ID 等大整数经 float64 往返会被舍入（如 ...789 → ...800）。
+		parsed, err := decodeJSONUseNumber(bodyBytes)
+		if err != nil {
+			return clierr.Usagef("--data/--data-file 不是合法 JSON: %w", err)
+		}
+		body = parsed
 	}
 
 	if apiPageAll && apiOutput != "" && apiFormat == "" && apiJQ == "" {
