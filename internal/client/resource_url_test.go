@@ -96,7 +96,7 @@ func TestParseResourceURL_CustomHostRequiresOptIn(t *testing.T) {
 func TestIsFeishuResourceHost(t *testing.T) {
 	cases := map[string]bool{
 		"feishu.cn": true, "a.feishu.cn": true, "a.b.feishu.cn": true, "feishu.cn.": true,
-		"larksuite.com": true, "x.larksuite.com": true, "x.larkoffice.com": true,
+		"larksuite.com": true, "xxx.larksuite.com": true, "xxx.larkoffice.com": true,
 		"evilfeishu.cn": false, "feishu.cn.evil.com": false, "larksuite.co": false, "": false,
 	}
 	for host, want := range cases {

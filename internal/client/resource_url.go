@@ -31,7 +31,7 @@ type ResourceRef struct {
 // resourceURLPathTypes 是 URL 路径前缀 → 资源类型映射（对齐官方 common/resource_url.go）。
 //
 // 只按 u.Path 的前缀匹配，绝不在整串 URL 里搜索标记：
-// 否则 https://x.feishu.cn/docx/ABC?from=/wiki/zzz 会被误判为 wiki 节点 zzz。
+// 否则 https://xxx.feishu.cn/docx/ABC?from=/wiki/zzz 会被误判为 wiki 节点 zzz。
 // 较长前缀必须排在前面（如 /drive/folder/ 先于任何 /drive/ 前缀）。
 var resourceURLPathTypes = []struct {
 	Prefix string
