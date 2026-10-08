@@ -123,15 +123,24 @@ func ReadTable(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, 
 	for j := 0; j < nCols; j++ {
 		dtype := inferColumnDtype(dataRows, j)
 		dtypes[columns[j]] = dtype
-		if dtype == "datetime64[ns]" {
-			formats[columns[j]] = "yyyy-mm-dd"
-		}
+		hasTime := false
 		for i, row := range dataRows {
 			var sc cellScalar
 			if j < len(row) {
 				sc = row[j]
 			}
 			data[i][j] = scalarToJSON(sc, dtype)
+			if s, ok := data[i][j].(string); ok && sc.kind == "date" && strings.Contains(s, "T") {
+				hasTime = true
+			}
+		}
+		if dtype == "datetime64[ns]" {
+			// 单元格格式带时间（读回的格式化串含时分秒）时输出日期时间格式，
+			// table-put 据此设 yyyy/MM/dd HH:mm:ss，round-trip 不丢时间显示
+			formats[columns[j]] = "yyyy-mm-dd"
+			if hasTime {
+				formats[columns[j]] = TableDateTimeFormat
+			}
 		}
 	}
 

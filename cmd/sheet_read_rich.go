@@ -8,13 +8,13 @@ import (
 )
 
 var sheetReadRichCmd = &cobra.Command{
-	Use:   "read-rich <spreadsheet_token> <sheet_id> <range1> [range2...]",
+	Use:   "read-rich <spreadsheet_token|url> <sheet_id> <range1> [range2...]",
 	Short: "获取富文本内容（V3 API）",
 	Long: `使用 V3 API 批量获取工作表的富文本内容。
 
 范围格式:
-  SheetID!A1:B2    - 指定工作表的范围
-  A1:B2            - 当前工作表的范围
+  <sheetId>!A1:B2  - 指定工作表的范围（也可用子表名作前缀）
+  A1:B2            - 不带前缀时自动补上 <sheet_id>
 
 特点:
   - 支持批量获取多个范围
@@ -32,21 +32,22 @@ var sheetReadRichCmd = &cobra.Command{
   feishu-cli sheet read-rich shtcnxxxxxx 0b12 "0b12!A1:C10" --datetime-render formatted_string`,
 	Args: cobra.MinimumNArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		sheetID := args[1]
-		ranges := args[2:]
 		dateTimeRender, _ := cmd.Flags().GetString("datetime-render")
 		valueRender, _ := cmd.Flags().GetString("value-render")
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
-		// 处理 shell 转义
-		for i := range ranges {
-			ranges[i] = unescapeSheetRange(ranges[i])
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		ranges, err := target.qualifyRanges(args[2:], sheetID)
+		if err != nil {
+			return err
 		}
 
-		result, err := client.ReadCellsRichV3(client.Context(), spreadsheetToken, sheetID, ranges, dateTimeRender, valueRender, userIDType, userAccessToken)
+		result, err := client.ReadCellsRichV3(client.Context(), target.Token, sheetID, ranges, dateTimeRender, valueRender, userIDType, target.UAT)
 		if err != nil {
 			return err
 		}

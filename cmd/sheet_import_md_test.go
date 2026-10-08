@@ -473,7 +473,7 @@ func sheetImportMDTestDeps(t *testing.T, create func(context.Context, string, st
 	t.Helper()
 	return sheetImportMDDeps{
 		validate:          func() error { return nil },
-		resolveUserToken:  func(*cobra.Command) string { return "user-token" },
+		resolveUserToken:  func(*cobra.Command) (string, error) { return "user-token", nil },
 		createSpreadsheet: create,
 		querySheets: func(ctx context.Context, spreadsheetToken, userAccessToken string) ([]*client.SheetInfo, error) {
 			return []*client.SheetInfo{{SheetID: "sheet1"}}, nil

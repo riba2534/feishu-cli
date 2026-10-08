@@ -21,7 +21,7 @@ var sheetDropdownSetCmd = &cobra.Command{
 	Short: "设置下拉菜单",
 	Long: `在指定区域设置下拉菜单（list 类型数据验证）。
 
-range 必须带 sheetId 前缀，例如 "0b1212!A1:A100"。
+range 前缀可写 sheetId 或子表名，例如 "0b1212!A1:A100"、"Sheet1!A1:A100"；不带前缀时用 --token URL 的 ?sheet= 或唯一子表补全。
 options 用逗号分隔多个选项，每项 ≤ 100 字符；如需选项内出现逗号请改用 --options-json '["a","b,c"]'。
 
 示例:
@@ -71,7 +71,14 @@ options 用逗号分隔多个选项，每项 ≤ 100 字符；如需选项内出
 			}
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
+		if rangeStr, err = target.qualifyRange(rangeStr, "", ""); err != nil {
+			return err
+		}
 
 		if err := client.SetDropdown(client.Context(), spreadsheetToken, rangeStr, options, multiple, colors, userAccessToken); err != nil {
 			return err
@@ -106,7 +113,7 @@ func init() {
 	sheetDropdownCmd.AddCommand(sheetDropdownSetCmd)
 
 	sheetDropdownSetCmd.Flags().String("token", "", "电子表格 token（必填）")
-	sheetDropdownSetCmd.Flags().String("range", "", "单元格范围，必须带 sheetId 前缀（如 0b1212!A1:A100）（必填）")
+	sheetDropdownSetCmd.Flags().String("range", "", "单元格范围，前缀可写 sheetId 或子表名（如 0b1212!A1:A100）（必填）")
 	sheetDropdownSetCmd.Flags().String("options", "", "下拉选项，逗号分隔（与 --options-json 二选一）")
 	sheetDropdownSetCmd.Flags().String("options-json", "", `下拉选项 JSON 数组，如 '["a","b,c"]'（选项含逗号时使用）`)
 	sheetDropdownSetCmd.Flags().Bool("multiple", false, "启用多选（默认 false）")

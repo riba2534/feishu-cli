@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/converter"
 	"github.com/spf13/cobra"
@@ -18,7 +19,8 @@ var sheetExportCmd = &cobra.Command{
 
 CSV 格式导出时必须指定 --sheet-id 参数（只能导出单个工作表）。
 Markdown 格式不指定 --sheet-id 时会导出所有可见工作表。
-<spreadsheet_token_or_url> 支持直接传 spreadsheet token，或 https://xxx.feishu.cn/sheets/<token> URL。
+<spreadsheet_token_or_url> 支持直接传 spreadsheet token，或 /sheets/、/spreadsheets/、/wiki/ URL
+（wiki 自动换出底层表格；CSV/Markdown 未指定 --sheet-id 时使用 URL 中的 ?sheet= 参数）。
 
 示例:
   # 导出为 XLSX
@@ -39,10 +41,6 @@ Markdown 格式不指定 --sheet-id 时会导出所有可见工作表。
 			return err
 		}
 
-		spreadsheetToken, err := extractSpreadsheetToken(args[0])
-		if err != nil {
-			return err
-		}
 		format, _ := cmd.Flags().GetString("format")
 		format = normalizeSheetExportFormat(format)
 		sheetID, _ := cmd.Flags().GetString("sheet-id")
@@ -53,18 +51,25 @@ Markdown 格式不指定 --sheet-id 时会导出所有可见工作表。
 			return fmt.Errorf("不支持的导出格式: %s（支持 xlsx/csv/markdown）", format)
 		}
 
+		// 解析身份与表格参数（支持 /sheets/、/spreadsheets/、/wiki/ URL）
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
+		if sheetID == "" && target.URLSheetID != "" && format != "xlsx" {
+			sheetID = target.URLSheetID
+		}
+
 		// CSV 格式必须指定 sheet-id
 		if format == "csv" && sheetID == "" {
-			return fmt.Errorf("CSV 格式导出必须指定 --sheet-id 参数（使用 feishu-cli sheet list-sheets <token> 查看工作表 ID）")
+			return clierr.Usagef("CSV 格式导出必须指定 --sheet-id 参数（使用 feishu-cli sheet list-sheets <token> 查看工作表 ID）")
 		}
 
 		// 默认输出文件名
 		if outputPath == "" {
 			outputPath = spreadsheetToken + "." + sheetExportFileExt(format)
 		}
-
-		// 获取可选的 User Access Token
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		if format == "markdown" {
 			return exportSheetAsMarkdown(spreadsheetToken, sheetID, outputPath, userAccessToken, converter.FetchSheetDataForMarkdown, os.WriteFile)
@@ -106,16 +111,6 @@ func init() {
 	sheetExportCmd.Flags().StringP("output", "o", "", "输出文件路径")
 	sheetExportCmd.Flags().Int("max-retries", 30, "最大轮询重试次数")
 	sheetExportCmd.Flags().String("user-access-token", "", "User Access Token")
-}
-
-func extractSpreadsheetToken(input string) (string, error) {
-	if token, ok := extractURLSegmentToken(input, "/sheets/"); ok {
-		return token, nil
-	}
-	if strings.Contains(input, "://") {
-		return "", fmt.Errorf("不支持的电子表格 URL 格式（仅支持 /sheets/<token>）: %s", input)
-	}
-	return input, nil
 }
 
 func normalizeSheetExportFormat(format string) string {

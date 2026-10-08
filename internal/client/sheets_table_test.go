@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 )
@@ -36,13 +37,20 @@ func TestDtypeToTypeFormat(t *testing.T) {
 func TestIsoDateToSerial(t *testing.T) {
 	cases := []struct {
 		in   string
-		want int
+		want float64
 	}{
 		{"2024-01-15", 45306}, // 官方验证值
 		{"1899-12-30", 0},
 		{"1900-01-01", 2},
-		{"2024-01-15T08:30:00", 45306},           // ISO datetime 带 T，截断后等价
-		{"2024-01-15T00:00:00.000+08:00", 45306}, // 带时区
+		// 时分秒保留为小数部分（旧实现截掉 T 之后的部分，table-get → table-put 丢时间）
+		{"2024-01-15T08:30:00", 45306 + 8.5/24},
+		{"2024-01-15T12:00:00", 45306.5},
+		{"2024-01-15 12:00:00", 45306.5}, // 空格分隔同样接受
+		{"2024-01-15T12:00", 45306.5},    // 省略秒
+		{"2024-01-15T23:59:59", 45306 + 86399.0/86400},
+		{"2024-01-15T00:00:00.000+08:00", 45306}, // 带时区：保留墙上时间
+		{"2024-01-15T06:00:00+08:00", 45306.25},
+		{"2024-01-15T06:00:00Z", 45306.25},
 	}
 	for _, c := range cases {
 		got, err := isoDateToSerial(c.in)
@@ -50,8 +58,8 @@ func TestIsoDateToSerial(t *testing.T) {
 			t.Errorf("isoDateToSerial(%q) 意外错误: %v", c.in, err)
 			continue
 		}
-		if got != c.want {
-			t.Errorf("isoDateToSerial(%q) = %d, want %d", c.in, got, c.want)
+		if math.Abs(got-c.want) > 1e-9 {
+			t.Errorf("isoDateToSerial(%q) = %v, want %v", c.in, got, c.want)
 		}
 	}
 	if _, err := isoDateToSerial("not-a-date"); err == nil {

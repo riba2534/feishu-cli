@@ -8,7 +8,7 @@ import (
 )
 
 var sheetFindCmd = &cobra.Command{
-	Use:   "find <spreadsheet_token> <sheet_id> <keyword>",
+	Use:   "find <spreadsheet_token|url> <sheet_id> <keyword>",
 	Short: "查找单元格内容",
 	Long: `在工作表中查找指定内容。
 
@@ -23,7 +23,6 @@ var sheetFindCmd = &cobra.Command{
   feishu-cli sheet find shtcnxxxxxx 0b12 "关键词" --range "A1:C10"`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		sheetID := args[1]
 		keyword := args[2]
 		rangeStr, _ := cmd.Flags().GetString("range")
@@ -32,9 +31,17 @@ var sheetFindCmd = &cobra.Command{
 		searchByRegex, _ := cmd.Flags().GetBool("regex")
 		output, _ := cmd.Flags().GetString("output")
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		if rangeStr != "" {
+			if rangeStr, err = target.qualifyRange(rangeStr, sheetID, ""); err != nil {
+				return err
+			}
+		}
 
-		result, err := client.FindCells(client.Context(), spreadsheetToken, sheetID, keyword, matchCase, matchEntireCell, searchByRegex, rangeStr, userAccessToken)
+		result, err := client.FindCells(client.Context(), target.Token, sheetID, keyword, matchCase, matchEntireCell, searchByRegex, rangeStr, target.UAT)
 		if err != nil {
 			return err
 		}

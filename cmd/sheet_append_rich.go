@@ -1,21 +1,20 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
 var sheetAppendRichCmd = &cobra.Command{
-	Use:   "append-rich <spreadsheet_token> <sheet_id> <range>",
+	Use:   "append-rich <spreadsheet_token|url> <sheet_id> <range>",
 	Short: "追加富文本数据（V3 API）",
 	Long: `使用 V3 API 在指定范围的空白位置追加数据。
 
 范围格式:
-  SheetID!A1:B2    - 指定工作表的范围
+  <sheetId>!A1:B2  - 指定工作表的范围（也可用子表名作前缀）
+  A1:B2            - 不带前缀时自动补上 <sheet_id>
 
 从 range 指定的起始单元格往下查找第一个空白位置写入数据。
 
@@ -44,51 +43,29 @@ var sheetAppendRichCmd = &cobra.Command{
   feishu-cli sheet append-rich shtcnxxxxxx 0b12 "0b12!A1:B2" --data-file data.json`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		sheetID := args[1]
-		rangeStr := args[2]
-		dataStr, _ := cmd.Flags().GetString("data")
-		dataFile, _ := cmd.Flags().GetString("data-file")
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
 		simple, _ := cmd.Flags().GetBool("simple")
 
-		// 处理 shell 转义
-		rangeStr = unescapeSheetRange(rangeStr)
-
-		// 获取数据
-		var jsonData string
-		if dataFile != "" {
-			data, err := os.ReadFile(dataFile)
-			if err != nil {
-				return fmt.Errorf("读取数据文件失败: %w", err)
-			}
-			jsonData = string(data)
-		} else if dataStr != "" {
-			jsonData = dataStr
-		} else {
-			return fmt.Errorf("请通过 --data 或 --data-file 指定数据")
-		}
-
-		var values [][][]*client.CellElement
-
-		if simple {
-			// 简单模式：二维数组转换为三维数组
-			var simpleValues [][]any
-			if err := json.Unmarshal([]byte(jsonData), &simpleValues); err != nil {
-				return fmt.Errorf("解析数据失败（需要 JSON 二维数组）: %w", err)
-			}
-			values = client.ConvertSimpleToV3Values(simpleValues)
-		} else {
-			// 富文本模式
-			if err := json.Unmarshal([]byte(jsonData), &values); err != nil {
-				return fmt.Errorf("解析数据失败（需要 V3 三维数组格式）: %w", err)
-			}
-		}
-
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
-
-		err := client.AppendCellsV3(client.Context(), spreadsheetToken, sheetID, rangeStr, values, userIDType, userAccessToken)
+		raw, err := readSheetDataInput(cmd)
 		if err != nil {
+			return err
+		}
+		values, err := decodeV3CellValues(raw, simple)
+		if err != nil {
+			return err
+		}
+
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		rangeStr, err := target.qualifyRange(args[2], sheetID, "")
+		if err != nil {
+			return err
+		}
+
+		if err := client.AppendCellsV3(client.Context(), target.Token, sheetID, rangeStr, values, userIDType, target.UAT); err != nil {
 			return err
 		}
 

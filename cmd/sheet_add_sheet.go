@@ -8,19 +8,21 @@ import (
 )
 
 var sheetAddSheetCmd = &cobra.Command{
-	Use:   "add-sheet <spreadsheet_token>",
+	Use:   "add-sheet <spreadsheet_token|url>",
 	Short: "添加工作表",
 	Long:  "在电子表格中添加新的工作表",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		title, _ := cmd.Flags().GetString("title")
 		index, _ := cmd.Flags().GetInt("index")
 		output, _ := cmd.Flags().GetString("output")
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
 
-		info, err := client.AddSheet(client.Context(), spreadsheetToken, title, index, userAccessToken)
+		info, err := client.AddSheet(client.Context(), target.Token, title, index, target.UAT)
 		if err != nil {
 			return err
 		}
