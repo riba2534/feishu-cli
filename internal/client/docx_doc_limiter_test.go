@@ -237,7 +237,8 @@ func TestDocxLowLevelWritersAcquireDocWriteSlot(t *testing.T) {
 	// 注意：上层 helper（如 InsertTableRow / AppendTableRows / fillCellSingleBlock）
 	// 走这 4 个底层函数，自动被 limiter 覆盖；这里只盯死 4 个底层。
 	required := []string{
-		"func CreateBlock(",
+		// CreateBlock 委托给 CreateBlockWithClientToken（携带幂等 client_token），限流在后者内完成
+		"func CreateBlockWithClientToken(",
 		"func UpdateBlock(",
 		"func DeleteBlocks(",
 		"func BatchUpdateBlocks(",

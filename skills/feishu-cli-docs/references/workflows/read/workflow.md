@@ -51,6 +51,41 @@ feishu-cli doc read <document_id> --keyword "QPS|限流" --context 5
 三种模式互斥（三选一）。`--heading` 命中多个标题时输出第一个并在 stderr 提示其余候选；
 代码块围栏内的 `#` 行不会被误判为标题。block 级精确分页仍用 `doc blocks`。
 
+### docs_ai 引擎：带 block id 读取（与 content-update 块级更新衔接）
+
+默认的本地引擎行为不变；使用下列任一 flag 时改走服务端 docs_ai 读取（`POST /docs_ai/v1/documents/{id}/fetch`，
+与官方 `docs +fetch` 同协议）：
+
+```bash
+# 带 block id 读取某一节（--heading 自动换成标题块 ID，scope=section），输出 XML
+feishu-cli doc read <doc> --with-ids --heading "性能优化"
+
+# 关键词定位：docs_ai 的 keyword 支持 a|b；上下文按"兄弟块数"计
+feishu-cli doc read <doc> --with-ids --scope keyword --keyword "QPS|限流" --context-before 1 --context-after 1
+
+# 按 block id 区间读取（-1 表示到文末）；服务端大纲（--max-depth 限制层级）
+feishu-cli doc read <doc> --with-ids --start-block-id <A> --end-block-id -1
+feishu-cli doc read <doc> --engine docs_ai --outline --max-depth 2
+
+# 服务端 Markdown 全文；-o json 输出完整响应（含评论、引用表、revision_id）
+feishu-cli doc read <doc> --engine docs_ai --doc-format markdown
+feishu-cli doc read <doc> --with-ids -o json
+```
+
+| flag | 说明 |
+|---|---|
+| `--engine local\|docs_ai` | 默认 local；用 docs_ai 专属 flag 时自动切换，显式 `--engine local` 再用它们会报错 |
+| `--with-ids` | 等价 `--detail with-ids`，默认输出 XML；block id 可直接用于 `doc content-update --block-id` |
+| `--doc-format xml\|markdown` | `--with-ids`/`--detail full` 时默认 xml，否则 markdown；Markdown 无法携带 block id |
+| `--detail simple\|with-ids\|full` | full 额外带样式属性与引用元数据 |
+| `--scope full\|outline\|range\|keyword\|section` | 也可由 `--outline` / `--heading` / `--keyword` / `--start-block-id` 推断 |
+| `--context-before/--context-after` | range/keyword/section 的前后兄弟块数 |
+| `--max-depth` | outline 的标题层级上限，其余范围的子树深度（-1 不限） |
+| `--revision-id` | 读取指定版本（-1 最新） |
+
+典型闭环：`doc read --with-ids --heading "章节"` 拿到 block id → `doc content-update --mode replace_range --block-id <id>`
+精确改写 → 再次 `doc read --with-ids` 验证（写操作后旧 block id 可能失效，必须重新读取）。
+
 `doc read` / `doc export` / `doc content-update` / `doc media-insert` 的文档参数统一接受 docx token、
 `/docx/` URL 和 `/wiki/` URL：wiki 节点自动经 `node_by_token` 换出底层 docx 的 obj_token（stderr 提示
 "已将 wiki 节点 … 解析为 docx: …"），底层不是 docx 时直接报错。URL 只按路径前缀识别，

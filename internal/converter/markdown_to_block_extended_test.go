@@ -801,8 +801,8 @@ func TestMarkdownToBlockCallout(t *testing.T) {
 				if nodes[0].Block.Callout == nil {
 					t.Error("expected Callout block")
 				}
-				if *nodes[0].Block.Callout.BackgroundColor != 2 {
-					t.Errorf("WARNING color should be 2, got %d", *nodes[0].Block.Callout.BackgroundColor)
+				if *nodes[0].Block.Callout.BackgroundColor != CalloutBgLightRed {
+					t.Errorf("WARNING color should be 1 (浅红), got %d", *nodes[0].Block.Callout.BackgroundColor)
 				}
 			},
 		},

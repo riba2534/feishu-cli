@@ -25,7 +25,7 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 | 意图 | 读取文件 |
 |---|---|
 | 阅读、分析、获取块结构，不主动落盘 | `references/workflows/read/workflow.md` |
-| 创建、追加、覆盖、替换或编辑 docx | `references/workflows/write/workflow.md` |
+| 创建、追加、覆盖、替换或编辑 docx（含按 block id 精确改写、插入本地图片、历史版本回滚） | `references/workflows/write/workflow.md` |
 | 把 Markdown 导入为飞书 docx | `references/workflows/import/workflow.md` |
 | 导出 docx/wiki/sheet 到本地文件 | `references/workflows/export/workflow.md` |
 | 上传、下载、覆盖、查找替换或比较云盘原生 `.md` | `references/workflows/markdown/workflow.md` |

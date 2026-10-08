@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"fmt"
-	"os"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -26,9 +28,17 @@ var exportMarkdownCmd = &cobra.Command{
 内嵌飞书电子表格默认会自动展开为 Markdown 表格，可用 --expand-sheets=false 保留为 <sheet/> 引用。
 跨文档引用同步块会自动读取源文档并展开；权限或 API 异常时输出带源标识的 WARNING 占位和 stderr 诊断，不会静默丢失内容。
 
+docs_ai 引擎（--engine docs_ai，服务端导出，与 doc content-update / docs_ai 写入同一方言，写回无需方言转换）：
+  保留 callout emoji、分栏宽度比例、@人/@文档引用、mermaid/plantuml 画板源码、原图 token；
+  callout 颜色、文字颜色、下划线等样式只在 --doc-format xml --detail full 中保留（Markdown 序列化会丢失）。
+  --detail with-ids|full 仅用于 xml，输出 block id 与样式属性。画板写回到其它文档仍可能克隆失败（degrade 2105）。
+  docs_ai 引擎不支持 --download-images / --highlight / --expand-mentions / --expand-sheets（本地引擎专属）。
+
 示例:
   feishu-cli doc export ABC123def456
   feishu-cli doc export ABC123def456 --output doc.md
+  feishu-cli doc export ABC123def456 --engine docs_ai -o doc.md        # 服务端 Markdown（docs_ai 方言）
+  feishu-cli doc export ABC123def456 --engine docs_ai --doc-format xml --detail full -o doc.xml
   feishu-cli doc export ABC123def456 --download-images
   feishu-cli doc export ABC123def456 --download-images --assets-dir ./images`,
 	Args: cobra.ExactArgs(1),
@@ -41,6 +51,25 @@ var exportMarkdownCmd = &cobra.Command{
 		downloadImages, _ := cmd.Flags().GetBool("download-images")
 		assetsDir, _ := cmd.Flags().GetString("assets-dir")
 
+		engine, _ := cmd.Flags().GetString("engine")
+		engine = strings.ToLower(strings.TrimSpace(engine))
+		switch engine {
+		case "", "local":
+			for _, name := range []string{"doc-format", "detail"} {
+				if cmd.Flags().Changed(name) {
+					return clierr.Usagef("--%s 只用于 --engine docs_ai", name)
+				}
+			}
+		case "docs_ai", "docs-ai":
+			for _, name := range []string{"download-images", "assets-dir", "highlight", "expand-mentions", "expand-sheets"} {
+				if cmd.Flags().Changed(name) {
+					return clierr.Usagef("--%s 是本地引擎专属参数，不能与 --engine docs_ai 同时使用", name)
+				}
+			}
+		default:
+			return clierr.Usagef("不支持的 --engine %q，可选 local（默认）或 docs_ai", engine)
+		}
+
 		// 获取可选的 User Access Token（用于访问无 App 权限的文档）
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
@@ -48,6 +77,10 @@ var exportMarkdownCmd = &cobra.Command{
 		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 		if err != nil {
 			return err
+		}
+
+		if engine == "docs_ai" || engine == "docs-ai" {
+			return exportDocsAI(cmd, documentID, userAccessToken, output)
 		}
 
 		// Get all blocks
@@ -100,17 +133,66 @@ var exportMarkdownCmd = &cobra.Command{
 		}
 
 		// Output
-		if output != "" {
-			if err := os.WriteFile(output, []byte(markdown), 0600); err != nil {
-				return fmt.Errorf("写入输出文件失败: %w", err)
-			}
-			fmt.Printf("已导出到 %s\n", output)
-		} else {
-			fmt.Print(markdown)
-		}
-
-		return nil
+		return writeExportOutput(output, markdown)
 	},
+}
+
+// writeExportOutput 原子写入输出文件（或打印到 stdout）。
+func writeExportOutput(output, content string) error {
+	if output == "" {
+		fmt.Print(content)
+		return nil
+	}
+	if err := safefile.AtomicWriteFile(output, []byte(content), 0o600); err != nil {
+		return fmt.Errorf("写入输出文件失败: %w", err)
+	}
+	fmt.Printf("已导出到 %s\n", output)
+	return nil
+}
+
+// exportDocsAI 用 docs_ai fetch 导出全文（服务端方言，可经 content-update 无损写回）。
+func exportDocsAI(cmd *cobra.Command, documentID, userAccessToken, output string) error {
+	format, _ := cmd.Flags().GetString("doc-format")
+	detail, _ := cmd.Flags().GetString("detail")
+	format = strings.ToLower(strings.TrimSpace(format))
+	detail = strings.ToLower(strings.TrimSpace(detail))
+	if format == "" {
+		format = "markdown"
+	}
+	if detail == "" {
+		detail = "simple"
+	}
+	if format != "markdown" && format != "xml" {
+		return clierr.Usagef("不支持的 --doc-format %q，可选 markdown / xml", format)
+	}
+	switch detail {
+	case "simple", "with-ids", "full":
+	default:
+		return clierr.Usagef("不支持的 --detail %q，可选 simple / with-ids / full", detail)
+	}
+	if format == "markdown" && detail != "simple" {
+		return clierr.Usagef("--detail %s 只支持 --doc-format xml", detail)
+	}
+	opts := &docsAIReadOptions{format: format, detail: detail, scope: "full", maxDepth: -1}
+	data, err := client.FetchDocsAI(documentID, buildDocsAIFetchBody(opts), userAccessToken)
+	if err != nil {
+		return err
+	}
+	content, _ := client.DocsAIDocumentContent(data)
+	if frontMatter, _ := cmd.Flags().GetBool("front-matter"); frontMatter {
+		docTitle := ""
+		if doc, docErr := client.GetDocumentWithToken(documentID, userAccessToken); docErr == nil && doc != nil && doc.Title != nil {
+			docTitle = *doc.Title
+		}
+		content = fmt.Sprintf("---\ntitle: %q\ndocument_id: %s\n---\n\n", docTitle, documentID) + content
+	}
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	for _, w := range client.DocsAIWarnings(data) {
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ 服务端警告: %s\n", w)
+	}
+	return writeExportOutput(output, content)
 }
 
 func init() {
@@ -123,4 +205,7 @@ func init() {
 	exportMarkdownCmd.Flags().Bool("expand-mentions", true, "展开 @用户为友好格式 (需要 contact:user.base:readonly 权限)")
 	exportMarkdownCmd.Flags().Bool("expand-sheets", true, "自动展开内嵌飞书电子表格为 Markdown 表格")
 	exportMarkdownCmd.Flags().String("user-access-token", "", "User Access Token（用于访问无 App 权限的文档，自动从 auth login 读取）")
+	exportMarkdownCmd.Flags().String("engine", "local", "导出引擎: local（本地块树转换，默认）| docs_ai（服务端导出，docs_ai 方言）")
+	exportMarkdownCmd.Flags().String("doc-format", "", "docs_ai: 输出格式 markdown（默认）| xml")
+	exportMarkdownCmd.Flags().String("detail", "", "docs_ai: xml 详细程度 simple | with-ids | full")
 }

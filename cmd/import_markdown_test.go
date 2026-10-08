@@ -220,7 +220,23 @@ func TestAppendImageTasksSkipsTokenImages(t *testing.T) {
 	}
 }
 
-func TestProcessVideoTaskRejectsFilesOverUploadAllLimit(t *testing.T) {
+// TestProcessVideoTaskUsesMultipartOverUploadAllLimit 超过 20MB 的视频改走分片上传（此前直接拒绝）。
+func TestProcessVideoTaskUsesMultipartOverUploadAllLimit(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal" {
+			_, _ = w.Write([]byte(`{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`))
+			return
+		}
+		paths = append(paths, r.URL.Path)
+		// 让 prepare 失败即可证明走了分片通道，且不会回落到 upload_all
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":1061002,"msg":"params error"}`))
+	}))
+	defer server.Close()
+	initDocUpdateTestConfig(t, server.URL)
+
 	baseDir := t.TempDir()
 	videoPath := filepath.Join(baseDir, "large.mp4")
 	f, err := os.Create(videoPath)
@@ -240,13 +256,18 @@ func TestProcessVideoTaskRejectsFilesOverUploadAllLimit(t *testing.T) {
 		fileBlockID: "block-id",
 		source:      "large.mp4",
 		basePath:    baseDir,
-	}, false, "user-token")
+	}, false, "")
 
 	if result.success {
-		t.Fatal("processVideoTask() success = true, want false")
+		t.Fatal("prepare 失败时不应成功")
 	}
-	if result.err == nil || !strings.Contains(result.err.Error(), "视频超过") {
-		t.Fatalf("processVideoTask() err = %v, want video size limit error", result.err)
+	if len(paths) == 0 || paths[0] != "/open-apis/drive/v1/medias/upload_prepare" {
+		t.Fatalf(">20MB 视频应先调用 upload_prepare，实际请求: %v", paths)
+	}
+	for _, p := range paths {
+		if strings.HasSuffix(p, "/upload_all") {
+			t.Fatalf(">20MB 视频不应走 upload_all: %v", paths)
+		}
 	}
 }
 

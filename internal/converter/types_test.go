@@ -206,3 +206,27 @@ func TestHeadingLevelRange(t *testing.T) {
 		}
 	}
 }
+
+// TestCalloutColorMapping 固化飞书 Callout 背景色枚举（docs_ai 读写实测：light-red=1 … light-purple=6）。
+func TestCalloutColorMapping(t *testing.T) {
+	cases := []struct {
+		typ   string
+		color int
+	}{
+		{"WARNING", 1}, {"CAUTION", 2}, {"TIP", 3}, {"SUCCESS", 4}, {"NOTE", 5}, {"IMPORTANT", 6},
+	}
+	for _, c := range cases {
+		if got := CalloutColorForType(c.typ); got != c.color {
+			t.Errorf("CalloutColorForType(%s) = %d, want %d", c.typ, got, c.color)
+		}
+		if got := CalloutTypeForColor(c.color); got != c.typ {
+			t.Errorf("CalloutTypeForColor(%d) = %s, want %s", c.color, got, c.typ)
+		}
+	}
+	if CalloutColorForType("info") != 5 || CalloutColorForType("unknown") != 5 {
+		t.Error("INFO/未知类型应映射为浅蓝 5")
+	}
+	if CalloutTypeForColor(7) != "IMPORTANT" || CalloutTypeForColor(12) != "NOTE" || CalloutTypeForColor(99) != "NOTE" {
+		t.Error("灰色兼容旧版 IMPORTANT、深色按色相、未知按 NOTE")
+	}
+}

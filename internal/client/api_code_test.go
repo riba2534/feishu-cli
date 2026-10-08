@@ -45,6 +45,7 @@ func TestHasHTTPStatus(t *testing.T) {
 		{"HTTP 状态码 502", fmt.Errorf("下载失败: HTTP 状态码 502"), 502, true},
 		{"status code: 429", fmt.Errorf("request failed: status code: 429"), 429, true},
 		{"status code 503", fmt.Errorf("status code 503"), 503, true},
+		{"SDK 非 JSON 429", fmt.Errorf("更新块失败: response content-type not json, response: StatusCode: 429, Header:map[], Body: <binary> len 0"), 429, true},
 		{"nil 错误", nil, 500, false},
 		{"log_id 含 500 不误判", fmt.Errorf("code=10000, msg=fail, log_id=20260827123450000000000000000000"), 500, false},
 		{"log_id 含 429 不误判", fmt.Errorf("code=10000, msg=fail, log_id=20260429123456"), 429, false},

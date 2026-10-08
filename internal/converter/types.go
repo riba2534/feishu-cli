@@ -2,6 +2,7 @@ package converter
 
 import (
 	"fmt"
+	"strings"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 )
@@ -268,4 +269,58 @@ var fontBgColorMap = map[int]string{
 	12: "#bfdbfe", // DarkBlue
 	13: "#e9d5ff", // DarkPurple
 	14: "#e5e7eb", // DarkGray
+}
+
+// Callout 背景色枚举（飞书 docx CalloutBackgroundColor，经 docs_ai 写入与读取实测校准）：
+// 1 浅红、2 浅橙、3 浅黄、4 浅绿、5 浅蓝、6 浅紫、7 中灰；8-14 为对应的深色（红/橙/黄/绿/蓝/紫/灰）。
+//
+// 历史实现把映射整体错了一位（WARNING=2、NOTE=6、IMPORTANT=7），导致导入的 NOTE 显示为浅紫、
+// WARNING 显示为浅橙、IMPORTANT 显示为灰色。
+const (
+	CalloutBgLightRed    = 1
+	CalloutBgLightOrange = 2
+	CalloutBgLightYellow = 3
+	CalloutBgLightGreen  = 4
+	CalloutBgLightBlue   = 5
+	CalloutBgLightPurple = 6
+	CalloutBgMediumGray  = 7
+)
+
+// CalloutColorForType 把 GitHub 风格高亮块类型映射为背景色枚举；未知类型按 NOTE（蓝）处理。
+func CalloutColorForType(calloutType string) int {
+	switch strings.ToUpper(strings.TrimSpace(calloutType)) {
+	case "WARNING":
+		return CalloutBgLightRed
+	case "CAUTION":
+		return CalloutBgLightOrange
+	case "TIP":
+		return CalloutBgLightYellow
+	case "SUCCESS":
+		return CalloutBgLightGreen
+	case "IMPORTANT":
+		return CalloutBgLightPurple
+	default: // NOTE / INFO / 其它
+		return CalloutBgLightBlue
+	}
+}
+
+// CalloutTypeForColor 把背景色枚举映射回 GitHub 风格类型（深色按同色相处理）；
+// 灰色没有对应类型，按 IMPORTANT 输出以兼容旧版导入的 IMPORTANT（历史上被写成 7）。
+func CalloutTypeForColor(color int) string {
+	switch color {
+	case 1, 8:
+		return "WARNING"
+	case 2, 9:
+		return "CAUTION"
+	case 3, 10:
+		return "TIP"
+	case 4, 11:
+		return "SUCCESS"
+	case 6, 13:
+		return "IMPORTANT"
+	case 7, 14:
+		return "IMPORTANT"
+	default: // 5 / 12 / 未知
+		return "NOTE"
+	}
 }

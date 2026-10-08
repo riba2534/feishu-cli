@@ -1610,24 +1610,8 @@ func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.Tex
 }
 
 func (c *MarkdownToBlock) convertCallout(node *ast.Blockquote, calloutType string) (*BlockNode, error) {
-	// Map callout type to background color
-	var bgColor int
-	switch strings.ToUpper(calloutType) {
-	case "WARNING":
-		bgColor = 2 // Red
-	case "CAUTION":
-		bgColor = 3 // Orange
-	case "TIP":
-		bgColor = 4 // Yellow
-	case "SUCCESS":
-		bgColor = 5 // Green
-	case "INFO", "NOTE":
-		bgColor = 6 // Blue
-	case "IMPORTANT":
-		bgColor = 7 // Purple
-	default:
-		bgColor = 6 // Default blue
-	}
+	// Map callout type to background color（枚举见 CalloutColorForType）
+	bgColor := CalloutColorForType(calloutType)
 
 	blockType := int(BlockTypeCallout)
 	calloutBlock := &larkdocx.Block{
@@ -2872,26 +2856,11 @@ func (c *MarkdownToBlock) handleHTMLImageBlock(tag *HTMLTag) []*BlockNode {
 // handleHTMLCalloutBlock 处理块级 <callout type="NOTE" color="6">内容</callout>
 // Phase 2: 基本框架，内容作为纯文本处理；Phase 3 将支持递归 Markdown 转换
 func (c *MarkdownToBlock) handleHTMLCalloutBlock(tag *HTMLTag) []*BlockNode {
-	// 确定背景色
-	bgColor := 6 // 默认蓝色
+	// 确定背景色：color 为飞书背景色枚举原值（1-14），type 按 CalloutColorForType 映射
+	bgColor := CalloutColorForType(tag.Attrs["type"])
 	if colorStr := tag.Attrs["color"]; colorStr != "" {
-		if v := parseHTMLIntAttr(colorStr); v >= 2 && v <= 7 {
+		if v := parseHTMLIntAttr(colorStr); v >= 1 && v <= 14 {
 			bgColor = v
-		}
-	} else if typeStr := tag.Attrs["type"]; typeStr != "" {
-		switch strings.ToUpper(typeStr) {
-		case "WARNING":
-			bgColor = 2
-		case "CAUTION":
-			bgColor = 3
-		case "TIP":
-			bgColor = 4
-		case "SUCCESS":
-			bgColor = 5
-		case "INFO", "NOTE":
-			bgColor = 6
-		case "IMPORTANT":
-			bgColor = 7
 		}
 	}
 

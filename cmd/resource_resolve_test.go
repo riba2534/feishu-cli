@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -180,7 +182,12 @@ func TestDocMediaInsert_WikiURLNeverUsesWikiTokenAsRoute(t *testing.T) {
 	})
 	initWikiNodeDeleteTestConfig(t, server.URL)
 
-	_ = docMediaInsertCmd.Flags().Set("file", "/nonexistent.png")
+	// media-insert 会在发请求前校验 --file 存在（fail-fast），这里给一个真实的小文件
+	img := filepath.Join(t.TempDir(), "x.png")
+	if err := os.WriteFile(img, []byte("\x89PNG\r\n\x1a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = docMediaInsertCmd.Flags().Set("file", img)
 	defer resetCmdFlag(docMediaInsertCmd, "file")
 	_ = docMediaInsertCmd.RunE(docMediaInsertCmd, []string{"https://example.feishu.cn/wiki/WikTok"})
 	got := reqs()

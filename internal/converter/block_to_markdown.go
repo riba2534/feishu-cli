@@ -120,7 +120,7 @@ func NewBlockToMarkdown(blocks []*larkdocx.Block, options ConvertOptions) *Block
 			}
 		case BlockTypeAddOns, BlockTypeSyncSource, BlockTypeSyncReference,
 			BlockTypeAgenda, BlockTypeAgendaItem, BlockTypeAgendaItemContent,
-			BlockTypeLinkPreview:
+			BlockTypeLinkPreview, BlockTypeView:
 			// 容器块：子块由父块递归展开
 			if block.Children != nil {
 				for _, childID := range block.Children {
@@ -349,6 +349,17 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 	case BlockTypeGridColumn:
 		// GridColumn 块由 Grid 块处理，跳过独立处理
 		return "", nil
+	case BlockTypeView:
+		// 视图块（type=33）是文件/附件块的透明容器（media-insert 插入附件时服务端自动包一层），
+		// 只展开子块；此前输出"不支持的块类型"注释，子块又在顶层重复导出一次。
+		var sb strings.Builder
+		for _, childID := range block.Children {
+			if childBlock := c.blockMap[childID]; childBlock != nil {
+				text, _ := c.convertBlockWithDepth(childBlock, indent, depth+1)
+				sb.WriteString(text)
+			}
+		}
+		return sb.String(), nil
 	case BlockTypeAddOns:
 		// 优先解析小组件内置内容（例如文本绘图的 Mermaid 源码）
 		if block.AddOns != nil {
@@ -1194,20 +1205,7 @@ func (c *BlockToMarkdown) convertCalloutWithDepth(block *larkdocx.Block, depth i
 	// Determine callout type based on background color or emoji
 	calloutType := "NOTE"
 	if block.Callout.BackgroundColor != nil {
-		switch *block.Callout.BackgroundColor {
-		case 2: // Red
-			calloutType = "WARNING"
-		case 3: // Orange
-			calloutType = "CAUTION"
-		case 4: // Yellow
-			calloutType = "TIP"
-		case 5: // Green
-			calloutType = "SUCCESS"
-		case 6: // Blue
-			calloutType = "NOTE"
-		case 7: // Purple
-			calloutType = "IMPORTANT"
-		}
+		calloutType = CalloutTypeForColor(*block.Callout.BackgroundColor)
 	}
 
 	var sb strings.Builder

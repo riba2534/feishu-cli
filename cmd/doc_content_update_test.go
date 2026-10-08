@@ -375,7 +375,7 @@ func TestReplaceAllAtomicProtocolWithPartialFailure(t *testing.T) {
 	defer server.Close()
 	initDocUpdateTestConfig(t, server.URL)
 
-	err := doReplaceAll("doc-rep-all", "新词", "", "待替换词项", "", "", 10)
+	err := doReplaceAll("doc-rep-all", "新词", "", "待替换...词项", "", "", 10)
 	if err == nil {
 		t.Fatal("部分失败时必须返回非零错误！")
 	}
@@ -610,8 +610,8 @@ func TestReplaceAllAbortsWhenNextRevisionMissing(t *testing.T) {
 				"code":0,"msg":"ok",
 				"data":{
 					"items":[
-						{"block_id":"item_1","block_type":2,"text":{"elements":[{"text_run":{"content":"待替换"}}]}},
-						{"block_id":"item_2","block_type":2,"text":{"elements":[{"text_run":{"content":"待替换"}}]}}
+						{"block_id":"item_1","block_type":2,"text":{"elements":[{"text_run":{"content":"待替换内容"}}]}},
+						{"block_id":"item_2","block_type":2,"text":{"elements":[{"text_run":{"content":"待替换内容"}}]}}
 					],
 					"has_more":false
 				}
@@ -627,7 +627,7 @@ func TestReplaceAllAbortsWhenNextRevisionMissing(t *testing.T) {
 	defer server.Close()
 	initDocUpdateTestConfig(t, server.URL)
 
-	err := doReplaceAll("doc-rep", "新内容", "", "待替换", "", "", 5)
+	err := doReplaceAll("doc-rep", "新内容", "", "待替换...内容", "", "", 5)
 	if err == nil {
 		t.Fatal("缺少新的 revision_id 时必须非零中止，绝不能未受保护继续执行")
 	}
@@ -710,7 +710,7 @@ func TestReplaceAllRevisionExtractionFallback(t *testing.T) {
 	defer server.Close()
 	initDocUpdateTestConfig(t, server.URL)
 
-	err := doReplaceAll("doc-rep-fallback", "新词", "", "测试词", "", "", 10)
+	err := doReplaceAll("doc-rep-fallback", "新词", "", "测试...词", "", "", 10)
 	if err != nil {
 		t.Fatalf("即使 document 对象缺少 revision_id，也应独立从顶层 revision_id 提取成功，但报错: %v", err)
 	}

@@ -66,5 +66,7 @@ func HasHTTPStatus(err error, status int) bool {
 
 func httpStatusPattern(status int) *regexp.Regexp {
 	n := strconv.Itoa(status)
-	return regexp.MustCompile(fmt.Sprintf(`(?i)\bHTTP\s*(?:状态码|status(?:\s*code)?)?\s*[:=]?\s*%s\b|\bstatus\s+code\s*[:=]?\s*%s\b`, n, n))
+	// "status\s*code" 同时覆盖 "status code: 429" 与 SDK 非 JSON 响应错误里的 "StatusCode: 429"
+	// （限流网关返回空 body 的 429 时，SDK 报 "response content-type not json, response: StatusCode: 429"）
+	return regexp.MustCompile(fmt.Sprintf(`(?i)\bHTTP\s*(?:状态码|status(?:\s*code)?)?\s*[:=]?\s*%s\b|\bstatus\s*code\s*[:=]?\s*%s\b`, n, n))
 }

@@ -13,10 +13,10 @@ import (
 // callout 类型对应的背景色
 // 飞书 Callout 背景色值: 1-灰色, 2-红色, 3-橙色, 4-黄色, 5-绿色, 6-蓝色, 7-紫色
 var calloutTypeConfig = map[string]int{
-	"info":    6, // 蓝色
-	"warning": 4, // 黄色
-	"error":   2, // 红色
-	"success": 5, // 绿色
+	"info":    converter.CalloutBgLightBlue,   // 蓝色（5）
+	"warning": converter.CalloutBgLightYellow, // 黄色（3）
+	"error":   converter.CalloutBgLightRed,    // 红色（1）
+	"success": converter.CalloutBgLightGreen,  // 绿色（4）
 }
 
 var addCalloutCmd = &cobra.Command{

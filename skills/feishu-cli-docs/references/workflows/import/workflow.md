@@ -28,7 +28,8 @@
 5. **表格列宽**：默认按内容启发式，可用紧邻表格上方注释 `<!-- feishu-colwidth: ... -->` 或 CLI flag `--table-column-width` 覆盖（注释优先级高于 flag）；仅 `doc import` / `doc add` 支持，`doc content-update` 会 fail-closed 报错；完整规则（单位/优先级/clamp/适用范围）以 `references/doc-guide.md` 表格章节为权威
 6. **API 限流自动重试**：画板创建和图表导入遇到 HTTP 429 时自动重试，读取服务端 `x-ogw-ratelimit-reset` 响应头精确计算退避时间，采用指数退避策略，默认最多重试 10 次
 7. **并发控制**：图表和表格分别使用独立的 worker 池（默认图表 5、表格 3 并发）
-8. **表格单元格图片真嵌入（#164）**：Markdown 表格单元格内的本地/网络图片，会在表格填充完成后（阶段 2.5）真正嵌入为单元格内的 Image 子块，而非丢失或退化为文字。细节：纯图片单元格不会把图片说明（alt）串成多余的标题文字；嵌入失败或单元格对不齐的图片计入统计 `cell_image_failed` 并打印，不静默丢弃；上传失败的空图块会被清理并补占位文本。仅 `doc import` 走这条真嵌入管线；`doc add` 的单元格图片降级为 `[图片: 说明]` 占位文本，`content-update` 则会拒绝本地图片路径。JSON 输出新增 `cell_image_total/success/failed`
+8. **表格单元格图片真嵌入（#164）**：Markdown 表格单元格内的本地/网络图片，会在表格填充完成后（阶段 2.5）真正嵌入为单元格内的 Image 子块，而非丢失或退化为文字。细节：纯图片单元格不会把图片说明（alt）串成多余的标题文字；嵌入失败或单元格对不齐的图片计入统计 `cell_image_failed` 并打印，不静默丢弃；上传失败的空图块会被清理并补占位文本。仅 `doc import` 走这条真嵌入管线；`doc add` 的单元格图片降级为 `[图片: 说明]` 占位文本，`content-update` 则由服务端解析表格并经占位协议上传单元格内的本地图片。JSON 输出新增 `cell_image_total/success/failed`
+9. **部分失败非零退出**：图片/视频/表格/单元格图片写入失败、图表导入失败且降级为代码块也失败、嵌套子块创建失败时，命令在输出文档链接与统计后以退出码 1 结束；文本模式在 stderr 列出失败明细，JSON 模式输出 `partial_failure: true` 与 `failures` 数组（每项含 `kind`/`index`/`source`/`error`）。图表成功降级为代码块属于设计内降级，不计为失败。脚本/Agent 遇到非零退出时应读取 `failures`，按需用 `doc media-insert` 或 `doc content-update` 补齐，而不是重新导入整篇文档
 
 ## 核心概念
 
@@ -320,5 +321,5 @@ for f in *.md; do feishu-cli doc import "$f" --title "${f%.md}" --upload-images;
 | 图表降级为代码块 | Mermaid/PlantUML 语法不兼容飞书渲染引擎 | 参考 `references/doc-guide.md` 调整语法（禁花括号、禁 par 等） |
 | 超长表格导入耗时显著 | 单元格内容填充已走 `batch_update` 批量加速（v1.29+，~25-30x），主要耗时来自行 > 9 时 `insert_table_row` API **逐行串行追加**到同一 block（受单文档 3 QPS 节流，每行约 1 次 API 往返） | 属于正常行为；verbose 模式每 5 行打印进度。行数极多（200+）时建议改用电子表格（Sheet）承载 |
 | 表格被拆分为多个 block | 列 > 9 时 CLI 按列组拆分（每组 ≤ 9 列），首列作为标识在所有组中保留 | 属于正常行为，避免拆分后行无法识别 |
-| 图片上传失败 | 网络不通或图片 URL 不可访问 | 检查网络连通性；失败的图片会自动创建占位块，不影响整体导入 |
+| 图片上传失败 | 网络不通、图片 URL 不可访问或本地路径不存在 | 失败的图片保留占位块，命令以退出码 1 结束并在 `failures` 中给出明细；修正后用 `doc media-insert` 单独补图 |
 | 文档创建成功但无法编辑 | 未按 owner 配置添加权限 | 设置 `FEISHU_OWNER_EMAIL` 后执行 `perm add`；仅当 `transfer_ownership=true` 时再执行 `perm transfer-owner` |
