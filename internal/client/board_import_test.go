@@ -76,7 +76,7 @@ func TestImportDiagram_SVGRequestAndDegraded(t *testing.T) {
 	var gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "tenant_access_token") {
-			_, _ = io.WriteString(w, `{"code":0,"tenant_access_token":"t-x","expire":7200}`)
+			_, _ = io.WriteString(w, `{"code":0,"tenant_access_token":"t-test","expire":7200}`)
 			return
 		}
 		if r.URL.Path != "/open-apis/board/v1/whiteboards/wb1/nodes/plantuml" {
@@ -119,7 +119,7 @@ func TestImportDiagram_SVGRequestAndDegraded(t *testing.T) {
 func TestImportDiagram_BusinessErrorOnHTTP400(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "tenant_access_token") {
-			_, _ = io.WriteString(w, `{"code":0,"tenant_access_token":"t-x","expire":7200}`)
+			_, _ = io.WriteString(w, `{"code":0,"tenant_access_token":"t-test","expire":7200}`)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
