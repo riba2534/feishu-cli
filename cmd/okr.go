@@ -10,6 +10,9 @@ var okrCmd = &cobra.Command{
 子命令组:
   cycle         OKR 周期相关（list / detail）
   progress      OKR 进展记录相关（list / get / create / update / delete）
+  objective     OKR 目标写入（create / update，v2）
+  key-result    OKR 关键结果写入（create / update，v2）
+  comment       OKR 评论（list / create）
   upload-image  上传进展图片素材
 
 身份（--as，所有子命令继承）:
@@ -25,6 +28,8 @@ var okrCmd = &cobra.Command{
   progress create/update  okr:okr 或 okr:okr.progress:writeonly
   progress delete       okr:okr 或 okr:okr.progress:delete
   upload-image          okr:okr 或 okr:okr.progress.file:upload
+  objective/key-result  okr:okr.content:writeonly
+  comment list/create   okr:okr.comment.readonly / okr:okr.comment.writeonly（create 必需 User Token）
 
 示例:
   # 查询自己的 OKR 周期（用户周期 ID，可直接用于 cycle detail）

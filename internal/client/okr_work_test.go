@@ -51,3 +51,69 @@ func TestOKRBusinessErrorOn400(t *testing.T) {
 		t.Fatalf("期望 APIError 99991672，得到 %v", err)
 	}
 }
+
+func TestOKRV2ContentAndBuilders(t *testing.T) {
+	c := OKRV2TextContent("第一行\n第二行")
+	blocks := c["blocks"].([]any)
+	first := blocks[0].(map[string]any)
+	if len(blocks) != 2 || first["block_element_type"] != "paragraph" {
+		t.Fatalf("v2 ContentBlock 应使用 snake_case 键: %+v", c)
+	}
+	if _, err := ParseOKRV2Content("a", `{"blocks":[]}`, "content"); err == nil {
+		t.Fatal("--content 与 --content-json 同时传应报错")
+	}
+	if _, err := ParseOKRV2Content("", `{"x":1}`, "content"); err == nil {
+		t.Fatal("缺 blocks 的 JSON 应报错")
+	}
+	req, err := BuildOKRCreateObjective("c1", c, nil, "", "")
+	if err != nil || req.Path != "/open-apis/okr/v2/cycles/c1/objectives" || req.Query["user_id_type"] != "open_id" {
+		t.Fatalf("create objective: %+v %v", req, err)
+	}
+	if _, err := BuildOKRCreateObjective("", c, nil, "", ""); err == nil {
+		t.Fatal("缺 cycle_id 应报错")
+	}
+	for _, s := range []float64{-0.1, 1.1, 0.75} {
+		s := s
+		if _, err := BuildOKRPatch("objective", "o1", OKRPatchFields{Score: &s}, ""); err == nil {
+			t.Fatalf("score %v 应报错", s)
+		}
+	}
+	ok := 0.5
+	req, err = BuildOKRPatch("key-result", "k1", OKRPatchFields{Score: &ok}, "")
+	if err != nil || req.Method != "PATCH" || req.Path != "/open-apis/okr/v2/key_results/k1" || req.Body["score"] != 0.5 {
+		t.Fatalf("patch kr: %+v %v", req, err)
+	}
+	if _, err := BuildOKRPatch("key-result", "k1", OKRPatchFields{Notes: c}, ""); err == nil {
+		t.Fatal("关键结果不支持 notes")
+	}
+	sec := int64(1798732799)
+	if _, err := BuildOKRPatch("objective", "o1", OKRPatchFields{Deadline: &sec}, ""); err == nil {
+		t.Fatal("秒级时间戳应报错")
+	}
+	if _, err := BuildOKRCommentCreate(OKRCommentCreate{TargetType: "objective", TargetID: "o1", Content: c}, ""); err == nil {
+		t.Fatal("目标评论缺选区应报错")
+	}
+	req, err = BuildOKRCommentCreate(OKRCommentCreate{TargetType: "objective", TargetID: "o1", Content: c, SelectAll: true, PlainText: "评论"}, "")
+	if err != nil || req.Body["selected_text"] != "**" {
+		t.Fatalf("select-all 应生成通配选区: %+v %v", req, err)
+	}
+	if _, err := BuildOKRCommentCreate(OKRCommentCreate{TargetType: "cycle", TargetID: "c1", Content: c, SelectedText: "x"}, ""); err == nil {
+		t.Fatal("周期评论不支持选区")
+	}
+}
+
+func TestDoOKRWriteSendsRequest(t *testing.T) {
+	got := captureAPI(t, func(w http.ResponseWriter, r *http.Request, cap *capturedHTTPRequest) {
+		writeJSON(w, http.StatusOK, `{"code":0,"data":{"objective_id":"o9"}}`)
+	})
+	req, _ := BuildOKRCreateObjective("c1", OKRV2TextContent("x"), nil, "cat1", "")
+	data, err := DoOKRWrite(req, "创建 OKR 目标", testUserToken)
+	if err != nil || !strings.Contains(string(data), "o9") {
+		t.Fatalf("DoOKRWrite: %s %v", data, err)
+	}
+	r := got()[0]
+	if r.Method != http.MethodPost || r.Path != "/open-apis/okr/v2/cycles/c1/objectives" || r.Query.Get("user_id_type") != "open_id" ||
+		!strings.Contains(string(r.Body), `"category_id":"cat1"`) {
+		t.Fatalf("请求错误: %+v %s", r, r.Body)
+	}
+}
