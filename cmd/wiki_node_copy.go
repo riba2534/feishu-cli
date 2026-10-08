@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -36,7 +37,9 @@ API: POST /open-apis/wiki/v2/spaces/{space_id}/nodes/{node_token}/copy
   --target-space-id          目标 space ID（与 --target-parent-node-token 二选一）
   --target-parent-node-token 目标父节点 token（与 --target-space-id 二选一）
   --title                    复制后的新标题（可选，留空保留原标题）
-  --dry-run                  仅打印请求
+  --as                       身份: bot|user|auto（默认 auto：User 优先，未配置 User 时用 Bot；
+                             已配置 User 但解析/刷新失败时 fail-closed 报错，不会静默降级为 Bot）
+  --dry-run                  仅打印请求（不解析身份、不发请求）
 
 示例:
   # 复制节点到另一个 space 根目录
@@ -86,6 +89,9 @@ API: POST /open-apis/wiki/v2/spaces/{space_id}/nodes/{node_token}/copy
 		apiPath := fmt.Sprintf("/open-apis/wiki/v2/spaces/%s/nodes/%s/copy",
 			url.PathEscape(spaceID), url.PathEscape(nodeToken))
 
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
 		if dryRun {
 			return printJSON(map[string]any{
 				"dry_run": true,
@@ -95,8 +101,12 @@ API: POST /open-apis/wiki/v2/spaces/{space_id}/nodes/{node_token}/copy
 			})
 		}
 
-		// 复制属于"高风险写"，先 auto token（User 优先回退 Bot）
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		// 复制属于写操作：auto 下 User 优先、未配置时用 Bot；已配置 User 但不可用时 fail-closed，
+		// 不能像读类 helper 那样告警后静默降级为 Bot（结果会落到 Bot 身份可见的位置，且权限判断不同）。
+		token, err := resolveIdentityToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		fmt.Fprintf(cmd.ErrOrStderr(), "复制 wiki 节点 %s (space %s)...\n", nodeToken, spaceID)
 
@@ -104,8 +114,9 @@ API: POST /open-apis/wiki/v2/spaces/{space_id}/nodes/{node_token}/copy
 		if err != nil {
 			return fmt.Errorf("复制节点失败: %w", err)
 		}
-		if status < 200 || status >= 300 {
-			return fmt.Errorf("HTTP %d: %s", status, string(raw))
+		// 业务错误常随 HTTP 400/403 下发：先解析飞书信封里的 code，再看 HTTP 状态
+		if err := client.ParseAPIResponse("复制知识库节点", status, nil, raw); err != nil {
+			return err
 		}
 		var resp struct {
 			Code int    `json:"code"`
@@ -144,5 +155,6 @@ func init() {
 	wikiNodeCopyCmd.Flags().String("title", "", "复制后的新标题（可选）")
 	wikiNodeCopyCmd.Flags().Bool("dry-run", false, "仅打印请求")
 	wikiNodeCopyCmd.Flags().String("user-access-token", "", "User Access Token")
+	addAsFlag(wikiNodeCopyCmd)
 	mustMarkFlagRequired(wikiNodeCopyCmd, "space-id", "node-token")
 }
