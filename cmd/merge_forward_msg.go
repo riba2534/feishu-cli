@@ -18,6 +18,10 @@ var mergeForwardMsgCmd = &cobra.Command{
   --receive-id-type   接收者 ID 类型（默认 email）
   --message-ids       消息 ID 列表（逗号分隔，必填）
 
+身份:
+  仅支持 Bot（应用）身份：飞书合并转发接口只接受 tenant_access_token。
+  传 --user-access-token / FEISHU_USER_ACCESS_TOKEN 会被忽略并在 stderr 提示。
+
 接收者类型:
   email       邮箱
   open_id     Open ID
@@ -42,7 +46,11 @@ var mergeForwardMsgCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		// 合并转发接口只接受 tenant_access_token（Bot 身份）：传入的 User Token 会被
+		// 服务端拒绝或被 SDK 静默改用 Bot，这里固定 Bot 并明确提示，避免误以为以本人身份转发。
+		if userToken := resolveOptionalUserToken(cmd); userToken != "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "[提示] msg merge-forward 仅支持 Bot（应用）身份，已忽略 User Access Token，以 Bot 身份执行（Bot 需能看到这些消息且在目标会话中）")
+		}
 
 		receiveID, _ := cmd.Flags().GetString("receive-id")
 		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
@@ -53,7 +61,7 @@ var mergeForwardMsgCmd = &cobra.Command{
 			return fmt.Errorf("消息 ID 列表不能为空")
 		}
 
-		newMessageID, err := client.MergeForwardMessage(receiveID, receiveIDType, messageIDs, token)
+		newMessageID, err := client.MergeForwardMessage(receiveID, receiveIDType, messageIDs, "")
 		if err != nil {
 			return err
 		}
@@ -71,6 +79,6 @@ func init() {
 	mergeForwardMsgCmd.Flags().String("receive-id", "", "接收者 ID")
 	mergeForwardMsgCmd.Flags().String("receive-id-type", "email", "接收者 ID 类型（email/open_id/user_id/union_id/chat_id）")
 	mergeForwardMsgCmd.Flags().String("message-ids", "", "消息 ID 列表（逗号分隔）")
-	mergeForwardMsgCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	mergeForwardMsgCmd.Flags().String("user-access-token", "", "已忽略：合并转发接口仅支持 Bot 身份")
 	mustMarkFlagRequired(mergeForwardMsgCmd, "receive-id", "message-ids")
 }

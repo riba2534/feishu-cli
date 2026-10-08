@@ -996,7 +996,7 @@ func equalIgnoreCase(a, b string) bool {
 	return true
 }
 
-// MergeForwardMessage 合并转发多条消息
+// MergeForwardMessage 合并转发多条消息。接口仅支持 Bot（tenant）身份，userAccessToken 参数保留仅为兼容，会被忽略。
 func MergeForwardMessage(receiveID, receiveIDType string, messageIDs []string, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
@@ -1011,7 +1011,10 @@ func MergeForwardMessage(receiveID, receiveIDType string, messageIDs []string, u
 			Build()).
 		Build()
 
-	resp, err := client.Im.Message.MergeForward(Context(), req, UserTokenOption(userAccessToken)...)
+	// 合并转发接口仅支持 tenant_access_token：无论是否传入 User Token 都以 Bot 身份调用，
+	// 避免 SDK 按 token 类型静默降级时调用方误以为是本人身份转发。
+	_ = userAccessToken
+	resp, err := client.Im.Message.MergeForward(Context(), req)
 	if err != nil {
 		return "", fmt.Errorf("合并转发消息失败: %w", err)
 	}

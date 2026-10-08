@@ -19,6 +19,11 @@ var chatUpdateCmd = &cobra.Command{
   --description  新群描述
   --owner-id     新群主 ID
 
+身份:
+  --as bot|user|auto   默认 auto：已登录用 User Token（与旧版一致），未登录回退 Bot；
+                       User Token 已配置但不可用时直接报错，不会静默切 Bot。
+                       --as bot 用应用身份（Bot 需在群内）。
+
 示例:
   # 更新群名称
   feishu-cli chat update oc_xxx --name "新群名"
@@ -34,7 +39,7 @@ var chatUpdateCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := resolveRequiredUserToken(cmd)
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}
@@ -64,4 +69,5 @@ func init() {
 	chatUpdateCmd.Flags().String("description", "", "新群描述")
 	chatUpdateCmd.Flags().String("owner-id", "", "新群主 ID")
 	chatUpdateCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addAsFlag(chatUpdateCmd)
 }
