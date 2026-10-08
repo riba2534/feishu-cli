@@ -231,6 +231,15 @@ func appsWalkCandidates(rootPath string) ([]appsCandidate, error) {
 		if walkErr != nil {
 			return walkErr
 		}
+		// 跳过 git 仓库元数据（对齐官方 walk_html_publish_candidates）：.git 目录整棵子树不打包，
+		// .git 文件（submodule / worktree 的 gitdir 指针）也跳过，避免把仓库历史发布到公网。
+		// 只按名字精确匹配 .git，.gitignore / .github 等普通文件照常打包。
+		if d.Name() == ".git" {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() {
 			return nil
 		}
