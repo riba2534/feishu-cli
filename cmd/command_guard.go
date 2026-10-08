@@ -40,18 +40,64 @@ func installUnknownSubcommandGuard(cmd *cobra.Command) {
 	}
 }
 
-// unknownSubcommandError 构造带拼写建议的未知子命令错误。
+// unknownSubcommandError 构造带拼写建议的未知子命令错误（用法错误，退出码 2）。
 func unknownSubcommandError(cmd *cobra.Command, name string) error {
-	// cobra 仅在根命令上默认启用建议距离（ExecuteC 里设 2）；命令组上需显式设置
-	if cmd.SuggestionsMinimumDistance <= 0 {
-		cmd.SuggestionsMinimumDistance = 2
-	}
 	msg := fmt.Sprintf("未知子命令 %q（命令组 %q）", name, cmd.CommandPath())
-	if suggestions := cmd.SuggestionsFor(name); len(suggestions) > 0 {
+	if suggestions := suggestSubcommands(cmd, name); len(suggestions) > 0 {
 		msg += fmt.Sprintf("\n\n你是不是想用:\n\t%s", strings.Join(suggestions, "\n\t"))
 	}
 	msg += fmt.Sprintf("\n\n运行 `%s --help` 查看全部可用子命令", cmd.CommandPath())
 	return clierr.Usagef("%s", msg)
+}
+
+// suggestSubcommands 为拼错的子命令名给出候选：
+//   - cobra 内建规则：编辑距离 ≤ 2、输入是子命令名前缀、SuggestFor 别名；
+//   - 子命令名是输入在 "-"/"_" 边界上的前缀（如 send-messag → send）。
+func suggestSubcommands(cmd *cobra.Command, typed string) []string {
+	// cobra 仅在根命令上默认启用建议距离（ExecuteC 里设 2）；命令组上需显式设置
+	if cmd.SuggestionsMinimumDistance <= 0 {
+		cmd.SuggestionsMinimumDistance = 2
+	}
+	const limit = 5
+	seen := map[string]bool{}
+	var out []string
+	add := func(name string) {
+		if !seen[name] && len(out) < limit {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	for _, name := range cmd.SuggestionsFor(typed) {
+		add(name)
+	}
+	lower := strings.ToLower(typed)
+	for _, c := range cmd.Commands() {
+		if !c.IsAvailableCommand() {
+			continue
+		}
+		name := strings.ToLower(c.Name())
+		if strings.HasPrefix(lower, name+"-") || strings.HasPrefix(lower, name+"_") {
+			add(c.Name())
+		}
+	}
+	return out
+}
+
+// misspelledSubcommandError 处理"子命令拼错 + 带了子命令的 flag"：
+// `feishu-cli msg send-messag --text hi` 中 msg 是纯分组命令，--text 属于（拼错的）子命令，
+// pflag 先在 msg 上报 unknown flag --text，用户看不出真正的问题是子命令名拼错。
+// 解析失败时已扫描到的位置参数仍在 cmd.Flags().Args() 中，首个即为用户输入的子命令名。
+// 仅对守卫注入的纯分组命令生效：自身可运行的命令其位置参数是业务参数，不做猜测；
+// 根命令的未知命令在 cobra 解析 flag 之前就已报错（带建议），无需处理。
+func misspelledSubcommandError(cmd *cobra.Command) error {
+	if cmd == nil || cmd.Annotations[groupGuardAnnotation] != "1" {
+		return nil
+	}
+	args := cmd.Flags().Args()
+	if len(args) == 0 {
+		return nil
+	}
+	return unknownSubcommandError(cmd, args[0])
 }
 
 // flagSuggestionErrorFunc 是 cobra FlagErrorFunc：flag 解析失败（未知 flag / 拼写错误）时
@@ -59,6 +105,10 @@ func unknownSubcommandError(cmd *cobra.Command, name string) error {
 func flagSuggestionErrorFunc(cmd *cobra.Command, err error) error {
 	if err == nil {
 		return nil
+	}
+	// 纯分组命令上 flag 解析失败，多半是子命令拼错：优先提示子命令拼写
+	if subErr := misspelledSubcommandError(cmd); subErr != nil {
+		return subErr
 	}
 	// flag 解析失败一律是用法错误（退出码 2）
 	name := parseUnknownFlagName(err.Error())

@@ -98,3 +98,70 @@ func TestLevenshtein(t *testing.T) {
 		}
 	}
 }
+
+// newMsgGuardTestTree 模拟 `msg` 纯分组命令：子命令带自己的 flag。
+func newMsgGuardTestTree() *cobra.Command {
+	root := &cobra.Command{Use: "root", SilenceErrors: true, SilenceUsage: true}
+	group := &cobra.Command{Use: "msg"}
+	send := &cobra.Command{Use: "send", RunE: func(*cobra.Command, []string) error { return nil }}
+	send.Flags().String("text", "", "")
+	group.AddCommand(send)
+	group.AddCommand(&cobra.Command{Use: "history", RunE: func(*cobra.Command, []string) error { return nil }})
+	hybrid := &cobra.Command{Use: "hybrid", Args: cobra.ArbitraryArgs, RunE: func(*cobra.Command, []string) error { return nil }}
+	hybrid.AddCommand(&cobra.Command{Use: "sub", Run: func(*cobra.Command, []string) {}})
+	root.AddCommand(group, hybrid)
+	installUnknownSubcommandGuard(root)
+	root.SetFlagErrorFunc(flagSuggestionErrorFunc)
+	return root
+}
+
+// TestMisspelledSubcommandWithFlags 回归：`msg send-messag --text hi` 过去只报 unknown flag: --text，
+// 看不出是子命令拼错；现在应提示子命令拼写并按用法错误（退出码 2）退出。
+func TestMisspelledSubcommandWithFlags(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    []string
+		wantSub []string
+	}{
+		{"拼错子命令 + 子命令 flag", []string{"msg", "send-messag", "--text", "hi"}, []string{`未知子命令 "send-messag"`, "你是不是想用", "send"}},
+		{"拼错子命令 + 等号形式 flag", []string{"msg", "histroy", "--text=hi"}, []string{`未知子命令 "histroy"`, "history"}},
+		{"分组命令上只有未知 flag 仍报 unknown flag", []string{"msg", "--text", "hi"}, []string{"unknown flag: --text"}},
+		{"可运行命令的位置参数不被当作子命令", []string{"hybrid", "arg1", "--nope"}, []string{"unknown flag: --nope"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newMsgGuardTestTree()
+			root.SetArgs(tc.args)
+			err := root.Execute()
+			if err == nil {
+				t.Fatal("期望报错，实际成功")
+			}
+			for _, sub := range tc.wantSub {
+				if !strings.Contains(err.Error(), sub) {
+					t.Errorf("错误信息应包含 %q，实际: %v", sub, err)
+				}
+			}
+			if strings.Contains(tc.name, "可运行") && strings.Contains(err.Error(), "未知子命令") {
+				t.Errorf("可运行命令不应被误判为子命令拼错: %v", err)
+			}
+			if got := exitCodeFor(err); got != 2 {
+				t.Errorf("退出码 = %d, want 2", got)
+			}
+		})
+	}
+}
+
+func TestSuggestSubcommandsPrefixBoundary(t *testing.T) {
+	root := newMsgGuardTestTree()
+	group, _, err := root.Find([]string{"msg"})
+	if err != nil {
+		t.Fatalf("找不到 msg: %v", err)
+	}
+	got := suggestSubcommands(group, "send-message")
+	if len(got) == 0 || got[0] != "send" {
+		t.Fatalf("send-message 应建议 send，实际: %v", got)
+	}
+	if got := suggestSubcommands(group, "zzzz"); len(got) != 0 {
+		t.Fatalf("无相近子命令时不应给出建议: %v", got)
+	}
+}
