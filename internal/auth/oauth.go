@@ -38,7 +38,7 @@ type tokenResponse struct {
 
 // refresh_token 刷新失败的业务码分类（对齐官方 lark-cli errclass/codemeta.go）。
 const (
-	refreshCodeLegacyFormat = 20026 // refresh_token 为旧版格式（终态）
+	refreshCodeLegacyFormat = 20026 // refresh_token 无效 / 旧版格式（终态）
 	refreshCodeExpired      = 20037 // refresh_token 已过期（终态）
 	refreshCodeServerError  = 20050 // 刷新端点临时错误（可重试一次）
 	refreshCodeRevoked      = 20064 // refresh_token 已被吊销（终态）
@@ -63,7 +63,7 @@ func isTerminalRefreshCode(code int) bool {
 func terminalRefreshReason(code int) string {
 	switch code {
 	case refreshCodeLegacyFormat:
-		return "refresh_token 为旧版格式"
+		return "refresh_token 无效（格式不被识别或为旧版格式）"
 	case refreshCodeExpired:
 		return "refresh_token 已过期"
 	case refreshCodeRevoked:
@@ -118,9 +118,9 @@ func (e *RefreshError) Error() string {
 	}
 	switch {
 	case e.Terminal:
-		fmt.Fprintf(&b, "。%s，无法自动续期，请重新 `feishu-cli auth login`", terminalRefreshReason(e.Code))
+		fmt.Fprintf(&b, "；%s，无法自动续期，请重新 `feishu-cli auth login`", terminalRefreshReason(e.Code))
 	case e.Uncertain:
-		b.WriteString("。刷新请求已发出但未收到有效响应，refresh_token 可能已被服务端消耗：网络恢复后重试；若随后报 20073/20064，请重新 `feishu-cli auth login`")
+		b.WriteString("；刷新请求已发出但未收到有效响应，refresh_token 可能已被服务端消耗：网络恢复后重试；若随后报 20073/20064，请重新 `feishu-cli auth login`")
 	}
 	return b.String()
 }

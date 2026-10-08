@@ -291,3 +291,38 @@ func TestAuthStatusShowsRefreshFailureMarker(t *testing.T) {
 		t.Fatalf("auth check 应报 token_expired: %v", result)
 	}
 }
+
+// --verify 触发刷新且被服务端判定终态失效：同一次输出就要体现 refresh_failure 与 needs_relogin。
+func TestAuthStatusVerify_TerminalRefreshShowsMarker(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":20064,"error":"invalid_grant","error_description":"revoked"}`))
+	}))
+	t.Cleanup(srv.Close)
+	writeVerifyToken(t, &auth.TokenStore{
+		AccessToken:      "u-stale-terminal",
+		RefreshToken:     "r-revoked",
+		ExpiresAt:        time.Now().Add(-time.Hour),
+		RefreshExpiresAt: time.Now().Add(24 * time.Hour),
+		AppID:            "cli_app",
+	})
+	t.Setenv("FEISHU_APP_ID", "cli_app")
+	t.Setenv("FEISHU_APP_SECRET", "secret_x")
+	t.Setenv("FEISHU_BASE_URL", srv.URL)
+
+	stdout, _, err := runCLI(t, "auth", "status", "--verify", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["verified"] != false || out["health"] != "needs_relogin" || out["refresh_failure"] == nil {
+		t.Fatalf("verified=%v health=%v refresh_failure=%v", out["verified"], out["health"], out["refresh_failure"])
+	}
+	if msg, _ := out["verify_error"].(string); !strings.Contains(msg, "code=20064") {
+		t.Fatalf("verify_error 应带业务码: %v", out["verify_error"])
+	}
+}

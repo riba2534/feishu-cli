@@ -72,6 +72,9 @@ var authStatusCmd = &cobra.Command{
 			fresh, verified, verifyErr = verifyStoredUserToken(token, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
 			if fresh != nil {
 				token = fresh
+			} else if reloaded, err := auth.LoadToken(); err == nil && reloaded != nil {
+				// 校验失败时 token.json 可能刚被写入终态刷新失败标记，重读以展示最新状态
+				token = reloaded
 			}
 		}
 
