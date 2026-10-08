@@ -1,4 +1,4 @@
-.PHONY: build check-skills check-skill-contracts clean install test lint fmt help update-meta
+.PHONY: build check-skills check-skill-contracts check-privacy clean install test lint fmt help update-meta
 
 # Go parameters
 GOCMD=go
@@ -40,6 +40,10 @@ check-skills: build
 ## check-skill-contracts: Build current source and run offline CLI contracts (no live Feishu API)
 check-skill-contracts: build
 	python3 scripts/check_skill_contracts.py ./$(BUILD_DIR)/$(BINARY_NAME)
+
+## check-privacy: Scan tracked files for internal emails, tenant-prefixed Feishu domains and real-looking tokens
+check-privacy:
+	python3 scripts/check_privacy.py
 
 ## install: Install the binary to $GOPATH/bin
 install:
