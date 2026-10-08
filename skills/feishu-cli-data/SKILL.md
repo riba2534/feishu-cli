@@ -9,7 +9,7 @@ description: >-
   OpenAPI 通用透传；它们分别使用 feishu-cli-storage、feishu-cli-messaging 和
   feishu-cli-platform。文档内 Markdown 表格使用 feishu-cli-docs；数据图表展示使用
   feishu-cli-visual。
-compatibility: Requires feishu-cli v1.41.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Read Write
 ---
 

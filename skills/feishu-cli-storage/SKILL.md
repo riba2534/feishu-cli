@@ -7,7 +7,7 @@ description: >-
   协作者、公开链接、分享密码、转移所有权或权限申请时必须使用本 Skill。
   Wiki 仅在管理空间、节点结构或成员时属于本 Skill；明确禁止用它读取或总结 Wiki/文档正文，
   正文内容使用 feishu-cli-docs。会议录制、妙记和逐字稿使用 feishu-cli-meetings；Drive 范围搜索属于本 Skill；全局文档/消息/应用搜索使用 feishu-cli-platform。
-compatibility: Requires feishu-cli v1.41.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Bash(python3:*) Read Write
 ---
 
@@ -30,7 +30,7 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 
 1. 基础文件操作优先 file/media；需要分块、resume、镜像或异步任务时使用 drive。
 2. 删除、移动、覆盖、转移所有权和删除知识空间属于高风险操作，先确认目标并使用命令提供的确认参数。
-3. 评论常需 User Token；perm 命令组仅 App 身份（无 user-token 参数），`drive apply-permission` 才需 User Token。以工作流和实际帮助为准。
+3. 评论常需 User Token；perm 命令组默认 App 身份，操作用户自己的文档时用 `--as user`（或显式 `--user-access-token`），Bot 无权时会提示改用 User；`drive apply-permission` 需 User Token。以工作流和实际帮助为准。
 4. wiki node token 与普通 document/file token 不可混用。
 
 遇到 Token、身份或 scope 报错（如 99991663/99991668/99991672/99991679）时，读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md` 确认应使用的身份与预检方式，排错表见 `../feishu-cli-platform/references/workflows/auth/workflow.md`。

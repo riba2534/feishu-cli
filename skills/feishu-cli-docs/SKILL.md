@@ -10,7 +10,7 @@ description: >-
   云盘目录和权限管理，这些使用 feishu-cli-storage；考勤等工作管理使用 feishu-cli-work；
   文档内 HTMLBox、ECharts 交互图表和其他动态组件只使用 feishu-cli-visual，不属于正文编辑。
   只要意图是评论的 list/reply/resolve，即使请求中出现“文档”，也不要使用本 Skill。
-compatibility: Requires feishu-cli v1.41.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Bash(python3:*) Bash(sleep:*) Read Write
 ---
 

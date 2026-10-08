@@ -6,7 +6,7 @@ description: >-
   邮件模板、回复、转发、发送预览/确认或发送 HTML/CID 邮件时必须使用本 Skill。
   仅要求预览或等待发送确认也属于本 Skill 的草稿/发送工作流，必须先加载本 Skill 准备预览。
   只读命令可用 User/Bot；写入、签名和模板需要 User。聊天消息使用 feishu-cli-messaging。
-compatibility: Requires feishu-cli v1.41.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Read Write
 ---
 

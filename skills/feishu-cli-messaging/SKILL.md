@@ -2,7 +2,7 @@
 name: feishu-cli-messaging
 description: >-
   飞书即时消息、群聊与交互卡片：发送、回复、转发、加急、撤回、资源下载、聊天历史与话题、Reaction/Pin、成员管理和事件订阅。用于构造或预览 Card JSON 2.0、模板及卡片引用，也支持品牌宣传和主题风格卡片。仅处理 IM 消息及其资源；跨会话关键词搜索使用 feishu-cli-platform。明确不用于邮箱邮件、视频会议录制、妙记或逐字稿及其媒体下载，分别使用 feishu-cli-mail、feishu-cli-meetings。
-compatibility: Requires feishu-cli v1.41.0+ and network access for Feishu API calls. Bundled scripts require Python 3.10+.
+compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls. Bundled scripts require Python 3.10+.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Bash(python3:*) Read Write
 ---
 

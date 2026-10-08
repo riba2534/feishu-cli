@@ -8,7 +8,7 @@ description: >-
   feishu-cli-platform、feishu-cli-mail 和 feishu-cli-meetings。会议通知消息使用
   feishu-cli-messaging。
   明确查询 schema 或调用未封装 raw OpenAPI 使用 feishu-cli-platform。
-compatibility: Requires feishu-cli v1.41.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Read Write
 ---
 

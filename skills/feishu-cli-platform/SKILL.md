@@ -11,7 +11,7 @@ description: >-
   这里的“全局搜索”仅指 `search docs/messages/apps`，不包括在审批、会议、邮箱等业务域内查询。
   业务审批定义/实例/待办使用 feishu-cli-work，会议/妙记业务使用 feishu-cli-meetings。
   但明确查询 schema 或调用未封装 raw OpenAPI 时仍使用本 Skill，即使端点属于 approval/vc。
-compatibility: Requires feishu-cli v1.41.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Bash(curl:*) Bash(python3:*) Read Write
 ---
 
