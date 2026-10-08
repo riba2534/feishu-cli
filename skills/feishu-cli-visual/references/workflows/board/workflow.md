@@ -17,7 +17,8 @@
 - **feishu-cli**：未装就到 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 装
 - **认证**：环境变量 `FEISHU_APP_ID` + `FEISHU_APP_SECRET` 或 `~/.feishu-cli/config.yaml`
 - **权限**：`board:whiteboard`（画板读写）+ `docx:document`（文档加画板）
-- **whiteboard-cli**（路径 B/C 用）：`npm i -g @larksuite/whiteboard-cli`
+- **whiteboard-cli**（路径 B 与路径 C 的本地管道用）：`npm i -g @larksuite/whiteboard-cli`；
+  本仓库实测版本 0.2.13，升级后先用 `--dry-run`（svg_to_board.py）或小图核对节点输出再批量使用
 
 ---
 
@@ -34,6 +35,8 @@
 ├─ AI 自由作图（飞轮/鱼骨/价值金字塔/转化漏斗/桑基/路线图/Dashboard/海报/
 │              Mobile UI/户型图/地铁图/插画/周期表/机芯/赛博朋克城市等）
 │  ⭐ → 路径 C（SVG → 原生节点，每个元素可单独点击编辑）
+│     ├─ 默认：`board import --syntax svg`（服务端解析，一条命令，无需 whiteboard-cli）
+│     └─ 需要裁剪 viewBox 溢出 / 离线预检 / 超大图分批：svg_to_board.py 本地管道
 │
 ├─ 简单 SVG 装饰（图标/印章/小元素，< 2KB SVG）
 │  └─ 路径 D（svg-import 单节点）
@@ -78,7 +81,13 @@ feishu-cli board import $BOARD_ID "graph TD; A-->B-->C" --source-type content --
 
 # PlantUML
 feishu-cli board import $BOARD_ID diagram.puml --syntax plantuml
+
+# 取回画板上图表的 Mermaid/PlantUML 源码（多个图表时加 --node-id）
+feishu-cli board export-code $BOARD_ID --source
 ```
+
+- `--syntax` 只接受 `plantuml` / `mermaid` / `svg`（`--style`、`--diagram-type` 同样白名单），未知取值直接报用法错误（exit 2），不会再被静默当成 PlantUML
+- 服务端引擎接口不认 `client_token`（实测同一 token 重复请求会重复建图）：未带 `--overwrite` 时 CLI 在重试前回读画板顶层节点，上一次请求已落地就不再重复提交
 
 ### 限制（详见 references/mermaid-engines.md）
 
@@ -120,7 +129,21 @@ feishu-cli board import --engine local
 
 适合：所有 AI 自由设计图，每个元素都是独立可编辑的飞书节点。
 
-### 快速开始（一键脚本）
+### 快速开始 1：服务端 SVG 解析（默认）
+
+```bash
+DOC_ID=$(feishu-cli doc create --title "增长飞轮" -o json | jq -r .document_id)
+BOARD_ID=$(feishu-cli doc add-board $DOC_ID -o json | jq -r .whiteboard_id)
+
+feishu-cli board import $BOARD_ID flywheel.svg --syntax svg -o json
+```
+
+服务端（`syntax_type=3`）把 rect/circle/ellipse/text/line/path/polygon 拆成原生可编辑节点，按 SVG 顺序赋 z_index；
+渐变 `fill=url(#id)`、自定义 `stroke-dasharray` 等不支持的属性会降级并在输出 `degraded_attributes` 中列出。
+它**不裁剪** viewBox 外的元素——画布外有元素时先在 SVG 里删掉，或改用下面的本地管道。
+A/B 实测结论见 `references/svg-workflow.md`「服务端 SVG 解析 vs 本地管道」。
+
+### 快速开始 2：本地管道（一键脚本）
 
 ```bash
 # Step 0: 定色板（生成 SVG 之前）—— 用户指定品牌/色板时沿用并校验；否则取统一色板
@@ -246,15 +269,15 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 | `feishu-cli board nodes <board_id>` | 拉所有节点 | 无 |
 | `feishu-cli board image <board_id> out` | 下载画板缩略图（自动按实际格式补扩展名，通常 JPEG） | 无 |
 | `feishu-cli board create-notes <board_id> nodes.json` | 批量创建节点 | `--source-type` `--client-token` |
-| `feishu-cli board import <board_id> diagram.mmd --syntax mermaid` | 路径 A：服务端渲染 | `--engine [server\|local]` `--diagram-type` `--style` `--dry-run` |
-| `feishu-cli board svg-import <board_id> drawing.svg` | 路径 D：单 svg 节点 | `--x` `--y` `--width` `--height` `--source-type` `--dry-run` |
+| `feishu-cli board import <board_id> diagram.mmd --syntax mermaid` | 路径 A：服务端渲染；`--syntax svg` 为路径 C 服务端解析 | `--syntax [plantuml\|mermaid\|svg]` `--engine [server\|local]` `--diagram-type` `--style` `--client-token`（仅 local）`--dry-run` |
+| `feishu-cli board svg-import <board_id> drawing.svg` | 路径 D：单 svg 节点 | `--x` `--y` `--width` `--height` `--source-type` `--client-token` `--dry-run` |
 | `python3 svg_to_board.py drawing.svg <board_id>` | 路径 C：5 步管道 | `--viewbox WxH`（覆盖为零原点视口，默认自动解析完整 viewBox）`--keep-overflow`（不裁剪溢出节点）`--batch`（默认 300）`--interval`（默认 0.3s）`--dry-run` |
-| `feishu-cli board update <board_id> nodes.json` | 更新画板（覆盖模式） | `--overwrite` `--snapshot` `--dry-run` `--stdin` |
-| `feishu-cli board delete <board_id> --all` | 删全部节点 | `--node-ids` |
+| `feishu-cli board update <board_id> nodes.json` | 更新画板（覆盖模式） | `--overwrite` `--snapshot` `--client-token` `--dry-run` `--stdin` |
+| `feishu-cli board delete <board_id> --all` | 删全部节点（空画板直接提示"没有节点"并成功退出） | `--node-ids` |
 | `feishu-cli board clone <src> <dst>` | 克隆画板 | `--batch-size` `--interval` `--filter-types` `--dry-run` |
 | `feishu-cli board upload-image <board_id> photo.png` | 图片转 image 节点（v1.38.3+ 支持 jpeg/png/gif/webp/bmp/tiff，只读文件头取尺寸；EXIF Orientation 5-8 旋转的 JPEG——手机竖拍照片最常见——无法自动取尺寸，会报错要求显式 `--width/--height`） | `--x` `--y` `--width` `--height` `--dry-run` |
 | `feishu-cli board lint <board_id>` | 几何质检 | 无 |
-| `feishu-cli board export-code <board_id>` | 反向导出 SVG | `--output-path` `--merge` |
+| `feishu-cli board export-code <board_id>` | 反向导出 SVG；`--source` 取回 Mermaid/PlantUML 源码 | `--output-path` `--merge` `--source` `--node-id` |
 | `feishu-cli board svg-export <board_id> --output-path board.svg` | 服务端整板渲染 SVG 快照 | `--output-path` |
 
 详细的每个命令的内部行为见对应代码：`cmd/board_*.go`。
@@ -285,6 +308,8 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 - **根因**：脚本 stdout 解析失败但 API 已成功 → 重传导致翻倍
 - **修复**：rc=0 一律按成功，已翻倍则 `board delete --all` 后重传
 - **一键修复**：`scripts/svg_to_board.py` Step 4 容错解析内置
+- **预防**：`board update` / `svg-import` / `create-notes` / `import --engine local` 带同一个 `--client-token`（≥10 字符）重跑，
+  服务端直接返回首次写入的节点 ID，不会翻倍（`/nodes` 端点实测幂等）
 
 ---
 
@@ -360,7 +385,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 
 | 用户描述 | 命令 |
 |---------|------|
-| "画个增长飞轮 / 鱼骨 / Dashboard" | `python3 svg_to_board.py drawing.svg $BOARD` |
+| "画个增长飞轮 / 鱼骨 / Dashboard" | `feishu-cli board import $BOARD drawing.svg --syntax svg`（需裁剪溢出时用 `python3 svg_to_board.py drawing.svg $BOARD`） |
 | "把这份 mermaid 落到画板" | `feishu-cli board import $BOARD diagram.mmd --syntax mermaid` |
 | "mermaid 服务端失败 / 太复杂" | 加 `--engine local` |
 | "上传个小图标 / 印章" | `feishu-cli board svg-import $BOARD icon.svg` |
@@ -369,3 +394,4 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 | "把这张图片放到画板" | `feishu-cli board upload-image $BOARD photo.png` |
 | "检查画板质量" | `feishu-cli board lint $BOARD` |
 | "把画板里的 SVG 拉回本地" | `feishu-cli board export-code $BOARD --output-path design.svg --merge` |
+| "取回画板里 Mermaid/PlantUML 的源码" | `feishu-cli board export-code $BOARD --source --output-path diagram` |

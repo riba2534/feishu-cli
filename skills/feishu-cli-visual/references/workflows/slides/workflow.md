@@ -1,210 +1,208 @@
 # 飞书 Slides 演示文稿技能
 
-通过 `feishu-cli slides` 创建空白演示文稿，并把本地图片以 `slide_file` 媒体形式上传到该演示文稿，
-返回的 `file_token` 可直接在 slide XML 中作为 `<img src="...">` 引用。
+通过 `feishu-cli slides` 创建演示文稿、读取全文或单页 XML、逐页增删改、截图预览，以及上传图片。
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
-> **范围声明**：本工作流覆盖创建空白演示文稿、读取 SML 内容和上传媒体。如需在已有
-> 演示文稿里做复杂 slide 编辑（block insert/replace 等），目前 CLI 未实现，请改走
-> 官方 `lark-slides` 客户端或 `feishu-cli api` 透传对应 OpenAPI。
+**写任何 slide XML 之前先读** [`references/xml-schema-quick-ref.md`](references/xml-schema-quick-ref.md)：
+`<slide>` 下只有 `<style>`/`<data>`/`<note>`，文字必须包在 `<content><p>…</p></content>` 里，
+图片是 `<img>` 不是 `<image>`，坐标用 `topLeftX/topLeftY`，页面 960×540。
 
-## 核心概念
+## 目录
 
-### 两种产物分别是什么
+- [身份与权限](#身份与权限)
+- [命令速查](#命令速查)
+- [创建](#1-创建-slides-create)
+- [读取](#2-读取-slides-get别名-xml-get)
+- [加页与删页](#3-加页与删页)
+- [编辑已有页面](#4-编辑已有页面)
+- [截图预览](#5-截图预览-slides-screenshot)
+- [图片](#6-图片)
+- [错误排查](#错误排查)
 
-| 命令 | 调用的 API | 产物 | 用途 |
-|------|------------|------|------|
-| `slides create` | `POST /open-apis/slides_ai/v1/xml_presentations` | `xml_presentation_id` | 后续所有 slides 操作的 ID（不是普通 docx token） |
-| `slides get` | `GET /open-apis/slides_ai/v1/xml_presentations/{xml_presentation_id}` | `content` (XML) | 读取演示文稿全文 SML 内容 |
-| `slides media-upload` | `POST /open-apis/drive/v1/medias/upload_all` (`parent_type=slide_file`/`office_slide_file`) | `file_token` | 可直接放进 slide XML 的 `<img src="...">` |
+## 身份与权限
 
-**关键约束**：
-- `parent_type` 由 CLI 自动选择：原生 Slides 演示文稿使用 `slide_file`；导入型 Office deck（token 以 `fake_office_`/`local_office_` 开头，或长度 ≥25 且第 5/10/15/20/25 位依次为 `OFL0X`）使用 `office_slide_file`
-- `parent_node` 必须传 `xml_presentation_id`（而不是 docx token 或 file_token）
-- 上传走单分片 `upload_all`，**不支持** `upload_prepare` 多分片，所以单文件硬限 20 MB
+- **身份**：写命令（create / add-slide / delete-slide / replace-slide / update-slide / media-upload）默认 **App Token（Bot）**，
+  显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 切到用户身份；读命令（get / screenshot）优先 User Token、未配置回落 Bot。
+  演示文稿通常属于用户本人：编辑用户已有的 PPT 时用 User 身份，Bot 没有该文件权限会直接报错。
+- **Bot 创建**：`slides create` 以 Bot 身份创建后自动给当前 CLI 登录用户授予 `full_access`，JSON 输出 `url` 与 `permission_grant`。
+  应用未开通 tenant 的 `slides:presentation:create` 时会报 99991672，改用 User 身份。
+- **scope**：
 
-### XML 模板格式（create 内部）
+| 命令 | 所需 scope |
+|------|-----------|
+| `slides create` | `slides:presentation:create` 或 `slides:presentation:write_only`（带图片另需 `docs:document.media:upload`） |
+| `slides add-slide` / `delete-slide` / `replace-slide` / `update-slide` | `slides:presentation:update` 或 `slides:presentation:write_only` |
+| `slides get` | `slides:presentation:read` |
+| `slides screenshot` | `slides:presentation:screenshot` |
+| `slides media-upload` | `docs:document.media:upload` |
 
-`slides create` 在 CLI 内部用 `--title/--width/--height` 拼成最小可用 XML 模板再 POST：
-
-```xml
-<presentation xmlns="https://www.larkoffice.com/sml/2.0" width="960" height="540">
-  <title>演示文稿标题</title>
-</presentation>
-```
-
-> 当前版本不暴露 `--xml-file` 参数让你直接传整个 presentation XML——只能通过 `--title/--width/--height`
-> 影响这个最小模板。如需复杂初始内容，先 `create` 拿到 `xml_presentation_id`，再走 lark-slides
-> 或后续 CLI 扩展。
-
-## 前置条件
-
-- **认证**：`create` / `media-upload` 默认 **App Token**；显式 `--user-access-token` 或
-  `FEISHU_USER_ACCESS_TOKEN` 可切换用户身份。`get` 优先使用已登录 User Token，未配置时回落 App Token。
-- **权限**：
-  | 命令 | 所需 scope |
-  |------|-----------|
-  | `slides create` | `slides:presentation:create` 或 `slides:presentation:write_only` |
-  | `slides get` | `slides:presentation:read` |
-  | `slides media-upload` | `docs:document.media:upload` |
-- **预检**：`feishu-cli auth check --scope "slides:presentation:create docs:document.media:upload"`
+传 `/wiki/` URL 时额外需要 `wiki:node:read`。预检：`feishu-cli auth check --scope "slides:presentation:update slides:presentation:read"`。
 
 ## 命令速查
 
-读取已有演示文稿：`feishu-cli slides get <xml_presentation_id|slides URL|wiki URL> --output json`
-（wiki URL 自动经 node_by_token 解析，底层不是 slides 时直接报错；docx 等其他 URL 在本地拒绝，不再返回误导性 404）；
-需要历史版本时加 `--revision-id <revision>`，默认 `-1` 表示最新版本。
+所有接收演示文稿的命令都接受 `xml_presentation_id`、`/slides/` URL 或 `/wiki/` URL（wiki 自动解析，底层不是 slides 时报错）。
+XML / JSON 参数（`--slide`、`--slides`、`--content`、`--parts`）都支持 `@file` 读文件、`-` 读 stdin，用来绕开 shell 转义——
+多层转义是 3350001 的头号来源。写页面的命令都有 `--dry-run`。
 
-### 1. `slides create` — 创建空白演示文稿
-
-```bash
-# 最简用法（默认尺寸 960x540，title="Untitled"）
-feishu-cli slides create
-
-# 指定标题
-feishu-cli slides create --title "Q2 OKR"
-
-# 自定义宽高（像素）
-feishu-cli slides create --title "Wide Deck" --width 1920 --height 1080
-
-# JSON 输出（脚本接力时常用，方便 jq 取 xml_presentation_id）
-feishu-cli slides create --title "Demo" --output json
-
-# 以用户身份创建（推荐，演示文稿归属个人）
-feishu-cli slides create --title "Demo" --user-access-token <u-xxx>
-```
-
-**关键参数**：
-
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--title`, `-t` | 演示文稿标题 | `Untitled` |
-| `--width` | 幻灯片宽度（像素） | `960` |
-| `--height` | 幻灯片高度（像素） | `540` |
-| `--output`, `-o` | 输出格式（留空 = 文本摘要，`json` = JSON） | 文本摘要 |
-| `--user-access-token` | 显式传 User Token | 不传走 App Token |
-
-> **Bot 创建自动授权**：不传 User Token（Bot 身份）创建时，CLI 自动给当前 CLI 登录用户授予 `full_access`，
-> JSON 输出新增 `url`（按品牌生成）与 `permission_grant`（`granted`/`skipped`/`failed`，见 feishu-cli-storage 的 perm 工作流）；
-> 以 User 身份创建时不触发。
-
-> **两层默认值分工**：未传 `--title/--width/--height` 时，client 层注入 `Untitled` 和 `960x540`。
-> CLI 会检查 flag 是否由用户显式设置；显式传 `--width 0` 或 `--height 0` 会报“必须大于 0”，不会使用默认值。
-
-**返回**：
-
-```
-Slides 演示文稿已创建：
-  xml_presentation_id: <id>
-  title:               Q2 OKR
-  revision_id:         1
-```
-
-`xml_presentation_id` 就是后续 `media-upload --presentation-token` 要传的值。
-
-### 2. `slides media-upload` — 上传媒体到演示文稿
-
-```bash
-# 上传封面图
-feishu-cli slides media-upload \
-  --file ./cover.png \
-  --presentation-token <xml_presentation_id>
-
-# JSON 输出，方便 jq 接力拿 file_token
-feishu-cli slides media-upload \
-  --file ./cover.png \
-  --presentation-token <xml_presentation_id> \
-  --output json
-```
-
-**关键参数**：
-
-| 参数 | 说明 | 必填 |
-|------|------|------|
-| `--file` | 本地图片路径（**≤ 20 MB**） | 是 |
-| `--presentation-token` | 目标演示文稿的 `xml_presentation_id` | 是 |
-| `--output`, `-o` | 输出格式（留空 = 文本摘要，`json` = JSON） | 否 |
-| `--user-access-token` | 显式传 User Token | 否 |
-
-**返回**：
-
-```
-图片上传成功：
-  file_token:      <token>
-  file_name:       cover.png
-  size:            123456 bytes
-  presentation_id: <xml_presentation_id>
-
-提示: 在 slide XML 中可用作 <img src="<token>"/>
-```
-
-## 典型工作流
-
-### 工作流 A：创建 + 上传封面图（端到端）
-
-```bash
-# 1. 创建空白演示文稿
-PRES_ID=$(feishu-cli slides create --title "Q2 OKR" --output json | jq -r '.xml_presentation_id')
-
-# 2. 上传封面图，拿到 file_token
-FILE_TOKEN=$(feishu-cli slides media-upload \
-  --file ./cover.png \
-  --presentation-token "$PRES_ID" \
-  --output json | jq -r '.file_token')
-
-# 3. 现在 $FILE_TOKEN 可以拼到 slide XML 的 <img src="..."> 里
-echo "presentation: $PRES_ID, cover: $FILE_TOKEN"
-```
-
-### 工作流 B：批量上传一组图片
-
-```bash
-PRES_ID=$(feishu-cli slides create --title "Photo Deck" --output json | jq -r '.xml_presentation_id')
-
-for img in ./assets/*.png; do
-  feishu-cli slides media-upload \
-    --file "$img" \
-    --presentation-token "$PRES_ID" \
-    --output json | jq -r '"\(.file_name) -> \(.file_token)"'
-done
-```
-
-## 何时转用其他工具
-
-| 场景 | 改走 |
+| 场景 | 命令 |
 |------|------|
-| 在已有演示文稿里插入/修改/删除 slide 或 block | `lark-slides`（官方 CLI）或 `feishu-cli api` 透传 `slides_ai/v1/...` 编辑接口 |
-| 直接传整个 presentation XML 模板 | 暂未暴露 `--xml-file`，等 CLI 扩展或 OpenAPI 直调 |
-| 单文件 > 20 MB 的媒体 | 拆分小图，或直接走飞书客户端上传 |
-| 把 markdown / docx 转成 slides | 暂不支持，建议先转 docx 再用飞书客户端导出 |
-| 普通文档（不是演示文稿）上传媒体 | 走 **feishu-cli-storage** 技能（`drive upload`） |
+| 新建（可带 ≤10 页） | `slides create --title T --slide @p1.xml --slide @p2.xml -o json` |
+| 读全文 / 单页 XML | `slides get <id>`、`slides get <id> --slide-number 2 -o json` |
+| 追加 / 插入一页 | `slides add-slide <id> --slide @page.xml [--before-slide-id <sid>]` |
+| 删一页 | `slides delete-slide <id> --slide-id <sid> --yes` |
+| 改单个元素 | `slides replace-slide <id> --slide-id <sid> --parts @parts.json` |
+| 整页改写（换背景 / 批量改样式 / 删多个元素） | `slides update-slide <id> --slide-id <sid> --content @page.xml` |
+| 截图核对 | `slides screenshot <id> --slide-number 1,2 --output-dir shots` |
+| 上传图片拿 file_token | `slides media-upload --file ./a.png --presentation-token <id> -o json` |
 
-## 注意事项
+## 1. 创建 `slides create`
 
-- **`parent_type` 自动选择**：源码根据 presentationID 形状（前缀或固定偏移 OFL0X 标记）自动选择 `slide_file` 或 `office_slide_file`。
-  自己传 `slide_image` / `slides_image` / `slides_file` 都会被服务端拒绝
-- **20 MB 上限不可绕过**：`upload_prepare` 多分片接口**不接受** `parent_type=slide_file` / `office_slide_file`，
-  CLI 在 client 侧也做了 20 MB 硬检查，超过会在本地直接报错（不会发请求）
-- **`xml_presentation_id` ≠ docx token**：这是 slides 模块独立的标识符，不要拿去当
-  `docx:document_id` 或 `drive:file_token` 用
-- **User Token vs App Token**：默认 App Token（Bot 身份），演示文稿归 Bot 所有，普通人在
-  飞书 UI 里看不到。**推荐传 `--user-access-token`** 让产物归个人，能直接在「我的空间」找到
-- **图片格式**：常见 png/jpg/jpeg/gif/webp 等，由 `medias/upload_all` 自动推断 MIME
+```bash
+# 空白演示文稿（960×540，title 默认 Untitled）
+feishu-cli slides create --title "Q2 OKR" -o json
+
+# 一步创建并带页面：每个 --slide 是一页（XML 或 @file），最多 10 页
+feishu-cli slides create --title "Q2 OKR" --slide @cover.xml --slide @agenda.xml -o json
+
+# 页面 JSON 数组（每项一个 <slide> XML 字符串）
+feishu-cli slides create --title "Q2 OKR" --slides @slides.json -o json
+
+# 预览请求
+feishu-cli slides create --title "Q2 OKR" --slide @cover.xml --dry-run
+```
+
+- 流程：先建空白演示文稿 →（有 `@` 占位图时）上传图片 → 逐页添加。某页失败即停止，错误里给出已创建的
+  `xml_presentation_id`、url 和已添加页数；**用 `slides add-slide` 补剩余页，不要重新 create**
+- 页面在创建前就做结构校验（必须是单个完整 `<slide>` 根、不能带 `<?xml?>` 声明）、占位图片在创建前检查存在与 ≤20 MB，
+  坏输入不会留下半成品演示文稿
+- `--slide` 与 `--slides` 互斥；`--slides null` / 空值视为错误（防止命令替换失败时把空白 deck 报成成功）；超过 10 页先建再 add-slide
+- JSON 输出：`xml_presentation_id`、`url`、`slide_ids`、`slides_added`、`images_uploaded`、`slide_issues`（服务端对已写入页面的 schema 告警）
+- `--width/--height` 只影响空白模板尺寸，默认 960×540
+
+## 2. 读取 `slides get`（别名 `xml-get`）
+
+```bash
+feishu-cli slides get <id>                                # 全文 XML 打到 stdout
+feishu-cli slides get <id> -o json                        # {xml_presentation_id, scope, revision_id, content}
+feishu-cli slides get <id> --slide-number 2 -o json       # 单页（也可 --slide-id）
+feishu-cli slides get <id> --slide-id <sid> --output-file page.xml   # 写文件，stdout 只给元信息
+feishu-cli slides get <id> --remove-attr-id               # 去掉 id 属性，只读浏览用（不能再按 id 编辑）
+```
+
+- 编辑前先读单页 XML，拿到页面 `slide_id` 和元素 `id`（`replace-slide` 的 `block_id`）
+- `--revision-id` 默认 `-1`（最新）。实测读取接口**忽略正整数版本号、始终返回最新版本**，`0` 会被服务端以 3350001 拒绝，
+  CLI 在本地直接报用法错误；需要历史版本请在飞书客户端的版本记录里查看
+
+## 3. 加页与删页
+
+```bash
+feishu-cli slides add-slide <id> --slide @page.xml                       # 追加到最后
+feishu-cli slides add-slide <id> --slide @page.xml --before-slide-id <sid>   # 插到某页之前
+cat page.xml | feishu-cli slides add-slide <id> --slide -
+
+feishu-cli slides delete-slide <id> --slide-id <sid> --dry-run
+feishu-cli slides delete-slide <id> --slide-id <sid> --yes
+```
+
+- add-slide 一次一页；JSON 输出 `slide_id`、`revision_id`、`images_uploaded`、`issues`
+- delete-slide 是危险操作：交互终端会二次确认；非交互环境（Agent / 管道）必须显式 `--yes`，否则退出码 10 且不执行。
+  删前先 `slides get --slide-id` 确认是哪一页；删除无法原地撤销，误删在飞书客户端版本记录中恢复
+- `--revision-id` 传具体版本号可做乐观锁（版本已变化时服务端拒绝）
+
+## 4. 编辑已有页面
+
+| 改动 | 用哪个 |
+|------|--------|
+| 改一个标题 / 文本块 / 图片，或插入一个元素 | `replace-slide`（只动点名的元素，同页其他元素不受影响） |
+| 一页里改很多、换背景、删若干元素 | `update-slide`（整页覆盖，`slide_id` 与页序不变） |
+| 多页大改 | 每页各跑一次 `update-slide`，不要重新 create 整份 PPT |
+
+### replace-slide（元素级）
+
+```bash
+feishu-cli slides replace-slide <id> --slide-id <sid> --parts @parts.json
+feishu-cli slides replace-slide <id> --slide-id <sid> --parts @parts.json --dry-run   # 看规范化后的真实请求
+```
+
+`parts.json`：
+
+```json
+[
+  {"action": "block_replace", "block_id": "bkW",
+   "replacement": "<shape type=\"text\" topLeftX=\"80\" topLeftY=\"80\" width=\"600\" height=\"80\"><content fontSize=\"28\"><p>新标题</p></content></shape>"},
+  {"action": "block_insert",
+   "insertion": "<shape type=\"rect\" topLeftX=\"520\" topLeftY=\"440\" width=\"200\" height=\"60\"/>"}
+]
+```
+
+CLI 自动处理（官方实测契约，避免 3350001）：
+
+- `block_replace` 的 replacement 根元素自动注入 `id="<block_id>"`（实测不带 id 直接 3350001）
+- 根为 `<shape>` 且缺 `<content/>` 时自动补上
+- 兼容别名并在输出 `normalizations` 中列出：`replace`→`block_replace`、`insert`→`block_insert`、
+  `target_id`→`block_id`、`block`/`content`/`element`/`shape`→`replacement`/`insertion`
+- 不支持 `str_replace`（只做结构化编辑）；`page_replace`/`slide_replace` 提示改用 update-slide；单次最多 200 条
+- 服务端部分失败时透出 `failed_part_index` / `failed_reason`（stderr 同时告警），已写入但有告警时透出 `issues`
+
+### update-slide（整页覆盖）
+
+```bash
+feishu-cli slides get <id> --slide-id <sid> --output-file page.xml
+# 编辑 page.xml（保留要留下的元素及其 id；不带 id 的元素会作为新元素插入）
+feishu-cli slides update-slide <id> --slide-id <sid> --content @page.xml
+```
+
+- `--content` 里**没有的元素会被删除**，`<style>` 背景与 `<note>` 备注也按 XML 更新
+- 根 `<slide>` 自动带上 `id=<slide-id>`；根上已有 id 但与 `--slide-id` 不同会被拒绝（防止把 A 页的 XML 写到 B 页）
+- 自动去掉 `<note>` 上的 id：过期的 note id（从别页复制、或页面被重建过）会让服务端整页拒绝 `block is not NoteBlock`（实测 4001000）
+- 服务端返回 `failed_reason` 表示整页没写进去，CLI 按失败退出（not found 时提示重新 get 当前 slide_id）
+
+### 服务端 XML lint
+
+写页面的命令（create 带页面、add-slide、replace-slide、update-slide）默认在请求体带 `lint_xml: true`，
+由服务端对写入后的整页做版式检查，error 级问题以 **4000153** 拒绝写入（错误里给出报告与 error 数）。
+确认是 lint 误判、页面必须原样提交时加 `--no-lint`。开关必须放在请求体：放 query 会被网关丢弃且不报错。
+（当前租户实测服务端尚未拦截越界页面，lint 是否生效以服务端为准，提交前仍应自查坐标在 960×540 内。）
+
+## 5. 截图预览 `slides screenshot`
+
+```bash
+feishu-cli slides screenshot <id> --slide-number 1 --output cover            # 自动补 .png/.jpg
+feishu-cli slides screenshot <id> --slide-number 1,2,3 --output-dir shots    # 一次最多 10 页
+feishu-cli slides screenshot <id> --slide-id <sid>                           # 默认目录 slides_screenshots
+feishu-cli slides screenshot --content @page.xml --output preview            # 不写入演示文稿，直接渲染 XML
+```
+
+- stdout 只输出文件元信息（`screenshots[].path/format/size/slide_id/slide_number`），不打印 Base64
+- 文件名 `<presentation>_p<页码>_<slide_id>.<ext>`，同名自动加 `_2` 序号不覆盖；`--output` 扩展名与实际格式不符时按实际格式改名
+- `--content` 模式适合写回前预览效果；后续读取文件时以输出里的 `path` 为准
+
+## 6. 图片
+
+- `<img src>` 只能是上传到该演示文稿的 `file_token`，**不能用 http(s) 外链**（渲染端不代理外链）
+- 两种方式：
+  1. `slides media-upload --file ./a.png --presentation-token <id> -o json` 拿 `file_token` 再写进 XML（多页复用同一张图时用这个，只传一次）
+  2. 在 create / add-slide / update-slide 的 XML 里写 `<img src="@./a.png" .../>`，CLI 先上传再替换；路径相对**当前工作目录**解析
+- 单张 ≤ 20 MB（只能走单分片 `upload_all`）；`parent_type` 自动选择：原生演示文稿 `slide_file`，导入型 Office deck
+  （token 以 `fake_office_`/`local_office_` 开头，或长度 ≥25 且第 5/10/15/20/25 位依次为 `OFL0X`）用 `office_slide_file`
+- `<img>` 的 width:height 与原图比例不同会被自动裁剪
 
 ## 错误排查
 
-| 错误 | 原因 | 解决 |
+| 错误 | 原因 | 处理 |
 |------|------|------|
-| `--file 不能为空` / `--presentation-token 不能为空` | 必填参数缺失 | 检查命令行参数 |
-| `读取文件失败` / `--file 必须是普通文件` | 路径错或不是 regular file | 检查路径、不要传符号链接到目录 |
-| `文件 X 大小 Y 字节超过 slides 上传限制（20 MB）` | 文件超过 20 MB | 压缩 / 切分，slides 后端硬限不可绕过 |
-| `创建 slides 失败: code=99991663, msg=...` | scope 不够 | `auth check --scope "slides:presentation:create"` 然后重新 `auth login --domain slides --recommend` |
-| `创建 slides 失败: HTTP 400, body: ...invalid xml_presentation...` | XML 模板异常（一般 title 含未转义字符触发） | CLI 已做 XML escape，若仍出现请 issue |
-| 上传报 `parent_type invalid` 或类似 | 走的不是 `slide_file`（如直接 curl 调 medias/upload_all 时传错） | 用 CLI 而不是手敲 curl，CLI 已锁定 `slide_file` |
+| `--revision-id 取值 0 无效` | 0 会被服务端拒绝 | 用 `-1`（最新） |
+| `3350001 invalid param` | block_id/slide_id 不在当前页；XML 结构或元素非法；坐标越界 | 先 `slides get --slide-id` 回读最新 XML；对照 XML 速查修正 |
+| `4000153` | 服务端 lint 拒绝 | 按报告修 error 级问题；确认误判再加 `--no-lint` |
+| `4001000 ... block is not NoteBlock` | 整页 XML 带了过期 note id | 用 `update-slide`（CLI 自动剥除），或删掉 `<note>` 的 id |
+| `99991672` | 应用缺 tenant scope（Bot 身份） | 用 User 身份，或让管理员为应用开通 |
+| `99991679` | 用户未授权该 scope | `feishu-cli auth login --scope "<scope>"` 增量补授 |
+| 退出码 10 | delete-slide 需要确认 | 确认后加 `--yes` |
+| `<presentation> 的资源类型是 "docx"` | 传了文档 URL | 换成 `/slides/` 或指向 slides 的 `/wiki/` 链接 |
+| 图片不显示 | 写了外链或别的演示文稿的 token | 用 `@` 占位符或 media-upload 到当前演示文稿 |
 
 ## 参考
 
-- API 文档：飞书开放平台「智能演示」/「云文档 - 素材」
-- 代码：`cmd/slides_create.go` / `cmd/slides_media_upload.go` / `internal/client/slides.go`
-- 上游 PR：[feishu-cli#135](https://github.com/riba2534/feishu-cli/pull/135)
+- XML 速查：[`references/xml-schema-quick-ref.md`](references/xml-schema-quick-ref.md)
+- 代码：`cmd/slides_*.go`、`internal/client/slides.go`
