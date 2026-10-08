@@ -13,8 +13,8 @@
       "id": 2,
       "workflows": ["vc"],
       "prompt": "让会议机器人加入会议。环境里有 FEISHU_USER_ACCESS_TOKEN，但我没有传 flag，它会用谁的身份？",
-      "expected_output": "join/leave 只认显式 flag；未传时使用 Bot，不读取环境变量。",
-      "expectations": ["说明 join/leave 只认显式 --user-access-token", "未传 flag 时选择 Bot 并忽略环境变量"],
+      "expected_output": "join/leave 仅支持 Bot 身份：未传 flag 时使用 Bot，不读取环境变量；显式传 --user-access-token 会报用法错误。",
+      "expectations": ["说明 join/leave 仅支持 Bot 身份（传 --user-access-token 会报错）", "未传 flag 时选择 Bot 并忽略环境变量"],
       "files": []
     },
     {

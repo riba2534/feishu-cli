@@ -24,7 +24,7 @@ var vcRecordingCmd = &cobra.Command{
   meeting_id / minute_token / recording_url / duration
 
 权限:
-  - User Access Token
+  - 默认 User 身份（--as user），可用 --as bot|auto 切换
   - vc:record:readonly
   - 使用 --calendar-event-ids 时额外需要 calendar:calendar:read / calendar:calendar.event:read
 
@@ -36,7 +36,7 @@ var vcRecordingCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := requireUserToken(cmd, "vc recording")
+		token, err := resolveVCReadIdentity(cmd)
 		if err != nil {
 			return err
 		}
@@ -191,4 +191,5 @@ func init() {
 	vcRecordingCmd.Flags().String("calendar-event-ids", "", "日历事件实例 ID 列表，逗号分隔（最多 50 条）")
 	vcRecordingCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	vcRecordingCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addVCReadAsFlag(vcRecordingCmd)
 }

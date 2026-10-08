@@ -14,12 +14,17 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 
 ## 身份边界
 
-- `vc search/notes/recording/detail`、`vc note detail/transcript` 和 minutes 命令必须使用 User Token。
-- `vc bot meeting-join/meeting-leave` 默认 Bot 身份，而且只在显式 flag 时切换 User Token。
+- `vc search/notes/recording/detail`、`vc note detail`、`vc meeting list-active` 和 minutes
+  读命令支持 `--as user|bot|auto`，**默认 user**；Bot 身份需应用开通对应 scope（99991672 表示应用缺权限，
+  重新 `auth login` 无法解决）。`vc note transcript` 只支持 User。
+- `vc bot meeting-join/meeting-leave` 只支持 Bot 身份；传 `--user-access-token` 会直接报错（exit 2）。
+  会议号必须是 9 位数字。
 - `vc bot meeting-events` 支持 `--as bot|user|auto`（默认 auto），建议按来源显式选身份，须与
   `meeting_id` 来源一致：`--as user` 预检 `vc:meeting.meetingevent:read`；`--as bot`
   确认应用已开通 `vc:meeting.bot.join:write` 且机器人须在会中，不能用 User `auth check` 替代。`--as auto` 刷新/token 文件错误
   fail-closed，禁止静默切 Bot；`--dry-run` 只静态探测身份，不联网不写 token。
+  `--meeting-id` 必须是长数字 meeting_id，9 位会议号会被拒绝；先用 `vc meeting list-active` 或 `vc detail <会议号>` 获取。
+- 妙记只读：本 Skill 不提供妙记编辑类命令。
 
 下载媒体时保留服务端文件名；无法解析扩展名时再按 Content-Type 推导。
 

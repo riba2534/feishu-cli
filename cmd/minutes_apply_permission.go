@@ -23,7 +23,7 @@ var minutesApplyPermissionCmd = &cobra.Command{
   --output, -o    输出格式（json）
 
 权限:
-  需要 User Access Token + minutes:permission:apply 权限
+  默认 User 身份（--as user），可用 --as bot|auto 切换；需要 minutes:permission:apply 权限
 
 示例:
   # 申请查看权限
@@ -36,7 +36,7 @@ var minutesApplyPermissionCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := requireUserToken(cmd, "minutes apply-permission")
+		token, err := resolveVCReadIdentity(cmd)
 		if err != nil {
 			return err
 		}
@@ -78,5 +78,6 @@ func init() {
 	minutesApplyPermissionCmd.Flags().String("perm", "", "申请的权限类型：view / edit（必填）")
 	minutesApplyPermissionCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	minutesApplyPermissionCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addVCReadAsFlag(minutesApplyPermissionCmd)
 	mustMarkFlagRequired(minutesApplyPermissionCmd, "minute-token", "perm")
 }

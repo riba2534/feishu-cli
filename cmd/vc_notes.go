@@ -30,7 +30,7 @@ var vcNotesCmd = &cobra.Command{
   --overwrite           覆盖已存在的逐字稿文件
 
 权限:
-  - User Access Token
+  - 默认 User 身份（--as user），可用 --as bot|auto 切换
   - 基础: vc:note:read
   - meeting-ids 路径: vc:meeting.meetingevent:read
   - minute-tokens 路径: minutes:minutes:readonly
@@ -52,7 +52,7 @@ var vcNotesCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := requireUserToken(cmd, "vc notes")
+		token, err := resolveVCReadIdentity(cmd)
 		if err != nil {
 			return err
 		}
@@ -153,17 +153,20 @@ type notesOptions struct {
 
 // noteView vc notes 命令的单条输出视图
 type noteView struct {
-	Source         string   `json:"source"` // meeting_id / minute_token / calendar_event_id
-	MeetingID      string   `json:"meeting_id,omitempty"`
-	MinuteToken    string   `json:"minute_token,omitempty"`
-	Title          string   `json:"title,omitempty"`
-	MinuteURL      string   `json:"minute_url,omitempty"`
-	CreateTime     string   `json:"create_time,omitempty"`
-	NoteDoc        string   `json:"note_doc,omitempty"`
-	VerbatimDoc    string   `json:"verbatim_doc,omitempty"`
-	SharedDocs     []string `json:"shared_docs,omitempty"`
-	Artifacts      any      `json:"artifacts,omitempty"`
-	TranscriptPath string   `json:"transcript_path,omitempty"`
+	Source          string   `json:"source"` // meeting_id / minute_token / calendar_event_id
+	MeetingID       string   `json:"meeting_id,omitempty"`
+	MinuteToken     string   `json:"minute_token,omitempty"`
+	NoteID          string   `json:"note_id,omitempty"`
+	NoteDisplayType string   `json:"note_display_type,omitempty"` // normal / unified / unknown
+	Hint            string   `json:"hint,omitempty"`
+	Title           string   `json:"title,omitempty"`
+	MinuteURL       string   `json:"minute_url,omitempty"`
+	CreateTime      string   `json:"create_time,omitempty"`
+	NoteDoc         string   `json:"note_doc,omitempty"`
+	VerbatimDoc     string   `json:"verbatim_doc,omitempty"`
+	SharedDocs      []string `json:"shared_docs,omitempty"`
+	Artifacts       any      `json:"artifacts,omitempty"`
+	TranscriptPath  string   `json:"transcript_path,omitempty"`
 }
 
 // runNotesBatch 串行处理一批 ID
@@ -296,11 +299,31 @@ func processMeetingID(meetingID string, opts *notesOptions) (*noteView, error) {
 		Title:      parsed.Meeting.Topic,
 		CreateTime: formatVCTime(parsed.Meeting.StartTime),
 	}
+	// 与官方 vc +notes 一致：无论有无纪要，都尝试通过录制接口拿 minute_token，
+	// 方便后续 minutes get / vc notes --minute-tokens（best-effort，失败记入 hint）
+	if recData, recErr := client.GetMeetingRecording(meetingID, opts.Token); recErr != nil {
+		view.addHint(recErr.Error())
+	} else if rv := parseRecordingData(recData); rv.MinuteToken != "" {
+		view.MinuteToken = rv.MinuteToken
+	}
 	if parsed.Meeting.NoteID == "" {
+		view.addHint("该会议没有智能纪要")
 		return view, nil
 	}
 	applyNoteDocs(view, parsed.Meeting.NoteID, opts)
 	return view, nil
+}
+
+// addHint 追加一条说明（多条用 "; " 连接）
+func (v *noteView) addHint(msg string) {
+	if msg == "" {
+		return
+	}
+	if v.Hint == "" {
+		v.Hint = msg
+		return
+	}
+	v.Hint += "; " + msg
 }
 
 // processMinuteToken minute-token 路径处理
@@ -371,43 +394,27 @@ func processMinuteToken(minuteToken string, opts *notesOptions) (*noteView, erro
 	return view, nil
 }
 
-// applyNoteDocs 调用 GetMeetingNote 并把 artifacts/references 填入 view
+// applyNoteDocs 调用 GetMeetingNote 并把纪要类型、文档 token 填入 view；
+// 失败（如 121005 无纪要权限）不中断整条结果，记入 hint。
 func applyNoteDocs(view *noteView, noteID string, opts *notesOptions) {
+	view.NoteID = noteID
 	data, err := client.GetMeetingNote(noteID, opts.Token)
 	if err != nil {
+		view.addHint(decorateNoteError(err).Error())
 		return
 	}
-	var parsed struct {
-		Note struct {
-			CreateTime string `json:"create_time"`
-			Artifacts  []struct {
-				ArtifactType int    `json:"artifact_type"`
-				DocToken     string `json:"doc_token"`
-			} `json:"artifacts"`
-			References []struct {
-				DocToken string `json:"doc_token"`
-			} `json:"references"`
-		} `json:"note"`
-	}
-	if err := json.Unmarshal(data, &parsed); err != nil {
+	d, err := parseNoteDetail(noteID, data)
+	if err != nil {
+		view.addHint(err.Error())
 		return
 	}
-	if view.CreateTime == "" && parsed.Note.CreateTime != "" {
-		view.CreateTime = formatVCTime(parsed.Note.CreateTime)
+	view.NoteDisplayType = d.displayTypeName()
+	if view.CreateTime == "" && d.CreateTime != "" {
+		view.CreateTime = formatVCTime(d.CreateTime)
 	}
-	for _, a := range parsed.Note.Artifacts {
-		switch a.ArtifactType {
-		case 1:
-			view.NoteDoc = a.DocToken
-		case 2:
-			view.VerbatimDoc = a.DocToken
-		}
-	}
-	for _, r := range parsed.Note.References {
-		if r.DocToken != "" {
-			view.SharedDocs = append(view.SharedDocs, r.DocToken)
-		}
-	}
+	view.NoteDoc = d.NoteDocToken
+	view.VerbatimDoc = d.VerbatimDocToken
+	view.SharedDocs = append(view.SharedDocs, d.SharedDocTokens...)
 }
 
 // downloadTranscriptFile 下载逐字稿到 {outputDir}/artifact-{sanitizedTitle}-{token}/transcript.txt
@@ -474,6 +481,12 @@ func printOneNoteView(v *noteView, indent string) {
 	if v.MinuteToken != "" {
 		fmt.Printf("%sminute_token:%s\n", indent, v.MinuteToken)
 	}
+	if v.NoteID != "" {
+		fmt.Printf("%snote_id:     %s\n", indent, v.NoteID)
+	}
+	if v.NoteDisplayType != "" {
+		fmt.Printf("%s纪要类型:    %s\n", indent, v.NoteDisplayType)
+	}
 	if v.CreateTime != "" {
 		fmt.Printf("%screate_time: %s\n", indent, v.CreateTime)
 	}
@@ -491,6 +504,9 @@ func printOneNoteView(v *noteView, indent string) {
 	}
 	if v.TranscriptPath != "" {
 		fmt.Printf("%stranscript:  %s\n", indent, v.TranscriptPath)
+	}
+	if v.Hint != "" {
+		fmt.Printf("%s说明:        %s\n", indent, v.Hint)
 	}
 	if v.Artifacts != nil {
 		if b, err := json.MarshalIndent(v.Artifacts, indent, "  "); err == nil {
@@ -510,4 +526,5 @@ func init() {
 	vcNotesCmd.Flags().Bool("overwrite", false, "覆盖已存在的逐字稿文件")
 	vcNotesCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	vcNotesCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addVCReadAsFlag(vcNotesCmd)
 }

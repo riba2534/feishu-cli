@@ -31,7 +31,7 @@ var minutesDownloadCmd = &cobra.Command{
   --url-only    只打印下载 URL，不实际下载
 
 权限:
-  - User Access Token
+  - 默认 User 身份（--as user），可用 --as bot|auto 切换
   - minutes:minutes.media:export
 
 示例:
@@ -48,7 +48,7 @@ var minutesDownloadCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := requireUserToken(cmd, "minutes download")
+		token, err := resolveVCReadIdentity(cmd)
 		if err != nil {
 			return err
 		}
@@ -202,5 +202,6 @@ func init() {
 	minutesDownloadCmd.Flags().Bool("overwrite", false, "覆盖已存在文件")
 	minutesDownloadCmd.Flags().Bool("url-only", false, "只打印下载 URL，不下载")
 	minutesDownloadCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addVCReadAsFlag(minutesDownloadCmd)
 	mustMarkFlagRequired(minutesDownloadCmd, "minute-tokens")
 }

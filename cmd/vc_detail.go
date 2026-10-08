@@ -51,7 +51,7 @@ var vcDetailCmd = &cobra.Command{
 进行中的会议：纪要与妙记尚未生成，此时 note_id / minute_token 为空并附状态说明，不视为错误。
 
 权限:
-  - User Access Token
+  - 默认 User 身份（--as user），可用 --as bot|auto 切换
   - meeting.get + recording 路径: vc:meeting.meetingevent:read、vc:record:readonly
   - 会议号反查（传 9 位会议号时）额外需要: vc:meeting:readonly 或 vc:meeting.meetingid:read
 
@@ -70,7 +70,7 @@ var vcDetailCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := requireUserToken(cmd, "vc detail")
+		token, err := resolveVCReadIdentity(cmd)
 		if err != nil {
 			return err
 		}
@@ -209,7 +209,8 @@ func fetchMeetingDetail(meetingID, token string) *meetingDetailView {
 
 	data, err := client.GetMeeting(meetingID, token)
 	if err != nil {
-		v.Error = fmt.Sprintf("获取会议详情失败: %v", err)
+		// client 错误已带"获取会议详情失败"前缀，避免重复
+		v.Error = err.Error()
 		return v
 	}
 
@@ -250,7 +251,7 @@ func fetchMeetingDetail(meetingID, token string) *meetingDetailView {
 	var minuteHint string
 	recData, recErr := client.GetMeetingRecording(meetingID, token)
 	if recErr != nil {
-		minuteHint = fmt.Sprintf("查询会议录制失败: %v", recErr)
+		minuteHint = recErr.Error()
 	} else if rv := parseRecordingData(recData); rv.MinuteToken != "" {
 		v.MinuteToken = rv.MinuteToken
 	}
@@ -339,4 +340,5 @@ func init() {
 	vcDetailCmd.Flags().String("end", "", "会议号反查时间窗口终点（YYYY-MM-DD 或 RFC3339，默认当前时间）")
 	vcDetailCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	vcDetailCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addVCReadAsFlag(vcDetailCmd)
 }
