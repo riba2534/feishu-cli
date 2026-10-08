@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -17,9 +17,12 @@ var mailThreadCmd = &cobra.Command{
 必填:
   --thread-id
 
+正文字段默认从 base64url 解码为明文（--raw-body 保留原始编码）。
+
 可选:
   --mailbox   默认 me
   --format    full / plain_text_full
+  --raw-body  保留 API 原始 base64url 正文（不解码）
   -o json     JSON 格式
 
 示例:
@@ -36,6 +39,7 @@ var mailThreadCmd = &cobra.Command{
 		threadID, _ := cmd.Flags().GetString("thread-id")
 		format, _ := cmd.Flags().GetString("format")
 		output, _ := cmd.Flags().GetString("output")
+		rawBody, _ := cmd.Flags().GetBool("raw-body")
 
 		if threadID == "" {
 			return fmt.Errorf("--thread-id 必填")
@@ -46,10 +50,14 @@ var mailThreadCmd = &cobra.Command{
 			return err
 		}
 
-		if output == "json" {
-			return printJSON(json.RawMessage(data))
+		payload, err := decodeMailPayloadBodies(data, rawBody)
+		if err != nil {
+			return err
 		}
-		fmt.Println(string(data))
+		if output == "json" {
+			return printJSON(payload)
+		}
+		renderMailPayloadText(os.Stdout, payload)
 		return nil
 	},
 }
@@ -61,6 +69,7 @@ func init() {
 	mailThreadCmd.Flags().String("format", "full", "格式: full/plain_text_full")
 	mailThreadCmd.Flags().String("as", "auto", "身份选择: bot | user | auto（默认 auto）")
 	mailThreadCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	mailThreadCmd.Flags().Bool("raw-body", false, "保留 API 原始 base64url 编码的正文字段（默认解码为明文）")
 	mailThreadCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(mailThreadCmd, "thread-id")
 }

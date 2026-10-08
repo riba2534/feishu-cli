@@ -263,18 +263,3 @@ func GetMailEventSubscription(mailboxID, userAccessToken string) (json.RawMessag
 	}
 	return callMailAPI(http.MethodGet, mailboxPath(mailboxID, "event", "subscription"), nil, userAccessToken)
 }
-
-// ==================== CID 上传辅助（内嵌图片） ====================
-
-// UploadMailInlineImage 上传一张内嵌图片到云盘并返回 file_token
-// parent_type 固定 "email"，与模板/大附件链路对齐
-// userOpenID 必填：飞书要求 email 上下文的 ParentNode 是 user open_id
-//
-// 复用 drive.UploadMedia（SDK v3 的 UploadAll），parent_type=email 走内嵌图片场景
-func UploadMailInlineImage(filePath, fileName, userOpenID, userAccessToken string) (string, error) {
-	fileToken, _, err := UploadMedia(filePath, "email", userOpenID, fileName, userAccessToken)
-	if err != nil {
-		return "", fmt.Errorf("上传内嵌图片失败: %w", err)
-	}
-	return fileToken, nil
-}
