@@ -12,9 +12,16 @@ var userSearchCmd = &cobra.Command{
 	Use:   "search",
 	Short: "查询用户 ID（支持邮箱/手机号/关键词）",
 	Long: `查询用户 ID。支持三种入口：
-  --email / --mobile  走 contact/v3/users/batch_get_id（App Token 亦可），返回 user_id；
-                      额外通过 search/v1/user（User Token 必需）补齐 open_id 和姓名。
+  --email / --mobile  走 contact/v3/users/batch_get_id（App Token），精确返回 open_id；
+                      另按 user_id / union_id 各查一次填入对应字段（应用缺对应权限时留空）。
+                      已登录时再用 contact/v3/users/basic_batch 按 open_id 精确补齐姓名。
   --query             直接走 search/v1/user，按姓名/邮箱/手机号模糊搜索，返回 open_id。
+
+输出字段（--email / --mobile）:
+  open_id   本应用下的 Open ID（ou_xxx）
+  user_id   租户内 User ID（需应用有 contact:user.employee_id:readonly，否则为空）
+  union_id  跨应用的 Union ID（on_xxx）
+  注意：旧版本的 user_id 字段实际填的是 open_id，已修正为真实 user_id。
 
 参数:
   --email     邮箱列表，逗号分隔
@@ -86,25 +93,26 @@ var userSearchCmd = &cobra.Command{
 			return err
 		}
 
-		// 有 User Token 时为每条邮箱/手机号额外调 SearchUsers 补 open_id 和姓名。
-		// 搜不到不是错误 — 保留 BatchGetUserID 原始结果，只是没 open_id。
+		// 有 User Token 时按 open_id 精确补齐姓名（basic_batch）。
+		// 旧版用 search/v1/user 模糊搜邮箱并取第一条，可能把同名/相近账号的姓名张冠李戴。
 		if userToken != "" {
-			enrichWithSearch := func(infos []*client.UserContactIDInfo, getKey func(*client.UserContactIDInfo) string) {
-				for _, info := range infos {
-					k := getKey(info)
-					if k == "" || info.OpenID != "" {
-						continue
-					}
-					res, err := client.SearchUsers(k, 0, "", userToken)
-					if err != nil || res == nil || len(res.Users) == 0 {
-						continue
-					}
-					info.OpenID = res.Users[0].OpenID
-					info.Name = res.Users[0].Name
+			var openIDs []string
+			for _, info := range result {
+				if info.OpenID != "" {
+					openIDs = append(openIDs, info.OpenID)
 				}
 			}
-			enrichWithSearch(result, func(i *client.UserContactIDInfo) string { return i.Email })
-			enrichWithSearch(result, func(i *client.UserContactIDInfo) string { return i.Mobile })
+			if len(openIDs) > 0 {
+				names, nameErr := client.BatchGetUsersBasic(openIDs, userToken)
+				if nameErr != nil && len(names) == 0 {
+					fmt.Fprintf(cmd.ErrOrStderr(), "[提示] 补齐姓名失败（不影响 ID 结果）: %v\n", nameErr)
+				}
+				for _, info := range result {
+					if n := names[info.OpenID]; n != "" {
+						info.Name = n
+					}
+				}
+			}
 		}
 
 		if output == "json" {
@@ -128,6 +136,9 @@ var userSearchCmd = &cobra.Command{
 			}
 			if item.OpenID != "" {
 				fmt.Printf("    open_id: %s\n", item.OpenID)
+			}
+			if item.UnionID != "" {
+				fmt.Printf("    union_id: %s\n", item.UnionID)
 			}
 			if item.Email != "" {
 				fmt.Printf("    邮箱: %s\n", item.Email)
