@@ -294,6 +294,45 @@ type importStats struct {
 	phase1Duration   time.Duration
 	phase2Duration   time.Duration
 	phase3Duration   time.Duration
+	failures         []importFailure // 最终未能写入的内容明细（降级成功的图表不算）
+}
+
+// importFailure 一项导入失败明细，JSON 输出在 failures 数组中。
+type importFailure struct {
+	Kind   string `json:"kind"`             // image / table / video / cell_image / diagram / nested_blocks
+	Index  int    `json:"index"`            // 该类内容的序号（1 起）；嵌套子块为段落序号
+	Source string `json:"source,omitempty"` // 图片/视频来源等
+	Error  string `json:"error"`
+}
+
+// addFailure 记录一项失败明细（自带加锁，调用方不要持有 stats.mu）。
+func (s *importStats) addFailure(kind string, index int, source string, err error) {
+	msg := "未知错误"
+	if err != nil {
+		msg = err.Error()
+	}
+	s.mu.Lock()
+	s.failures = append(s.failures, importFailure{Kind: kind, Index: index, Source: source, Error: msg})
+	s.mu.Unlock()
+}
+
+// importFailureKindLabel 失败类型的中文名。
+func importFailureKindLabel(kind string) string {
+	switch kind {
+	case "image":
+		return "图片"
+	case "table":
+		return "表格"
+	case "video":
+		return "视频"
+	case "cell_image":
+		return "单元格图片"
+	case "diagram":
+		return "图表"
+	case "nested_blocks":
+		return "嵌套子块"
+	}
+	return kind
 }
 
 func (s *importStats) progressf(format string, a ...any) {
@@ -565,11 +604,17 @@ JSON 输出 permission_grant；导入到已有文档（--document-id）或 User 
 				"phase1_seconds":     stats.phase1Duration.Seconds(),
 				"phase2_seconds":     stats.phase2Duration.Seconds(),
 				"phase3_seconds":     stats.phase3Duration.Seconds(),
+				"partial_failure":    len(stats.failures) > 0,
+				"failures":           importFailuresForJSON(stats.failures),
 			}, grant)); err != nil {
 				return err
 			}
 		} else {
-			fmt.Println("导入完成!")
+			if len(stats.failures) > 0 {
+				fmt.Println("导入结束（部分内容失败，明细见下方）")
+			} else {
+				fmt.Println("导入完成!")
+			}
 			fmt.Printf("  文档ID: %s\n", documentID)
 			fmt.Printf("  添加块数: %d\n", stats.totalBlocks)
 			if stats.imageTotal > 0 {
@@ -623,10 +668,69 @@ JSON 输出 permission_grant；导入到已有文档（--document-id）或 User 
 			fmt.Printf("  总耗时: %.1fs\n", totalDuration.Seconds())
 			fmt.Printf("  链接: %s\n", client.BuildResourceURL(client.ResourceTypeDocx, documentID))
 			printPermissionGrantText(os.Stdout, grant)
+			printImportFailures(cmd.ErrOrStderr(), stats.failures)
 		}
 
-		return nil
+		// 部分内容未写入（图片/表格/视频/单元格图片失败、图表降级也失败、嵌套子块失败）时非零退出：
+		// 文档已创建且链接已输出，但脚本/Agent 不能把它当成完整导入。
+		return importFailureError(stats.failures, documentID)
 	},
+}
+
+// importFailuresForJSON 保证 JSON 中 failures 恒为数组（无失败时为 []）。
+func importFailuresForJSON(failures []importFailure) []importFailure {
+	if failures == nil {
+		return []importFailure{}
+	}
+	return failures
+}
+
+// printImportFailures 文本模式下把失败明细打到 stderr。
+func printImportFailures(w io.Writer, failures []importFailure) {
+	if len(failures) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\n⚠ 部分内容未能写入文档（%d 项）：\n", len(failures))
+	for _, f := range sortedImportFailures(failures) {
+		src := ""
+		if f.Source != "" {
+			src = " (" + f.Source + ")"
+		}
+		fmt.Fprintf(w, "  - %s %d%s: %s\n", importFailureKindLabel(f.Kind), f.Index, src, f.Error)
+	}
+}
+
+func sortedImportFailures(failures []importFailure) []importFailure {
+	out := append([]importFailure(nil), failures...)
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Index < out[j].Index
+	})
+	return out
+}
+
+// importFailureError 有失败明细时返回非零退出的错误（文档链接保留在错误信息中）。
+func importFailureError(failures []importFailure, documentID string) error {
+	if len(failures) == 0 {
+		return nil
+	}
+	counts := map[string]int{}
+	var kinds []string
+	for _, f := range failures {
+		if counts[f.Kind] == 0 {
+			kinds = append(kinds, f.Kind)
+		}
+		counts[f.Kind]++
+	}
+	sort.Strings(kinds)
+	parts := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		parts = append(parts, fmt.Sprintf("%s %d 项", importFailureKindLabel(k), counts[k]))
+	}
+	return fmt.Errorf("文档已创建，但部分内容导入失败（%s），失败明细见上方输出（JSON 模式见 failures 字段）；文档链接: %s",
+		strings.Join(parts, "、"), client.BuildResourceURL(client.ResourceTypeDocx, documentID))
 }
 
 // phase1CreateBlocks 顺序创建所有文档块，收集待处理的图表、表格和图片任务
@@ -731,9 +835,9 @@ func phase1CreateBlocks(
 
 				nestedCount, nestedCreated, nestedErr := createNestedChildren(documentID, parentID, node.Children, userAccessToken)
 				if nestedErr != nil {
-					if verbose {
-						syncPrintf("  ⚠ 段落 %d 嵌套子块创建失败: %v\n", segIdx+1, nestedErr)
-					}
+					// 嵌套子块（如嵌套列表项）创建失败意味着内容缺失：始终提示并计入失败明细
+					syncPrintf("  ✗ 段落 %d 嵌套子块创建失败: %v\n", segIdx+1, nestedErr)
+					stats.addFailure("nested_blocks", segIdx+1, "", nestedErr)
 				}
 				stats.totalBlocks += nestedCount
 				nestedCreatedByTop[idx] = nestedCreated
@@ -797,6 +901,7 @@ func phase1CreateBlocks(
 			if createResult.Err != nil {
 				stats.progressf("  ✗ %s %d 创建画板失败: %v\n", syntaxLabel, diagramIdx, createResult.Err)
 				stats.diagramFailed++
+				stats.addFailure("diagram", diagramIdx, syntaxLabel, fmt.Errorf("创建画板失败（图表内容未写入）: %w", createResult.Err))
 				continue
 			}
 			boardResult := createResult.Value
@@ -804,6 +909,7 @@ func phase1CreateBlocks(
 			if boardResult.WhiteboardID == "" {
 				stats.progressf("  ✗ %s %d 未返回画板 ID\n", syntaxLabel, diagramIdx)
 				stats.diagramFailed++
+				stats.addFailure("diagram", diagramIdx, syntaxLabel, fmt.Errorf("创建画板未返回画板 ID（图表内容未写入）"))
 				continue
 			}
 
@@ -904,6 +1010,9 @@ func phase2ConcurrentProcess(
 				stats.tableFailed++
 			}
 			stats.mu.Unlock()
+			if !result.success {
+				stats.addFailure("table", t.index, "", result.err)
+			}
 		}(task)
 	}
 
@@ -932,6 +1041,9 @@ func phase2ConcurrentProcess(
 					stats.imageFailed++
 				}
 				stats.mu.Unlock()
+				if !result.success {
+					stats.addFailure("image", t.index, t.source, result.err)
+				}
 			}(task)
 		}
 	}
@@ -953,6 +1065,9 @@ func phase2ConcurrentProcess(
 					stats.videoFailed++
 				}
 				stats.mu.Unlock()
+				if !result.success {
+					stats.addFailure("video", t.index, t.source, result.err)
+				}
 			}(task)
 		}
 	}
@@ -1223,6 +1338,7 @@ func embedTableCellImages(documentID string, tTasks []tableTask, basePath string
 			stats.mu.Lock()
 			stats.cellImageFailed += tableImgCount
 			stats.mu.Unlock()
+			stats.addFailure("cell_image", t.index, "", fmt.Errorf("表格 %d 获取单元格失败，%d 张单元格图片未写入: %w", t.index, tableImgCount, err))
 			continue
 		}
 		if len(cellIDs) != len(t.tableData.CellImages) {
@@ -1233,6 +1349,8 @@ func embedTableCellImages(documentID string, tTasks []tableTask, basePath string
 			stats.mu.Lock()
 			stats.cellImageFailed += tableImgCount
 			stats.mu.Unlock()
+			stats.addFailure("cell_image", t.index, "", fmt.Errorf("表格 %d 单元格数(%d)与图片索引(%d)不一致，%d 张单元格图片未写入",
+				t.index, len(cellIDs), len(t.tableData.CellImages), tableImgCount))
 			continue
 		}
 		for ci, imgs := range t.tableData.CellImages {
@@ -1270,6 +1388,10 @@ func embedTableCellImages(documentID string, tTasks []tableTask, basePath string
 				stats.mu.Lock()
 				stats.cellImageFailed++
 				stats.mu.Unlock()
+				if err == nil {
+					err = fmt.Errorf("创建单元格图片块未返回块 ID")
+				}
+				stats.addFailure("cell_image", idx+1, w.source, err)
 				return
 			}
 
@@ -1290,6 +1412,9 @@ func embedTableCellImages(documentID string, tTasks []tableTask, basePath string
 				stats.cellImageFailed++
 			}
 			stats.mu.Unlock()
+			if !res.success {
+				stats.addFailure("cell_image", idx+1, w.source, res.err)
+			}
 
 			// 上传失败：删除步骤 1 建的空 Image 块并补占位 Text，避免单元格里留孤儿空图。
 			// 串行化所有占位操作：replaceFailedCellImageBlock 内部每次重新拉子块并按 block ID 定位，
@@ -1705,6 +1830,10 @@ func phase3HandleFallbacks(
 	if err != nil {
 		stats.progressf("  ✗ 获取文档子块失败，无法降级: %v\n", err)
 		stats.fallbackFailed += len(failedDiagrams)
+		for _, r := range failedDiagrams {
+			stats.addFailure("diagram", r.task.index, diagramSyntaxLabel(r.task.syntax),
+				fmt.Errorf("图表导入失败（%v），且获取文档子块失败无法降级为代码块: %w", r.err, err))
+		}
 		return
 	}
 
@@ -1731,6 +1860,7 @@ func phase3HandleFallbacks(
 				stats.progressf("  ⚠ %s %d 画板块未找到，跳过降级\n", syntaxLabel, r.task.index)
 			}
 			stats.fallbackFailed++
+			stats.addFailure("diagram", r.task.index, syntaxLabel, fmt.Errorf("图表导入失败（%v），画板块未找到无法降级为代码块", r.err))
 		}
 	}
 
@@ -1749,6 +1879,7 @@ func phase3HandleFallbacks(
 		if err != nil {
 			stats.progressf("  ✗ %s %d 删除画板失败: %v\n", syntaxLabel, item.result.task.index, err)
 			stats.fallbackFailed++
+			stats.addFailure("diagram", item.result.task.index, syntaxLabel, fmt.Errorf("图表导入失败（%v），降级时删除空画板失败: %w", item.result.err, err))
 			continue
 		}
 
@@ -1758,6 +1889,7 @@ func phase3HandleFallbacks(
 		if err != nil {
 			stats.progressf("  ✗ %s %d 插入代码块失败: %v\n", syntaxLabel, item.result.task.index, err)
 			stats.fallbackFailed++
+			stats.addFailure("diagram", item.result.task.index, syntaxLabel, fmt.Errorf("图表导入失败（%v），降级插入代码块失败（图表内容未写入）: %w", item.result.err, err))
 			continue
 		}
 
