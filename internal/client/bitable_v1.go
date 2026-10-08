@@ -1,10 +1,7 @@
 package client
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -77,22 +74,10 @@ func BitableV1Call(method, path string, params map[string]any, body any, userAcc
 	if err != nil {
 		return nil, fmt.Errorf("bitable/v1 API 调用失败: %w", err)
 	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		bodyPreview := strings.TrimSpace(string(resp.RawBody))
-		if bodyPreview == "" {
-			return nil, fmt.Errorf("bitable/v1 API HTTP %d", resp.StatusCode)
-		}
-		return nil, fmt.Errorf("bitable/v1 API HTTP %d: %s", resp.StatusCode, bodyPreview)
-	}
-
-	var result map[string]any
-	dec := json.NewDecoder(bytes.NewReader(resp.RawBody))
-	dec.UseNumber()
-	if err := dec.Decode(&result); err != nil {
-		return nil, fmt.Errorf("bitable/v1 API 响应解析失败: %w", err)
-	}
-	if code := toInt(result["code"]); code != 0 {
-		return nil, fmt.Errorf("bitable/v1 API 失败: code=%d, msg=%s", code, apiErrorDetail(result))
+	// 先解析业务信封再看 HTTP 状态码（与 base/v3 一致，见 decodeBaseEnvelope）
+	result, err := decodeBaseEnvelope("bitable/v1", resp)
+	if err != nil {
+		return nil, err
 	}
 	if data, ok := result["data"].(map[string]any); ok {
 		return data, nil
