@@ -149,7 +149,7 @@ python3 -c "import requests; print(requests.get('https://open.feishu.cn/open-api
 
 ### Agent 判读：auth check / auth status 的 JSON 契约
 
-**`auth check --scope "..."`** —— 执行业务前预检某组 scope 够不够。退出码 `0`=满足、非 `0`=缺失或未登录；stdout 出 JSON：
+**`auth check --scope "..."`** —— 执行业务前预检某组 scope 够不够。退出码 `0`=满足、`3`=缺失或未登录（鉴权类）；stdout 出 JSON：
 
 | 字段 | 说明 |
 |---|---|
