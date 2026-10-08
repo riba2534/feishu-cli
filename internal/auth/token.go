@@ -124,7 +124,7 @@ func loadTokenFile(path string) (*TokenStore, error) {
 	}
 	var t TokenStore
 	if err := json.Unmarshal(data, &t); err != nil {
-		return nil, fmt.Errorf("解析 token 文件失败: %w", err)
+		return nil, fmt.Errorf("解析 token 文件失败: %w（%s 可能已损坏：执行 feishu-cli auth login 重新登录覆盖，或 feishu-cli auth logout 清理本地文件）", err, path)
 	}
 	return &t, nil
 }

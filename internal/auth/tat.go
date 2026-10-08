@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -85,6 +87,32 @@ func FetchTenantAccessTokenResult(ctx context.Context, appID, appSecret, baseURL
 	return fetchTenantAccessToken(ctx, config.NewHTTPClient(tatHTTPTimeout), appID, appSecret, baseURL)
 }
 
+// tatMaxRetryAfter 是 429 时愿意等待的上限；tatDefaultRetryAfter 是缺少 / 无法解析 Retry-After 时的等待。
+var (
+	tatMaxRetryAfter     = 5 * time.Second
+	tatDefaultRetryAfter = time.Second
+)
+
+// parseRetryAfter 解析 Retry-After（秒数或 HTTP-date），结果限制在 (0, tatMaxRetryAfter]。
+func parseRetryAfter(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	wait := tatDefaultRetryAfter
+	if v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs >= 0 {
+			wait = time.Duration(secs) * time.Second
+		} else if at, err := http.ParseTime(v); err == nil {
+			wait = time.Until(at)
+		}
+	}
+	if wait <= 0 {
+		wait = tatDefaultRetryAfter
+	}
+	if wait > tatMaxRetryAfter {
+		wait = tatMaxRetryAfter
+	}
+	return wait
+}
+
 func validateTATExpiresIn(expiresIn int) error {
 	if expiresIn < minTATExpireSeconds {
 		return fmt.Errorf("tenant token 缺少有效的 expires_in")
@@ -116,15 +144,33 @@ func fetchTenantAccessToken(ctx context.Context, httpClient *http.Client, appID,
 	form.Set("client_id", appID)
 	form.Set("client_secret", appSecret)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("构造 tenant token 请求失败: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	var resp *http.Response
+	for attempt := 1; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+		if err != nil {
+			return nil, fmt.Errorf("构造 tenant token 请求失败: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("请求 tenant token 失败: %w", err)
+		resp, err = httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("请求 tenant token 失败: %w", err)
+		}
+		// 429 限流：按 Retry-After（上限 tatMaxRetryAfter）等待后重试一次
+		if resp.StatusCode != http.StatusTooManyRequests || attempt >= 2 {
+			break
+		}
+		wait := parseRetryAfter(resp.Header.Get("Retry-After"))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxAuthResponseBytes))
+		resp.Body.Close()
+		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) <= wait {
+			return nil, fmt.Errorf("获取 tenant_access_token 被限流（HTTP 429），Retry-After=%s 超过剩余超时，请稍后重试", wait)
+		}
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return nil, fmt.Errorf("请求 tenant token 失败: %w", ctx.Err())
+		}
 	}
 	defer resp.Body.Close()
 
