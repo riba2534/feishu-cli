@@ -10,6 +10,9 @@ var okrCmd = &cobra.Command{
 子命令组:
   cycle         OKR 周期相关（list / detail）
   progress      OKR 进展记录相关（list / get / create / update / delete）
+  objective     OKR 目标写入（create / update，v2）
+  key-result    OKR 关键结果写入（create / update，v2）
+  comment       OKR 评论（list / create）
   upload-image  上传进展图片素材
 
 身份（--as，所有子命令继承）:
@@ -19,14 +22,17 @@ var okrCmd = &cobra.Command{
   auto        User 优先、Tenant 兜底
 
 权限要求（bot 走 tenant scope，user 走同名 user scope）:
-  cycle list / detail   okr:okr:readonly 或 okr:okr.period:readonly
+  cycle list            okr:okr.period:readonly（v2 用户周期；--tenant 走 v1 时 okr:okr:readonly 亦可）
+  cycle detail          okr:okr:readonly（user 身份为 okr:okr.content:readonly）
   progress list / get   okr:okr:readonly 或 okr:okr.progress:readonly
   progress create/update  okr:okr 或 okr:okr.progress:writeonly
   progress delete       okr:okr 或 okr:okr.progress:delete
   upload-image          okr:okr 或 okr:okr.progress.file:upload
+  objective/key-result  okr:okr.content:writeonly
+  comment list/create   okr:okr.comment.readonly / okr:okr.comment.writeonly（create 必需 User Token）
 
 示例:
-  # 查询当前租户的所有 OKR 周期（租户级全局列表）
+  # 查询自己的 OKR 周期（用户周期 ID，可直接用于 cycle detail）
   feishu-cli okr cycle list
 
   # 查询周期下全部目标 + 关键结果
@@ -50,10 +56,12 @@ var okrCycleCmd = &cobra.Command{
 	Long: `OKR 周期相关命令。
 
 子命令:
-  list   获取当前租户的 OKR 周期列表
+  list     获取用户的 OKR 周期列表（v2 用户周期）
+  detail   周期详情：全部目标 + 关键结果
 
 示例:
-  feishu-cli okr cycle list`,
+  feishu-cli okr cycle list
+  feishu-cli okr cycle detail <cycle_id>`,
 }
 
 var okrProgressCmd = &cobra.Command{

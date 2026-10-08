@@ -37,6 +37,12 @@ var approvalTaskTransferCmd = &cobra.Command{
 			return err
 		}
 
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return approvalWriteDryRun(cmd, "approval task transfer", "transfer", client.TransferApprovalTaskOptions{
+				InstanceCode: instanceCode, TaskID: taskID, TransferUserID: transferUserID, Comment: comment, UserIDType: userIDType,
+			})
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -71,6 +77,7 @@ var approvalTaskTransferCmd = &cobra.Command{
 
 func init() {
 	approvalTaskCmd.AddCommand(approvalTaskTransferCmd)
+	approvalTaskTransferCmd.Flags().Bool("dry-run", false, "只预览请求，不执行（不联网、不解析身份）")
 	approvalTaskTransferCmd.Flags().String("instance-code", "", "审批实例 Code（必填）")
 	approvalTaskTransferCmd.Flags().String("task-id", "", "审批任务 ID（必填）")
 	approvalTaskTransferCmd.Flags().String("transfer-user-id", "", "被转交用户 ID（必填）")

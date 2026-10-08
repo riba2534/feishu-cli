@@ -41,9 +41,15 @@ var taskCommentAddCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 		content, _ := cmd.Flags().GetString("content")
 		replyTo, _ := cmd.Flags().GetString("reply-to")
 		output, _ := cmd.Flags().GetString("output")
@@ -87,7 +93,10 @@ var taskCommentListCmd = &cobra.Command{
 
 		token := resolveOptionalUserTokenWithFallback(cmd)
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
@@ -142,6 +151,7 @@ func init() {
 	taskCommentAddCmd.Flags().String("reply-to", "", "回复评论的 ID（可选）")
 	taskCommentAddCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	taskCommentAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(taskCommentAddCmd)
 	mustMarkFlagRequired(taskCommentAddCmd, "content")
 
 	taskCommentCmd.AddCommand(taskCommentListCmd)

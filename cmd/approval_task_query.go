@@ -36,14 +36,21 @@ var approvalTaskQueryCmd = &cobra.Command{
 参数:
   --topic        任务主题，可选：todo、done、cc-unread、cc-read
                  （started 已被官方下线，请用 approval instance initiated）
+  --page-all     自动翻页直到没有更多（上限 --page-limit 页，默认 20）
   --output, -o   输出格式，可选：json、raw-json
+
+分页（重要）:
+  该接口是稀疏分页：实测同一查询首页可能 0 条但 has_more=true，后续页仍有大量数据。
+  空页或不足 page_size 都不代表"没有了"，只能以 has_more 为准——用 --page-all，或按提示的
+  --page-token 继续翻。count 只在首页返回且随 page_size 变化，不是总数，不要据此判断数量。
+  服务端的 keyword 参数实测不生效（任意关键词返回同一列表），需要按标题过滤时自行过滤 JSON。
 
 示例:
   # 查询当前登录用户的待我审批（User Token 必需）
   feishu-cli approval task query --topic todo
 
-  # 查询我已审批的任务
-  feishu-cli approval task query --topic done
+  # 查询我已审批的任务（自动翻完所有页）
+  feishu-cli approval task query --topic done --page-all
 
   # 显式使用 User Token
   feishu-cli approval task query --topic todo --user-access-token u-xxx
@@ -72,7 +79,12 @@ var approvalTaskQueryCmd = &cobra.Command{
 		endTimestamp, _ := cmd.Flags().GetString("end-timestamp")
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
 		output, _ := cmd.Flags().GetString("output")
+		pageAll, _ := cmd.Flags().GetBool("page-all")
+		pageLimit, _ := cmd.Flags().GetInt("page-limit")
 		if err := validateApprovalWriteUserIDType(userIDType); err != nil {
+			return err
+		}
+		if err := validateApprovalPaging(pageAll, pageLimit, output); err != nil {
 			return err
 		}
 
@@ -100,22 +112,61 @@ var approvalTaskQueryCmd = &cobra.Command{
 			return nil
 		}
 
-		result, err := client.QueryApprovalTasks(queryOpts, token)
+		var firstCount *int
+		limit := 1
+		if pageAll {
+			limit = pageLimit
+		}
+		pages, err := approvalCollectPages(pageToken, limit, func(tok string) ([]*client.ApprovalTaskInfo, string, bool, error) {
+			opts := queryOpts
+			opts.PageToken = tok
+			r, err := client.QueryApprovalTasks(opts, token)
+			if err != nil {
+				return nil, "", false, err
+			}
+			if firstCount == nil {
+				firstCount = r.Count
+			}
+			return r.Tasks, r.PageToken, r.HasMore, nil
+		})
 		if err != nil {
 			return err
 		}
+		result := &client.ApprovalTaskQueryResult{
+			Tasks:     pages.Items,
+			PageToken: pages.PageToken,
+			HasMore:   pages.HasMore,
+			Count:     firstCount,
+		}
+		if result.Tasks == nil {
+			result.Tasks = []*client.ApprovalTaskInfo{}
+		}
+		printApprovalSparseHint(len(result.Tasks), result.HasMore, result.PageToken, pageAll)
 
 		if output == "json" {
+			if pageAll {
+				return printJSON(map[string]any{
+					"tasks":      result.Tasks,
+					"page_token": result.PageToken,
+					"has_more":   result.HasMore,
+					"count":      result.Count,
+					"pages":      pages.Pages,
+				})
+			}
 			return printJSON(result)
 		}
 
 		if len(result.Tasks) == 0 {
+			if result.HasMore {
+				fmt.Printf("审批任务（%s）：当前页为空，但还有更多数据（稀疏分页），用 --page-token %s 或 --page-all 继续\n", approvalTaskTopicLabel(topicValue), result.PageToken)
+				return nil
+			}
 			fmt.Printf("没有找到审批任务（topic: %s）\n", approvalTaskTopicLabel(topicValue))
 			return nil
 		}
 
-		if result.Count != nil {
-			fmt.Printf("审批任务（%s），总数约 %d\n\n", approvalTaskTopicLabel(topicValue), *result.Count)
+		if pageAll {
+			fmt.Printf("审批任务（%s），共 %d 条（翻了 %d 页）\n\n", approvalTaskTopicLabel(topicValue), len(result.Tasks), pages.Pages)
 		} else {
 			fmt.Printf("审批任务（%s），当前页 %d 条\n\n", approvalTaskTopicLabel(topicValue), len(result.Tasks))
 		}
@@ -148,7 +199,7 @@ var approvalTaskQueryCmd = &cobra.Command{
 		}
 
 		if result.HasMore {
-			fmt.Printf("还有更多任务，使用 --page-token %s 获取下一页\n", result.PageToken)
+			fmt.Printf("还有更多任务，使用 --page-token %s 获取下一页（或 --page-all）\n", result.PageToken)
 		}
 
 		return nil
@@ -196,6 +247,8 @@ func init() {
 	approvalTaskQueryCmd.Flags().String("topic", "", "任务主题：todo、done、cc-unread、cc-read（started 已下线，用 approval instance initiated）")
 	approvalTaskQueryCmd.Flags().Int("page-size", 50, "每页数量")
 	approvalTaskQueryCmd.Flags().String("page-token", "", "分页标记")
+	approvalTaskQueryCmd.Flags().Bool("page-all", false, "自动翻页直到没有更多（稀疏分页：空页不代表结束）")
+	approvalTaskQueryCmd.Flags().Int("page-limit", 20, "--page-all 最多翻的页数（1-100）")
 	approvalTaskQueryCmd.Flags().String("locale", "", "语言，如 zh-CN / en-US / ja-JP")
 	approvalTaskQueryCmd.Flags().String("definition-code", "", "审批定义 Code，用于筛选")
 	approvalTaskQueryCmd.Flags().String("start-timestamp", "", "任务时间范围开始（秒级时间戳）")

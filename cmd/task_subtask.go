@@ -39,9 +39,15 @@ var taskSubtaskCreateCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 		summary, _ := cmd.Flags().GetString("summary")
 		output, _ := cmd.Flags().GetString("output")
 
@@ -81,7 +87,10 @@ var taskSubtaskListCmd = &cobra.Command{
 
 		token := resolveOptionalUserTokenWithFallback(cmd)
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
@@ -133,6 +142,7 @@ func init() {
 	taskSubtaskCreateCmd.Flags().StringP("summary", "s", "", "子任务标题（必填）")
 	taskSubtaskCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	taskSubtaskCreateCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(taskSubtaskCreateCmd)
 	mustMarkFlagRequired(taskSubtaskCreateCmd, "summary")
 
 	taskSubtaskCmd.AddCommand(taskSubtaskListCmd)

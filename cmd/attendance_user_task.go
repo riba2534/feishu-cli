@@ -19,8 +19,14 @@ var attendanceUserTaskCmd = &cobra.Command{
   query  查询用户考勤打卡记录
 
 示例:
+  # 查本人（User Token，无需 --user-ids）
   feishu-cli attendance user-task query \
-      --employee-type open_id --user-ids ou_xxx \
+      --employee-type employee_no \
+      --start 2026-05-01 --end 2026-05-18
+
+  # 按 employee_id 查指定员工（--employee-type 只支持 employee_id / employee_no，不支持 open_id）
+  feishu-cli attendance user-task query \
+      --employee-type employee_id --user-ids 2847xxxx \
       --start 2026-05-01 --end 2026-05-18`,
 }
 

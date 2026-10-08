@@ -62,8 +62,8 @@ func SuggestFreebusy(req *SuggestionRequest, userAccessToken string) (*Suggestio
 	if err != nil {
 		return nil, fmt.Errorf("查询智能时段建议失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询智能时段建议失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("查询智能时段建议", resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -148,8 +148,8 @@ func FindMeetingRoom(req *RoomFindRequest, userAccessToken string) ([]*RoomSugge
 			return nil, nil, fmt.Errorf("查询可用会议室失败: %w", err)
 		}
 		headers := resp.Header
-		if resp.StatusCode != http.StatusOK {
-			return nil, headers, fmt.Errorf("查询可用会议室失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+		if err := CheckAPIResponse("查询可用会议室", resp); err != nil {
+			return nil, headers, err
 		}
 
 		var apiResp struct {

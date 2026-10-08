@@ -31,6 +31,10 @@ var approvalInstanceCancelCmd = &cobra.Command{
 			return fmt.Errorf("--instance-code 不能为空")
 		}
 
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return approvalWriteDryRun(cmd, "approval instance cancel", "cancel", client.CancelApprovalInstanceOptions{InstanceCode: instanceCode})
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -53,6 +57,7 @@ var approvalInstanceCancelCmd = &cobra.Command{
 
 func init() {
 	approvalInstanceCmd.AddCommand(approvalInstanceCancelCmd)
+	approvalInstanceCancelCmd.Flags().Bool("dry-run", false, "只预览请求，不执行（不联网、不解析身份）")
 
 	approvalInstanceCancelCmd.Flags().String("instance-code", "", "审批实例 code（必填）")
 	approvalInstanceCancelCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")

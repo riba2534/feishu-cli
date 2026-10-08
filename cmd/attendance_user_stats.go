@@ -21,8 +21,10 @@ var attendanceUserStatsCmd = &cobra.Command{
   query  查询用户考勤统计数据（日度 / 月度）
 
 示例:
+  # --employee-type 只支持 employee_id / employee_no（不支持 open_id）；
+  # --current-user-id 与 --employee-type 同类型
   feishu-cli attendance user-stats query \
-      --employee-type open_id --user-ids ou_xxx --current-user-id ou_xxx \
+      --employee-type employee_id --user-ids 2847xxxx --current-user-id 2847xxxx \
       --stats-type daily --start 2026-05-01 --end 2026-05-18`,
 }
 

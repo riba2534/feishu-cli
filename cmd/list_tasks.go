@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -36,6 +37,11 @@ var listTasksCmd = &cobra.Command{
   # JSON 格式输出
   feishu-cli task list --output json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if c, _ := cmd.Flags().GetBool("completed"); c {
+			if u, _ := cmd.Flags().GetBool("uncompleted"); u {
+				return clierr.Usagef("--completed 与 --uncompleted 不能同时使用（都不传则返回全部任务）")
+			}
+		}
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -82,11 +88,8 @@ var listTasksCmd = &cobra.Command{
 				fmt.Printf("    ID: %s\n", task.Guid)
 				if task.Description != "" {
 					// Truncate long descriptions
-					desc := task.Description
-					if len(desc) > 50 {
-						desc = desc[:50] + "..."
-					}
-					fmt.Printf("    描述: %s\n", desc)
+					// 按 rune 截断：按字节切中文会切出半个字符（乱码）
+					fmt.Printf("    描述: %s\n", truncateRunes(task.Description, 50))
 				}
 				if task.DueTime != "" {
 					fmt.Printf("    截止: %s\n", task.DueTime)

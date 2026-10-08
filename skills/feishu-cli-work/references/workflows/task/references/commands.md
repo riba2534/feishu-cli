@@ -20,7 +20,7 @@ feishu-cli task create \
 ### 列出任务
 
 ```bash
-feishu-cli task list [--completed | --uncompleted] [--page-size 20] [--page-token <token>]
+feishu-cli task list [--completed | --uncompleted] [--page-size 20] [--page-token <token>]   # 两个过滤 flag 互斥
 ```
 
 ### 获取任务详情

@@ -230,8 +230,8 @@ func searchTasksPage(cli *lark.Client, pageSize int, pageToken string, body map[
 	if apiResp.Code == taskSearchPaginationLimitCode {
 		return nil, "", false, errTaskSearchPaginationLimit
 	}
-	if apiResp.Code != 0 {
-		return nil, "", false, fmt.Errorf("搜索任务失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	if err := CheckAPIResponse("搜索任务", resp); err != nil {
+		return nil, "", false, err
 	}
 
 	hits := make([]searchTaskHit, 0, len(apiResp.Data.Items))
