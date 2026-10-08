@@ -15,9 +15,7 @@
     ["completion"],
     ["help"]
   ],
-  "hidden_commands": [
-    ["apps", "list"]
-  ],
+  "hidden_commands": [],
   "non_command_workflows": [
     {"skill": "feishu-cli-messaging", "workflow": "card"},
     {"skill": "feishu-cli-visual", "workflow": "dataviz"}

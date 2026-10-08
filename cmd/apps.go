@@ -12,24 +12,28 @@ import (
 // appsCmd 妙搭（Miaoda）应用父命令：秒搭 HTML 应用 + 一键发布 + 访问范围管理。
 var appsCmd = &cobra.Command{
 	Use:   "apps",
-	Short: "妙搭（Miaoda）应用：创建 / 发布 HTML / 访问范围管理",
+	Short: "妙搭（Miaoda）应用：创建 / 发布 HTML / 发布状态 / 访问范围管理",
 	Long: `妙搭（Miaoda）低代码应用平台操作 —— 把一份 HTML 秒级发布成一个可分享的飞书应用。
 
 所有 apps 子命令均需 User Access Token，且需要妙搭权限 scope：
+  feishu-cli auth check --scope "spark:app:read spark:app:write"   # 先预检
   feishu-cli auth login --scope "spark:app:read spark:app:write"
-⚠️ feishu-cli 的 --scope 是「替换」不是「合并」，裸跑会丢掉已有 scope；
-   要保留现有权限，请把 spark scope 并入你完整的 scope 串一起登录。
+auth login 是增量授权：多次登录申请的 scope 在服务端累积，补授 spark scope 不会丢掉已有授权。
 
 子命令:
-  create            创建一个 HTML 妙搭应用
-  html-publish      把 HTML 文件/目录按官方三段协议打包发布，返回 release_id
+  create            创建妙搭应用（html / frontend / full_stack）
+  get               查看单个应用详情（app_type / 发布状态等）
+  list              按名称定位应用 app_id（--keyword）
+  html-publish      把 HTML 文件/目录按官方三段协议打包发布，返回 release_id（--wait 等待完成拿 online_url）
+  release get       按 release_id 查询发布状态 / online_url / error_logs
+  release list      发布历史
   update            修改应用名称 / 描述
   access-scope-get  查看应用访问范围
   access-scope-set  设置应用访问范围（specific / public / tenant）
 
 典型流程:
-  feishu-cli apps create --name "我的页面" --app-type HTML        # 拿 app_id
-  feishu-cli apps html-publish --app-id app_xxx --path ./site     # 发布拿 release_id
+  feishu-cli apps create --name "我的页面" --app-type html                 # 拿 app_id
+  feishu-cli apps html-publish --app-id app_xxx --path ./site --wait       # 发布并等待 online_url
   feishu-cli apps access-scope-set --app-id app_xxx --scope tenant`,
 }
 

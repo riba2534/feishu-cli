@@ -10,10 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 	"github.com/spf13/cobra"
 )
 
@@ -32,7 +35,7 @@ const maxAppsSensitiveListInError = 5
 
 var appsHTMLPublishCmd = &cobra.Command{
 	Use:   "html-publish",
-	Short: "把 HTML 文件/目录打包发布到妙搭应用，返回 release_id",
+	Short: "把 HTML 文件/目录打包发布到妙搭应用（--wait 等待发布完成并返回 online_url）",
 	Long: `把 --path（单个 HTML 文件或整个目录）打包成 tar.gz，按官方三段协议发布：
   GET /apps/{id}/pre_release 解析 upload_url / tos_path →
   对预签名 URL PUT tar.gz（不携带飞书 Authorization）→
@@ -45,13 +48,20 @@ var appsHTMLPublishCmd = &cobra.Command{
   - 未压缩总大小 ≤ 200MB；打包后 tar.gz ≤ 20MB；单个 .html 文件 ≤ 10MB
   - 默认拦截凭证文件（.env / .npmrc / .netrc / .git-credentials / .aws/credentials /
     .docker/config.json / .kube/config），用 --allow-sensitive 显式放行
+  - 目录形态自动跳过 .git 目录与 .git 文件（不会把仓库历史发布到公网）
+  - --app-id 必须是 app_ 开头的应用 ID（meta_token 先用 apps get 换出 app_id）
   - --dry-run 只展示计划（三段 endpoint + 打包清单），不获取 token、不访问网络、不上传
+
+发布结果:
+  发布是异步的，默认只返回 release_id；加 --wait 会每 20 秒查询一次 release 状态（默认最多 5 分钟），
+  finished 输出 online_url，failed 输出 error_logs 并非零退出；进入人工审批时停止等待并提示审批链接。
+  不加 --wait 时用 apps release get --app-id <id> --release-id <release_id> 查询。
 
 权限: User Access Token + spark:app:read + spark:app:write
 
 示例:
   feishu-cli apps html-publish --app-id app_xxx --path ./index.html
-  feishu-cli apps html-publish --app-id app_xxx --path ./dist
+  feishu-cli apps html-publish --app-id app_xxx --path ./dist --wait     # 等待发布完成拿 online_url
   feishu-cli apps html-publish --app-id app_xxx --path ./dist --dry-run   # 只看计划与打包清单`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -60,7 +70,10 @@ var appsHTMLPublishCmd = &cobra.Command{
 
 		appID := strings.TrimSpace(flagString(cmd, "app-id"))
 		if appID == "" {
-			return fmt.Errorf("--app-id 不能为空")
+			return clierr.Usagef("--app-id 不能为空")
+		}
+		if err := validateRealAppID(appID); err != nil {
+			return err
 		}
 		pathArg := strings.TrimSpace(flagString(cmd, "path"))
 		if pathArg == "" {
@@ -128,8 +141,97 @@ var appsHTMLPublishCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if wait, _ := cmd.Flags().GetBool("wait"); wait {
+			timeout, _ := cmd.Flags().GetDuration("wait-timeout")
+			return appsWaitRelease(cmd, appID, sparkStringValue(data["release_id"]), token, timeout)
+		}
 		return renderAppsResult(cmd, data)
 	},
+}
+
+// appsReleasePollInterval 轮询发布状态的间隔（官方建议约 20 秒；var 便于测试调小）。
+var appsReleasePollInterval = 20 * time.Second
+
+// appsWaitRelease 轮询 release get 直到终态并输出 online_url / error_logs（对齐官方 release-get 的 Agent 规则）：
+//   - finished：输出 online_url（服务端未返回时不编造）
+//   - failed：输出 error_logs 并以非零退出
+//   - 尚未终态且 current_node_info.current_status=PENDING：等待审批负责人处理，立即停止轮询（不是失败）
+//   - 顶层 pending 但节点不明确、未知状态：停止轮询原样报告
+//   - publishing 超过 --wait-timeout：停止轮询，报告 release_id 与当前状态（发布仍在进行，不要重新发布）
+func appsWaitRelease(cmd *cobra.Command, appID, releaseID, token string, timeout time.Duration) error {
+	if releaseID == "" {
+		return fmt.Errorf("html-publish 未返回 release_id，无法等待发布结果")
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	ctx := runctx.Root()
+	deadline := time.Now().Add(timeout)
+	path := client.SparkReleaseGetPath(appID, releaseID)
+	polls := 0
+	for {
+		polls++
+		data, err := client.SparkCall("GET", path, nil, nil, token)
+		if err != nil {
+			return appsWithHint(err, fmt.Sprintf("发布已提交（release_id=%s），只是查询状态失败；稍后用 `feishu-cli apps release get --app-id %s --release-id %s` 继续查询，不要重新发布", releaseID, appID, releaseID))
+		}
+		rel := projectSparkRelease(data)
+		if sparkStringValue(rel["release_id"]) == "" {
+			rel["release_id"] = releaseID
+		}
+		status := sparkStringValue(rel["status"])
+		outcome := ""
+		switch {
+		case status == sparkReleaseFinished:
+			outcome = "finished"
+		case status == sparkReleaseFailed:
+			outcome = "failed"
+		case sparkReleasePendingApproval(rel):
+			outcome = "pending_approval"
+		case status == sparkReleasePublishing:
+			if time.Now().Add(appsReleasePollInterval).After(deadline) {
+				outcome = "timeout"
+			}
+		default:
+			// 顶层 pending 但没有明确 PENDING 节点、或未知状态：不自行判定结果
+			outcome = "stopped"
+		}
+		if outcome == "" {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("等待发布结果被中断（release_id=%s）: %w", releaseID, ctx.Err())
+			case <-time.After(appsReleasePollInterval):
+			}
+			continue
+		}
+
+		rel["wait"] = map[string]any{"outcome": outcome, "polls": polls}
+		switch outcome {
+		case "finished":
+			if sparkStringValue(rel["online_url"]) != "" {
+				fmt.Fprintln(os.Stderr, "发布完成；online_url 默认仅创建者可见，交付他人前按需执行 apps access-scope-set")
+			}
+		case "pending_approval":
+			msg := "发布已进入人工审批，正在等待审批负责人处理（不是失败）。"
+			if u := sparkApprovalURL(rel); u != "" {
+				msg += "\n审批链接：" + u + "（打开前核对域名）"
+			} else {
+				msg += "\n服务端未返回有效审批链接。"
+			}
+			fmt.Fprintf(os.Stderr, "%s\n审批处理后用 `feishu-cli apps release get --app-id %s --release-id %s` 继续查询，不要重新发布\n", msg, appID, releaseID)
+		case "timeout":
+			fmt.Fprintf(os.Stderr, "等待 %s 后发布仍在进行（status=publishing）；稍后用 `feishu-cli apps release get --app-id %s --release-id %s` 继续查询，不要重新发布\n", timeout, appID, releaseID)
+		case "stopped":
+			fmt.Fprintf(os.Stderr, "发布状态为 %q，停止自动轮询；用 `feishu-cli apps release get --app-id %s --release-id %s` 查看详情\n", status, appID, releaseID)
+		}
+		if err := renderAppsResult(cmd, rel); err != nil {
+			return err
+		}
+		if outcome == "failed" {
+			return fmt.Errorf("妙搭发布失败（release_id=%s），失败步骤见输出中的 error_logs", releaseID)
+		}
+		return nil
+	}
 }
 
 // appsHTMLPublishDryRun 打印打包清单预览（文件列表/总大小/缺 index.html 提示/放行的凭证文件）。
@@ -159,6 +261,14 @@ func appsHTMLPublishDryRun(cmd *cobra.Command, appID, pathArg string, pathIsDir 
 				"body":     map[string]string{"tos_path": "<from pre_release response>"},
 			},
 		},
+	}
+	if wait, _ := cmd.Flags().GetBool("wait"); wait {
+		timeout, _ := cmd.Flags().GetDuration("wait-timeout")
+		m["steps"] = append(m["steps"].([]map[string]any), map[string]any{
+			"method":   "GET",
+			"endpoint": appsAppPath(appID, "/releases/<release_id>"),
+			"desc":     fmt.Sprintf("--wait：每 %s 查询一次发布状态直到 finished/failed/待审批，最长 %s", appsReleasePollInterval, timeout),
+		})
 	}
 	if walkErr != nil {
 		m["path_error"] = walkErr.Error()
@@ -230,6 +340,15 @@ func appsWalkCandidates(rootPath string) ([]appsCandidate, error) {
 	err = filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		// 跳过 git 仓库元数据（对齐官方 walk_html_publish_candidates）：.git 目录整棵子树不打包，
+		// .git 文件（submodule / worktree 的 gitdir 指针）也跳过，避免把仓库历史发布到公网。
+		// 只按名字精确匹配 .git，.gitignore / .github 等普通文件照常打包。
+		if d.Name() == ".git" {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if d.IsDir() {
 			return nil
@@ -386,5 +505,7 @@ func init() {
 	appsHTMLPublishCmd.Flags().String("app-id", "", "妙搭应用 ID（必填）")
 	appsHTMLPublishCmd.Flags().String("path", "", "HTML 文件或目录路径（必填）")
 	appsHTMLPublishCmd.Flags().Bool("allow-sensitive", false, "跳过凭证文件扫描（放行 .env / .npmrc / .aws/credentials 等）")
+	appsHTMLPublishCmd.Flags().Bool("wait", false, "发布后轮询 release 状态直到终态，输出 online_url / error_logs（失败时非零退出）")
+	appsHTMLPublishCmd.Flags().Duration("wait-timeout", 5*time.Minute, "--wait 的最长等待时间")
 	addAppsWriteFlags(appsHTMLPublishCmd)
 }

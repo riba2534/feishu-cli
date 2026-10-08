@@ -655,3 +655,79 @@ func TestAppsWalkCandidates_SkipsSymlink(t *testing.T) {
 		t.Fatalf("regular file index.html 应被收集，实际清单: %+v", got)
 	}
 }
+
+// TestAppsWalkCandidates_SkipsGitMetadata 回归：html-publish 打包时必须跳过 .git 目录整棵子树
+// 与 .git 文件（submodule/worktree 的 gitdir 指针），否则仓库历史会随应用发布到公网。
+// .gitignore / .github/ 等普通文件不受影响。
+func TestAppsWalkCandidates_SkipsGitMetadata(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"index.html":                  "<html></html>",
+		".git/HEAD":                   "ref: refs/heads/main",
+		".git/objects/ab/cdef":        "blob",
+		".git/config":                 "[core]",
+		"sub/.git":                    "gitdir: ../.git/modules/sub",
+		"sub/page.html":               "<p>sub</p>",
+		"vendor/lib/.git/HEAD":        "ref: refs/heads/x",
+		".gitignore":                  "node_modules",
+		".github/workflows/ci.yml":    "on: push",
+		"assets/app.git.js":           "console.log(1)",
+		"vendor/lib/index.js":         "export {}",
+		"node_modules/pkg/index.js":   "module.exports = 1",
+		"nested/deeper/.git/refs/tag": "x",
+	}
+	for rel, content := range files {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := appsWalkCandidates(dir)
+	if err != nil {
+		t.Fatalf("appsWalkCandidates: %v", err)
+	}
+	gotSet := map[string]bool{}
+	for _, c := range got {
+		gotSet[c.RelPath] = true
+		if c.RelPath == ".git" || strings.HasPrefix(c.RelPath, ".git/") || strings.Contains(c.RelPath, "/.git/") || strings.HasSuffix(c.RelPath, "/.git") {
+			t.Errorf(".git 元数据不应进入打包清单: %s", c.RelPath)
+		}
+	}
+	// 官方只跳过 .git；node_modules / .gitignore / .github 等按原样打包
+	for _, want := range []string{"index.html", "sub/page.html", ".gitignore", ".github/workflows/ci.yml", "assets/app.git.js", "vendor/lib/index.js", "node_modules/pkg/index.js"} {
+		if !gotSet[want] {
+			t.Errorf("普通文件 %s 应被打包，实际清单: %v", want, gotSet)
+		}
+	}
+}
+
+// TestAppsHTMLPublish_DryRunExcludesGit 在 RunE（dry-run）层面锁住 .git 不出现在 files 清单。
+func TestAppsHTMLPublish_DryRunExcludesGit(t *testing.T) {
+	initAppsTestConfig(t)
+	dir := writeAppsIndexFixture(t, "<h1>hi</h1>")
+	if err := os.MkdirAll(filepath.Join(dir, ".git", "objects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "HEAD"), []byte("ref: refs/heads/main"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := newAppsHTMLPublishTestCmd()
+	mustSet(t, c, "app-id", "app_x")
+	mustSet(t, c, "path", dir)
+	mustSet(t, c, "dry-run", "true")
+
+	out, err := captureAppsStdout(t, func() error { return appsHTMLPublishCmd.RunE(c, nil) })
+	if err != nil {
+		t.Fatalf("dry-run 不应报错: %v", err)
+	}
+	if strings.Contains(out, ".git/HEAD") {
+		t.Fatalf("dry-run files 清单不应包含 .git/HEAD，实际:\n%s", out)
+	}
+	if !strings.Contains(out, "\"file_count\": 1") {
+		t.Fatalf("dry-run 应只统计 index.html 1 个文件，实际:\n%s", out)
+	}
+}

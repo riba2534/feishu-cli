@@ -8,6 +8,7 @@
 
 ## 目录
 
+- [服务端解析 vs 本地管道](#0-服务端-svg-解析-vs-本地管道ab-实测)
 - [为什么不用单节点](#1-为什么不用-board-svg-import-单节点)
 - [标准工作流](#2-5-步标准工作流)
 - [一键脚本](#3-一键脚本scriptssvg_to_boardpy)
@@ -15,6 +16,32 @@
 - [节点密度](#5-节点密度参考14-张实战图)
 - [拆图判断](#6-何时该拆图)
 - [验证清单](#7-验证清单)
+
+## 0. 服务端 SVG 解析 vs 本地管道（A/B 实测）
+
+拆成原生节点有两条路：
+
+- **服务端解析**：`feishu-cli board import <board_id> drawing.svg --syntax svg`（`syntax_type=3`，一条命令）
+- **本地管道**：`scripts/svg_to_board.py`（whiteboard-cli 翻译 → 修 z_index → 裁剪溢出 → 分批 create-notes）
+
+同一批 SVG 在测试画板上的实测对比（whiteboard-cli 0.2.13）：
+
+| 维度 | 服务端解析 `--syntax svg` | 本地管道 svg_to_board.py |
+|------|------------------------|-------------------------|
+| 简单图（6 元素：rect/text/circle/line/曲线 path/polygon） | 6 个节点：round_rect、text_shape、ellipse、straight connector、**curve connector（保留曲率）**、polygon → image 节点 | 6 个节点，类型一致；polygon → svg 节点 |
+| 飞轮图（70 节点：渐变背景 + group + 曲线箭头 + 40 根柱子） | 70 节点，z_index 0..57 与 SVG 顺序一致，渲染与本地管道几乎一致 | 70 节点，渲染一致 |
+| 720+ 元素城市夜景（45 KB） | 723 节点约 1 秒落板，背景/窗户层级正确 | 未测（同类图在本地管道需分批上传） |
+| 不支持的属性 | 渐变 `fill=url(#id)` 取首个色、自定义 `stroke-dasharray` 降级，响应 `degraded_attributes` 逐条列出 | 静默按 whiteboard-cli 规则转换 |
+| viewBox 外的元素 | **原样保留**（画布外会多出一块） | Step 3 自动裁剪 |
+| 依赖 / 速度 | 无本地依赖，1 次请求 | 需 whiteboard-cli，多次请求 |
+
+结论：
+
+1. 默认用服务端解析——同等可编辑性，曲线连接保留得更好，还能拿到降级清单；
+2. SVG 有画布外元素、需要离线 `--dry-run` 预检节点、或要和 z_index/溢出修复规则精确对齐时，用本地管道；
+3. 单节点 `board svg-import` 仍只用于小图标（见下一节）。
+
+---
 
 ## 1. 为什么不用 `board svg-import` 单节点？
 
@@ -327,7 +354,7 @@ whiteboard-cli 的翻译规则（实测整理）：
 
 | 需求 | 路径 |
 |------|------|
-| 让大图里的小元素可点击编辑 | 用 5 步管道 + `scripts/svg_to_board.py` |
+| 让大图里的小元素可点击编辑 | 默认 `board import --syntax svg`；需裁剪溢出时用 5 步管道 + `scripts/svg_to_board.py` |
 | 简单图标 / 印章 | `board svg-import`（单节点） |
 | 200-2000 节点的复杂图 | 5 步管道，没问题 |
 | > 2000 节点 | 先考虑简化或拆图 |

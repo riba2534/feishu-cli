@@ -999,8 +999,14 @@ func processDiagramTask(task diagramTask, maxRetries int, verbose bool, userAcce
 		UserAccessToken: userAccessToken,
 	}
 
+	attempt := 0
 	result := client.DoWithRetry(func() (*client.ImportDiagramResult, http.Header, error) {
-		return client.ImportDiagram(task.whiteboardID, task.content, opts)
+		attempt++
+		// 每个图表写入的都是本次导入新建的空画板；/nodes/plantuml 不认 client_token（实测重复请求会重复建图），
+		// 所以重试改用 overwrite 原子覆盖：上一次请求若其实已落地（只是响应超时/5xx），重试不会叠出第二张图。
+		retryOpts := opts
+		retryOpts.Overwrite = attempt > 1
+		return client.ImportDiagram(task.whiteboardID, task.content, retryOpts)
 	}, client.RetryConfig{
 		MaxRetries:       maxRetries,
 		MaxTotalAttempts: maxRetries + 5,

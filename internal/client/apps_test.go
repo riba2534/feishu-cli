@@ -59,3 +59,15 @@ func TestSparkBasePath(t *testing.T) {
 		t.Fatalf("SparkBasePath = %q", SparkBasePath)
 	}
 }
+
+// TestParseSparkResponse_BusinessCodeOnHTTP4xx 回归：随 HTTP 4xx 下发的业务码要按 code=N 报出，
+// 否则 wrapSparkHTMLPublishErr 等按业务码分支的提示（如 400002577 应用不存在）走不到。
+func TestParseSparkResponse_BusinessCodeOnHTTP4xx(t *testing.T) {
+	_, err := parseSparkResponse(http.StatusBadRequest, []byte(`{"code":400002577,"msg":"app not exist","data":{}}`))
+	if err == nil || !strings.Contains(err.Error(), "code=400002577") || strings.Contains(err.Error(), "HTTP 400") {
+		t.Fatalf("应按业务码报错，got %v", err)
+	}
+	if !HasAPICode(err, 400002577) {
+		t.Fatalf("HasAPICode 应命中: %v", err)
+	}
+}

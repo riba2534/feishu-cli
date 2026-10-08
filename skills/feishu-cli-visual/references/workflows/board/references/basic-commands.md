@@ -21,6 +21,9 @@ feishu-cli board import <whiteboard_id> diagram.mmd --syntax mermaid
 
 # 指定图表类型
 feishu-cli board import <whiteboard_id> diagram.puml --diagram-type sequence
+
+# SVG：服务端拆成可编辑原生节点（syntax_type=3），不支持的属性列在 degraded_attributes
+feishu-cli board import <whiteboard_id> drawing.svg --syntax svg -o json
 ```
 
 ### 从内容直接导入
@@ -36,9 +39,10 @@ feishu-cli board import <whiteboard_id> "graph TD; A-->B" \
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `--syntax` | `plantuml` 或 `mermaid` | `plantuml` |
-| `--diagram-type` | 图表类型字符串：auto/mindmap/sequence/activity/class/er/flowchart/state/component | `auto` |
-| `--style` | `board` 或 `classic` | `board` |
+| `--syntax` | `plantuml` / `mermaid` / `svg`，未知取值报用法错误（exit 2） | `plantuml` |
+| `--diagram-type` | 图表类型字符串：auto/mindmap/sequence/activity/class/er/flowchart/state/component（只作用于 PlantUML/Mermaid） | `auto` |
+| `--style` | `board` 或 `classic`（只作用于 PlantUML/Mermaid） | `board` |
+| `--client-token` | 幂等键（≥10 字符），仅 `--engine local` 生效 | 空 |
 | `--source-type` | `file` 或 `content` | `file` |
 | `<source>` | source-type=content 时直接传图表源码；source-type=file 时传文件路径 | 必填 |
 
@@ -55,6 +59,30 @@ feishu-cli board import <whiteboard_id> "graph TD; A-->B" \
 | flowchart | 流程图 |
 | state | 状态图 |
 | component | 组件图 |
+
+## 取回图表源码
+
+服务端导入的 Mermaid / PlantUML 图表在 section 节点上保留 `syntax.code`，可原样取回再编辑：
+
+```bash
+feishu-cli board export-code <whiteboard_id> --source                          # 只有一个图表时直接打印
+feishu-cli board export-code <whiteboard_id> --source --node-id t1:2           # 多个图表时指定节点
+feishu-cli board export-code <whiteboard_id> --source --node-id t1:2 --output-path diagram   # 自动补 .mmd/.puml
+```
+
+改完用 `board import <whiteboard_id> diagram.mmd --syntax mermaid --overwrite` 写回。
+
+## 写入幂等（client_token）
+
+`/nodes` 端点（`board update`、`board svg-import`、`board create-notes`、`board import --engine local`）
+对同一 `client_token` 只写一次，重复请求直接返回首次的节点 ID。网络超时等结果未知时，带同一个值重跑：
+
+```bash
+feishu-cli board update <whiteboard_id> nodes.json --client-token fp-nodes-20260101-001
+```
+
+`/nodes/plantuml`（`board import` 服务端引擎）实测**不认** client_token，CLI 改为重试前回读顶层节点去重；
+文档导入（`doc import`）的图表重试使用 `overwrite` 覆盖本次新建的空画板，同样不会叠图。
 
 ## 获取画板节点
 
@@ -90,7 +118,8 @@ feishu-cli doc add-board <document_id> --parent-id <block_id> --index 0
 ## 画板 API 技术说明
 
 - API 端点：`/open-apis/board/v1/whiteboards/{id}/nodes/plantuml`
-- `syntax_type=1` 表示 PlantUML，`syntax_type=2` 表示 Mermaid
+- `syntax_type=1` 表示 PlantUML，`syntax_type=2` 表示 Mermaid，`syntax_type=3` 表示 SVG
+- 空画板 `GET /nodes` 返回 `{"code":0,"data":{}}`（没有 nodes 字段），按"无节点"处理
 - 使用通用 HTTP 请求方式（client.Get/Post），非专用 SDK 方法
 
 ## 权限要求
@@ -145,7 +174,6 @@ feishu-cli board create-notes <whiteboard_id> \
 
 | 限制 | 说明 |
 |------|------|
-| `board import` CLI 命令 | 单独导入画板时 API 返回 404（API 限制） |
 | Mermaid 花括号 | `{text}` 被识别为菱形节点，需避免 |
 | Mermaid par 语法 | `par...and...end` 飞书不支持 |
 | 画板无 PATCH API；已有 DELETE | 修改节点用 create+delete，或 `board update --overwrite`（服务端 `overwrite: true` 原子清空并写入新节点） |

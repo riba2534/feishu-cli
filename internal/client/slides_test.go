@@ -201,8 +201,8 @@ func TestGetSlides(t *testing.T) {
 	t.Cleanup(srv.Close)
 	setupTestConfig(t, srv.URL)
 
-	// 1. 默认 revision_id (0) -> 传递 -1 (最新版本)
-	res, err := GetSlides("pres_123", 0, "u-test")
+	// 1. revision_id=-1（最新版本）原样下发；0 不再在 client 层被静默改写（由命令层拒绝）
+	res, err := GetSlides("pres_123", -1, "u-test")
 	if err != nil {
 		t.Fatalf("GetSlides 意外报错: %v", err)
 	}
