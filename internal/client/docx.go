@@ -1254,8 +1254,15 @@ func UnmergeTableCells(documentID, tableBlockID string, rowIndex, columnIndex in
 }
 
 // UpdateDocContentAtomic 封装官方 PUT /open-apis/docs_ai/v1/documents/{document_id} 单操作原子更新接口。
-// 支持 command: overwrite, block_replace, block_delete, block_insert_after, append 等。
+// 支持 command: overwrite, block_replace, block_delete, block_insert_after, str_replace,
+// block_move_after, block_copy_insert_after 等。
 // 彻底避免客户端先删后写的中间窗口，并支持服务端 revision 乐观锁冲突校验。
+//
+// 返回约定：
+//   - 业务码非 0（常随 HTTP 400 下发）→ *APIError（含 log_id），先解析信封再看 HTTP 状态；
+//   - data.result 为 failed / partial_success → 同时返回 data 与 *DocsAIResultError（含 warnings、log_id），
+//     调用方必须以非零退出码结束；
+//   - 成功时 data 中额外写入 log_id（响应头 X-Tt-Logid，若有）。
 func UpdateDocContentAtomic(documentID string, body map[string]any, userAccessToken string) (map[string]any, error) {
 	c, err := GetClient()
 	if err != nil {
@@ -1272,25 +1279,15 @@ func UpdateDocContentAtomic(documentID string, body map[string]any, userAccessTo
 	if err != nil {
 		return nil, fmt.Errorf("更新文档内容失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("更新文档内容失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	data, logID, err := decodeDocsAIData("更新文档内容", resp.StatusCode, resp.Header, resp.RawBody)
+	if err != nil {
+		return nil, err
 	}
-	var parsed struct {
-		Code int            `json:"code"`
-		Msg  string         `json:"msg"`
-		Data map[string]any `json:"data"`
+	if logID != "" {
+		data["log_id"] = logID
 	}
-	if err := json.Unmarshal(resp.RawBody, &parsed); err != nil {
-		return nil, fmt.Errorf("解析更新文档响应失败: %w", err)
+	if err := classifyDocsAIResult("更新文档内容", data, logID); err != nil {
+		return data, err
 	}
-	if parsed.Code != 0 {
-		return nil, fmt.Errorf("更新文档内容失败: code=%d, msg=%s", parsed.Code, parsed.Msg)
-	}
-	if parsed.Data == nil || len(parsed.Data) == 0 {
-		return nil, fmt.Errorf("更新文档接口返回空数据对象")
-	}
-	if resStr, ok := parsed.Data["result"].(string); ok && strings.EqualFold(strings.TrimSpace(resStr), "failed") {
-		return nil, fmt.Errorf("更新文档操作失败: result=failed")
-	}
-	return parsed.Data, nil
+	return data, nil
 }
