@@ -24,6 +24,7 @@ import (
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
+	"golang.org/x/term"
 )
 
 // flagString 读取字符串 flag，忽略错误（未注册 flag 返回空串）。
@@ -361,10 +362,14 @@ func printJSONLine(v any) error {
 }
 
 // 确认门禁的输入源与交互判定，供测试注入。
+//
+// 交互判定必须用真正的 TTY 检测（ioctl），不能复用 isTerminal 的字符设备判断：
+// /dev/null 也是字符设备，`cmd </dev/null` 会被误判为交互终端，读到 EOF 后
+// 又落回"已取消"分支。isTerminal 保持原语义（event consume 的 stdin EOF 协议依赖它）。
 var (
 	confirmInput         io.Reader = os.Stdin
 	confirmPromptOut     io.Writer = os.Stderr
-	confirmIsInteractive           = func() bool { return isTerminal(os.Stdin) }
+	confirmIsInteractive           = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 )
 
 // confirmDangerousAction 危险操作（删除等不可逆写）的确认门禁。返回 nil 表示可以继续执行。
