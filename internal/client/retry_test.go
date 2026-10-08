@@ -246,14 +246,48 @@ func TestGetRetryWaitDuration_WithHeader(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("x-ogw-ratelimit-reset", "5.0")
 
-	// 运行多次验证抖动范围
-	for i := 0; i < 100; i++ {
-		wait := GetRetryWaitDuration(headers, 0)
-		secs := wait.Seconds()
-		// 5.0 * 0.9 = 4.5, 5.0 * 1.1 = 5.5
-		if secs < 4.4 || secs > 5.6 {
-			t.Fatalf("等待时间 %.2f 超出 ±10%% 抖动范围 [4.5, 5.5]", secs)
+	// 只向上抖动：不得早于服务端恢复时间（5s），最多晚 10%
+	for i := 0; i < 200; i++ {
+		secs := GetRetryWaitDuration(headers, 0).Seconds()
+		if secs < 5.0 || secs > 5.5+1e-9 {
+			t.Fatalf("等待时间 %.3f 超出 [5.0, 5.5]（不得早于服务端恢复时间）", secs)
 		}
+	}
+}
+
+// TestGetRetryWaitDuration_ServerHints 覆盖秒数向上取整、Retry-After 两种格式、优先级与非法值回退。
+func TestGetRetryWaitDuration_ServerHints(t *testing.T) {
+	future := time.Now().Add(7500 * time.Millisecond).UTC().Format(http.TimeFormat)
+	cases := []struct {
+		name     string
+		headers  http.Header
+		min, max float64 // 期望范围（秒）；min<0 表示应回退到 full jitter
+	}{
+		{"小数秒向上取整", http.Header{"X-Ogw-Ratelimit-Reset": {"0.3"}}, 1, 1.1},
+		{"未规范化的小写 key", http.Header{"x-ogw-ratelimit-reset": {"2"}}, 2, 2.2},
+		{"Retry-After 秒数", http.Header{"Retry-After": {"3"}}, 3, 3.3},
+		{"Retry-After HTTP-date 向上取整", http.Header{"Retry-After": {future}}, 7, 8.8},
+		{"x-ogw 优先于 Retry-After", http.Header{"X-Ogw-Ratelimit-Reset": {"2"}, "Retry-After": {"9"}}, 2, 2.2},
+		{"x-ogw 非法时回退 Retry-After", http.Header{"X-Ogw-Ratelimit-Reset": {"abc"}, "Retry-After": {"4"}}, 4, 4.4},
+		{"超大值封顶", http.Header{"X-Ogw-Ratelimit-Reset": {"100000"}}, maxServerWaitSeconds, maxServerWaitSeconds * 1.1},
+		{"0 视为无效", http.Header{"X-Ogw-Ratelimit-Reset": {"0"}}, -1, 0},
+		{"过去的 HTTP-date 视为无效", http.Header{"Retry-After": {"Mon, 02 Jan 2006 15:04:05 GMT"}}, -1, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := 0; i < 100; i++ {
+				secs := GetRetryWaitDuration(tc.headers, 0).Seconds()
+				if tc.min < 0 {
+					if secs > 1.0+1e-9 { // attempt=0 → full jitter 上限 2^0 = 1s
+						t.Fatalf("无效 header 应回退 full jitter（≤1s），得到 %.3f", secs)
+					}
+					continue
+				}
+				if secs < tc.min || secs > tc.max+1e-9 {
+					t.Fatalf("等待时间 %.3f 超出 [%.1f, %.1f]", secs, tc.min, tc.max)
+				}
+			}
+		})
 	}
 }
 
@@ -278,14 +312,13 @@ func TestGetRetryWaitDuration_Cap(t *testing.T) {
 		}
 	}
 
-	// header 值超大也应被截断
+	// 服务端给出的恢复时间不再被 30s 退避上限截短（否则会早于恢复时刻醒来），只受 maxServerWaitSeconds 约束
 	headers := http.Header{}
 	headers.Set("x-ogw-ratelimit-reset", "100.0")
 	for i := 0; i < 100; i++ {
-		wait := GetRetryWaitDuration(headers, 0)
-		secs := wait.Seconds()
-		if secs > maxBackoffSeconds+0.1 {
-			t.Fatalf("header 超大值时等待时间 %.2f 超过上限 %.0f 秒", secs, maxBackoffSeconds)
+		secs := GetRetryWaitDuration(headers, 0).Seconds()
+		if secs < 100 || secs > 110+1e-9 {
+			t.Fatalf("header=100 时等待时间 %.2f 应在 [100, 110]", secs)
 		}
 	}
 }
