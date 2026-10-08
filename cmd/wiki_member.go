@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -41,13 +42,17 @@ var wikiMemberAddCmd = &cobra.Command{
 	Long: `向知识空间添加成员。
 
 参数:
-  space_id          知识空间 ID（位置参数）
-  --member-type     成员类型（必填）
-  --member-id       成员 ID（必填）
-  --role            角色: admin/member（必填）
+  space_id              知识空间 ID（位置参数）
+  --member-type         成员类型（必填）
+  --member-id           成员 ID（必填）
+  --role                角色: admin/member（必填）
+  --need-notification   是否给新成员发送通知（默认 true；传 --need-notification=false 静默添加）
+  --dry-run             只打印将要发送的请求，不执行
 
 示例:
-  feishu-cli wiki member add SPACE_ID --member-type email --member-id user@example.com --role member`,
+  feishu-cli wiki member add SPACE_ID --member-type email --member-id user@example.com --role member
+  feishu-cli wiki member add SPACE_ID --member-type openid --member-id ou_xxx --role member --need-notification=false
+  feishu-cli wiki member add SPACE_ID --member-type openid --member-id ou_xxx --role member --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -59,9 +64,26 @@ var wikiMemberAddCmd = &cobra.Command{
 		memberID, _ := cmd.Flags().GetString("member-id")
 		role, _ := cmd.Flags().GetString("role")
 
+		needNotification, _ := cmd.Flags().GetBool("need-notification")
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
+
 		memberType = normalizePermMemberType(memberType)
 
-		if err := client.AddWikiSpaceMember(spaceID, memberType, memberID, role, resolveOptionalUserToken(cmd)); err != nil {
+		if dryRun {
+			return printJSON(map[string]any{
+				"dry_run": true,
+				"method":  "POST",
+				"path":    fmt.Sprintf("/open-apis/wiki/v2/spaces/%s/members", url.PathEscape(spaceID)),
+				"query":   map[string]any{"need_notification": needNotification},
+				"body": map[string]any{
+					"member_type": memberType,
+					"member_id":   memberID,
+					"member_role": role,
+				},
+			})
+		}
+
+		if err := client.AddWikiSpaceMemberWithOptions(spaceID, memberType, memberID, role, needNotification, resolveOptionalUserToken(cmd)); err != nil {
 			return err
 		}
 
@@ -168,6 +190,8 @@ func init() {
 	wikiMemberAddCmd.Flags().String("member-type", "", "成员类型（必填）")
 	wikiMemberAddCmd.Flags().String("member-id", "", "成员 ID（必填）")
 	wikiMemberAddCmd.Flags().String("role", "", "角色: admin/member（必填）")
+	wikiMemberAddCmd.Flags().Bool("need-notification", true, "是否给新成员发送通知（默认 true，保持历史行为）")
+	wikiMemberAddCmd.Flags().Bool("dry-run", false, "只打印将要发送的请求，不执行")
 	mustMarkFlagRequired(wikiMemberAddCmd, "member-type", "member-id", "role")
 	wikiMemberAddCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问个人知识库）")
 

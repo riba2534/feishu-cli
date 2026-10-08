@@ -40,6 +40,13 @@ func initWikiNodeDeleteTestConfig(t *testing.T, baseURL string) {
 	}
 }
 
+// writeWikiNodeByTokenEcho 模拟 node_by_token：把请求里的 token 原样作为 node_token / obj_token 返回，space_id 固定。
+// 删除命令无论是否传 --space-id 都会先解析节点并核对空间，测试服务端必须响应该端点。
+func writeWikiNodeByTokenEcho(w http.ResponseWriter, r *http.Request, spaceID string) {
+	tok := r.URL.Query().Get("token")
+	_, _ = fmt.Fprintf(w, `{"code":0,"msg":"ok","data":{"node":{"space_id":%q,"node_token":%q,"obj_token":%q,"obj_type":"docx","node_type":"origin","title":"测试"}}}`, spaceID, tok, tok)
+}
+
 // TestDeleteWikiNodePathBodyAndAsyncPoll 验证 Wiki 节点删除走正确的 OpenAPI 路径、Body 以及异步任务轮询
 func TestDeleteWikiNodePathBodyAndAsyncPoll(t *testing.T) {
 	deleteCalled := false
@@ -169,6 +176,8 @@ func TestDeleteWikiNodeSyncCompletion(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
+			writeWikiNodeByTokenEcho(w, r, "sp-1")
 		case r.Method == "DELETE" && r.URL.Path == "/open-apis/wiki/v2/spaces/sp-1/nodes/wikcnSync":
 			deleteCalled = true
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"task_id":""}}`)
@@ -204,6 +213,8 @@ func TestDeleteWikiNodeAllFailedReturnsError(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
+			writeWikiNodeByTokenEcho(w, r, "sp-fail")
 		case r.Method == "DELETE" && r.URL.Path == "/open-apis/wiki/v2/spaces/sp-fail/nodes/node-fail":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"task_id":"task-failed-999"}}`)
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/open-apis/wiki/v2/tasks/"):
@@ -265,6 +276,8 @@ func TestDeleteWikiNodeTimeoutReturnsError(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
+			writeWikiNodeByTokenEcho(w, r, "sp-timeout")
 		case r.Method == "DELETE" && r.URL.Path == "/open-apis/wiki/v2/spaces/sp-timeout/nodes/node-timeout":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"task_id":"task-timeout-888"}}`)
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/open-apis/wiki/v2/tasks/"):
@@ -481,6 +494,8 @@ func TestDeleteWikiNodeInvalidServerTaskIDRejected(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
+			writeWikiNodeByTokenEcho(w, r, "sp-123")
 		case r.Method == "DELETE":
 			// 返回含有路径分隔符的非法 task_id
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"task_id":"task/escape/evil"}}`)
@@ -594,6 +609,8 @@ func TestDeleteWikiNodePathEscaped(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
+			writeWikiNodeByTokenEcho(w, r, "sp-123")
 		case r.Method == "DELETE":
 			gotDeletePath = r.URL.EscapedPath()
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"task_id":"task-escaped-123"}}`)
