@@ -166,6 +166,43 @@ func refreshIfStaleLocalToken(explicitToken, appID, appSecret, baseURL string) (
 	return newToken.AccessToken, nil
 }
 
+// EnsureFreshLocalToken 按业务命令同样的规则取得 token.json 中可用的 User Token。
+//
+// snapshot 是调用方先前从 token.json 读到的快照：
+//   - 先校验已绑定当前 App（RequireBoundApp）：未绑定的旧 token 不得被静默绑定或刷新；
+//   - access_token 仍有效 → 原样返回（refreshed=false）；
+//   - 否则走跨进程加锁的 reload → 代际校验 → refresh → commit 路径，
+//     其他进程已轮换时直接采用新一代，不会二次消耗同一 refresh_token。
+//
+// 供 `auth status --verify` 等诊断命令复用，禁止绕过锁直接 RefreshAccessToken + SaveToken。
+func EnsureFreshLocalToken(appID, appSecret, baseURL string, snapshot *TokenStore) (*TokenStore, bool, error) {
+	fresh, refreshed, err := ensureFreshLocalToken(appID, appSecret, baseURL, snapshot)
+	if err != nil {
+		return nil, false, clierr.Auth(err)
+	}
+	return fresh, refreshed, nil
+}
+
+func ensureFreshLocalToken(appID, appSecret, baseURL string, snapshot *TokenStore) (*TokenStore, bool, error) {
+	if snapshot == nil {
+		return nil, false, fmt.Errorf("未登录（token.json 不存在），请先 `feishu-cli auth login`")
+	}
+	if err := snapshot.RequireBoundApp(appID); err != nil {
+		return nil, false, err
+	}
+	if snapshot.IsAccessTokenValid() {
+		return snapshot, false, nil
+	}
+	if !snapshot.IsRefreshTokenValid() {
+		return nil, false, fmt.Errorf("access_token 和 refresh_token 都已失效，请重新 `feishu-cli auth login`")
+	}
+	fresh, err := refreshLocalTokenLocked(appID, appSecret, baseURL, false, snapshot.RefreshToken)
+	if err != nil {
+		return nil, false, err
+	}
+	return fresh, fresh.AccessToken != snapshot.AccessToken, nil
+}
+
 // ForceRefreshLocalToken 强制刷新 token.json 中的 access_token，
 // 即使当前 access_token 仍然有效。由 `auth refresh` 子命令调用。
 //

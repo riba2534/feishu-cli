@@ -62,6 +62,19 @@ var authStatusCmd = &cobra.Command{
 			return nil
 		}
 
+		// --verify 先在线校验：access 过期时与业务命令一样走加锁刷新（含 App 绑定校验），
+		// 后续展示的就是刷新后的 token 状态，而不是刷新前的旧快照。
+		var verified bool
+		var verifyErr string
+		if verify {
+			cfg := config.Get()
+			var fresh *auth.TokenStore
+			fresh, verified, verifyErr = verifyStoredUserToken(token, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+			if fresh != nil {
+				token = fresh
+			}
+		}
+
 		status := token.TokenStatus()
 		identity := "user"
 		note := ""
@@ -91,7 +104,7 @@ var authStatusCmd = &cobra.Command{
 			"token_status":          status,
 			"access_token":          auth.MaskToken(token.AccessToken),
 			"scope":                 token.Scope,
-			"expires_at":            token.ExpiresAt.Format("2006-01-02T15:04:05+08:00"),
+			"expires_at":            token.ExpiresAt.Format(time.RFC3339),
 			"access_token_valid":    token.IsAccessTokenValid(),
 			"refresh_token_present": refreshPresent,
 			"health":                health,
@@ -103,7 +116,7 @@ var authStatusCmd = &cobra.Command{
 		if refreshPresent {
 			result["refresh_token_valid"] = token.IsRefreshTokenValid()
 			if !token.RefreshExpiresAt.IsZero() {
-				result["refresh_expires_at"] = token.RefreshExpiresAt.Format("2006-01-02T15:04:05+08:00")
+				result["refresh_expires_at"] = token.RefreshExpiresAt.Format(time.RFC3339)
 			}
 		} else {
 			result["refresh_token_valid"] = false
@@ -114,12 +127,11 @@ var authStatusCmd = &cobra.Command{
 				"user_id":   cache.UserID,
 				"union_id":  cache.UnionID,
 				"name":      cache.Name,
-				"cached_at": cache.CachedAt.Format("2006-01-02T15:04:05+08:00"),
+				"cached_at": cache.CachedAt.Format(time.RFC3339),
 			}
 		}
 		if verify {
-			ok, verifyErr := verifyStoredUserToken(token)
-			result["verified"] = ok
+			result["verified"] = verified
 			if verifyErr != "" {
 				result["verify_error"] = verifyErr
 			}
@@ -213,29 +225,27 @@ func init() {
 	authStatusCmd.Flags().Bool("verify", false, "在线校验当前 token 是否仍可被服务端接受")
 }
 
-func verifyStoredUserToken(token *auth.TokenStore) (bool, string) {
+// verifyUserInfoFn 在线校验 User Token（调 authen/v1/user_info），测试可替换。
+var verifyUserInfoFn = func(userAccessToken string) error {
+	_, err := client.GetCurrentUserInfo(userAccessToken)
+	return err
+}
+
+// verifyStoredUserToken 校验 token.json 中的 User Token 能否被服务端接受。
+//
+// 与业务命令共用 auth.EnsureFreshLocalToken：先校验 token 已绑定当前 App（未绑定的旧 token
+// 不会被静默绑定），access 过期时走跨进程加锁 + 代际校验的刷新路径，避免与并发进程
+// 重复消耗同一 refresh_token（20073）。返回刷新后的 token（未刷新时为入参）供展示。
+func verifyStoredUserToken(token *auth.TokenStore, appID, appSecret, baseURL string) (*auth.TokenStore, bool, string) {
 	if token == nil {
-		return false, "未登录"
+		return nil, false, "未登录"
 	}
-
-	activeToken := token.AccessToken
-	if !token.IsAccessTokenValid() {
-		if !token.IsRefreshTokenValid() {
-			return false, "access_token 和 refresh_token 都已过期"
-		}
-		cfg := config.Get()
-		fresh, err := auth.RefreshAccessToken(token, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
-		if err != nil {
-			return false, err.Error()
-		}
-		if err := auth.SaveToken(fresh); err != nil {
-			return false, err.Error()
-		}
-		activeToken = fresh.AccessToken
+	fresh, _, err := auth.EnsureFreshLocalToken(appID, appSecret, baseURL, token)
+	if err != nil {
+		return nil, false, err.Error()
 	}
-
-	if _, err := client.GetCurrentUserInfo(activeToken); err != nil {
-		return false, err.Error()
+	if err := verifyUserInfoFn(fresh.AccessToken); err != nil {
+		return fresh, false, err.Error()
 	}
-	return true, ""
+	return fresh, true, ""
 }
