@@ -28,7 +28,13 @@
 ### 安装与认证
 
 - **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
-- **认证**：使用 **App Token（应用身份）**，需配置 App ID 和 App Secret（环境变量或 `~/.feishu-cli/config.yaml`）。无需 `auth login`（User Token 不适用于权限管理 API）。
+- **认证**：权限管理 API 同时支持 **App（Bot）身份**与 **User 身份**。perm 全部子命令：
+  - 不传 `--as`：保持默认 **Bot 身份**（App ID / App Secret，环境变量或 `~/.feishu-cli/config.yaml`）；
+    显式 `--user-access-token u-xxx` 时以该用户身份调用。**不读** `FEISHU_USER_ACCESS_TOKEN` 环境变量，避免环境变量静默切换身份。
+  - `--as user`：以 `auth login` 的用户身份调用（缺 User Token 报错）；`--as bot` 强制 App 身份；
+    `--as auto`：已登录用 User、未配置回退 Bot，已配置但不可用时 fail-closed 报错。
+  - **个人文档**（应用不是协作者）用 Bot 身份会返回 `1063004 User has no share permission` /
+    `1063002 Permission denied`，CLI 会提示改用 `--as user`（实测同一文档 `--as user` 成功）。
 
 ### 所需权限 scope
 
@@ -54,6 +60,9 @@ feishu-cli perm list <TOKEN> --doc-type docx
 
 # 删除指定协作者
 feishu-cli perm delete <TOKEN> --doc-type docx --member-type email --member-id user@example.com
+
+# 个人文档（应用不是协作者）：以当前登录用户身份操作
+feishu-cli perm list <TOKEN> --doc-type docx --as user
 ```
 
 ### Bot 创建资源后自动授权当前用户
@@ -113,8 +122,13 @@ feishu-cli perm add <TOKEN> \
   --member-type <MEMBER_TYPE> \
   --member-id <MEMBER_ID> \
   --perm <PERM> \
-  [--notification]
+  [--notification] \
+  [--perm-type <container|single_page>] \
+  [--as <bot|user|auto>]
 ```
+
+`--perm-type` 只对知识库节点（`--doc-type wiki`）有效：`container` = 当前页面及子页面，`single_page` = 仅当前页面；
+不传时不下发，由服务端按默认（container）处理；非 wiki 文档传入会直接报用法错误（exit 2）。
 
 ### 更新权限
 
@@ -129,8 +143,10 @@ feishu-cli perm update <TOKEN> \
 ### 查看协作者列表
 
 ```bash
-feishu-cli perm list <TOKEN> --doc-type <DOC_TYPE>
+feishu-cli perm list <TOKEN> --doc-type <DOC_TYPE> [--as <bot|user|auto>]
 ```
+
+输出协作者数组（`member_type` / `member_id` / `perm` / `perm_type` / `type` 等，按服务端返回）。
 
 ### 删除协作者
 
@@ -158,6 +174,8 @@ members.json 格式（顶层为 JSON 数组）：
   {"member_type": "email", "member_id": "user@example.com", "perm": "edit"}
 ]
 ```
+
+知识库（`--doc-type wiki`）成员可额外带 `"perm_type": "container"` 或 `"single_page"`；非 wiki 文档带该字段会报错。
 
 ### 转移所有权
 
@@ -191,8 +209,13 @@ feishu-cli perm auth <TOKEN> --action <ACTION> [--doc-type <DOC_TYPE>]
 ### 查看公开权限
 
 ```bash
-feishu-cli perm public-get <TOKEN>
+feishu-cli perm public-get <TOKEN> [--doc-type <DOC_TYPE>] [--as <bot|user|auto>]
 ```
+
+主读取走 v2 接口（`GET /open-apis/drive/v2/permissions/:token/public`），比 v1 多出
+`copy_entity`（谁可以复制）、`manage_collaborator_entity`（谁可以管理协作者）、
+`external_access_entity`（对外分享范围 open/closed/…）等字段；同时补读 v1 保留旧字段
+`external_access`、`invite_external`（v1 读取失败时 stderr 告警，`external_access` 由 `external_access_entity` 推断）。
 
 ### 更新公开权限
 
@@ -354,7 +377,10 @@ feishu-cli perm transfer-owner <TOKEN> \
 | `doc-type mismatch` / Token 无效 | doc-type 与实际文档类型不匹配 | 检查常见 Token 前缀：`doxcn` → docx、`shtcn` → sheet、`bascn` → bitable；最终以 URL 类型和 API 返回为准 |
 | `member not found` | member-id 不存在或 member-type 不正确 | 确认邮箱/ID 正确，注意 email 类型需要用户的飞书注册邮箱 |
 | `password create: Permission denied` | 分享密码为企业版功能 | 确认企业是否开通此功能，或联系管理员开启 |
-| `transfer-owner: no permission` | 只有文档所有者或管理员可转移 | 先用 `perm list` 确认当前 App 身份，确保是文档创建者 |
+| `transfer-owner: no permission` | 只有文档所有者或管理员可转移 | 先用 `perm list` 确认当前身份，确保是文档创建者；文档属于你本人时用 `--as user` |
+| `1063004 User has no share permission` | 当前身份对文档无管理协作者/分享权限；Bot 身份最常见（应用不是协作者） | 文档属于你本人或你有管理权限时加 `--as user`；否则联系所有者授予「可管理」，或把应用加为协作者 |
+| `1063002 Permission denied` | 当前身份无权访问该文档 | 同上，Bot 身份时改用 `--as user` |
+| `--perm-type / perm_type 仅在文档类型为 wiki 时有效` | 对非 wiki 文档传了 perm_type | 去掉 `--perm-type`，或确认 `--doc-type wiki` |
 
 ## 参考文档
 
