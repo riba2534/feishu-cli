@@ -19,6 +19,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -275,18 +276,19 @@ func emitAPIBody(status int, header http.Header, rawBody []byte) error {
 	return writeAPIOutput(rawBody, apiRaw)
 }
 
-// writeAPIOutput 把响应体写到 stdout 或 --output 文件。
+// writeAPIOutput 把响应体写到 stdout 或 --output 文件（原子写入：失败不留半截文件、不破坏原文件）。
 func writeAPIOutput(rawBody []byte, raw bool) error {
-	outWriter := io.Writer(os.Stdout)
-	if apiOutput != "" {
-		f, err := os.Create(apiOutput)
-		if err != nil {
-			return fmt.Errorf("打开输出文件失败: %w", err)
-		}
-		defer f.Close()
-		outWriter = f
+	if apiOutput == "" {
+		return writeAPIResponse(os.Stdout, rawBody, raw)
 	}
-	return writeAPIResponse(outWriter, rawBody, raw)
+	var buf bytes.Buffer
+	if err := writeAPIResponse(&buf, rawBody, raw); err != nil {
+		return err
+	}
+	if err := safefile.AtomicWriteFile(apiOutput, buf.Bytes(), 0o644); err != nil {
+		return fmt.Errorf("写入输出文件失败: %w", err)
+	}
+	return nil
 }
 
 // emitAPIError 处理业务错误 / HTTP 错误响应：stdout 不输出错误体（--jq/--format 也不处理），
@@ -496,7 +498,7 @@ func loadAPIBody(inline, file string) ([]byte, error) {
 	if file == "-" {
 		return io.ReadAll(os.Stdin)
 	}
-	return os.ReadFile(file)
+	return readLocalInputFile(file)
 }
 
 // resolveAPIToken 根据 --as 选择 token 策略

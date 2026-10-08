@@ -26,11 +26,11 @@ OpenAPI host：`open.feishu.cn` / `open.larksuite.com` / `open.larkoffice.com`�
 | Flag | 说明 |
 |------|------|
 | `--params '<json>'` | query 参数（**单个** JSON 对象），如 `'{"page_size":10}'`；尾部有多余内容（如 `'{"a":1} {"b":2}'`）会报错而非静默只取前半 |
-| `--data '<json>'` / `--data-file <file>` | 请求体：`--data` 传 JSON 字符串，或 `--data-file` 从文件读（`-` 表示 stdin）；二者互斥 |
+| `--data '<json>'` / `--data-file <file>` | 请求体：`--data` 传 JSON 字符串，或 `--data-file` 从文件读（`-` 表示 stdin）；二者互斥。`--data-file` 拒绝读取 `~/.ssh`、`~/.aws`、`~/.feishu-cli`、`/etc` 等敏感目录（退出码 2） |
 | `--as auto\|user\|bot` | 身份：auto（未配置 User 时回退 Tenant；已配置但不可用时失败，默认）/ user（强制 User Token，需先 `auth login`）/ bot（强制 Tenant/应用 Token） |
 | `--user-access-token` | 显式 User Token，仅 auto/user 路径解析；`--as bot` 强制应用身份，不用 User Token |
 | `--dry-run` | 只打印将发送的请求（method/path/query/body/identity），不实际调用 |
-| `-o <file>` | 写原始响应体到文件（binary-safe，适合下载类接口） |
+| `-o <file>` | 写原始响应体到文件（binary-safe，原子写入；拒绝敏感目录与越出当前目录的相对 `..` 路径） |
 | `--raw` | 原样输出响应 body，不做 pretty JSON |
 | `--include-headers` | 在 stderr 打印响应状态码和响应头 |
 | `--timeout <seconds>` | 单次请求超时，默认 30 秒 |

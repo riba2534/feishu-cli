@@ -17,6 +17,7 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkdrive "github.com/larksuite/oapi-sdk-go/v3/service/drive/v1"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // 最大下载文件大小限制 (100MB)
@@ -431,12 +432,10 @@ func saveToFile(reader io.Reader, outputPath string) error {
 }
 
 // validatePath 验证路径安全性，防止路径遍历攻击
+// validatePath 校验本地输出路径：按路径段拒绝越出当前目录的 ".."，
+// 并拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），规则见 internal/safefile。
 func validatePath(path string) error {
-	cleanPath := filepath.Clean(path)
-	if strings.Contains(cleanPath, "..") {
-		return fmt.Errorf("路径不安全: 不允许包含 '..'")
-	}
-	return nil
+	return safefile.ValidateOutputPath(path)
 }
 
 // DriveFile 云空间文件信息

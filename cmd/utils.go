@@ -12,7 +12,6 @@ import (
 	_ "image/png"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
@@ -317,7 +317,7 @@ func loadJSONInput(inlineValue, filePath, inlineFlag, fileFlag, label string) (s
 	}
 
 	if filePath != "" {
-		data, err := os.ReadFile(filePath)
+		data, err := readLocalInputFile(filePath)
 		if err != nil {
 			return "", fmt.Errorf("读取 %s 文件失败: %w", label, err)
 		}
@@ -409,33 +409,32 @@ func confirmationBypassed(cmd *cobra.Command) bool {
 	return false
 }
 
-// validateOutputPath 验证输出路径是否安全
-// 防止路径遍历攻击
+// validateOutputPath 验证用户指定的输出路径是否安全：
+//   - 相对路径按路径段拒绝 ".."（越出当前目录），report..v2.json 这类文件名放行；
+//   - 解析符号链接后拒绝敏感目录（~/.ssh、~/.aws、~/.feishu-cli、/etc 等，见 internal/safefile）；
+//   - allowedDir 非空时要求路径（解析符号链接后）位于该目录内，判断带路径分隔符边界。
 func validateOutputPath(outputPath string, allowedDir string) error {
-	// 清理路径
-	cleanPath := filepath.Clean(outputPath)
-
-	// 检查是否包含路径遍历
-	if strings.Contains(cleanPath, "..") {
-		return fmt.Errorf("输出路径不能包含 '..'")
+	if err := safefile.ValidateOutputPath(outputPath); err != nil {
+		return err
 	}
-
-	// 如果指定了允许的目录，验证路径在该目录下
 	if allowedDir != "" {
-		absOutput, err := filepath.Abs(cleanPath)
+		within, err := safefile.IsWithinResolved(outputPath, allowedDir)
 		if err != nil {
 			return fmt.Errorf("无法解析输出路径: %w", err)
 		}
-		absAllowed, err := filepath.Abs(allowedDir)
-		if err != nil {
-			return fmt.Errorf("无法解析允许目录: %w", err)
-		}
-		if !strings.HasPrefix(absOutput, absAllowed) {
-			return fmt.Errorf("输出路径必须在 %s 目录下", allowedDir)
+		if !within {
+			return clierr.Usagef("输出路径必须在 %s 目录下", allowedDir)
 		}
 	}
-
 	return nil
+}
+
+// readLocalInputFile 读取用户指定的本地输入文件，先拒绝敏感目录（防止把凭证当请求体发往远端）。
+func readLocalInputFile(path string) ([]byte, error) {
+	if err := safefile.ValidateInputPath(path); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
 }
 
 // unescapeSheetRange 处理 shell 转义的范围字符串
