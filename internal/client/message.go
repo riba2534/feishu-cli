@@ -197,6 +197,21 @@ type ListMessagesOptions struct {
 	// CardContentType 控制 interactive 卡片的返回格式（取值 user_card_content / raw_card_content / 空）。
 	// 详见 CardMsgContentTypeUser/CardMsgContentTypeRaw 注释。
 	CardContentType string
+	// OnlyThreadRootMessages 为 true 时传 only_thread_root_messages=true，仅对
+	// container_id_type=chat 生效：话题群（chat_mode=topic）里服务端默认会把话题内的
+	// 回复与根消息混排返回，导致回复既出现在 items、又出现在 thread_replies 里，
+	// 且翻页额度被回复占用。只拉根消息、回复由 ExpandThreadReplies 单独展开（对齐官方
+	// im_chat_messages_list.go）。普通群的引用回复（无 thread_id）不受影响。
+	OnlyThreadRootMessages bool
+}
+
+// shouldSendOnlyThreadRoot 只有 chat 容器才传 only_thread_root_messages；
+// thread 容器本身就是"某个话题的全部消息"，传了反而语义不明。
+func (opts ListMessagesOptions) shouldSendOnlyThreadRoot() bool {
+	if !opts.OnlyThreadRootMessages {
+		return false
+	}
+	return opts.ContainerIDType == "" || opts.ContainerIDType == "chat"
 }
 
 // ListMessagesResult contains the result of listing messages
@@ -288,6 +303,9 @@ func listMessagesViaRawRequest(containerID string, opts ListMessagesOptions) (*L
 	if opts.CardContentType != "" {
 		req.QueryParams.Set("card_msg_content_type", opts.CardContentType)
 	}
+	if opts.shouldSendOnlyThreadRoot() {
+		req.QueryParams.Set("only_thread_root_messages", "true")
+	}
 	// 让服务端直接回填发送者显示名（含 Bot / 外部租户用户），侧路采集见 harvestSenderNames
 	req.QueryParams.Set("with_sender_name", "true")
 
@@ -295,8 +313,8 @@ func listMessagesViaRawRequest(containerID string, opts ListMessagesOptions) (*L
 	if err != nil {
 		return nil, fmt.Errorf("获取消息列表失败: %w", err)
 	}
-	if apiResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("获取消息列表失败: HTTP %d, body: %s", apiResp.StatusCode, string(apiResp.RawBody))
+	if err := ParseAPIResponse("获取消息列表", apiResp.StatusCode, apiResp.Header, apiResp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var resp listMessagesRawResponse
@@ -358,6 +376,9 @@ func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, use
 	if opts.CardContentType != "" {
 		params.Set("card_msg_content_type", opts.CardContentType)
 	}
+	if opts.shouldSendOnlyThreadRoot() {
+		params.Set("only_thread_root_messages", "true")
+	}
 	params.Set("with_sender_name", "true")
 
 	reqURL := fmt.Sprintf("%s/open-apis/im/v1/messages?%s", baseURL, params.Encode())
@@ -377,6 +398,10 @@ func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, use
 	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("获取消息列表失败: 读取响应失败: %w", err)
+	}
+	// 飞书大量业务错误随 HTTP 4xx 下发：先解析业务信封，保留 code/log_id 供上层分支与诊断
+	if err := ParseAPIResponse("获取消息列表", httpResp.StatusCode, httpResp.Header, body); err != nil {
+		return nil, err
 	}
 
 	var resp listMessagesRawResponse
@@ -633,6 +658,10 @@ func getMessageWithUserToken(messageID, userAccessToken, cardContentType string)
 	if err != nil {
 		return nil, fmt.Errorf("获取消息详情失败: 读取响应失败: %w", err)
 	}
+	// 飞书大量业务错误随 HTTP 4xx 下发：先解析业务信封，保留 code/log_id 供上层分支与诊断
+	if err := ParseAPIResponse("获取消息详情", httpResp.StatusCode, httpResp.Header, body); err != nil {
+		return nil, err
+	}
 
 	var resp listMessagesRawResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -681,8 +710,8 @@ func getMessageViaRawRequest(messageID, cardContentType, userAccessToken string)
 	if err != nil {
 		return nil, fmt.Errorf("获取消息详情失败: %w", err)
 	}
-	if apiResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("获取消息详情失败: HTTP %d, body: %s", apiResp.StatusCode, string(apiResp.RawBody))
+	if err := ParseAPIResponse("获取消息详情", apiResp.StatusCode, apiResp.Header, apiResp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var resp listMessagesRawResponse
@@ -856,8 +885,8 @@ func searchChatsWithSearchAPI(client *lark.Client, opts SearchChatsOptions, user
 	if err != nil {
 		return nil, fmt.Errorf("搜索群聊失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("搜索群聊失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("搜索群聊", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -1423,8 +1452,8 @@ func mgetMessages(ids []string, userAccessToken, cardContentType string) ([]*lar
 	if err != nil {
 		return nil, nil, fmt.Errorf("批量获取消息失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, resp.RawBody, fmt.Errorf("批量获取消息失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("批量获取消息", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, resp.RawBody, err
 	}
 
 	var parsed listMessagesRawResponse

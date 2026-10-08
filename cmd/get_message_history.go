@@ -177,6 +177,10 @@ var getMessageHistoryCmd = &cobra.Command{
 			PageSize:        pageSize,
 			PageToken:       pageToken,
 			CardContentType: cardContentType,
+			// 群聊容器只拉话题根消息：话题群里服务端默认把回复与根消息混排返回，
+			// 回复会同时出现在 items 与 thread_replies 中，且翻页额度被回复占用。
+			// 回复统一由下方 ExpandThreadReplies 展开（--expand-threads=false 时只看根消息）。
+			OnlyThreadRootMessages: containerIDType == "chat",
 		}
 
 		result, err := client.ListMessages(containerID, opts, token)

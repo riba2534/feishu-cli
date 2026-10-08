@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -231,8 +230,8 @@ func SearchMessages(opts SearchMessagesOptions, userAccessToken string) (*Search
 	if err != nil {
 		return nil, fmt.Errorf("搜索消息失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("搜索消息失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("搜索消息", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -413,8 +412,8 @@ func SearchDocWiki(opts SearchDocWikiOptions, userAccessToken string) (*SearchDo
 		return nil, fmt.Errorf("搜索文档失败: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("搜索文档失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("搜索文档", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	// 解析响应
@@ -570,8 +569,8 @@ func DriveSearchV2(opts DriveSearchOptions, userAccessToken string) (*DriveSearc
 	if err != nil {
 		return nil, fmt.Errorf("drive 搜索失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("drive 搜索失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("drive 搜索", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var parsed struct {
