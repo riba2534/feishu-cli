@@ -164,6 +164,9 @@ feishu-cli chat member list oc_xxx --page-all       # 自动翻页拉全部成�
 feishu-cli chat member add oc_xxx --id-list ou_xxx,ou_yyy
 feishu-cli chat member remove oc_xxx --id-list ou_xxx
 feishu-cli chat create --name "项目群" --user-ids ou_xxx,ou_yyy
+feishu-cli chat create --name "需求讨论" --chat-mode topic --bots cli_xxx   # 话题群 + 拉入机器人（建群只走应用身份）
+feishu-cli chat list --types p2p,group --exclude-muted   # 单聊需用户身份；免打扰过滤仅用户身份生效
+feishu-cli msg search-chats --member-ids ou_xxx --chat-modes topic --sort update_time   # 按成员/群模式/排序筛群
 feishu-cli chat delete oc_xxx --yes                # 不可逆；非交互环境必须显式 --yes，否则退出码 10
 ```
 

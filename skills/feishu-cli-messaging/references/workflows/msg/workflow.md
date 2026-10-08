@@ -368,6 +368,25 @@ feishu-cli msg send \
 - 本技能发送：feishu-cli msg send --msg-type interactive --content-file <card.json>。
 - 不要在本技能内新写 v1 elements/action/note 卡片模板；旧 v1 示例仅用于历史兼容排查。
 
+### 统一输入、附件区与编辑
+
+- `--text` / `--markdown` / `--content` 都支持 `@文件路径` 读文件、`-` 读 stdin（三者中只能有一个用 stdin）；
+  长 Markdown 优先用 `@file`，避免 shell 转义 `!`、反引号等字符。字面以 `@` 开头的文本写成 `@@...`；
+  `--text`/`--markdown` 的 `@xxx` 若不是存在的文件，按原文发送（兼容 "@张三 你好"）。
+- `--markdown` 发送前会做样式归一（对齐官方）：H1→H4、H2~H6→H5，连续标题与表格前后补空行；
+  post 的 md 只能渲染 `img_xxx` 图片，其余图片引用会被移除并在 stderr 提示，本地图片加 `--upload-images` 自动上传。
+- `--attachment <file_key 或本地路径>`（可重复/逗号分隔）把文件放进 post 的附件区；可与 `--markdown` 或 post
+  `--content` 同用，单独使用时发送只含附件的 post。音视频文件上传时会自动解析时长。
+- `--text` / `--markdown` / `--content` 中的 `<at>` 标签统一规范化，AI 常写的转义形式不会导致 @ 失效。
+- `msg send/reply` 输出 `message_id`、`chat_id`、`create_time`；`--dry-run` 只打印请求（本地文件不上传，用占位 key）。
+- `msg edit <message_id> --text|--markdown|--content` 编辑已发送的 text/post 消息（PUT，仅能编辑本身份发送的消息）。
+
+```bash
+feishu-cli msg send --receive-id-type email --receive-id user@example.com --markdown @report.md --attachment ./data.csv
+cat note.txt | feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx --text -
+feishu-cli msg edit om_xxx --text "更正后的内容"
+```
+
 ## 执行流程
 
 ### 回复、转发、合并转发与加急
