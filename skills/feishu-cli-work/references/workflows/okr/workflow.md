@@ -1,6 +1,6 @@
 # 飞书 OKR 查询与进度上报技能
 
-通过 feishu-cli 查询 OKR 周期与周期详情（`cycle list/detail`）、管理进展记录（`progress list/get/create/update/delete`）并上传进展图片（`upload-image`），与「命令速查」表一一对应。
+通过 feishu-cli 查询 OKR 周期与周期详情（`cycle list/detail`）、管理进展记录（`progress list/get/create/update/delete`）、上传进展图片（`upload-image`），并写入目标 / 关键结果与评论（`objective` / `key-result` / `comment`），与「命令速查」表一一对应。
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
@@ -14,7 +14,7 @@
 6. [关键踩坑](#-关键踩坑)
 7. [权限要求](#权限要求应用-token--tenant-scope)
 8. [典型工作流](#典型工作流)
-9. [未封装的能力：api 透传（含创建 O/KR、量化指标 indicators）](#未封装的能力用-feishu-cli-api-透传)
+9. [目标 / 关键结果写入与评论](#目标--关键结果写入与评论v2)；[未封装的能力：api 透传（量化指标 indicators 等）](#未封装的能力用-feishu-cli-api-透传)
 10. [错误处理](#错误处理)
 11. [相关技能](#相关技能)
 
@@ -60,6 +60,12 @@ OKR 命令组默认 **`--as bot`**（App/Tenant Token，无需 `auth login`，cr
 | `okr progress update <progress_id>` | 更新进展内容/进度 | 进展 ID + 内容（二选一） |
 | `okr progress delete <progress_id>` | 删除进展（`--yes` 跳过确认） | 进展 ID |
 | `okr upload-image` | 上传进展图片素材（ContentBlock imageList 引用） | `--file` + 目标 ID（二选一） |
+| `okr objective create` | 在周期下创建目标（v2，先 `--dry-run`） | `--cycle-id` + `--content`/`--content-json` |
+| `okr objective update <id>` | 更新目标内容/备注/得分/截止 | 至少一个字段 |
+| `okr key-result create` | 在目标下创建关键结果 | `--objective-id` + 内容 |
+| `okr key-result update <id>` | 更新关键结果内容/得分/截止 | 至少一个字段 |
+| `okr comment list` | 列出周期/进展/目标/KR 的评论 | `--target-type` + `--target-id` |
+| `okr comment create` | 创建评论或回复（必需 User Token） | `--target-type` + `--target-id` + 内容 |
 
 ### 身份选择 `--as`（命令组 persistent flag）
 
@@ -273,33 +279,40 @@ for kr_id in 7xxx 7yyy 7zzz; do
 done
 ```
 
-## 未封装的能力（用 `feishu-cli api` 透传）
+## 目标 / 关键结果写入与评论（v2）
 
-`cycle list/detail`、`progress list/get/create/update/delete`、`upload-image` 均已是一等命令（见命令速查）。
-以下能力未做专用命令，属季度级低频操作，用 `feishu-cli api` 透传即可（先 `feishu-cli schema okr.<resource>.<method>` 查参数）：
-
-### 创建 Objective / Key Result（api 透传配方）
-
-scope `okr:okr.content:writeonly`；写端点建议 `--as user`（官方对写端点均以 user 身份验证；tenant 身份未实测）。
+OKR 对组织可见：**先 `--dry-run` 预览**，确认目标对象和内容后再去掉 `--dry-run` 执行。
 
 ```bash
-# 创建 Objective（cycle_id 是 okr cycle list 默认返回的用户周期 ID，不是 --tenant 的租户周期 ID）
-feishu-cli api POST /open-apis/okr/v2/cycles/<cycle_id>/objectives --as user --data '{
-  "content": {"blocks":[{"type":"paragraph","paragraph":{"elements":[{"type":"textRun","textRun":{"text":"目标内容","style":{}}}]}}]}
-}'
+# 创建目标（cycle_id 是 okr cycle list 默认返回的用户周期 ID，不是 --tenant 的租户周期 ID）
+feishu-cli okr objective create --cycle-id <cycle_id> --content "提升交付质量" [--notes "口径说明"] [--category-id <id>] --dry-run
 
-# 在 Objective 下创建 Key Result
-feishu-cli api POST /open-apis/okr/v2/objectives/<objective_id>/key_results --as user --data '{
-  "content": {"blocks":[{"type":"paragraph","paragraph":{"elements":[{"type":"textRun","textRun":{"text":"KR 内容","style":{}}}]}}]}
-}'
+# 在目标下创建关键结果
+feishu-cli okr key-result create --objective-id <objective_id> --content "缺陷率降到 1% 以下" --dry-run
+
+# 更新：只改传入字段；--score 0-1 最多一位小数；--deadline 毫秒时间戳或 YYYY-MM-DD
+feishu-cli okr objective update <objective_id> --score 0.7 --deadline 2026-12-31 --dry-run
+feishu-cli okr key-result update <key_result_id> --content "缺陷率降到 0.5%" --dry-run
+
+# 评论（创建必需 User Token；目标/KR 评论必须且只能指定 --selected-text / --select-all / --ref-comment-id 之一）
+feishu-cli okr comment list --target-type objective --target-id <objective_id>
+feishu-cli okr comment create --target-type objective --target-id <objective_id> --content "口径需要再对齐" --select-all --dry-run
 ```
+
+- `--content` / `--notes` 的纯文本会包装为 **v2 ContentBlock**（`block_element_type` / `paragraph_element_type` / `text_run`，snake_case）；
+  需要 @人、链接时用 `--content-json` 传完整结构。**v2 与 v1 进展记录的 ContentBlock 键名不同**（v1 为 `type` / `textRun`），
+  此前文档里用 v1 键名调用 v2 创建接口的 api 透传配方是错的，已改为上面的一等命令。
+- 身份沿用命令组 `--as`（默认 bot）；`comment create` 只支持 User Token。
+- scope：目标/KR 写入 `okr:okr.content:writeonly`，评论读 `okr:okr.comment.readonly`、写 `okr:okr.comment.writeonly`。
+- 验证状态：本地租户未开通 OKR 写 scope，以上写命令只做了 dry-run 与单元测试，未做真实创建。
+
+## 未封装的能力（用 `feishu-cli api` 透传）
+
+`objective list/get`、`key-result list/get`、`reorder/weight`、评论 `get/patch/delete/solve`、`review list/query`（评审/复盘）
+走 `feishu-cli api` 透传（先 `feishu-cli schema okr.<resource>.<method>` 查参数）。
 
 租户强制 OKR 分类时创建 Objective 需带 `category_id`（先 `feishu-cli api GET /open-apis/okr/v2/categories --as user` 查，
 该端点需 user scope `okr:okr.setting:read`，缺失报 99991679——实测确认）。
-
-> 验证状态：上述端点路径与请求形状来自官方 OpenAPI（okr/v2）；本地租户未开通 okr 写 scope，
-> 仅实测了鉴权关卡（99991672/99991679 及所需 scope 名），未做真实创建。首次使用前先
-> `feishu-cli auth check --scope "okr:okr.content:writeonly"` 预检。
 
 ### 量化指标 indicators（api 透传）
 
@@ -313,10 +326,6 @@ feishu-cli api PATCH /open-apis/okr/v2/indicators/<indicator_id> --as user --dat
 - `current_value_calculate_type`：0=手动 / 2=按 KR 汇总 / 3=按拆解汇总；**仅 0 允许 PATCH 当前值**
 - `entity_type`：2=Objective / 3=Key Result；`indicator_status`：-1/0/1/2
 - **默认初始指标不带 start/current/target/unit**——此时汇报必须说「未设置进度」，不能说 0%
-
-### 其他未封装端点
-
-`objective list/get`、`key-result list/get`、`review list/query`（评审/复盘）同样走 `feishu-cli api` 透传。
 
 ## 错误处理
 
