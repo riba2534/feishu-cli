@@ -46,7 +46,7 @@ func TestCompleteTaskPatchesWhenOpen(t *testing.T) {
 
 func TestParseTaskGUID(t *testing.T) {
 	cases := map[string]string{
-		"a66b960c-a57d-4189-859d-3e56d722c72e": "a66b960c-a57d-4189-859d-3e56d722c72e",
+		"a66b960c-a57d-4189-859d-3e56d722c72e":                                          "a66b960c-a57d-4189-859d-3e56d722c72e",
 		"https://applink.feishu.cn/client/todo/detail?guid=abc-123&suite_entity_num=t1": "abc-123",
 	}
 	for in, want := range cases {
