@@ -207,6 +207,12 @@ var driveInspectCmd = &cobra.Command{
 			}
 		}
 
+		// 按当前品牌生成标准访问链接（www.feishu.cn / www.larksuite.com，由服务端重定向到租户域名）
+		canonicalURL := client.BuildResourceURL(docType, docToken)
+		if canonicalURL != "" {
+			result["url"] = canonicalURL
+		}
+
 		if output == "json" {
 			return printJSON(result)
 		}
@@ -217,6 +223,9 @@ var driveInspectCmd = &cobra.Command{
 			fmt.Printf("Title: %s\n", title)
 		}
 		fmt.Printf("Token: %s\n", docToken)
+		if canonicalURL != "" {
+			fmt.Printf("URL:   %s\n", canonicalURL)
+		}
 		if wn, ok := result["wiki_node"].(map[string]string); ok {
 			fmt.Printf("Wiki:  space_id=%s, node_token=%s\n", wn["space_id"], wn["node_token"])
 		}

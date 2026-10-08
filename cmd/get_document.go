@@ -56,7 +56,9 @@ var getDocumentCmd = &cobra.Command{
 			fmt.Printf("  文档ID: %s\n", documentID)
 			fmt.Printf("  标题: %s\n", docTitle)
 			fmt.Printf("  版本: %d\n", revisionID)
-			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+			if link := client.BuildResourceURL(client.ResourceTypeDocx, documentID); link != "" {
+				fmt.Printf("  链接: %s\n", link)
+			}
 		}
 
 		return nil

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
+	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -2662,16 +2663,18 @@ func applyTextStyle(elem *larkdocx.TextElement, bold, italic, strikethrough bool
 // 1. 将 feishu:// 内部协议转换为 https:// 链接（API 不接受 feishu:// 协议）
 // 2. 解码 URL 编码的链接，例如 "https%3A%2F%2Fexample.com" → "https://example.com"
 func normalizeURL(rawURL string) string {
-	// feishu:// 内部协议转换为 HTTPS 链接
+	// feishu:// 内部协议转换为 HTTPS 链接（按当前品牌选择 www.feishu.cn / www.larksuite.com，
+	// 由服务端重定向到租户域名；Lark 租户不能落到飞书国内站）
+	urlBase := client.ResourceURLBase()
 	if strings.HasPrefix(rawURL, "feishu://doc/") {
-		return "https://feishu.cn/docx/" + strings.TrimPrefix(rawURL, "feishu://doc/")
+		return urlBase + "/docx/" + strings.TrimPrefix(rawURL, "feishu://doc/")
 	}
 	if strings.HasPrefix(rawURL, "feishu://wiki/") {
-		return "https://feishu.cn/wiki/" + strings.TrimPrefix(rawURL, "feishu://wiki/")
+		return urlBase + "/wiki/" + strings.TrimPrefix(rawURL, "feishu://wiki/")
 	}
 	if strings.HasPrefix(rawURL, "feishu://") {
 		// 其他 feishu:// 链接，尝试通用转换
-		return "https://feishu.cn/" + strings.TrimPrefix(rawURL, "feishu://")
+		return urlBase + "/" + strings.TrimPrefix(rawURL, "feishu://")
 	}
 
 	// URL 解码：用 PathUnescape 而非 QueryUnescape，避免 query 中字面 `+` 被错误解码为空格

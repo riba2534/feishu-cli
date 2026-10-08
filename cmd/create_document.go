@@ -60,6 +60,7 @@ var createDocumentCmd = &cobra.Command{
 				"document_id": documentID,
 				"title":       docTitle,
 				"revision_id": revisionID,
+				"url":         client.BuildResourceURL(client.ResourceTypeDocx, documentID),
 			}); err != nil {
 				return err
 			}
@@ -68,7 +69,9 @@ var createDocumentCmd = &cobra.Command{
 			fmt.Printf("  文档 ID: %s\n", documentID)
 			fmt.Printf("  标题: %s\n", docTitle)
 			fmt.Printf("  版本: %d\n", revisionID)
-			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+			if link := client.BuildResourceURL(client.ResourceTypeDocx, documentID); link != "" {
+				fmt.Printf("  链接: %s\n", link)
+			}
 		}
 
 		return nil

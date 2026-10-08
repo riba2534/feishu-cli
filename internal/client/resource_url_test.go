@@ -132,3 +132,51 @@ func TestNormalizeResourceType(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildResourceURL_BrandAware(t *testing.T) {
+	cases := []struct {
+		base, kind, token, want string
+	}{
+		{feishuResourceURLBase, "docx", "DocA", "https://www.feishu.cn/docx/DocA"},
+		{larkResourceURLBase, "docx", "DocA", "https://www.larksuite.com/docx/DocA"},
+		{feishuResourceURLBase, "sheet", "ShtA", "https://www.feishu.cn/sheets/ShtA"},
+		{feishuResourceURLBase, "base", "BasA", "https://www.feishu.cn/base/BasA"},
+		{feishuResourceURLBase, "bitable", "BasA", "https://www.feishu.cn/base/BasA"},
+		{feishuResourceURLBase, "folder", "FldA", "https://www.feishu.cn/drive/folder/FldA"},
+		{feishuResourceURLBase, "wiki", "WikA", "https://www.feishu.cn/wiki/WikA"},
+		{feishuResourceURLBase, "slides", "SldA", "https://www.feishu.cn/slides/SldA"},
+		{feishuResourceURLBase, "file", "BoxA", "https://www.feishu.cn/file/BoxA"},
+		{feishuResourceURLBase, "unknown", "X", ""},
+		{feishuResourceURLBase, "docx", "", ""},
+		{feishuResourceURLBase, "docx", "a/b", ""},
+	}
+	for _, tc := range cases {
+		if got := BuildResourceURLForBrand(tc.base, tc.kind, tc.token); got != tc.want {
+			t.Errorf("BuildResourceURLForBrand(%q,%q,%q) = %q, want %q", tc.base, tc.kind, tc.token, got, tc.want)
+		}
+		// 生成的链接必须能被 ParseResourceURL 原样解析回来（互为逆操作）
+		if tc.want != "" {
+			ref, err := ParseResourceURL(tc.want)
+			if err != nil || ref.Token != tc.token || ref.Type != NormalizeResourceType(tc.kind) {
+				t.Errorf("ParseResourceURL(%q) = %+v, %v；应还原 kind=%s token=%s", tc.want, ref, err, tc.kind, tc.token)
+			}
+		}
+	}
+}
+
+func TestResourceURLBase_FollowsConfiguredBrand(t *testing.T) {
+	setupTestConfig(t, "https://open.larksuite.com")
+	if got := ResourceURLBase(); got != larkResourceURLBase {
+		t.Fatalf("Lark base_url 时 ResourceURLBase = %q, want %q", got, larkResourceURLBase)
+	}
+	if got := BuildResourceURL("docx", "DocA"); got != "https://www.larksuite.com/docx/DocA" {
+		t.Fatalf("BuildResourceURL = %q", got)
+	}
+	if got := buildDocsURL("sheet", "ShtA"); got != "https://www.larksuite.com/sheets/ShtA" {
+		t.Fatalf("搜索结果链接应按品牌生成，得到 %q", got)
+	}
+	setupTestConfig(t, "https://open.feishu.cn")
+	if got := ResourceURLBase(); got != feishuResourceURLBase {
+		t.Fatalf("飞书 base_url 时 ResourceURLBase = %q, want %q", got, feishuResourceURLBase)
+	}
+}

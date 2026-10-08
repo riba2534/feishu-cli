@@ -181,3 +181,62 @@ func ParseResourceURL(rawURL string) (ResourceRef, error) {
 	}
 	return ResourceRef{}, fmt.Errorf("无法从 URL 路径 %q 识别资源类型；支持的路径前缀: %s", u.Path, SupportedResourceURLPaths())
 }
+
+// 各品牌的标准文档入口域名：服务端会把 /docx/<token> 等路径重定向到租户自己的域名。
+// 注意：裸 larksuite.com 不提供该重定向（实测超时），Lark 必须使用 www 子域。
+const (
+	feishuResourceURLBase = "https://www.feishu.cn"
+	larkResourceURLBase   = "https://www.larksuite.com"
+)
+
+// ResourceURLBase 返回当前配置品牌（按 base_url 判定飞书 / Lark）的标准文档入口域名。
+func ResourceURLBase() string {
+	brand := config.BrandFeishu
+	if cfg := config.Get(); cfg != nil {
+		brand = config.ParseBrand(cfg.BaseURL)
+	}
+	return ResourceURLBaseForBrand(brand)
+}
+
+// ResourceURLBaseForBrand 返回指定品牌的标准文档入口域名。
+func ResourceURLBaseForBrand(brand config.Brand) string {
+	if brand == config.BrandLark {
+		return larkResourceURLBase
+	}
+	return feishuResourceURLBase
+}
+
+// resourceURLPaths 是资源类型 → 用户可访问 URL 路径（BuildResourceURL 使用）。
+var resourceURLPaths = map[string]string{
+	ResourceTypeDocx:     "/docx/",
+	ResourceTypeDoc:      "/docs/",
+	ResourceTypeSheet:    "/sheets/",
+	ResourceTypeBitable:  "/base/",
+	ResourceTypeWiki:     "/wiki/",
+	ResourceTypeFile:     "/file/",
+	ResourceTypeFolder:   "/drive/folder/",
+	ResourceTypeMindnote: "/mindnotes/",
+	ResourceTypeSlides:   "/slides/",
+}
+
+// BuildResourceURL 按当前品牌生成资源的标准访问链接（ParseResourceURL 的逆操作）。
+//
+// 用于创建类接口不返回 url 时的兜底：链接指向品牌标准域名（www.feishu.cn / www.larksuite.com），
+// 由服务端重定向到租户域名，并非猜测租户的自定义域名。kind 未知、token 为空或含非法字符时返回 ""，
+// 调用方应只在结果非空时写入，避免覆盖接口已返回的真实链接。
+func BuildResourceURL(kind, token string) string {
+	return BuildResourceURLForBrand(ResourceURLBase(), kind, token)
+}
+
+// BuildResourceURLForBrand 与 BuildResourceURL 相同，但显式指定入口域名（便于测试）。
+func BuildResourceURLForBrand(base, kind, token string) string {
+	token = strings.TrimSpace(token)
+	if !IsSafeResourceToken(token) {
+		return ""
+	}
+	path, ok := resourceURLPaths[NormalizeResourceType(kind)]
+	if !ok {
+		return ""
+	}
+	return strings.TrimRight(base, "/") + path + token
+}

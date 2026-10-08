@@ -20,17 +20,17 @@ func TestNormalizeURL(t *testing.T) {
 		{
 			name:     "feishu://doc/ 转换为 https://",
 			input:    "feishu://doc/ABC123",
-			expected: "https://feishu.cn/docx/ABC123",
+			expected: "https://www.feishu.cn/docx/ABC123",
 		},
 		{
 			name:     "feishu://wiki/ 转换为 https://",
 			input:    "feishu://wiki/NODE456",
-			expected: "https://feishu.cn/wiki/NODE456",
+			expected: "https://www.feishu.cn/wiki/NODE456",
 		},
 		{
 			name:     "通用 feishu:// 协议转换",
 			input:    "feishu://board/token",
-			expected: "https://feishu.cn/board/token",
+			expected: "https://www.feishu.cn/board/token",
 		},
 		{
 			name:     "URL 解码 https%3A%2F%2F",
@@ -418,7 +418,7 @@ func TestCreateLinkElement(t *testing.T) {
 			text:     "文档",
 			rawURL:   "feishu://doc/ABC123",
 			hasLink:  true,
-			finalURL: "https://feishu.cn/docx/ABC123",
+			finalURL: "https://www.feishu.cn/docx/ABC123",
 		},
 		{
 			name:    "锚点 #section 无 Link",

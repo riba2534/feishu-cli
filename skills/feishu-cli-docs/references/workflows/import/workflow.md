@@ -227,7 +227,7 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 ```
 已导入文档！
   文档 ID: <document_id>
-  文档链接: https://feishu.cn/docx/<document_id>
+  文档链接: https://www.feishu.cn/docx/<document_id>   # Lark 品牌为 https://www.larksuite.com/docx/...
   导入块数: 25
 ```
 

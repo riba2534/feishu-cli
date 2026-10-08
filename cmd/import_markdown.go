@@ -427,7 +427,7 @@ var importMarkdownCmd = &cobra.Command{
 			}
 			documentID = *doc.DocumentId
 			fmt.Fprintf(progressOut, "已创建文档: %s\n", documentID)
-			fmt.Fprintf(progressOut, "链接: https://feishu.cn/docx/%s\n\n", documentID)
+			fmt.Fprintf(progressOut, "链接: %s\n\n", client.BuildResourceURL(client.ResourceTypeDocx, documentID))
 		}
 
 		// 解析 Markdown 为片段
@@ -531,6 +531,7 @@ var importMarkdownCmd = &cobra.Command{
 		if output == "json" {
 			if err := printJSON(map[string]any{
 				"document_id":        documentID,
+				"url":                client.BuildResourceURL(client.ResourceTypeDocx, documentID),
 				"blocks":             stats.totalBlocks,
 				"diagram_total":      stats.diagramTotal,
 				"diagram_success":    stats.diagramSuccess,
@@ -613,7 +614,7 @@ var importMarkdownCmd = &cobra.Command{
 				}
 			}
 			fmt.Printf("  总耗时: %.1fs\n", totalDuration.Seconds())
-			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+			fmt.Printf("  链接: %s\n", client.BuildResourceURL(client.ResourceTypeDocx, documentID))
 		}
 
 		return nil
