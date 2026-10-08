@@ -52,7 +52,8 @@
 
 ## 命令速查
 
-读取已有演示文稿：`feishu-cli slides get <xml_presentation_id> --output json`；
+读取已有演示文稿：`feishu-cli slides get <xml_presentation_id|slides URL|wiki URL> --output json`
+（wiki URL 自动经 node_by_token 解析，底层不是 slides 时直接报错；docx 等其他 URL 在本地拒绝，不再返回误导性 404）；
 需要历史版本时加 `--revision-id <revision>`，默认 `-1` 表示最新版本。
 
 ### 1. `slides create` — 创建空白演示文稿

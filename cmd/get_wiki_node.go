@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"regexp"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -15,12 +14,13 @@ var getWikiNodeCmd = &cobra.Command{
 	Long: `获取知识库节点的详细信息，包括文档类型、标题、创建时间等。
 
 参数:
-  node_token    节点 Token（从 URL 中提取）
-  url           知识库文档 URL
+  node_token    节点 Token，或挂载在知识库中的文档 obj_token（服务端 node_by_token 自动识别）
+  url           知识库 URL，或挂载在知识库中的文档 URL（/docx/、/sheets/、/base/ 等）
 
 URL 格式示例:
   https://xxx.feishu.cn/wiki/Ad8Iw0oz3iSp4kkIi7QctVhin3e
   https://xxx.larkoffice.com/wiki/Ad8Iw0oz3iSp4kkIi7QctVhin3e
+  https://xxx.feishu.cn/docx/<obj_token>（文档已挂载在知识库时）
 
 返回信息:
   space_id        知识空间 ID
@@ -46,7 +46,7 @@ URL 格式示例:
 		}
 
 		// 解析 node_token（支持 URL 或直接 token）
-		nodeToken, err := extractWikiToken(args[0])
+		nodeToken, err := extractWikiLookupToken(args[0])
 		if err != nil {
 			return err
 		}
@@ -80,24 +80,6 @@ URL 格式示例:
 
 		return nil
 	},
-}
-
-// extractWikiToken 从 URL 或直接的 token 中提取 node_token
-func extractWikiToken(input string) (string, error) {
-	// 尝试匹配 wiki URL
-	re := regexp.MustCompile(`/wiki/([a-zA-Z0-9]+)`)
-	matches := re.FindStringSubmatch(input)
-	token := input
-	if len(matches) > 1 {
-		token = matches[1]
-	}
-
-	// 验证 token 格式
-	if !isValidToken(token) {
-		return "", fmt.Errorf("无效的节点 token: %s", token)
-	}
-
-	return token, nil
 }
 
 func init() {

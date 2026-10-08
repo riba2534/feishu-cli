@@ -53,7 +53,7 @@ var exportWikiCmd = &cobra.Command{
 		}
 
 		// 解析 node_token
-		nodeToken, err := extractWikiToken(args[0])
+		nodeToken, err := extractWikiLookupToken(args[0])
 		if err != nil {
 			return err
 		}

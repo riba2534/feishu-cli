@@ -38,6 +38,14 @@ feishu-cli drive apply-permission --token <url> --perm view --dry-run    # 预�
 
 详见 [`embedded-api-discovery.md`](../../../../feishu-cli-platform/references/workflows/api/references/embedded-api-discovery.md)（埋藏 API 调研方法论）。
 
+**URL 解析规则（inspect / apply-permission / export / add-comment / import 的 `--folder-token` 通用）**：
+- 只按 URL **路径前缀**识别类型：`/docx/`、`/doc/`、`/docs/`、`/sheets/`、`/spreadsheets/`、`/base/`、`/bitable/`、
+  `/wiki/`、`/file/`、`/drive/file/`、`/drive/folder/`、`/drive/shr/`、`/chat/drive/`、`/mindnote(s)/`、`/slides/`；
+  `?from=/wiki/xxx` 这类查询参数不会改变解析结果。
+- 只接受 `*.feishu.cn` / `*.larksuite.com` / `*.larkoffice.com` 的 https 链接（私有化部署需开启 `allow_custom_base_url`）。
+- `--type` / `--doc-type` 与 URL 推断的类型冲突时直接报错（旧版本会静默以 `--type` 覆盖）；
+  唯一例外是 wiki URL 配合需要解包的命令（如 `drive export`、`drive inspect`），此时 `--type` 表示期望的底层文档类型。
+
 ### 1. 上传 / 下载
 
 ```bash

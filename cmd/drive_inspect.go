@@ -17,65 +17,6 @@ var driveInspectTypes = []string{
 	"doc", "docx", "sheet", "bitable", "wiki", "file", "folder", "mindnote", "slides",
 }
 
-// driveInspectURLMarkers 文档 URL 路径片段 → type 映射（与 apply-permission 复用同一套）
-// 加上 /folder/ 这种 drive-only 的标记
-var driveInspectURLMarkers = []struct {
-	Marker string
-	Type   string
-}{
-	{"/wiki/", "wiki"},
-	{"/docx/", "docx"},
-	{"/sheets/", "sheet"},
-	{"/base/", "bitable"},
-	{"/bitable/", "bitable"},
-	{"/file/", "file"},
-	{"/folder/", "folder"},
-	{"/mindnote/", "mindnote"},
-	{"/slides/", "slides"},
-	{"/doc/", "doc"},
-}
-
-// parseDriveURL 从 URL 抽 (type, token)；非 URL 时返回 (explicitType, raw)
-func parseDriveURL(raw, explicitType string) (docType, token string, err error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", "", fmt.Errorf("--url 不能为空")
-	}
-
-	if strings.Contains(raw, "://") {
-		for _, m := range driveInspectURLMarkers {
-			if idx := strings.Index(raw, m.Marker); idx >= 0 {
-				rest := raw[idx+len(m.Marker):]
-				for _, sep := range []string{"?", "#", "/"} {
-					if i := strings.Index(rest, sep); i >= 0 {
-						rest = rest[:i]
-					}
-				}
-				if rest != "" {
-					token = rest
-					docType = m.Type
-					break
-				}
-			}
-		}
-		if token == "" {
-			return "", "", fmt.Errorf("无法从 URL 推断 token: %q\n支持的 URL: /docx/、/sheets/、/base/、/file/、/folder/、/wiki/、/doc/、/mindnote/、/slides/", raw)
-		}
-		if explicitType != "" {
-			docType = explicitType
-		}
-	} else {
-		// 裸 token 必须传 --type
-		if explicitType == "" {
-			return "", "", fmt.Errorf("--type 必填（当 --url 是裸 token 时）。可选: %s",
-				strings.Join(driveInspectTypes, ", "))
-		}
-		token = raw
-		docType = explicitType
-	}
-	return docType, token, nil
-}
-
 // driveAPICall 内部 helper：用当前 token 发 raw API 调用
 func driveAPICall(method, path string, query map[string]string, body any, userToken string) ([]byte, int, error) {
 	cli, err := client.GetClient()
@@ -105,16 +46,6 @@ func driveAPICall(method, path string, query map[string]string, body any, userTo
 		return nil, 0, err
 	}
 	return resp.RawBody, resp.StatusCode, nil
-}
-
-// inspectFetchWikiNode 调 wiki/v2/spaces/node_by_token 拆出 obj_type/obj_token。
-// node_by_token 同时接受 wiki node_token 与挂载在知识库中的文档 obj_token。
-func inspectFetchWikiNode(token, userToken string) (objType, objToken, spaceID, nodeToken string, err error) {
-	node, err := client.ResolveWikiNode(token, userToken)
-	if err != nil {
-		return "", "", "", "", err
-	}
-	return node.ObjType, node.ObjToken, node.SpaceID, node.NodeToken, nil
 }
 
 // inspectFetchTitle 调 drive/v1/metas/batch_query 拿 title
@@ -204,39 +135,45 @@ var driveInspectCmd = &cobra.Command{
 		explicitType, _ := cmd.Flags().GetString("type")
 		output, _ := cmd.Flags().GetString("output")
 
-		docType, docToken, err := parseDriveURL(rawURL, explicitType)
+		// 统一解析：只按 URL 路径前缀推断类型；--type 与 URL 冲突时报错（wiki URL + 非 wiki 类型视为对底层类型的断言）
+		opts := resourceArgOptions{
+			ArgName:      "--url",
+			ExplicitType: explicitType,
+			Allowed:      driveInspectTypes,
+			ResolveWiki:  true,
+		}
+		res, err := parseResourceArg(rawURL, opts)
 		if err != nil {
 			return err
 		}
 
 		// auto token：User 优先，回退 Bot
 		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		opts.UserAccessToken = userToken
 
 		result := map[string]any{
-			"input_url": rawURL,
-			"type":      docType,
-			"token":     docToken,
+			"input_url": strings.TrimSpace(rawURL),
+			"type":      res.InputType,
+			"token":     res.InputToken,
 		}
 
-		// Step 1: 如果是 wiki，先展开
-		if docType == "wiki" {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Wiki 节点展开中: %s ...\n", docToken)
-			objType, objToken, spaceID, nodeToken, err := inspectFetchWikiNode(docToken, userToken)
-			if err != nil {
+		// Step 1: 如果是 wiki，先通过 node_by_token 展开
+		if res.InputType == client.ResourceTypeWiki {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Wiki 节点展开中: %s ...\n", res.InputToken)
+			if err := resolveWikiInResource(res, opts); err != nil {
 				return err
 			}
 			result["wiki_node"] = map[string]string{
-				"space_id":   spaceID,
-				"node_token": nodeToken,
-				"obj_type":   objType,
-				"obj_token":  objToken,
+				"space_id":   res.WikiNode.SpaceID,
+				"node_token": res.WikiNode.NodeToken,
+				"obj_type":   res.Type,
+				"obj_token":  res.Token,
 			}
-			docType = objType
-			docToken = objToken
-			result["type"] = docType
-			result["token"] = docToken
-			fmt.Fprintf(cmd.ErrOrStderr(), "Wiki 已展开为 %s: %s\n", docType, docToken)
+			result["type"] = res.Type
+			result["token"] = res.Token
+			fmt.Fprintf(cmd.ErrOrStderr(), "Wiki 已展开为 %s: %s\n", res.Type, res.Token)
 		}
+		docType, docToken := res.Type, res.Token
 
 		// Step 2: 查 title（除了 folder 类型，folder 没 title API）
 		if docType != "folder" {

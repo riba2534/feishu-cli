@@ -38,7 +38,7 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
   --type        目标文档类型: docx / sheet / bitable / slides
 
 可选:
-  --folder-token   目标 Drive 文件夹 token
+  --folder-token   目标 Drive 文件夹 token 或文件夹 URL
   --name           导入后的文件名（默认本地文件名去扩展名）
   --target-token   已有 bitable token（仅 --type bitable）
   --as             bot|user|auto（默认 auto：User 优先；未配置回退 Bot；已配置但解析/刷新失败 fail-closed）
@@ -68,6 +68,18 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
 
 		if filePath == "" {
 			return fmt.Errorf("--file 必填")
+		}
+		// --folder-token 也接受文件夹 URL（/drive/folder/、/drive/shr/ 等），只按路径前缀解析
+		if folderToken != "" {
+			res, err := parseResourceArg(folderToken, resourceArgOptions{
+				ArgName:     "--folder-token",
+				DefaultType: client.ResourceTypeFolder,
+				Allowed:     []string{client.ResourceTypeFolder},
+			})
+			if err != nil {
+				return err
+			}
+			folderToken = res.Token
 		}
 		if err := validateDriveImportSpec(filePath, targetType, folderToken, targetToken, ""); err != nil {
 			return err

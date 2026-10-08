@@ -30,7 +30,7 @@ var updateWikiNodeCmd = &cobra.Command{
 			return err
 		}
 
-		nodeToken, err := extractWikiToken(args[0])
+		nodeToken, err := extractWikiLookupToken(args[0])
 		if err != nil {
 			return err
 		}

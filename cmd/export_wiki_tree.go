@@ -63,7 +63,7 @@ var exportWikiTreeCmd = &cobra.Command{
 			return err
 		}
 
-		rootToken, err := extractWikiToken(args[0])
+		rootToken, err := extractWikiLookupToken(args[0])
 		if err != nil {
 			return err
 		}

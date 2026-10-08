@@ -201,39 +201,27 @@ func parseReplyElements(raw string) ([]map[string]any, error) {
 	return out, nil
 }
 
-// resolveCommentDoc 解析 --doc 输入，返回 (file_token, file_type, resolved_by)
+// resolveCommentDoc 解析 --doc 输入，返回 (file_token, file_type, resolved_by)。
+// 只按 URL 路径前缀识别类型（query 中的 /wiki/ 等字样不会劫持解析）；wiki 经 node_by_token 换出底层文档。
 func resolveCommentDoc(input, userAccessToken string) (string, string, string, error) {
-	raw := strings.TrimSpace(input)
-	if raw == "" {
-		return "", "", "", fmt.Errorf("--doc 不能为空")
+	res, err := resolveResourceArg(input, resourceArgOptions{
+		ArgName:         "--doc",
+		DefaultType:     client.ResourceTypeDocx,
+		Allowed:         []string{client.ResourceTypeDocx, client.ResourceTypeDoc},
+		ResolveWiki:     true,
+		UserAccessToken: userAccessToken,
+	})
+	if err != nil {
+		return "", "", "", err
 	}
-
-	// URL 形式
-	if strings.Contains(raw, "://") {
-		if wikiToken, ok := extractURLSegmentToken(raw, "/wiki/"); ok {
-			node, err := client.ResolveWikiNode(wikiToken, userAccessToken)
-			if err != nil {
-				return "", "", "", err
-			}
-			if node.ObjType != "docx" && node.ObjType != "doc" {
-				return "", "", "", fmt.Errorf("wiki 解析到 obj_type=%s，当前仅支持 doc/docx", node.ObjType)
-			}
-			return node.ObjToken, node.ObjType, "wiki", nil
-		}
-		if token, ok := extractURLSegmentToken(raw, "/docx/"); ok {
-			return token, "docx", "docx_url", nil
-		}
-		if token, ok := extractURLSegmentToken(raw, "/doc/"); ok {
-			return token, "doc", "doc_url", nil
-		}
-		return "", "", "", fmt.Errorf("不支持的 --doc URL 格式（仅支持 /wiki/ /docx/ /doc/）: %s", raw)
+	switch {
+	case res.WikiNode != nil:
+		return res.Token, res.Type, "wiki", nil
+	case res.FromURL:
+		return res.Token, res.Type, res.Type + "_url", nil
+	default:
+		return res.Token, res.Type, "docx_token", nil
 	}
-
-	// 纯 token（默认 docx）
-	if strings.ContainsAny(raw, "/?#") {
-		return "", "", "", fmt.Errorf("--doc 格式非法: %q", raw)
-	}
-	return raw, "docx", "docx_token", nil
 }
 
 // extractURLSegmentToken 从 URL 里提取某个路径段后面紧跟的 token

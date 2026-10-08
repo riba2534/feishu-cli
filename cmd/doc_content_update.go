@@ -14,7 +14,7 @@ import (
 )
 
 var docContentUpdateCmd = &cobra.Command{
-	Use:   "content-update <document_id>",
+	Use:   "content-update <document_id|url>",
 	Short: "更新文档内容（支持 7 种模式）",
 	Long: `更新飞书文档内容，支持追加、覆盖、定位替换、插入和删除。
 
@@ -26,6 +26,8 @@ var docContentUpdateCmd = &cobra.Command{
   insert_before  在定位内容前插入
   insert_after   在定位内容后插入
   delete_range   删除定位的内容
+
+文档参数支持 docx token、/docx/ URL 与 /wiki/ URL（wiki 自动解析为底层 docx）。
 
 定位方式（replace_range/replace_all/insert_before/insert_after/delete_range 必需）:
   --selection-by-title "## 标题"        按标题定位
@@ -82,7 +84,6 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	documentID := args[0]
 	mode, _ := cmd.Flags().GetString("mode")
 	markdownStr, _ := cmd.Flags().GetString("markdown")
 	markdownFile, _ := cmd.Flags().GetString("markdown-file")
@@ -125,6 +126,12 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else if err := validateNoColumnWidthDirective(cmd.Flags().Changed("table-column-width"), colWidthRaw, ""); err != nil {
+		return err
+	}
+
+	// 参数校验通过后再解析文档（wiki URL 需要一次 node_by_token 请求）
+	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+	if err != nil {
 		return err
 	}
 

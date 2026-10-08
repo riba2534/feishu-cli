@@ -315,12 +315,14 @@ func normalizeDriveExportInput(rawURL, token, docType string) (sourceType, sourc
 		raw = rawURL
 	}
 	if strings.Contains(raw, "://") {
-		parsedType, parsedToken, parseErr := parseDriveURL(raw, "")
+		// 只按 URL 路径前缀推断类型（query 中的 /wiki/ 等字样不会劫持解析）
+		ref, parseErr := client.ParseResourceURL(raw)
 		if parseErr != nil {
-			return "", "", "", parseErr
+			return "", "", "", fmt.Errorf("--url 解析失败: %w", parseErr)
 		}
+		parsedType := ref.Type
 		sourceType = normalizeDriveExportDocType(parsedType)
-		sourceToken = parsedToken
+		sourceToken = ref.Token
 		if sourceType == "wiki" {
 			if docType == "wiki" {
 				return "wiki", sourceToken, "", nil
@@ -347,6 +349,10 @@ func normalizeDriveExportInput(rawURL, token, docType string) (sourceType, sourc
 	if rawURL != "" {
 		return "", "", "", fmt.Errorf("不支持的 --url %q，请使用飞书文档 URL", rawURL)
 	}
+	if !client.IsSafeResourceToken(strings.TrimSpace(token)) {
+		return "", "", "", fmt.Errorf("--token 不是有效的 token（只允许字母、数字、_ 和 -）: %q", token)
+	}
+	token = strings.TrimSpace(token)
 	if docType == "" {
 		return "", "", "", fmt.Errorf("裸 token 必须提供 --doc-type（允许: %s）", driveExportInputDocTypeValues)
 	}
