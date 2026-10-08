@@ -30,6 +30,23 @@ feishu-cli doc create --title "文档标题" --output json
    ```
 4. 未配置 owner 时，不使用占位邮箱；在当前会话返回文档链接，说明尚未按 owner 配置授权，不要求用户为已明确指定的接收人再设置环境变量。
 
+### 服务端带内容建文档（docs_ai）
+
+```bash
+# 内容默认按 Markdown 解析；--title 以 <title> 前置，优先于内容中的标题
+feishu-cli doc create --title "周报" --content-file /tmp/weekly.md -o json
+feishu-cli doc create --content '<title>XML 文档</title><p>正文</p>' --doc-format xml
+# 位置：--folder / --parent-token（文件夹或知识库节点 token）/ --parent-position my_library 三选一
+```
+
+- 带 `--content/--content-file/--doc-format/--parent-token/--parent-position` 任一项即走 docs_ai（`POST /docs_ai/v1/documents`，
+  与官方 `docs +create` 同协议）；不带时仍是原来的本地空文档创建（`--title` 必填）。
+- 大内容时服务端可能转为异步任务：CLI 自动轮询 `async_tasks`（最长 10 分钟，只重试查询、不重放创建请求）；
+  `expired` / `execution_interrupted` 报超时并提示分批。网关超时（约 30s，实测 3000 段落即触发）时文档**通常已在后台生成**，
+  CLI 不会重试创建，请先在云空间确认再决定是否追加，避免重复文档。**大文档推荐先建少量内容，再 `content-update --mode append` 分批追加**。
+- Markdown 中 `doc export` 的本地方言按 content-update 同样规则转换；本地图片/附件不支持（改用 `doc import`）。
+- Bot 身份创建后同样自动给当前登录用户授予 `full_access`（JSON 输出 `permission_grant`）。
+
 ## 用 Markdown 创建文档
 
 ```bash
