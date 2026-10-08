@@ -122,7 +122,7 @@ diff 出本项目未覆盖的端点路径，自动起 issue。这是 K2 "埋藏 
 | 命令 | 对应 API | 移植日期 |
 |---|---|---|
 | `feishu-cli drive apply-permission` | `POST /drive/v1/permissions/{token}/members/apply` | 2026-05-24 |
-| `feishu-cli drive inspect` | `POST /drive/v1/metas/batch_query` + `GET /wiki/v2/spaces/get_node` | 2026-05-24 |
+| `feishu-cli drive inspect` | `POST /drive/v1/metas/batch_query` + `GET /wiki/v2/spaces/node_by_token` + `GET /drive/v2/files/query_by_token`（裸 token 识别类型） | 2026-10-08 |
 
 待移植（按优先级）：
 

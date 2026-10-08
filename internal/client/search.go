@@ -366,13 +366,13 @@ var docsTypeURLPath = map[string]string{
 	"shortcut": "docx",
 }
 
-// buildDocsURL 根据文档类型和 Token 拼接飞书文档 URL
+// buildDocsURL 根据文档类型和 Token 拼接文档 URL（按当前品牌选择 www.feishu.cn / www.larksuite.com）
 func buildDocsURL(docsType, docsToken string) string {
 	path, ok := docsTypeURLPath[docsType]
 	if !ok {
 		path = docsType
 	}
-	return fmt.Sprintf("https://feishu.cn/%s/%s", path, docsToken)
+	return fmt.Sprintf("%s/%s/%s", ResourceURLBase(), path, docsToken)
 }
 
 // SearchDocWiki 搜索云文档

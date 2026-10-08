@@ -35,11 +35,10 @@ func TestBuildPresentationXML_NamespaceHTTPS(t *testing.T) {
 	}
 }
 
-// TestIsOfficePresentation_Contract 覆盖官方 isOfficePresentation 契约的全部正例与负例。
+// TestIsOfficePresentation_Contract 覆盖 isOfficePresentation（委托 IsLocalOfficeToken）的正例与负例，
+// 并验证 slidesMediaParentType 与判定结果严格对齐。
 func TestIsOfficePresentation_Contract(t *testing.T) {
-	// 官方标准 28 字符交织 marker：0-based 下标 [4],[9],[14],[19],[24] 分别为 'O', 'F', 'L', '0', 'X'
-	// 索引: 0123 4 5678 9 10..13 14 15..18 19 20..23 24 25..27
-	// 字符: aaaa O aaaa F aaaa   L  aaaa   0  aaaa   X  aaa  (len=28)
+	// 交织 marker：0-based 下标 [4],[9],[14],[19],[24] 分别为 'O', 'F', 'L', '0', 'X'
 	officialPositiveFixture := "aaaaOaaaaFaaaaLaaaa0aaaaXaaa"
 
 	cases := []struct {
@@ -52,18 +51,21 @@ func TestIsOfficePresentation_Contract(t *testing.T) {
 		{"legacy fake_office_ 前缀自身", "fake_office_", true},
 		{"legacy local_office_ 前缀", "local_office_deck_888", true},
 		{"legacy local_office_ 前缀自身", "local_office_", true},
-		{"官方标准 28 字符交织 OFL0X marker fixture", officialPositiveFixture, true},
+		{"28 字符交织 OFL0X marker fixture", officialPositiveFixture, true},
 		{"真实格式 28 字符交织 marker", "abcdOefghFijklLmnop0qrstXuvw", true},
+		{"27 字符交织 marker（当前导入格式 OFL0X+21 随机+1 类型枚举）", "aaaaOaaaaFaaaaLaaaa0aaaaXaa", true},
+		{"29 字符交织 marker（长度只设下限）", "aaaaOaaaaFaaaaLaaaa0aaaaXaaaa", true},
+		{"25 字符交织 marker（恰好容纳标记）", "aaaaOaaaaFaaaaLaaaa0aaaaX", true},
 
 		// --- 负例 ---
 		{"5-shifted marker fixture (下标 5,10,15,20,25 错位)", "aaaaaObbbbFccccLdddd0eeeeXff", false},
 		{"普通原生 slides 28 字符 token (无 marker)", "zTqAwsEb4clrjOLd3drAcNZabcef", false},
-		{"短 marker (长度 27 字符)", "aaaaOaaaaFaaaaLaaaa0aaaaXaa", false},
-		{"长 marker (长度 29 字符)", "aaaaOaaaaFaaaaLaaaa0aaaaXaaaa", false},
+		{"24 字符：差一位容纳不下 marker", "aaaaOaaaaFaaaaLaaaa0aaaa", false},
 		{"错位 marker: 提前 1 位 (位置 3,8,13,18,23)", "aaaOaaaaFaaaaLaaaa0aaaaXaaaa", false},
 		{"错位 marker: 滞后 1 位 (位置 5,10,15,20,25)", "aaaaaOaaaaFaaaaLaaaa0aaaaXaa", false},
 		{"小写 marker 不匹配 (ofl0x)", "aaaaoaaaafaaaalaaaa0aaaaxaaa", false},
 		{"部分字符不匹配 (第 24 位不是 X 而是 Y)", "aaaaOaaaaFaaaaLaaaa0aaaaYaaa", false},
+		{"同长度原生 pptcn 交织 token", "abcdpefghpijkltmnopcqrstnuv", false},
 		{"前缀出现在中间不匹配", "prefix_fake_office_123", false},
 		{"普通短 token", "sldcnABC123", false},
 		{"空 token", "", false},

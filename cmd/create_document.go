@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -17,6 +18,9 @@ var createDocumentCmd = &cobra.Command{
   --title, -t     文档标题（必填）
   --folder, -f    目标文件夹 token（可选）
   --output, -o    输出格式，可选 json
+
+Bot 身份创建（未传 User Token）时，自动给当前 CLI 登录用户授予 full_access，
+JSON 输出 permission_grant（granted/skipped/failed）；以 User 身份创建时不触发。
 
 示例:
   # 创建空白文档
@@ -54,13 +58,17 @@ var createDocumentCmd = &cobra.Command{
 			revisionID = *doc.RevisionId
 		}
 
+		// Bot 身份创建时自动给当前 CLI 登录用户授予 full_access（User 身份创建不触发）
+		grant := autoGrantCurrentUser(userAccessToken, documentID, client.ResourceTypeDocx)
+
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			if err := printJSON(map[string]any{
+			if err := printJSON(withPermissionGrant(map[string]any{
 				"document_id": documentID,
 				"title":       docTitle,
 				"revision_id": revisionID,
-			}); err != nil {
+				"url":         client.BuildResourceURL(client.ResourceTypeDocx, documentID),
+			}, grant)); err != nil {
 				return err
 			}
 		} else {
@@ -68,7 +76,10 @@ var createDocumentCmd = &cobra.Command{
 			fmt.Printf("  文档 ID: %s\n", documentID)
 			fmt.Printf("  标题: %s\n", docTitle)
 			fmt.Printf("  版本: %d\n", revisionID)
-			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+			if link := client.BuildResourceURL(client.ResourceTypeDocx, documentID); link != "" {
+				fmt.Printf("  链接: %s\n", link)
+			}
+			printPermissionGrantText(os.Stdout, grant)
 		}
 
 		return nil

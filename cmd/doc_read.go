@@ -23,9 +23,12 @@ var docReadCmd = &cobra.Command{
   --heading <文本>     按标题定位章节：输出该标题到下一个同级/更高级标题之间的 Markdown
   --keyword <正则>     按内容定位：输出命中行及上下文（--context 控制上下文行数）
 
+文档参数支持 docx token、/docx/ URL 与 /wiki/ URL（wiki 自动解析为底层 docx）。
+
 示例:
   # 第一步：看结构
   feishu-cli doc read ABC123 --outline
+  feishu-cli doc read https://xxx.feishu.cn/wiki/wikcnXXXXXX --outline
 
   # 第二步：只读"性能优化"这一节
   feishu-cli doc read ABC123 --heading "性能优化"
@@ -39,10 +42,6 @@ var docReadCmd = &cobra.Command{
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
-			return err
-		}
-		documentID, err := extractDocToken(args[0])
-		if err != nil {
 			return err
 		}
 		outline, _ := cmd.Flags().GetBool("outline")
@@ -61,6 +60,12 @@ var docReadCmd = &cobra.Command{
 		}
 
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		// 支持 docx token、/docx/ URL 与 /wiki/ URL（wiki 经 node_by_token 换出底层 docx）
+		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
+		}
 
 		if outline {
 			blocks, err := client.GetAllBlocksWithToken(documentID, userAccessToken)

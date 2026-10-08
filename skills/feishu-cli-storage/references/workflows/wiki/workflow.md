@@ -2,6 +2,11 @@
 
 wiki 使用 node token；普通文档使用 document ID。先解析 URL 再选择命令。
 
+节点解析统一走 `GET /wiki/v2/spaces/node_by_token`：`wiki get/update/move/export/export-tree/delete` 的
+`<node_token>` 也可以直接传挂载在知识库中的文档 obj_token，服务端自动识别类型并返回真实 node_token
+（旧 `get_node` 对 obj_token 一律报 131005）。常见错误码：131012 节点已删除、131013/131016 token 无效或被截断、
+131014 文档不在知识库、131006 当前身份无权读取——均为终态，不要原样重试。
+
 ## 查询与导出
 
 ```bash
@@ -17,7 +22,7 @@ feishu-cli wiki export-tree <node_token> --output-dir ./backup
 ## 写操作
 
 ```bash
-feishu-cli wiki create --space-id <space_id> --title "新文档"
+feishu-cli wiki create --space-id <space_id> --title "新文档"   # Bot 创建时自动给当前登录用户授予节点 full_access（permission_grant）
 # 创建快捷方式节点必须提供 --origin-node-token
 feishu-cli wiki create --space-id <space_id> --title "快捷方式" --node-type shortcut --origin-node-token <origin_node_token>
 feishu-cli wiki update <node_token> --title "新标题"

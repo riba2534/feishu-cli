@@ -56,6 +56,24 @@ feishu-cli perm list <TOKEN> --doc-type docx
 feishu-cli perm delete <TOKEN> --doc-type docx --member-type email --member-id user@example.com
 ```
 
+### Bot 创建资源后自动授权当前用户
+
+`doc create`、`doc import`（新建文档时）、`doc import-file`、`slides create`、`file mkdir`、`file upload`、
+`file copy`、`wiki create`、`markdown create`、`drive import`、`drive task-result --scenario import`（导入完成时）、
+`bitable create/copy` **实际以 Bot 身份执行**时，CLI 会自动给当前 CLI 登录用户（`auth login` 的用户；open_id
+取自本地缓存，缓存失效时调一次 `/authen/v1/user_info`）授予 `full_access`（wiki 节点授予容器权限，不发通知），
+避免「Bot 建的资源用户自己打不开」。JSON 输出新增 `permission_grant`：
+
+| `status` | 含义 | 附加字段 |
+|---|---|---|
+| `granted` | 已授予 | `user_open_id`、`member_type=openid` |
+| `skipped` | 未登录 / User Token 不可用等，未授予 | `hint`（auth login 或 `perm add` 手动授权） |
+| `failed` | 授权接口报错 | `lark_code`、`hint` |
+
+- 以 User 身份执行（显式 `--user-access-token`、`FEISHU_USER_ACCESS_TOKEN`、`--as user`，或 auto 模式已登录）时资源本就属于用户，**不触发**，也不输出该字段；`--dry-run` 不触发。
+- 授权失败或跳过只在 stderr 告警，**不影响主操作的退出码**。
+- 它只覆盖「当前 CLI 登录用户」；需要交付给其他人（如 `owner_email`）时仍按上面的 `perm add` 授权。
+
 ## 命令总览
 
 ### 一、基础操作

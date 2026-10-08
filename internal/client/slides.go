@@ -11,22 +11,10 @@ import (
 )
 
 // isOfficePresentation 判定演示文稿 token 是否为导入的 Office deck。
-// 识别规则（对齐官方 lark-cli / slides 规范）：
-// 1. 兼容 legacy 前缀: "fake_office_" 或 "local_office_"
-// 2. 官方 28 字符交织标记: 长度恰好为 28，且 0-based 下标 [4],[9],[14],[19],[24]（人类 1-based 第 5,10,15,20,25 位）依次为 'O', 'F', 'L', '0', 'X'
+// 规则统一由 IsLocalOfficeToken 维护（前缀 fake_office_/local_office_，或长度 ≥25 且固定偏移为 OFL0X），
+// 避免 slides 与 sheets 各存一份副本、格式变化时漏改。
 func isOfficePresentation(token string) bool {
-	if strings.HasPrefix(token, "fake_office_") || strings.HasPrefix(token, "local_office_") {
-		return true
-	}
-	if len(token) == 28 &&
-		token[4] == 'O' &&
-		token[9] == 'F' &&
-		token[14] == 'L' &&
-		token[19] == '0' &&
-		token[24] == 'X' {
-		return true
-	}
-	return false
+	return IsLocalOfficeToken(token)
 }
 
 // slidesMediaParentType 根据演示文稿 token 返回上传 media 时使用的 parent_type。

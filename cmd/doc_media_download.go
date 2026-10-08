@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -18,8 +19,8 @@ var docMediaDownloadCmd = &cobra.Command{
   token       素材文件 token 或画板 ID
   --type      素材类型（media/whiteboard，默认 media）
   --output    输出文件路径（默认使用 token 作为文件名）
-  --doc-token 素材所属文档 token（文档内嵌图片需要）
-  --doc-type  素材所属文档类型（默认 docx）
+  --doc-token 素材所属文档 token 或 URL（文档内嵌图片需要；wiki URL 自动解析为底层文档）
+  --doc-type  素材所属文档类型（默认 docx；--doc-token 为 URL 时按路径推断，冲突报错）
   --extra     原始 extra JSON（优先于 --doc-token/--doc-type）
   --timeout   下载超时时间（默认 5m，大文件可设置更长如 30m、1h）
 
@@ -70,6 +71,26 @@ var docMediaDownloadCmd = &cobra.Command{
 			}
 		}
 
+		// --doc-token 支持 URL 与 wiki：换出底层文档 token/类型（--extra 优先，此时不解析）
+		if strings.TrimSpace(docToken) != "" && strings.TrimSpace(extra) == "" {
+			explicitType := ""
+			if cmd.Flags().Changed("doc-type") {
+				explicitType = docType
+			}
+			res, err := resolveResourceArg(docToken, resourceArgOptions{
+				ArgName:         "--doc-token",
+				ExplicitType:    explicitType,
+				DefaultType:     docType,
+				ResolveWiki:     true,
+				UserAccessToken: userAccessToken,
+			})
+			if err != nil {
+				return err
+			}
+			noteWikiResolved(res)
+			docToken, docType = res.Token, res.Type
+		}
+
 		switch mediaType {
 		case "whiteboard":
 			// 下载画板缩略图（扩展名按服务端实际格式决定）
@@ -114,7 +135,7 @@ func init() {
 	docCmd.AddCommand(docMediaDownloadCmd)
 	docMediaDownloadCmd.Flags().String("type", "media", "素材类型（media/whiteboard）")
 	docMediaDownloadCmd.Flags().StringP("output", "o", "", "输出文件路径")
-	docMediaDownloadCmd.Flags().String("doc-token", "", "素材所属文档 token（用于下载文档内嵌图片）")
+	docMediaDownloadCmd.Flags().String("doc-token", "", "素材所属文档 token 或 URL（用于下载文档内嵌图片；wiki URL 自动解析）")
 	docMediaDownloadCmd.Flags().String("doc-type", "docx", "素材所属文档类型（默认 docx）")
 	docMediaDownloadCmd.Flags().String("extra", "", "素材下载 extra JSON（优先于 --doc-token/--doc-type）")
 	docMediaDownloadCmd.Flags().String("user-access-token", "", "User Access Token（可选；默认优先使用 auth login 登录态，失败时回退 App Token）")

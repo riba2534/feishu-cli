@@ -43,7 +43,7 @@ var moveWikiNodeCmd = &cobra.Command{
 			return err
 		}
 
-		nodeToken, err := extractWikiToken(args[0])
+		nodeToken, err := extractWikiLookupToken(args[0])
 		if err != nil {
 			return err
 		}
@@ -51,14 +51,15 @@ var moveWikiNodeCmd = &cobra.Command{
 		targetParent, _ := cmd.Flags().GetString("target-parent")
 		output, _ := cmd.Flags().GetString("output")
 
-		// 先获取节点信息以获取当前 space_id
+		// 先通过 node_by_token 获取节点信息（当前 space_id 与真实 node_token）。
+		// 输入可能是挂载在知识库中的文档 obj_token，移动接口必须使用响应里的 node_token。
 		token := resolveOptionalUserToken(cmd)
-		node, err := client.GetWikiNode(nodeToken, token)
+		node, err := client.ResolveWikiNode(nodeToken, token)
 		if err != nil {
 			return fmt.Errorf("获取节点信息失败: %w", err)
 		}
 
-		result, err := client.MoveWikiNode(node.SpaceID, nodeToken, targetSpace, targetParent, token)
+		result, err := client.MoveWikiNode(node.SpaceID, node.NodeToken, targetSpace, targetParent, token)
 		if err != nil {
 			return err
 		}

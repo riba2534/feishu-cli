@@ -125,11 +125,14 @@ feishu-cli search docs "产品需求" -o json
       "DocsType": "docx",
       "Title": "产品需求文档 - Q2",
       "OwnerID": "ou_xxx",
-      "URL": "https://feishu.cn/docx/doc_token_xxx"
+      "URL": "https://www.feishu.cn/docx/doc_token_xxx"
     }
   ]
 }
 ```
+
+`URL` 由类型与 token 拼接，按配置品牌使用 `https://www.feishu.cn`（Lark 为 `https://www.larksuite.com`），
+打开后由服务端重定向到租户域名。
 
 后续操作必须同时看 `DocsType`，不能把所有 `DocsToken` 都交给 `doc get/export`：docx 走 doc，
 sheet 走 sheet，wiki 先按 node 类型解析，bitable/file/slides 分别走对应命令。

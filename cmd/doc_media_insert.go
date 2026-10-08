@@ -11,7 +11,7 @@ import (
 )
 
 var docMediaInsertCmd = &cobra.Command{
-	Use:   "media-insert <document_id>",
+	Use:   "media-insert <document_id|url>",
 	Short: "向文档中插入图片或文件",
 	Long: `向文档末尾插入本地图片或文件。
 
@@ -19,7 +19,7 @@ var docMediaInsertCmd = &cobra.Command{
 文件流程：上传文件 → 创建带 token 的块（两步法）
 
 参数:
-  document_id  文档 ID（必填）
+  document_id  文档 ID 或 URL（必填；支持 /docx/ 与 /wiki/ URL，wiki 自动解析为底层 docx）
   --file       本地文件路径（必填）
   --type       插入类型（image/file，默认 image）
   --align      图片对齐方式（left/center/right，默认 center，仅图片）
@@ -41,13 +41,19 @@ var docMediaInsertCmd = &cobra.Command{
 			return err
 		}
 
-		documentID := args[0]
 		filePath, _ := cmd.Flags().GetString("file")
 		insertType, _ := cmd.Flags().GetString("type")
 		alignStr, _ := cmd.Flags().GetString("align")
 		caption, _ := cmd.Flags().GetString("caption")
 		output, _ := cmd.Flags().GetString("output")
 		userAccessToken := resolveOptionalUserToken(cmd)
+
+		// wiki 节点必须先换出底层 docx 的 obj_token：块接口与素材上传的 drive_route_token
+		// 都只认文档 token，直接使用 wiki token 会导致创建块失败或素材挂错路由。
+		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
+		}
 
 		// 确定块类型和上传 parent_type
 		var blockType int

@@ -51,6 +51,11 @@ feishu-cli doc read <document_id> --keyword "QPS|限流" --context 5
 三种模式互斥（三选一）。`--heading` 命中多个标题时输出第一个并在 stderr 提示其余候选；
 代码块围栏内的 `#` 行不会被误判为标题。block 级精确分页仍用 `doc blocks`。
 
+`doc read` / `doc export` / `doc content-update` / `doc media-insert` 的文档参数统一接受 docx token、
+`/docx/` URL 和 `/wiki/` URL：wiki 节点自动经 `node_by_token` 换出底层 docx 的 obj_token（stderr 提示
+"已将 wiki 节点 … 解析为 docx: …"），底层不是 docx 时直接报错。URL 只按路径前缀识别，
+`?from=/wiki/...` 这类查询参数不会改变解析结果。
+
 ## 获取文档元信息（doc get）
 
 读取文档基本信息（document_id、revision_id、title），用于在 export 之前确认目标、或拿 revision_id 作为后续 API 调用参数。同样走"User 优先 + Tenant 兜底"。
@@ -107,7 +112,7 @@ feishu-cli doc blocks ABC123def456 --all --raw > /tmp/blocks_raw.json
 
 | Flag | 默认值 | 说明 |
 | --- | --- | --- |
-| `<node_token \| url>` | 必填 | 节点 Token 或 wiki URL |
+| `<node_token \| url>` | 必填 | 节点 Token、wiki URL，或挂载在知识库中的文档 obj_token / 文档 URL（`/docx/`、`/sheets/` 等，`node_by_token` 自动识别） |
 | `-o, --output` | text | 输出格式，可选 `json` |
 | `--user-access-token` | 空 | 手动覆盖 User Token |
 
@@ -191,7 +196,7 @@ feishu-cli sheet read shtcnxxxxxx "Sheet1!A1:B20" --value-render Formula
 
    - 判断 URL 类型：
      - `/docx/` → 普通文档，使用 `doc export`
-     - `/wiki/` → 知识库文档，使用 `wiki export`
+     - `/wiki/` → 知识库文档，使用 `wiki export`（底层是 docx 时 `doc export`/`doc read` 也可直接传 wiki URL）
    - 如果是 Token，根据格式判断类型
 
 2. **导出为 Markdown（含图片下载）**
@@ -288,7 +293,7 @@ feishu-cli sheet read shtcnxxxxxx "Sheet1!A1:B20" --value-render Formula
 | ----------------------------------------- | -------- | ------------- |
 | `https://xxx.feishu.cn/docx/<id>`         | 普通文档 | `doc export`  |
 | `https://xxx.feishu.cn/sheets/<token>`    | 普通电子表格 | `sheet export --format markdown` |
-| `https://xxx.feishu.cn/wiki/<token>`      | 知识库（docx/sheet） | `wiki export` |
+| `https://xxx.feishu.cn/wiki/<token>`      | 知识库（docx/sheet） | `wiki export`（底层 docx 时也可 `doc read/export`） |
 | `https://xxx.larkoffice.com/docx/<id>`    | 普通文档 | `doc export`  |
 | `https://xxx.larkoffice.com/sheets/<token>` | 普通电子表格 | `sheet export --format markdown` |
 | `https://xxx.larkoffice.com/wiki/<token>` | 知识库（docx/sheet） | `wiki export` |

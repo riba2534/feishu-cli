@@ -20,7 +20,7 @@
 | `slides media-upload` | `POST /open-apis/drive/v1/medias/upload_all` (`parent_type=slide_file`/`office_slide_file`) | `file_token` | 可直接放进 slide XML 的 `<img src="...">` |
 
 **关键约束**：
-- `parent_type` 由 CLI 自动选择：原生 Slides 演示文稿使用 `slide_file`；导入型 Office deck（token 以 `fake_office_` 开头）使用 `office_slide_file`
+- `parent_type` 由 CLI 自动选择：原生 Slides 演示文稿使用 `slide_file`；导入型 Office deck（token 以 `fake_office_`/`local_office_` 开头，或长度 ≥25 且第 5/10/15/20/25 位依次为 `OFL0X`）使用 `office_slide_file`
 - `parent_node` 必须传 `xml_presentation_id`（而不是 docx token 或 file_token）
 - 上传走单分片 `upload_all`，**不支持** `upload_prepare` 多分片，所以单文件硬限 20 MB
 
@@ -52,7 +52,8 @@
 
 ## 命令速查
 
-读取已有演示文稿：`feishu-cli slides get <xml_presentation_id> --output json`；
+读取已有演示文稿：`feishu-cli slides get <xml_presentation_id|slides URL|wiki URL> --output json`
+（wiki URL 自动经 node_by_token 解析，底层不是 slides 时直接报错；docx 等其他 URL 在本地拒绝，不再返回误导性 404）；
 需要历史版本时加 `--revision-id <revision>`，默认 `-1` 表示最新版本。
 
 ### 1. `slides create` — 创建空白演示文稿
@@ -83,6 +84,10 @@ feishu-cli slides create --title "Demo" --user-access-token <u-xxx>
 | `--height` | 幻灯片高度（像素） | `540` |
 | `--output`, `-o` | 输出格式（留空 = 文本摘要，`json` = JSON） | 文本摘要 |
 | `--user-access-token` | 显式传 User Token | 不传走 App Token |
+
+> **Bot 创建自动授权**：不传 User Token（Bot 身份）创建时，CLI 自动给当前 CLI 登录用户授予 `full_access`，
+> JSON 输出新增 `url`（按品牌生成）与 `permission_grant`（`granted`/`skipped`/`failed`，见 feishu-cli-storage 的 perm 工作流）；
+> 以 User 身份创建时不触发。
 
 > **两层默认值分工**：未传 `--title/--width/--height` 时，client 层注入 `Untitled` 和 `960x540`。
 > CLI 会检查 flag 是否由用户显式设置；显式传 `--width 0` 或 `--height 0` 会报“必须大于 0”，不会使用默认值。
@@ -177,7 +182,7 @@ done
 
 ## 注意事项
 
-- **`parent_type` 自动选择**：源码根据 presentationID 前缀自动选择 `slide_file` 或 `office_slide_file`。
+- **`parent_type` 自动选择**：源码根据 presentationID 形状（前缀或固定偏移 OFL0X 标记）自动选择 `slide_file` 或 `office_slide_file`。
   自己传 `slide_image` / `slides_image` / `slides_file` 都会被服务端拒绝
 - **20 MB 上限不可绕过**：`upload_prepare` 多分片接口**不接受** `parent_type=slide_file` / `office_slide_file`，
   CLI 在 client 侧也做了 20 MB 硬检查，超过会在本地直接报错（不会发请求）

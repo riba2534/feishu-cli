@@ -18,10 +18,13 @@ type WikiNode struct {
 	ObjType         string `json:"obj_type"`
 	ParentNodeToken string `json:"parent_node_token,omitempty"`
 	NodeType        string `json:"node_type"`
+	OriginNodeToken string `json:"origin_node_token,omitempty"`
+	OriginSpaceID   string `json:"origin_space_id,omitempty"`
 	Title           string `json:"title"`
 	HasChild        bool   `json:"has_child"`
 	Creator         string `json:"creator,omitempty"`
 	Owner           string `json:"owner,omitempty"`
+	NodeCreateTime  string `json:"node_create_time,omitempty"`
 	ObjCreateTime   string `json:"obj_create_time,omitempty"`
 	ObjEditTime     string `json:"obj_edit_time,omitempty"`
 }
@@ -35,54 +38,21 @@ type WikiSpace struct {
 	Visibility  string `json:"visibility,omitempty"`
 }
 
-// GetWikiNode 获取知识库节点信息（向后兼容）。
+// GetWikiNode 获取知识库节点信息。
+//
+// Deprecated: 请直接使用 ResolveWikiNode。保留此包装是为了让尚未迁移的调用点
+// 同样走 node_by_token（旧 get_node 对 obj_token 一律报 131005）。
 func GetWikiNode(token string, userAccessToken string) (*WikiNode, error) {
-	return GetWikiNodeWithOptions(token, "", userAccessToken)
+	return ResolveWikiNode(token, userAccessToken)
 }
 
 // GetWikiNodeWithOptions 获取知识库节点信息。
-// 当 token 为 non-wiki obj_token 时必须传入 objType（如 docx/sheet 等）；
-// 当 token 为 wiki node_token 时（objType 为 "" 或 "wiki"），OpenAPI 规定省略 obj_type 参数。
+//
+// Deprecated: node_by_token 由服务端自动识别 token 类型，objType 已无需传入并被忽略；
+// 请直接使用 ResolveWikiNode。
 func GetWikiNodeWithOptions(token, objType, userAccessToken string) (*WikiNode, error) {
-	client, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
-	reqBuilder := larkwiki.NewGetNodeSpaceReqBuilder().
-		Token(token)
-	if objType != "" && objType != "wiki" {
-		reqBuilder.ObjType(objType)
-	}
-
-	resp, err := client.Wiki.Space.GetNode(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
-	if err != nil {
-		return nil, fmt.Errorf("获取节点信息失败: %w", err)
-	}
-
-	if !resp.Success() {
-		return nil, fmt.Errorf("获取节点信息失败: code=%d, msg=%s", resp.Code, resp.Msg)
-	}
-
-	node := resp.Data.Node
-	if node == nil {
-		return nil, fmt.Errorf("节点不存在")
-	}
-
-	return &WikiNode{
-		NodeToken:       token,
-		SpaceID:         StringVal(node.SpaceId),
-		ObjToken:        StringVal(node.ObjToken),
-		ObjType:         StringVal(node.ObjType),
-		ParentNodeToken: StringVal(node.ParentNodeToken),
-		NodeType:        StringVal(node.NodeType),
-		Title:           StringVal(node.Title),
-		HasChild:        BoolVal(node.HasChild),
-		Creator:         StringVal(node.Creator),
-		Owner:           StringVal(node.Owner),
-		ObjCreateTime:   StringVal(node.ObjCreateTime),
-		ObjEditTime:     StringVal(node.ObjEditTime),
-	}, nil
+	_ = objType
+	return ResolveWikiNode(token, userAccessToken)
 }
 
 // ListWikiSpaces 获取知识空间列表

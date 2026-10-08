@@ -120,7 +120,7 @@ var sheetImageMediaUploadCmd = &cobra.Command{
 	Short: "上传本地图片素材，返回 file_token",
 	Long: `上传本地图片作为浮动图片素材，返回 file_token（再用于 sheet image add）。
 parent_type 按表格类型自动选择：原生飞书表格用 sheet_image，导入型 office 表格
-（token 以 fake_office_ 开头）用 office_sheet_file；parent_node 为电子表格 token。
+（token 以 fake_office_/local_office_ 开头，或长度 ≥25 且第 5/10/15/20/25 位依次为 OFL0X）用 office_sheet_file；parent_node 为电子表格 token。
 
 示例:
   feishu-cli sheet image media-upload shtcnxxxxxx ./logo.png

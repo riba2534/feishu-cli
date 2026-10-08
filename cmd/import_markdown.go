@@ -315,6 +315,9 @@ var importMarkdownCmd = &cobra.Command{
   - 表格并发填充，大表格自动拆分
   - 详细进度和耗时统计
 
+新建文档且以 Bot 身份执行时，创建后自动给当前 CLI 登录用户授予 full_access，
+JSON 输出 permission_grant；导入到已有文档（--document-id）或 User 身份时不触发。
+
 示例:
   feishu-cli doc import doc.md --title "我的文档"
   feishu-cli doc import doc.md --document-id ABC123def456
@@ -404,6 +407,9 @@ var importMarkdownCmd = &cobra.Command{
 			fmt.Fprintf(progressOut, "[信息] 检测到 %s 图表\n", strings.Join(parts, ", "))
 		}
 
+		// 新建文档且以 Bot 身份执行时，创建后立即给当前用户授予 full_access（导入中途失败也能打开文档排查）
+		var grant *client.PermissionGrantResult
+
 		// If no document ID, create new document
 		if documentID == "" {
 			if title == "" {
@@ -427,7 +433,8 @@ var importMarkdownCmd = &cobra.Command{
 			}
 			documentID = *doc.DocumentId
 			fmt.Fprintf(progressOut, "已创建文档: %s\n", documentID)
-			fmt.Fprintf(progressOut, "链接: https://feishu.cn/docx/%s\n\n", documentID)
+			fmt.Fprintf(progressOut, "链接: %s\n\n", client.BuildResourceURL(client.ResourceTypeDocx, documentID))
+			grant = autoGrantCurrentUser(userAccessToken, documentID, client.ResourceTypeDocx)
 		}
 
 		// 解析 Markdown 为片段
@@ -529,8 +536,9 @@ var importMarkdownCmd = &cobra.Command{
 		totalDuration := stats.phase1Duration + stats.phase2Duration + stats.phase3Duration
 
 		if output == "json" {
-			if err := printJSON(map[string]any{
+			if err := printJSON(withPermissionGrant(map[string]any{
 				"document_id":        documentID,
+				"url":                client.BuildResourceURL(client.ResourceTypeDocx, documentID),
 				"blocks":             stats.totalBlocks,
 				"diagram_total":      stats.diagramTotal,
 				"diagram_success":    stats.diagramSuccess,
@@ -557,7 +565,7 @@ var importMarkdownCmd = &cobra.Command{
 				"phase1_seconds":     stats.phase1Duration.Seconds(),
 				"phase2_seconds":     stats.phase2Duration.Seconds(),
 				"phase3_seconds":     stats.phase3Duration.Seconds(),
-			}); err != nil {
+			}, grant)); err != nil {
 				return err
 			}
 		} else {
@@ -613,7 +621,8 @@ var importMarkdownCmd = &cobra.Command{
 				}
 			}
 			fmt.Printf("  总耗时: %.1fs\n", totalDuration.Seconds())
-			fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
+			fmt.Printf("  链接: %s\n", client.BuildResourceURL(client.ResourceTypeDocx, documentID))
+			printPermissionGrantText(os.Stdout, grant)
 		}
 
 		return nil

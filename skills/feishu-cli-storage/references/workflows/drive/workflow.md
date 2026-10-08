@@ -26,8 +26,9 @@
 ```bash
 # 解析任意文档 URL → 输出 type/title/canonical token（自动展开 wiki）
 feishu-cli drive inspect --url "https://xxx.feishu.cn/docx/doxcnxxx"
-feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx"   # 自动 wiki get_node
-feishu-cli drive inspect --url doxcnxxx --type docx -o json            # 裸 token + JSON
+feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx"   # 自动 wiki node_by_token
+feishu-cli drive inspect --url doxcnxxx -o json                        # 裸 token：query_by_token 自动识别类型
+feishu-cli drive inspect --url doxcnxxx --type docx -o json            # 裸 token + 显式类型
 
 # 向文档所有者申请权限（埋藏 API，飞书文档站未收录但服务端可用）
 # 必需 User Token + docs:permission.member:apply scope（或 drive:drive 等任一大权限）
@@ -37,6 +38,14 @@ feishu-cli drive apply-permission --token <url> --perm view --dry-run    # 预�
 ```
 
 详见 [`embedded-api-discovery.md`](../../../../feishu-cli-platform/references/workflows/api/references/embedded-api-discovery.md)（埋藏 API 调研方法论）。
+
+**URL 解析规则（inspect / apply-permission / export / add-comment / import 的 `--folder-token` 通用）**：
+- 只按 URL **路径前缀**识别类型：`/docx/`、`/doc/`、`/docs/`、`/sheets/`、`/spreadsheets/`、`/base/`、`/bitable/`、
+  `/wiki/`、`/file/`、`/drive/file/`、`/drive/folder/`、`/drive/shr/`、`/chat/drive/`、`/mindnote(s)/`、`/slides/`；
+  `?from=/wiki/xxx` 这类查询参数不会改变解析结果。
+- 只接受 `*.feishu.cn` / `*.larksuite.com` / `*.larkoffice.com` 的 https 链接（私有化部署需开启 `allow_custom_base_url`）。
+- `--type` / `--doc-type` 与 URL 推断的类型冲突时直接报错（旧版本会静默以 `--type` 覆盖）；
+  唯一例外是 wiki URL 配合需要解包的命令（如 `drive export`、`drive inspect`），此时 `--type` 表示期望的底层文档类型。
 
 ### 1. 上传 / 下载
 
@@ -79,7 +88,7 @@ feishu-cli drive export --token basexxxx --doc-type bitable --file-extension csv
 ```
 
 **支持的格式**：
-- `--doc-type`: `doc` / `docx` / `sheet` / `bitable` / `slides` / `wiki`（wiki 先 get_node）
+- `--doc-type`: `doc` / `docx` / `sheet` / `bitable` / `slides` / `wiki`（wiki 先 node_by_token）
 - `--file-extension`: `docx` / `pdf` / `xlsx` / `csv` / `markdown` / `base` / `pptx`
 - 矩阵：doc→docx/pdf；docx→docx/pdf/markdown；sheet→xlsx/csv；bitable→xlsx/csv/base；slides→pptx/pdf
 - `--url` 可替代 `--token`；`--only-schema` 仅 bitable→base
@@ -111,13 +120,14 @@ feishu-cli drive import --file report.docx --type docx
 feishu-cli drive import --file data.xlsx --type sheet --folder-token fldxxx
 feishu-cli drive import --file bigsheet.csv --type bitable --folder-token fldxxx
 feishu-cli drive import --file deck.pptx --type slides
+# --as bot（或 auto 未登录）导入成功后自动给当前 CLI 登录用户授予新文档 full_access，JSON 带 permission_grant
 feishu-cli drive import --file snapshot.base --type bitable --target-token bascnxxx
 ```
 
 **关键技术点**：
 - 走 **官方 `/medias/upload_all` 端点**（`parent_type=ccm_import_open` + `extra`），**省略 parent_node**；>20MB 走 `upload_prepare/part/finish` 且 **显式 `parent_node=""`**
 - `import_tasks` **始终携带** `point.mount_type=1`；省略 `--folder-token` 时 `mount_key` 为空（根目录）
-- wiki 节点不能当 `--folder-token`（会先 probe `wiki get_node`）
+- wiki 节点不能当 `--folder-token`（会先 probe `wiki node_by_token`）
 - 官方大小矩阵：`.docx/.doc` 600MB、`.pptx` 500MB、`.xlsx` 800MB、`.csv` sheet 20MB / bitable 100MB、`.txt/.md/.html/.xls/.base` 20MB
 - 有界轮询 30×2s，超时返回 `next_command`
 
@@ -367,11 +377,15 @@ feishu-cli drive apply-permission --token <url> --perm view --dry-run
 # docx URL → 输出 type=docx + 标题 + 裸 token + canonical URL
 feishu-cli drive inspect --url "https://xxx.feishu.cn/docx/doxcnxxx"
 
-# wiki URL → 自动展开到底层文档（自动调 wiki get_node 拆 obj_token + obj_type）
+# wiki URL → 自动展开到底层文档（自动调 wiki node_by_token 拆 obj_token + obj_type）
 feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx"
 # → 输出 type=docx, token=<真实 docx token>
 
-# 裸 token + 显式 type → 拿标题做权限/分类
+# 裸 token：未传 --type 时自动调 GET /drive/v2/files/query_by_token 识别类型（Bot/User 均可用，
+# wiki node_token 自动识别并展开；JSON 带 detected_by=query_by_token，节点在回收站/已删除时带 token_status）
+feishu-cli drive inspect --url doxcnxxx
+
+# 裸 token + 显式 type → 跳过识别，直接查标题
 feishu-cli drive inspect --url doxcnxxx --type docx
 
 # JSON 输出（脚本/Agent 友好）
