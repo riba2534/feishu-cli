@@ -27,12 +27,16 @@ func bitableFieldPath(baseToken, tableID string, extra ...string) string {
 
 var bitableFieldListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "列出字段",
+	Short: "列出全部字段（自动翻页）",
+	Long: `GET /fields，列出数据表的全部字段。
+
+服务端按 offset/limit 分页且只返回 total（不传 limit 时只给 20 个字段）；
+本命令按 total 自动翻页取完，输出 {"fields":[...],"total":N}。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runBaseV3Simple(cmd, "GET", func(baseToken string) string {
-			tableID, _ := cmd.Flags().GetString("table-id")
+		tableID, _ := cmd.Flags().GetString("table-id")
+		return runBaseV3ListAll(cmd, "fields", func(baseToken string) string {
 			return bitableFieldPath(baseToken, tableID)
-		}, nil)
+		})
 	},
 }
 
@@ -144,6 +148,26 @@ func runBaseV3Simple(cmd *cobra.Command, method string, pathFn func(baseToken st
 		return err
 	}
 	return printJSON(data)
+}
+
+// runBaseV3ListAll 按 offset/limit 翻页取完 table/field/view 列表，输出 {key:[...],"total":N}。
+func runBaseV3ListAll(cmd *cobra.Command, key string, pathFn func(baseToken string) string) error {
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	token, err := resolveIdentityToken(cmd)
+	if err != nil {
+		return err
+	}
+	baseToken, err := resolveBaseToken(cmd)
+	if err != nil {
+		return err
+	}
+	items, total, err := listBaseV3Items(pathFn(baseToken), key, token)
+	if err != nil {
+		return err
+	}
+	return printJSON(map[string]any{key: items, "total": total})
 }
 
 // runBaseV3WithJSON 运行一个带 JSON body 的 POST/PUT/PATCH 请求
