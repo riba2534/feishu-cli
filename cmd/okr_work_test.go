@@ -53,3 +53,23 @@ func TestOKRCycleListTenantKeepsV1(t *testing.T) {
 		t.Fatalf("--tenant 应走 v1: %s %+v", out, rec.apiReqs())
 	}
 }
+
+// TestOKRWriteDryRunNoNetwork OKR 写命令 --dry-run 不联网（真实回归只允许 dry-run）
+func TestOKRWriteDryRunNoNetwork(t *testing.T) {
+	rec := setupWorkCmdTest(t, "", nil)
+	out, err := runWorkCmd(t, okrProgressCreateCmd, nil, map[string]string{"objective-id": "7x", "content": "进展", "dry-run": "true"})
+	if err != nil || !strings.Contains(out, "/open-apis/okr/v1/progress_records") || !strings.Contains(out, `"target_type": 2`) {
+		t.Fatalf("progress create --dry-run: %v %s", err, out)
+	}
+	out, err = runWorkCmd(t, okrObjectiveCreateCmd, nil, map[string]string{"cycle-id": "c1", "content": "目标", "dry-run": "true"})
+	if err != nil || !strings.Contains(out, "/open-apis/okr/v2/cycles/c1/objectives") || !strings.Contains(out, "block_element_type") {
+		t.Fatalf("objective create --dry-run: %v %s", err, out)
+	}
+	out, err = runWorkCmd(t, okrProgressDeleteCmd, []string{"7x"}, map[string]string{"dry-run": "true"})
+	if err != nil || !strings.Contains(out, `"DELETE"`) {
+		t.Fatalf("progress delete --dry-run: %v %s", err, out)
+	}
+	if len(rec.all()) != 0 {
+		t.Fatalf("dry-run 不应联网: %+v", rec.all())
+	}
+}

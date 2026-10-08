@@ -58,7 +58,7 @@ OKR 命令组默认 **`--as bot`**（App/Tenant Token，无需 `auth login`，cr
 | `okr progress get <progress_id>` | 单条进展详情 | 进展 ID |
 | `okr progress create` | 创建一条新进展 | 目标 ID（二选一）+ 内容（二选一） |
 | `okr progress update <progress_id>` | 更新进展内容/进度 | 进展 ID + 内容（二选一） |
-| `okr progress delete <progress_id>` | 删除进展（`--yes` 跳过确认） | 进展 ID |
+| `okr progress delete <progress_id>` | 删除进展（`--yes` 跳过确认；`--dry-run` 只预览） | 进展 ID |
 | `okr upload-image` | 上传进展图片素材（ContentBlock imageList 引用） | `--file` + 目标 ID（二选一） |
 | `okr objective create` | 在周期下创建目标（v2，先 `--dry-run`） | `--cycle-id` + `--content`/`--content-json` |
 | `okr objective update <id>` | 更新目标内容/备注/得分/截止 | 至少一个字段 |
@@ -181,6 +181,9 @@ feishu-cli okr progress create \
 ```
 
 进展卡片在飞书 OKR 页面会展示来源标题，点击跳转 URL。
+
+写命令（`progress create/update/delete`、`objective`/`key-result` create/update、`comment create`）都支持 `--dry-run`：
+只打印将发出的请求，不联网、不解析身份。OKR 对组织可见，先预览再执行。
 
 ### 完整参数表
 

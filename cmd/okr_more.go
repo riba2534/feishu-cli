@@ -139,6 +139,13 @@ var okrProgressUpdateCmd = &cobra.Command{
 			return err
 		}
 		opts.ProgressRate = rate
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return printDryRunPlan(cmd, "okr progress update 预览（未执行）", nil, []dryRunStep{{
+				Method: "PUT", URL: "/open-apis/okr/v1/progress_records/" + args[0],
+				Params: map[string]any{"user_id_type": userIDType},
+				Body:   okrProgressPreviewBody(contentJSON, rate, nil),
+			}})
+		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
@@ -172,6 +179,11 @@ var okrProgressDeleteCmd = &cobra.Command{
   feishu-cli okr progress delete 7123456789012345678 --yes`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return printDryRunPlan(cmd, "okr progress delete 预览（未执行）", nil, []dryRunStep{{
+				Method: "DELETE", URL: "/open-apis/okr/v1/progress_records/" + args[0],
+			}})
+		}
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -302,6 +314,8 @@ func init() {
 	okrProgressUpdateCmd.Flags().StringP("output", "o", "", "输出格式：json")
 
 	okrProgressDeleteCmd.Flags().Bool("yes", false, "跳过确认直接删除")
+	okrProgressDeleteCmd.Flags().Bool("dry-run", false, "只预览请求，不执行")
+	okrProgressUpdateCmd.Flags().Bool("dry-run", false, "只预览请求，不执行")
 
 	okrCmd.AddCommand(okrUploadImageCmd)
 	okrUploadImageCmd.Flags().String("file", "", "本地图片路径")
