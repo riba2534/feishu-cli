@@ -32,7 +32,7 @@ var minutesSearchCmd = &cobra.Command{
   --output, -o   输出格式（json）
 
 权限:
-  需要 User Access Token + minutes:minutes.search:read 权限
+  默认 User 身份（--as user），可用 --as bot|auto 切换；需要 minutes:minutes.search:read 权限
 
 示例:
   # 按关键词搜索
@@ -51,7 +51,7 @@ var minutesSearchCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := requireUserToken(cmd, "minutes search")
+		token, err := resolveVCReadIdentity(cmd)
 		if err != nil {
 			return err
 		}
@@ -183,4 +183,5 @@ func init() {
 	minutesSearchCmd.Flags().String("page-token", "", "分页标记")
 	minutesSearchCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	minutesSearchCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addVCReadAsFlag(minutesSearchCmd)
 }

@@ -30,7 +30,7 @@ var vcNotesCmd = &cobra.Command{
   --overwrite           覆盖已存在的逐字稿文件
 
 权限:
-  - User Access Token
+  - 默认 User 身份（--as user），可用 --as bot|auto 切换
   - 基础: vc:note:read
   - meeting-ids 路径: vc:meeting.meetingevent:read
   - minute-tokens 路径: minutes:minutes:readonly
@@ -52,7 +52,7 @@ var vcNotesCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := requireUserToken(cmd, "vc notes")
+		token, err := resolveVCReadIdentity(cmd)
 		if err != nil {
 			return err
 		}
@@ -510,4 +510,5 @@ func init() {
 	vcNotesCmd.Flags().Bool("overwrite", false, "覆盖已存在的逐字稿文件")
 	vcNotesCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	vcNotesCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addVCReadAsFlag(vcNotesCmd)
 }

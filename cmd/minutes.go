@@ -47,7 +47,7 @@ var minutesGetCmd = &cobra.Command{
   -o, --output json 以 JSON 格式输出
 
 权限:
-  - User Access Token
+  - 默认 User 身份（--as user），可用 --as bot|auto 切换
   - minutes:minutes:readonly
   - --with-artifacts 额外需要 minutes:minutes.artifacts:read
 
@@ -61,7 +61,7 @@ var minutesGetCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := requireUserToken(cmd, "minutes get")
+		token, err := resolveVCReadIdentity(cmd)
 		if err != nil {
 			return err
 		}
@@ -230,4 +230,5 @@ func init() {
 	minutesGetCmd.Flags().Int("wait-interval", 10, "--wait-ready 轮询间隔秒数")
 	minutesGetCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	minutesGetCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addVCReadAsFlag(minutesGetCmd)
 }
