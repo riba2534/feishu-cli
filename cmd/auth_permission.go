@@ -39,9 +39,13 @@ var authPermissionCmd = &cobra.Command{
 		docType, _ := cmd.Flags().GetString("doc-type")
 		action, _ := cmd.Flags().GetString("action")
 
-		result, err := client.AuthPermission(docToken, docType, action)
+		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {
 			return err
+		}
+		result, err := client.AuthPermission(docToken, docType, action, userToken)
+		if err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		return printJSON(result)

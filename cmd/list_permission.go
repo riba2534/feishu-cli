@@ -42,9 +42,13 @@ var listPermissionCmd = &cobra.Command{
 		docToken := args[0]
 		docType, _ := cmd.Flags().GetString("doc-type")
 
-		members, err := client.ListPermission(docToken, docType)
+		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {
 			return err
+		}
+		members, err := client.ListPermission(docToken, docType, userToken)
+		if err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		return printJSON(members)

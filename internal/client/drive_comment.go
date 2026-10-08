@@ -3,16 +3,19 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 )
 
 // CreateNewCommentReq 创建评论请求（V2 API，支持富文本 reply_elements）
 type CreateNewCommentReq struct {
-	FileToken     string           // 目标文件 token（docx/doc）
-	FileType      string           // docx / doc
-	BlockID       string           // 可选：局部评论的 anchor block_id
+	FileToken     string           // 目标文件 token（docx/doc/sheet/slides/bitable/file）
+	FileType      string           // docx / doc / sheet / slides / bitable / file
+	BlockID       string           // 可选：局部评论的 anchor block_id（docx）
 	ReplyElements []map[string]any // reply_elements 数组
+	// Anchor 非 nil 时作为完整 anchor 对象下发（优先于 BlockID），用于 sheet 单元格
+	// {block_id, sheet_col, sheet_row}、slides {block_id, slide_block_type}、
+	// bitable 记录 {block_id, base_record_id, base_view_id}、file 全文评论等锚点。
+	Anchor map[string]any
 }
 
 // CreateNewComment 创建新评论（V2 API，支持富文本 + 局部评论）
@@ -29,7 +32,9 @@ func CreateNewComment(req CreateNewCommentReq, userAccessToken string) (json.Raw
 		"file_type":      req.FileType,
 		"reply_elements": req.ReplyElements,
 	}
-	if req.BlockID != "" {
+	if req.Anchor != nil {
+		body["anchor"] = req.Anchor
+	} else if req.BlockID != "" {
 		body["anchor"] = map[string]any{
 			"block_id": req.BlockID,
 		}
@@ -42,20 +47,16 @@ func CreateNewComment(req CreateNewCommentReq, userAccessToken string) (json.Raw
 	if err != nil {
 		return nil, fmt.Errorf("创建评论失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("创建评论失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	// 先解析业务信封再看 HTTP 状态：飞书业务错误（如 1069302 内容超长、1069303 无权限）常随 HTTP 400 下发
+	if err := CheckAPIResponse("创建评论", resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
-		Code int             `json:"code"`
-		Msg  string          `json:"msg"`
 		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)
-	}
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("创建评论失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
 	}
 	return apiResp.Data, nil
 }

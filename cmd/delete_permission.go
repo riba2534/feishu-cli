@@ -53,8 +53,12 @@ var deletePermissionCmd = &cobra.Command{
 
 		memberType = normalizePermMemberType(memberType)
 
-		if err := client.DeletePermission(docToken, docType, memberType, memberID); err != nil {
+		userToken, err := resolvePermIdentity(cmd)
+		if err != nil {
 			return err
+		}
+		if err := client.DeletePermission(docToken, docType, memberType, memberID, userToken); err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		fmt.Printf("权限删除成功！\n")

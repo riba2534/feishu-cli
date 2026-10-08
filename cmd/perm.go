@@ -21,6 +21,11 @@ var permCmd = &cobra.Command{
   public-update    更新公共权限设置
   password         文档密码管理（create/update/delete）
 
+身份（所有子命令通用）:
+  默认以 App/Bot 身份调用（保持历史行为）；显式 --user-access-token 时用该 User Token。
+  --as bot|user|auto 显式切换：个人文档（应用不是协作者）用 Bot 会得到 1063004，
+  此时改用 --as user（需先 feishu-cli auth login，权限 API 同时支持 User / Tenant 身份）。
+
 权限级别:
   view         查看权限
   edit         编辑权限
@@ -37,6 +42,9 @@ var permCmd = &cobra.Command{
 示例:
   # 查看文档的协作者列表
   feishu-cli perm list DOC_TOKEN
+
+  # 以当前登录用户身份查看个人文档的协作者
+  feishu-cli perm list DOC_TOKEN --as user
 
   # 通过邮箱添加编辑权限
   feishu-cli perm add DOC_TOKEN \
@@ -67,4 +75,5 @@ var permCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(permCmd)
+	addPermIdentityFlags(permCmd)
 }

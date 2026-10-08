@@ -74,8 +74,12 @@ var transferOwnerCmd = &cobra.Command{
 
 		memberType = normalizePermMemberType(memberType)
 
-		if err := client.TransferOwnership(docToken, docType, memberType, memberID, notification, removeOldOwner, stayPut, oldOwnerPerm); err != nil {
+		userToken, err := resolvePermIdentity(cmd)
+		if err != nil {
 			return err
+		}
+		if err := client.TransferOwnership(docToken, docType, memberType, memberID, notification, removeOldOwner, stayPut, oldOwnerPerm, userToken); err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		fmt.Printf("文档所有权转移成功！\n")

@@ -173,7 +173,25 @@ feishu-cli drive add-comment --doc doccnxxxx --content '[
   {"type":"text","text":" 查看 "},
   {"type":"link","link":"https://feishu.cn"}
 ]'
+
+# 电子表格单元格评论（--block-id <sheetId>!<cell>，必填）
+feishu-cli drive add-comment --doc shtcnxxxx --type sheet --block-id a281f9!D6 \
+  --content '[{"type":"text","text":"这个数需要核对"}]'
+
+# 多维表格记录评论（--block-id <table-id>!<record-id>!<view-id>，必填）
+feishu-cli drive add-comment --doc "https://xxx.feishu.cn/base/bascnxxxx" \
+  --block-id tblxxx!recxxx!vewxxx --content '[{"type":"text","text":"请补充"}]'
+
+# 幻灯片元素评论（--block-id <slide-block-type>!<xml-id>，必填）
+feishu-cli drive add-comment --doc "https://xxx.feishu.cn/slides/sldxxxx" \
+  --block-id shape!bPq --content '[{"type":"text","text":"配色再调一下"}]'
+
+# 云盘文件全文评论（服务端仅支持部分扩展名，如 .md/.txt/.json/.csv/.pptx/.png/.jpg/.zip）
+feishu-cli drive add-comment --doc boxcnxxxx --type file --content '[{"type":"text","text":"已阅"}]'
 ```
+
+**目标类型**：裸 token 用 `--type`（默认 docx）；URL 按路径自动识别（docx/doc/sheets/slides/base/file/wiki）。
+所有 `text` 元素合计不超过 10000 字符（服务端按合计计数，拆成多个元素不能绕过，超限返回不透明的 1069302），CLI 本地预检。
 
 **reply_elements 元素类型**：
 - `text` — 纯文本
@@ -368,6 +386,9 @@ feishu-cli drive apply-permission --token <url> --perm view --dry-run
 ```
 
 > ⚠️ 这是「埋藏 API」（飞书文档站未收录但服务端可用，已实测），必需 User Token + `docs:permission.member:apply` scope（或任一大权限如 `drive:drive`）。
+>
+> 业务错误（含 HTTP 200 + code≠0）一律以非零退出码失败：`1063006` = 同一用户对同一文档每天最多申请 5 次，等次日额度重置；
+> `1063007` = 该文档不接受权限申请，核对目标与申请的权限，或直接联系所有者。
 
 ### 工作流 G：拿到 URL → 一行命令解析出 token / 标题 / 类型（inspect）
 
@@ -446,8 +467,8 @@ feishu-cli drive export --token $DOC_TOKEN --doc-type docx --file-extension mark
 - **文件夹移动轮询**：30 次 × 2 秒
 - **格式特定大小限制**（import）：按源扩展名，见上方矩阵（不再是笼统的 docx/sheet 20MB）
 - **drive move 省略 --folder-token**：先取真实根目录 token，不会把空字符串交给 move API
-- **add-comment 的 wiki 解析**：只支持 obj_type 为 `docx` 或 `doc` 的 wiki 节点；其他类型（sheet/bitable/mindnote 等）会报错
-- **局部评论**：仅 docx 支持 `--block-id` 锚点，doc（旧版文档）不支持
+- **add-comment 的 wiki 解析**：支持 obj_type 为 docx/doc/sheet/slides/bitable/file 的 wiki 节点；mindnote 等其他类型会报错
+- **局部评论**：docx 用 `--block-id <block_id>`；sheet/slides/bitable 必须带对应格式的 `--block-id`；doc（旧版文档）与 file 只支持全文评论
 - **文件名规则**：
   - **`drive download`**：`--output` 为目录时使用 `file_token` 作为文件名（不从响应头解析）；要自定义名字请显式传文件路径
   - **`minutes download`**（参见 feishu-cli-meetings）：从响应头按 `Content-Disposition > filename* > Content-Type 推导扩展名 > {token}.media` 优先级解析
