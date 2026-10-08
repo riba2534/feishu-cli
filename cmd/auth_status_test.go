@@ -253,3 +253,41 @@ func TestAuthTimeFieldsAreRFC3339(t *testing.T) {
 		}
 	}
 }
+
+// 终态刷新失败标记要在 auth status / auth check 中体现为"需要重新登录"。
+func TestAuthStatusShowsRefreshFailureMarker(t *testing.T) {
+	writeVerifyToken(t, &auth.TokenStore{
+		AccessToken:      "u-expired-marker",
+		RefreshToken:     "r-revoked",
+		ExpiresAt:        time.Now().Add(-time.Hour),
+		RefreshExpiresAt: time.Now().Add(24 * time.Hour),
+		AppID:            "cli_app",
+		RefreshFailure:   &auth.RefreshFailure{Code: 20064, Error: "invalid_grant", Description: "revoked", At: time.Now()},
+	})
+	t.Setenv("FEISHU_APP_ID", "cli_app")
+	t.Setenv("FEISHU_APP_SECRET", "secret_x")
+
+	stdout, stderr, err := runCLI(t, "auth", "status", "-o", "json")
+	if err != nil {
+		t.Fatalf("auth status: %v\n%s", err, stderr)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("stdout 非 JSON: %v", err)
+	}
+	if out["health"] != "needs_relogin" || out["token_status"] != "expired" || out["refresh_token_valid"] != false {
+		t.Fatalf("终态标记应判为需重新登录: health=%v token_status=%v refresh_token_valid=%v", out["health"], out["token_status"], out["refresh_token_valid"])
+	}
+	failure, _ := out["refresh_failure"].(map[string]any)
+	if failure == nil || failure["code"] != float64(20064) {
+		t.Fatalf("应输出 refresh_failure: %v", out["refresh_failure"])
+	}
+	if note, _ := out["note"].(string); !strings.Contains(note, "auth login") {
+		t.Fatalf("note 应提示重新登录: %v", out["note"])
+	}
+
+	result, ok := performAuthCheck([]string{"search:docs:read"})
+	if ok || result["error"] != "token_expired" {
+		t.Fatalf("auth check 应报 token_expired: %v", result)
+	}
+}

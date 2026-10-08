@@ -97,6 +97,11 @@ var authStatusCmd = &cobra.Command{
 		} else if status == "expired" {
 			health = "needs_relogin"
 		}
+		if token.RefreshFailure != nil {
+			// 终态刷新失败标记：refresh_token 已被服务端判定失效，access 过期后无法续期
+			health = "needs_relogin"
+			note = token.RefreshFailure.Err().Error()
+		}
 
 		result := map[string]any{
 			"logged_in":             true,
@@ -112,6 +117,19 @@ var authStatusCmd = &cobra.Command{
 		}
 		if note != "" {
 			result["note"] = note
+		}
+		if f := token.RefreshFailure; f != nil {
+			failure := map[string]any{"at": f.At.Format(time.RFC3339)}
+			if f.Code != 0 {
+				failure["code"] = f.Code
+			}
+			if f.Error != "" {
+				failure["error"] = f.Error
+			}
+			if f.Description != "" {
+				failure["description"] = f.Description
+			}
+			result["refresh_failure"] = failure
 		}
 		if refreshPresent {
 			result["refresh_token_valid"] = token.IsRefreshTokenValid()
@@ -157,7 +175,9 @@ var authStatusCmd = &cobra.Command{
 		}
 
 		if refreshPresent {
-			if token.IsRefreshTokenValid() {
+			if f := token.RefreshFailure; f != nil {
+				fmt.Printf("  Refresh Token:  已失效（code=%d，%s 刷新被拒绝）\n", f.Code, f.At.Format("2006-01-02 15:04:05"))
+			} else if token.IsRefreshTokenValid() {
 				if token.RefreshExpiresAt.IsZero() {
 					fmt.Println("  Refresh Token:  有效（过期时间未知）")
 				} else {
