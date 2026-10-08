@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 )
 
 // Mail API 基础路径
@@ -39,44 +41,27 @@ func callMailAPI(method, apiPath string, body any, userAccessToken string) (json
 	}
 	tokenType, opts := resolveTokenOpts(userAccessToken)
 
-	var rawBody []byte
-	var statusCode int
-
+	var resp *larkcore.ApiResp
 	switch method {
 	case http.MethodGet:
-		r, err := client.Get(Context(), apiPath, body, tokenType, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("mail API %s %s 失败: %w", method, apiPath, err)
-		}
-		statusCode = r.StatusCode
-		rawBody = r.RawBody
+		resp, err = client.Get(Context(), apiPath, body, tokenType, opts...)
 	case http.MethodPost:
-		r, err := client.Post(Context(), apiPath, body, tokenType, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("mail API %s %s 失败: %w", method, apiPath, err)
-		}
-		statusCode = r.StatusCode
-		rawBody = r.RawBody
+		resp, err = client.Post(Context(), apiPath, body, tokenType, opts...)
 	case http.MethodPut:
-		r, err := client.Put(Context(), apiPath, body, tokenType, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("mail API %s %s 失败: %w", method, apiPath, err)
-		}
-		statusCode = r.StatusCode
-		rawBody = r.RawBody
+		resp, err = client.Put(Context(), apiPath, body, tokenType, opts...)
 	case http.MethodDelete:
-		r, err := client.Delete(Context(), apiPath, body, tokenType, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("mail API %s %s 失败: %w", method, apiPath, err)
-		}
-		statusCode = r.StatusCode
-		rawBody = r.RawBody
+		resp, err = client.Delete(Context(), apiPath, body, tokenType, opts...)
 	default:
 		return nil, fmt.Errorf("不支持的 HTTP 方法: %s", method)
 	}
+	if err != nil {
+		return nil, fmt.Errorf("mail API %s %s 失败: %w", method, apiPath, err)
+	}
 
-	if statusCode != http.StatusOK {
-		return nil, fmt.Errorf("mail API %s %s 失败: HTTP %d, body: %s", method, apiPath, statusCode, string(rawBody))
+	// 先按飞书业务信封解析再看 HTTP 状态：邮箱的大量业务错误（如 4038 folder 非法、权限不足）随 HTTP 400 下发，
+	// 先判状态码会丢掉业务码与 log_id，按 HasAPICode 分支的提示也走不到。
+	if err := CheckAPIResponse("mail API "+method+" "+apiPathWithoutQuery(apiPath), resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -84,13 +69,18 @@ func callMailAPI(method, apiPath string, body any, userAccessToken string) (json
 		Msg  string          `json:"msg"`
 		Data json.RawMessage `json:"data"`
 	}
-	if err := json.Unmarshal(rawBody, &apiResp); err != nil {
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("mail API 解析响应失败: %w", err)
 	}
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("mail API 失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
-	}
 	return apiResp.Data, nil
+}
+
+// apiPathWithoutQuery 去掉 query，避免错误信息里带上 page_token 等长参数。
+func apiPathWithoutQuery(p string) string {
+	if i := strings.IndexByte(p, '?'); i >= 0 {
+		return p[:i]
+	}
+	return p
 }
 
 // MailboxProfile mailbox profile 信息
@@ -412,8 +402,10 @@ func SendMailDraft(mailboxID, draftID, userAccessToken string) (json.RawMessage,
 	return callMailAPI(http.MethodPost, mailboxPath(mailboxID, "drafts", draftID, "send"), nil, userAccessToken)
 }
 
-// GetMailDraftRaw 获取草稿原始 EML
+// GetMailDraftRaw 获取草稿原始 EML（base64url 编码）
 // API: GET /open-apis/mail/v1/user_mailboxes/{mailbox_id}/drafts/{draft_id}?format=raw
+// 实测响应形如 {"draft":{"id":"...","message":{"message_id":"...","raw":"<base64url EML>"}}}；
+// 兼容 data.raw / data.draft.raw 等旧形态。
 func GetMailDraftRaw(mailboxID, draftID, userAccessToken string) (string, error) {
 	if mailboxID == "" {
 		mailboxID = "me"
@@ -425,15 +417,25 @@ func GetMailDraftRaw(mailboxID, draftID, userAccessToken string) (string, error)
 	}
 	var parsed struct {
 		Draft struct {
-			Raw string `json:"raw"`
+			Raw     string `json:"raw"`
+			Message struct {
+				Raw string `json:"raw"`
+			} `json:"message"`
 		} `json:"draft"`
+		Message struct {
+			Raw string `json:"raw"`
+		} `json:"message"`
 		Raw string `json:"raw"`
 	}
-	_ = json.Unmarshal(data, &parsed)
-	if parsed.Raw != "" {
-		return parsed.Raw, nil
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return "", fmt.Errorf("解析草稿响应失败: %w", err)
 	}
-	return parsed.Draft.Raw, nil
+	for _, raw := range []string{parsed.Draft.Message.Raw, parsed.Draft.Raw, parsed.Message.Raw, parsed.Raw} {
+		if raw != "" {
+			return raw, nil
+		}
+	}
+	return "", fmt.Errorf("草稿 %s 的响应中没有 raw 字段（format=raw）", draftID)
 }
 
 func extractMailDraftID(data json.RawMessage) string {
