@@ -180,6 +180,8 @@ func Execute() {
 	rootCmd.InitDefaultCompletionCmd()
 	// 所有 init() 注册完成后统一安装：嵌套命令组的未知子命令守卫 + flag 拼写建议
 	installUnknownSubcommandGuard(rootCmd)
+	// --help 末尾追加 manifest owners 声明的相关技能指针（见 skills_help.go）
+	installSkillHelpPointers(rootCmd)
 	rootCmd.SetFlagErrorFunc(flagSuggestionErrorFunc)
 	if err := rootCmd.Execute(); err != nil {
 		if msg := err.Error(); msg != "" {
