@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -32,13 +33,40 @@ const (
 
 const messageResourceFileSizeExceedsLimitCode = 234037
 
+// SentMessage 是发送/回复成功后服务端返回的消息摘要。
+type SentMessage struct {
+	MessageID  string `json:"message_id"`
+	ChatID     string `json:"chat_id,omitempty"`
+	CreateTime string `json:"create_time,omitempty"` // 毫秒时间戳字符串
+	UpdateTime string `json:"update_time,omitempty"` // 仅编辑消息时回填
+	ThreadID   string `json:"thread_id,omitempty"`
+}
+
+func sentMessageFromSDK(msgID, chatID, createTime, threadID *string) *SentMessage {
+	return &SentMessage{
+		MessageID:  StringVal(msgID),
+		ChatID:     StringVal(chatID),
+		CreateTime: StringVal(createTime),
+		ThreadID:   StringVal(threadID),
+	}
+}
+
 // SendMessage sends a message to a user or chat.
 // uuid 为幂等键（对应 OAPI body 的 uuid 字段），非空时服务端按此键去重，
 // 相同 uuid 的重复请求返回首次发送的消息；传空字符串表示不启用幂等。
 func SendMessage(receiveIDType string, receiveID string, msgType string, content string, userAccessToken string, uuid string) (string, error) {
-	client, err := GetClient()
+	sent, err := SendMessageDetailed(receiveIDType, receiveID, msgType, content, userAccessToken, uuid)
 	if err != nil {
 		return "", err
+	}
+	return sent.MessageID, nil
+}
+
+// SendMessageDetailed 同 SendMessage，额外返回 chat_id / create_time 等服务端回填字段。
+func SendMessageDetailed(receiveIDType string, receiveID string, msgType string, content string, userAccessToken string, uuid string) (*SentMessage, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
 	}
 
 	bodyBuilder := larkim.NewCreateMessageReqBodyBuilder().
@@ -56,18 +84,18 @@ func SendMessage(receiveIDType string, receiveID string, msgType string, content
 
 	resp, err := client.Im.Message.Create(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
-		return "", fmt.Errorf("发送消息失败: %w", err)
+		return nil, fmt.Errorf("发送消息失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return "", fmt.Errorf("发送消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, fmt.Errorf("发送消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	if resp.Data == nil || resp.Data.MessageId == nil || *resp.Data.MessageId == "" {
-		return "", fmt.Errorf("消息已发送但未返回消息 ID")
+		return nil, fmt.Errorf("消息已发送但未返回消息 ID")
 	}
 
-	return *resp.Data.MessageId, nil
+	return sentMessageFromSDK(resp.Data.MessageId, resp.Data.ChatId, resp.Data.CreateTime, resp.Data.ThreadId), nil
 }
 
 // ReplyMessage replies to a message.
@@ -75,9 +103,18 @@ func SendMessage(receiveIDType string, receiveID string, msgType string, content
 // 若目标消息已经属于话题，则服务端默认将回复放入同一话题。
 // uuid 非空时用于服务端回复去重；相同 uuid 在一小时内至多成功回复一条消息。
 func ReplyMessage(messageID string, msgType string, content string, replyInThread bool, userAccessToken string, uuid string) (string, error) {
-	client, err := GetClient()
+	sent, err := ReplyMessageDetailed(messageID, msgType, content, replyInThread, userAccessToken, uuid)
 	if err != nil {
 		return "", err
+	}
+	return sent.MessageID, nil
+}
+
+// ReplyMessageDetailed 同 ReplyMessage，额外返回 chat_id / create_time / thread_id。
+func ReplyMessageDetailed(messageID string, msgType string, content string, replyInThread bool, userAccessToken string, uuid string) (*SentMessage, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
 	}
 
 	bodyBuilder := larkim.NewReplyMessageReqBodyBuilder().
@@ -97,18 +134,56 @@ func ReplyMessage(messageID string, msgType string, content string, replyInThrea
 
 	resp, err := client.Im.Message.Reply(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
-		return "", fmt.Errorf("回复消息失败: %w", err)
+		return nil, fmt.Errorf("回复消息失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return "", fmt.Errorf("回复消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, fmt.Errorf("回复消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	if resp.Data == nil || resp.Data.MessageId == nil || *resp.Data.MessageId == "" {
-		return "", fmt.Errorf("回复已发送但未返回消息 ID")
+		return nil, fmt.Errorf("回复已发送但未返回消息 ID")
 	}
 
-	return *resp.Data.MessageId, nil
+	return sentMessageFromSDK(resp.Data.MessageId, resp.Data.ChatId, resp.Data.CreateTime, resp.Data.ThreadId), nil
+}
+
+// EditMessage 编辑已发送的 text / post 消息（PUT /open-apis/im/v1/messages/:message_id，
+// 对齐官方 +messages-edit）。接口只接受 tenant_access_token（Bot 只能编辑自己发送的消息）。
+func EditMessage(messageID, msgType, content string) (*SentMessage, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	body := map[string]any{"msg_type": msgType, "content": content}
+	resp, err := cli.Put(Context(), "/open-apis/im/v1/messages/"+url.PathEscape(messageID), body, larkcore.AccessTokenTypeTenant)
+	if err != nil {
+		return nil, fmt.Errorf("编辑消息失败: %w", err)
+	}
+	if err := CheckAPIResponse("编辑消息", resp); err != nil {
+		return nil, err
+	}
+	var env struct {
+		Data struct {
+			MessageID  string `json:"message_id"`
+			ChatID     string `json:"chat_id"`
+			UpdateTime string `json:"update_time"`
+			CreateTime string `json:"create_time"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &env); err != nil {
+		return nil, fmt.Errorf("编辑消息失败: 解析响应失败: %w", err)
+	}
+	out := &SentMessage{
+		MessageID:  env.Data.MessageID,
+		ChatID:     env.Data.ChatID,
+		CreateTime: env.Data.CreateTime,
+		UpdateTime: env.Data.UpdateTime,
+	}
+	if out.MessageID == "" {
+		out.MessageID = messageID
+	}
+	return out, nil
 }
 
 // UpdateMessage updates a message content
@@ -783,6 +858,8 @@ type ChatInfo struct {
 	Description string `json:"description,omitempty"`
 	OwnerID     string `json:"owner_id,omitempty"`
 	External    bool   `json:"external,omitempty"`
+	// ChatMode 搜索接口返回的群模式（原样透出，如 GROUP / THREAD）；列表回退路径为 group/topic。
+	ChatMode string `json:"chat_mode,omitempty"`
 }
 
 // SearchChatsOptions contains options for searching chats
@@ -791,6 +868,17 @@ type SearchChatsOptions struct {
 	Query      string
 	PageToken  string
 	PageSize   int
+	// MemberIDs 只返回包含这些成员（open_id）的群，最多 50 个（对齐官方 --member-ids）。
+	MemberIDs []string
+	// ChatModes 群模式过滤：group / topic（发送时映射为 default / thread）。
+	ChatModes []string
+	// Sort 排序字段（固定降序）：create_time / update_time / member_count。
+	Sort string
+}
+
+// HasSearchFilters 是否设置了只有搜索接口才支持的过滤条件。
+func (opts SearchChatsOptions) HasSearchFilters() bool {
+	return len(opts.MemberIDs) > 0 || len(opts.ChatModes) > 0 || opts.Sort != ""
 }
 
 // SearchChatsResult contains the result of searching chats
@@ -823,7 +911,7 @@ func SearchChats(opts SearchChatsOptions, userAccessToken string) (*SearchChatsR
 		opts.UserIDType = "open_id"
 	}
 
-	if opts.Query != "" {
+	if opts.Query != "" || opts.HasSearchFilters() {
 		return searchChatsWithSearchAPI(client, opts, userAccessToken)
 	}
 	return searchChatsWithListAPI(client, opts, userAccessToken)
@@ -860,10 +948,51 @@ func chatInfoFromSearchItem(item map[string]any) *ChatInfo {
 	if v, ok := meta["external"].(bool); ok {
 		info.External = v
 	}
+	if v, _ := meta["chat_mode"].(string); v != "" {
+		info.ChatMode = v
+	}
 	if info.ChatID == "" && info.Name == "" {
 		return nil
 	}
 	return info
+}
+
+// buildChatSearchBody 构造 POST /im/v2/chats/search 请求体（对齐官方 buildSearchChatBody）。
+func buildChatSearchBody(opts SearchChatsOptions) map[string]any {
+	body := map[string]any{}
+	if opts.Query != "" {
+		body["query"] = normalizeChatSearchQuery(opts.Query)
+	}
+	filter := map[string]any{}
+	if len(opts.MemberIDs) > 0 {
+		filter["member_ids"] = opts.MemberIDs
+	}
+	if len(opts.ChatModes) > 0 {
+		seen := map[string]bool{}
+		var modes []string
+		for _, m := range opts.ChatModes {
+			wire := map[string]string{"group": "default", "topic": "thread"}[m]
+			if wire == "" || seen[wire] {
+				continue
+			}
+			seen[wire] = true
+			modes = append(modes, wire)
+		}
+		if len(modes) > 0 {
+			filter["chat_modes"] = modes
+		}
+	}
+	if len(filter) > 0 {
+		body["filter"] = filter
+	}
+	if sorter := map[string]string{
+		"create_time":  "create_time_desc",
+		"update_time":  "update_time_desc",
+		"member_count": "member_count_desc",
+	}[opts.Sort]; sorter != "" {
+		body["sorter"] = sorter
+	}
+	return body
 }
 
 // searchChatsWithSearchAPI uses POST /open-apis/im/v2/chats/search.
@@ -872,9 +1001,7 @@ func searchChatsWithSearchAPI(client *lark.Client, opts SearchChatsOptions, user
 	if err != nil {
 		return nil, fmt.Errorf("搜索群聊失败: %w", err)
 	}
-	body := map[string]any{
-		"query": normalizeChatSearchQuery(opts.Query),
-	}
+	body := buildChatSearchBody(opts)
 	q := url.Values{}
 	q.Set("page_size", strconv.Itoa(pageSize))
 	if opts.PageToken != "" {
@@ -1314,13 +1441,26 @@ func ListPins(chatID string, startTime, endTime, pageToken string, pageSize int,
 
 // DownloadMessageResource 下载消息中的资源文件（图片/文件）
 func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userAccessToken string, timeout ...time.Duration) error {
+	_, err := DownloadMessageResourceWithMeta(messageID, fileKey, resourceType, outputPath, userAccessToken, timeout...)
+	return err
+}
+
+// ResourceMeta 下载响应里与文件命名相关的元信息（可能为空：如走 Range 分片回退时）。
+type ResourceMeta struct {
+	FileName    string // Content-Disposition 里的文件名（未清洗）
+	ContentType string
+}
+
+// DownloadMessageResourceWithMeta 同 DownloadMessageResource，额外返回服务端给出的文件名与 MIME，
+// 供调用方在未指定输出文件名时推断合适的文件名与扩展名（对齐官方 resources-download）。
+func DownloadMessageResourceWithMeta(messageID, fileKey, resourceType, outputPath, userAccessToken string, timeout ...time.Duration) (*ResourceMeta, error) {
 	if userAccessToken != "" {
 		return downloadMessageResourceWithUserToken(messageID, fileKey, resourceType, outputPath, userAccessToken, timeout...)
 	}
 
 	client, err := GetClient()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	req := larkim.NewGetMessageResourceReqBuilder().
@@ -1332,24 +1472,43 @@ func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userA
 	t := resolveTimeout(downloadTimeout, timeout)
 	resp, err := client.Im.MessageResource.Get(ContextWithTimeout(t), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
-		return fmt.Errorf("下载消息资源失败: %w", err)
+		return nil, fmt.Errorf("下载消息资源失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return fmt.Errorf("下载消息资源失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, fmt.Errorf("下载消息资源失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	if err := resp.WriteFile(outputPath); err != nil {
-		return fmt.Errorf("保存文件失败: %w", err)
+		return nil, fmt.Errorf("保存文件失败: %w", err)
 	}
 
-	return nil
+	meta := &ResourceMeta{FileName: resp.FileName}
+	if resp.ApiResp != nil && resp.ApiResp.Header != nil {
+		meta.ContentType = resp.ApiResp.Header.Get("Content-Type")
+		if meta.FileName == "" {
+			meta.FileName = ParseContentDispositionFilename(resp.ApiResp.Header.Get("Content-Disposition"))
+		}
+	}
+	return meta, nil
+}
+
+// ParseContentDispositionFilename 解析 Content-Disposition 中的文件名（filename* 优先），失败返回空。
+func ParseContentDispositionFilename(header string) string {
+	if header == "" {
+		return ""
+	}
+	_, params, err := mime.ParseMediaType(header)
+	if err != nil {
+		return ""
+	}
+	return params["filename"]
 }
 
 // downloadMessageResourceWithUserToken calls the message resource API directly.
 // The generated SDK currently marks this endpoint as tenant-token only, but the
 // OpenAPI accepts user_access_token for resources visible to the user.
-func downloadMessageResourceWithUserToken(messageID, fileKey, resourceType, outputPath, userAccessToken string, timeout ...time.Duration) error {
+func downloadMessageResourceWithUserToken(messageID, fileKey, resourceType, outputPath, userAccessToken string, timeout ...time.Duration) (*ResourceMeta, error) {
 	reqURL := buildMessageResourceURL(messageID, fileKey, resourceType)
 	t := resolveTimeout(downloadTimeout, timeout)
 
@@ -1357,41 +1516,44 @@ func downloadMessageResourceWithUserToken(messageID, fileKey, resourceType, outp
 	httpClient := config.NewHTTPClient(t)
 	req, err := newBearerDownloadRequest(reqURL, userAccessToken, "")
 	if err != nil {
-		return fmt.Errorf("下载消息资源失败: %w", err)
+		return nil, fmt.Errorf("下载消息资源失败: %w", err)
 	}
 
 	httpResp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("下载消息资源失败: %w", err)
+		return nil, fmt.Errorf("下载消息资源失败: %w", err)
 	}
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode != http.StatusOK {
 		apiErr, parseErr := parseDownloadAPIError("下载消息资源", httpResp)
 		if parseErr != nil {
-			return parseErr
+			return nil, parseErr
 		}
 		if isDownloadFileSizeLimitError(apiErr.Code, apiErr.Msg, nil) {
-			return downloadBearerURLByRange("下载消息资源", reqURL, outputPath, userAccessToken, t)
+			return &ResourceMeta{}, downloadBearerURLByRange("下载消息资源", reqURL, outputPath, userAccessToken, t)
 		}
-		return fmt.Errorf("下载消息资源失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
+		return nil, fmt.Errorf("下载消息资源失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
 	}
 
 	bodyReader, apiErr, inspectErr := inspectDownloadAPIErrorResponse(httpResp)
 	if inspectErr != nil {
-		return fmt.Errorf("下载消息资源失败: 读取响应失败: %w", inspectErr)
+		return nil, fmt.Errorf("下载消息资源失败: 读取响应失败: %w", inspectErr)
 	}
 	if apiErr != nil {
 		if isDownloadFileSizeLimitError(apiErr.Code, apiErr.Msg, nil) {
-			return downloadBearerURLByRange("下载消息资源", reqURL, outputPath, userAccessToken, t)
+			return &ResourceMeta{}, downloadBearerURLByRange("下载消息资源", reqURL, outputPath, userAccessToken, t)
 		}
-		return fmt.Errorf("下载消息资源失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
+		return nil, fmt.Errorf("下载消息资源失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
 	}
 
 	if err := writeStreamToFile(bodyReader, outputPath); err != nil {
-		return fmt.Errorf("保存文件失败: %w", err)
+		return nil, fmt.Errorf("保存文件失败: %w", err)
 	}
-	return nil
+	return &ResourceMeta{
+		FileName:    ParseContentDispositionFilename(httpResp.Header.Get("Content-Disposition")),
+		ContentType: httpResp.Header.Get("Content-Type"),
+	}, nil
 }
 
 func buildMessageResourceURL(messageID, fileKey, resourceType string) string {

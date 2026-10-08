@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -34,8 +35,16 @@ var sendMessageCmd = &cobra.Command{
   --video             本地 MP4 或 file_key（需同时指定 --video-cover）
   --video-cover       视频封面本地图片或 image_key
   --upload-images     自动上传 Markdown、post image_key 与 Card V2 img_key 中的本地图片
+  --attachment        post 附件区文件（file_key 或本地路径，可重复）；可单独使用发送仅含附件的 post
   --idempotency-key   幂等键（≤50 字符），服务端按此键去重，防止重发
-  --output, -o        输出格式（json）
+  --dry-run           只预览请求（本地文件不上传），不发送
+  --output, -o        输出格式（json）：{message_id, chat_id, create_time}
+
+内容输入（--text / --markdown / --content）:
+  - 从 stdin 读取：--markdown -
+  @path 从文件读取：--markdown @report.md（--text/--markdown 找不到文件时按字面文本发送）
+  @@xxx 发送字面量 "@xxx"
+  --markdown 会做样式归一（H1→H4、H2~H6→H5、表格前后补空行），并移除 md 无法渲染的非 img_ 图片
 
 接收者类型:
   email       邮箱
@@ -100,6 +109,14 @@ var sendMessageCmd = &cobra.Command{
   feishu-cli msg reply om_xxx \
     --image /path/to/screenshot.png
 
+  # 从文件读取 Markdown，并附带附件区文件
+  feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
+    --markdown @weekly.md --attachment ./report.pdf
+
+  # 预览请求体（不上传、不发送）
+  feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
+    --markdown "**hi**" --dry-run
+
   # 使用幂等键防止重发（相同 key 重复调用只会发出一条消息）
   feishu-cli msg send \
     --receive-id-type email \
@@ -126,38 +143,50 @@ var sendMessageCmd = &cobra.Command{
 			return err
 		}
 		contentInput := readMessageContentInput(cmd)
-		if err := contentInput.validate(); err != nil {
+		if err := contentInput.expandInputSources(cmd.ErrOrStderr()); err != nil {
 			return err
+		}
+		if err := contentInput.validate(); err != nil {
+			return clierr.Usage(err)
+		}
+
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		token := resolveOptionalUserToken(cmd)
+		if dryRun {
+			// 预览：不读配置之外的任何远端资源，本地文件用占位 key，不发送。
+			contentInput.dryRun = true
+			msgType, msgContent, err := contentInput.resolve()
+			if err != nil {
+				return err
+			}
+			return printMessageDryRun(cmd, "发送消息（预览，不会真正发送）", "/open-apis/im/v1/messages",
+				map[string]any{"receive_id_type": receiveIDType},
+				messageDryRunBody(map[string]any{"receive_id": receiveID}, msgType, msgContent, idempotencyKey), token)
 		}
 
 		if err := config.Validate(); err != nil {
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
-
 		msgType, msgContent, err := contentInput.resolve()
 		if err != nil {
 			return err
 		}
 
-		messageID, err := client.SendMessage(receiveIDType, receiveID, msgType, msgContent, token, idempotencyKey)
+		sent, err := client.SendMessageDetailed(receiveIDType, receiveID, msgType, msgContent, token, idempotencyKey)
 		if err != nil {
 			return err
 		}
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			if err := printJSON(map[string]string{
-				"message_id": messageID,
-			}); err != nil {
-				return err
-			}
-		} else {
-			fmt.Printf("消息发送成功！\n")
-			fmt.Printf("  消息 ID: %s\n", messageID)
+			return printJSON(sent)
 		}
-
+		fmt.Printf("消息发送成功！\n")
+		fmt.Printf("  消息 ID: %s\n", sent.MessageID)
+		if sent.ChatID != "" {
+			fmt.Printf("  会话 ID: %s\n", sent.ChatID)
+		}
 		return nil
 	},
 }
@@ -204,6 +233,35 @@ func init() {
 	sendMessageCmd.Flags().String("idempotency-key", "", "幂等键（≤50 字符），服务端按此键去重；相同键重复发送返回首次消息，防止重发")
 	sendMessageCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	sendMessageCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	sendMessageCmd.Flags().Bool("dry-run", false, "只预览将要发送的请求（本地文件不上传，用占位 key），不真正发送")
+}
+
+// messageDryRunBody 组装发送/回复请求体（预览用）。
+func messageDryRunBody(base map[string]any, msgType, content, uuid string) map[string]any {
+	body := map[string]any{}
+	for k, v := range base {
+		body[k] = v
+	}
+	body["msg_type"] = msgType
+	body["content"] = content
+	if uuid != "" {
+		body["uuid"] = uuid
+	}
+	return body
+}
+
+// printMessageDryRun 输出发送类命令的预览计划；identity 只标注身份，不输出 token。
+func printMessageDryRun(cmd *cobra.Command, desc, path string, params, body map[string]any, userToken string) error {
+	identity := "bot"
+	if userToken != "" {
+		identity = "user"
+	}
+	return printDryRunPlan(cmd, desc, map[string]any{"identity": identity}, []dryRunStep{{
+		Method: "POST",
+		URL:    path,
+		Params: params,
+		Body:   body,
+	}})
 }
 
 // markdown 图片正则: ![alt](path)
