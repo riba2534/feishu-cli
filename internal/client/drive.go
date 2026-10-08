@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -1641,14 +1642,115 @@ func GetFileStatistics(fileToken, fileType string, userAccessToken ...string) (*
 	return stats, nil
 }
 
-// DriveQuota 云空间容量信息
-type DriveQuota struct {
-	Total int64 `json:"total"` // 总容量（字节）
-	Used  int64 `json:"used"`  // 已用容量（字节）
+// flexInt64 兼容服务端以 JSON 数字或数字字符串返回的 int64（容量字段最大可能为 int64）。
+type flexInt64 int64
+
+func (f *flexInt64) UnmarshalJSON(b []byte) error {
+	raw := strings.Trim(strings.TrimSpace(string(b)), `"`)
+	if raw == "" || raw == "null" {
+		*f = 0
+		return nil
+	}
+	v, err := json.Number(raw).Int64()
+	if err != nil {
+		return fmt.Errorf("容量字段不是整数: %s", raw)
+	}
+	*f = flexInt64(v)
+	return nil
 }
 
-// GetDriveQuota 获取云空间容量信息
-// 注意：当前飞书 SDK 版本不支持此 API
-func GetDriveQuota() (*DriveQuota, error) {
-	return nil, fmt.Errorf("获取云空间容量功能暂不支持：当前 SDK 版本未提供此 API")
+// DriveQuotaBiz 某业务（ccm/im/vc/mail/all）的容量使用。
+type DriveQuotaBiz struct {
+	Name      string `json:"name"`
+	Used      int64  `json:"used"`
+	Quota     int64  `json:"quota,omitempty"`
+	Unlimited bool   `json:"unlimited,omitempty"`
+}
+
+// DriveQuotaConfig 用户/部门配额配置。type: 1=仅云文档，2=全部业务。
+type DriveQuotaConfig struct {
+	ID    string `json:"id,omitempty"`
+	Limit int64  `json:"limit"`
+	Usage int64  `json:"usage"`
+	Type  int    `json:"type,omitempty"`
+}
+
+// DriveQuota 当前用户的云空间容量信息。
+type DriveQuota struct {
+	Total                 int64             `json:"total"`     // 用户配额上限（字节）；Unlimited=true 时无意义
+	Used                  int64             `json:"used"`      // 已用容量（字节）
+	Unlimited             bool              `json:"unlimited"` // 未设置容量上限
+	IsTenantQuotaExceeded bool              `json:"is_tenant_quota_exceeded"`
+	BizInfos              []DriveQuotaBiz   `json:"biz_infos,omitempty"`
+	UserQuota             *DriveQuotaConfig `json:"user_quota,omitempty"`
+	DepartmentQuota       *DriveQuotaConfig `json:"department_quota,omitempty"`
+}
+
+// GetDriveQuota 查询当前用户的容量信息：GET /open-apis/drive/v2/quota_details/{user_id}。
+// 只支持 User 身份，路径参数必须是当前登录用户的 user_id（只返回本人信息）。
+func GetDriveQuota(userID, userAccessToken string) (*DriveQuota, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, fmt.Errorf("查询云空间容量需要当前用户的 user_id")
+	}
+	if strings.TrimSpace(userAccessToken) == "" {
+		return nil, fmt.Errorf("查询云空间容量需要 User Access Token")
+	}
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Get(Context(), "/open-apis/drive/v2/quota_details/"+url.PathEscape(userID), nil, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("查询云空间容量失败: %w", err)
+	}
+	if err := CheckAPIResponse("查询云空间容量", resp); err != nil {
+		return nil, err
+	}
+	type cfg struct {
+		ID    string    `json:"id"`
+		Limit flexInt64 `json:"limit"`
+		Usage flexInt64 `json:"usage"`
+		Type  int       `json:"type"`
+	}
+	var parsed struct {
+		Data struct {
+			BizInfos []struct {
+				Name      string    `json:"name"`
+				Used      flexInt64 `json:"used"`
+				Quota     flexInt64 `json:"quota"`
+				Unlimited bool      `json:"unlimited"`
+			} `json:"biz_infos"`
+			IsTenantQuotaExceeded bool `json:"is_tenant_quota_exceeded"`
+			UserQuota             *cfg `json:"user_quota"`
+			DepartmentQuota       *cfg `json:"department_quota"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &parsed); err != nil {
+		return nil, fmt.Errorf("解析云空间容量响应失败: %w", err)
+	}
+	q := &DriveQuota{IsTenantQuotaExceeded: parsed.Data.IsTenantQuotaExceeded}
+	for _, b := range parsed.Data.BizInfos {
+		q.BizInfos = append(q.BizInfos, DriveQuotaBiz{Name: b.Name, Used: int64(b.Used), Quota: int64(b.Quota), Unlimited: b.Unlimited})
+		if b.Name == "all" {
+			q.Used = int64(b.Used)
+		}
+	}
+	conv := func(c *cfg) *DriveQuotaConfig {
+		if c == nil {
+			return nil
+		}
+		return &DriveQuotaConfig{ID: c.ID, Limit: int64(c.Limit), Usage: int64(c.Usage), Type: c.Type}
+	}
+	q.UserQuota = conv(parsed.Data.UserQuota)
+	q.DepartmentQuota = conv(parsed.Data.DepartmentQuota)
+	if q.UserQuota != nil {
+		q.Total = q.UserQuota.Limit
+		if q.UserQuota.Usage > 0 {
+			q.Used = q.UserQuota.Usage
+		}
+	}
+	// limit 缺失、非正或为 int64 上限都表示未设置上限
+	q.Unlimited = q.Total <= 0 || q.Total == math.MaxInt64
+	return q, nil
 }
