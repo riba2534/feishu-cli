@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -16,6 +17,8 @@ var replyCmd = &cobra.Command{
 子命令:
   list      列出评论的回复
   add       为已有评论添加回复
+  update    修改回复内容（仅回复作者身份）
+  react     为回复添加/取消表情回应
   delete    删除评论回复
 
 示例:
@@ -38,8 +41,13 @@ var listReplyCmd = &cobra.Command{
   file_token    文档 Token
   comment_id    评论 ID
 
+输出:
+  content 为可读文本（@人渲染为 @user_id，文档链接渲染为 URL）；JSON 中 elements 原样保留服务端
+  content.elements 结构（text_run / docs_link / person）。默认只取一页，has_more=true 时 stderr 提示续翻。
+
 示例:
-  feishu-cli comment reply list doccnXXX 6916106822734578184 --type docx`,
+  feishu-cli comment reply list doccnXXX 6916106822734578184 --type docx
+  feishu-cli comment reply list doccnXXX 6916106822734578184 --type docx --page-all -o json`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -51,16 +59,31 @@ var listReplyCmd = &cobra.Command{
 		fileType, _ := cmd.Flags().GetString("type")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
-
-		replies, _, _, err := client.ListCommentReplies(fileToken, commentID, fileType, pageSize, "", userAccessToken)
+		pageOpts, err := readListPageOptions(cmd)
 		if err != nil {
 			return err
 		}
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		res, err := collectListPages(pageOpts, func(pageToken string) ([]*client.CommentReply, string, bool, error) {
+			return client.ListCommentReplies(fileToken, commentID, fileType, pageSize, pageToken, userAccessToken)
+		})
+		if err != nil {
+			return err
+		}
+		replies := res.Items
 
 		if output == "json" {
-			return printJSON(replies)
+			if replies == nil {
+				replies = []*client.CommentReply{}
+			}
+			if err := printJSON(replies); err != nil {
+				return err
+			}
+			printListPageHint(cmd.ErrOrStderr(), res)
+			return nil
 		}
+		defer printListPageHint(cmd.ErrOrStderr(), res)
 
 		if len(replies) == 0 {
 			fmt.Println("暂无回复")
@@ -77,7 +100,7 @@ var listReplyCmd = &cobra.Command{
 				fmt.Printf("    内容:     %s\n", r.Content)
 			}
 			if r.CreateTime != 0 {
-				fmt.Printf("    创建时间: %d\n", r.CreateTime)
+				fmt.Printf("    创建时间: %s\n", time.Unix(int64(r.CreateTime), 0).Format("2006-01-02 15:04:05"))
 			}
 			fmt.Println()
 		}
@@ -194,6 +217,7 @@ func init() {
 
 	replyCmd.AddCommand(listReplyCmd)
 	listReplyCmd.Flags().Int("page-size", 50, "每页数量")
+	addListPageFlags(listReplyCmd)
 	listReplyCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 
 	replyCmd.AddCommand(addReplyCmd)

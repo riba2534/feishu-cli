@@ -1,15 +1,22 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
+	"strings"
 
 	larkdrive "github.com/larksuite/oapi-sdk-go/v3/service/drive/v1"
 )
 
-// Comment 评论信息
+// Comment 评论信息。
+//
+// 字段名与服务端 /drive/v1/files/:token/comments 返回的 item 一致，可直接反序列化；
+// reply_list 原样保留服务端结构（replies[].content.elements 中的 text_run / docs_link / person 等），
+// content 为根回复（即评论正文）渲染出的可读文本。
 type Comment struct {
 	CommentID    string `json:"comment_id"`
 	UserID       string `json:"user_id,omitempty"`
@@ -20,79 +27,239 @@ type Comment struct {
 	SolverUserID string `json:"solver_user_id,omitempty"`
 	IsWhole      bool   `json:"is_whole"`
 	// Quote 划词评论选中的原文；IsWhole=true 时为空
-	Quote   string          `json:"quote,omitempty"`
-	Content *CommentContent `json:"reply_list,omitempty"`
+	Quote string `json:"quote,omitempty"`
+	// Content 评论正文（根回复）的可读文本：@人渲染为 @user_id，文档链接渲染为 URL
+	Content string `json:"content,omitempty"`
+	// ReplyList 服务端原始回复列表 {"replies":[{reply_id,user_id,create_time,content:{elements:[...]}, extra}]}
+	ReplyList json.RawMessage `json:"reply_list,omitempty"`
+	// ReplyHasMore / ReplyPageToken 是该评论下回复的分页信息（回复过多时需用 comment reply list 续翻）
+	ReplyHasMore   bool   `json:"has_more,omitempty"`
+	ReplyPageToken string `json:"page_token,omitempty"`
 }
 
-// CommentContent 评论内容
-type CommentContent struct {
-	Elements []CommentElement `json:"elements,omitempty"`
+// ListCommentsOptions 评论列表查询参数。
+type ListCommentsOptions struct {
+	FileToken string
+	FileType  string
+	PageSize  int
+	PageToken string
+	// IsSolved 非 nil 时按解决状态过滤（true=已解决，false=未解决）；nil 表示全部
+	IsSolved *bool
+	// IsWhole 非 nil 时按评论范围过滤（true=全文评论，false=局部评论）；nil 表示全部
+	IsWhole *bool
 }
 
-// CommentElement 评论元素
-type CommentElement struct {
-	Type     string `json:"type"`
-	TextRun  string `json:"text_run,omitempty"`
-	DocsLink string `json:"docs_link,omitempty"`
-	Person   string `json:"person,omitempty"`
+// commentReplyWire 是服务端回复对象的原始形状。
+type commentReplyWire struct {
+	ReplyID    string `json:"reply_id"`
+	UserID     string `json:"user_id"`
+	CreateTime int    `json:"create_time"`
+	UpdateTime int    `json:"update_time"`
+	Content    *struct {
+		Elements []json.RawMessage `json:"elements"`
+	} `json:"content"`
+	Extra json.RawMessage `json:"extra"`
 }
 
-// ListComments 获取文档评论列表
+func (w commentReplyWire) toReply() *CommentReply {
+	r := &CommentReply{
+		ReplyID:    w.ReplyID,
+		UserID:     w.UserID,
+		CreateTime: w.CreateTime,
+		UpdateTime: w.UpdateTime,
+	}
+	if w.Content != nil {
+		r.Elements = w.Content.Elements
+		r.Content = RenderCommentElements(w.Content.Elements)
+	}
+	if len(bytes.TrimSpace(w.Extra)) > 0 && string(bytes.TrimSpace(w.Extra)) != "null" {
+		r.Extra = w.Extra
+	}
+	return r
+}
+
+// commentElementView 是渲染可读文本时使用的元素视图（未知字段不影响原始结构的保留）。
+type commentElementView struct {
+	Type    string `json:"type"`
+	TextRun *struct {
+		Text string `json:"text"`
+	} `json:"text_run"`
+	DocsLink *struct {
+		URL string `json:"url"`
+	} `json:"docs_link"`
+	Person *struct {
+		UserID string `json:"user_id"`
+	} `json:"person"`
+}
+
+// RenderCommentElements 把服务端 reply content.elements 渲染为可读文本：
+// text_run → 文本，docs_link → URL，person → @user_id；无法识别的元素渲染为 [type]。
+func RenderCommentElements(elements []json.RawMessage) string {
+	var b strings.Builder
+	for _, raw := range elements {
+		var el commentElementView
+		if err := json.Unmarshal(raw, &el); err != nil {
+			continue
+		}
+		switch {
+		case el.TextRun != nil:
+			b.WriteString(el.TextRun.Text)
+		case el.DocsLink != nil:
+			b.WriteString(el.DocsLink.URL)
+		case el.Person != nil:
+			b.WriteString("@" + el.Person.UserID)
+		case el.Type != "":
+			b.WriteString("[" + el.Type + "]")
+		}
+	}
+	return b.String()
+}
+
+// Replies 解析 Comment.ReplyList（服务端原始结构）为回复列表，供文本模式渲染。
+func (c *Comment) Replies() []*CommentReply {
+	if c == nil || len(bytes.TrimSpace(c.ReplyList)) == 0 {
+		return nil
+	}
+	var list struct {
+		Replies []commentReplyWire `json:"replies"`
+	}
+	if err := json.Unmarshal(c.ReplyList, &list); err != nil {
+		return nil
+	}
+	out := make([]*CommentReply, 0, len(list.Replies))
+	for _, w := range list.Replies {
+		out = append(out, w.toReply())
+	}
+	// 实测 comments 列表里的 reply_list 不保证按时间排序；按创建时间升序排列，首条即根回复（评论正文）
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].CreateTime != out[j].CreateTime {
+			return out[i].CreateTime < out[j].CreateTime
+		}
+		return lessNumericID(out[i].ReplyID, out[j].ReplyID)
+	})
+	return out
+}
+
+// lessNumericID 比较数字字符串 ID（长度优先，再按字典序），非数字时退化为字典序。
+func lessNumericID(a, b string) bool {
+	if len(a) != len(b) {
+		return len(a) < len(b)
+	}
+	return a < b
+}
+
+// fillCommentContent 用根回复（评论正文）填充 Content。
+func fillCommentContent(c *Comment) {
+	if c == nil || c.Content != "" {
+		return
+	}
+	if replies := c.Replies(); len(replies) > 0 {
+		c.Content = replies[0].Content
+	}
+}
+
+func decodeCommentItems(raw []json.RawMessage) ([]*Comment, error) {
+	comments := make([]*Comment, 0, len(raw))
+	for _, item := range raw {
+		var c Comment
+		if err := json.Unmarshal(item, &c); err != nil {
+			return nil, fmt.Errorf("解析评论失败: %w", err)
+		}
+		fillCommentContent(&c)
+		comments = append(comments, &c)
+	}
+	return comments, nil
+}
+
+// ListComments 获取文档评论列表（不过滤解决状态/范围）。
 // userAccessToken 非空时使用 User Token（用户身份），否则使用 App Token（租户身份）。
 // 文档归个人所有但 App 未被加为协作者时，App Token 会得到 1069303 forbidden；
 // 此时调用方应传入 User Token，让请求以文档所有者身份发出。
 func ListComments(fileToken string, fileType string, pageSize int, pageToken, userAccessToken string) ([]*Comment, string, bool, error) {
-	client, err := GetClient()
+	return ListCommentsWithOptions(ListCommentsOptions{
+		FileToken: fileToken,
+		FileType:  fileType,
+		PageSize:  pageSize,
+		PageToken: pageToken,
+	}, userAccessToken)
+}
+
+// ListCommentsWithOptions 获取文档评论列表，支持按解决状态 / 评论范围过滤。
+// 走原始 HTTP（GET /open-apis/drive/v1/files/:file_token/comments），完整保留服务端 reply_list 结构。
+func ListCommentsWithOptions(opts ListCommentsOptions, userAccessToken string) ([]*Comment, string, bool, error) {
+	cli, err := GetClient()
 	if err != nil {
 		return nil, "", false, err
 	}
 
-	reqBuilder := larkdrive.NewListFileCommentReqBuilder().
-		FileToken(fileToken).
-		FileType(fileType)
-
-	if pageSize > 0 {
-		reqBuilder.PageSize(pageSize)
+	query := url.Values{}
+	query.Set("file_type", opts.FileType)
+	if opts.PageSize > 0 {
+		query.Set("page_size", strconv.Itoa(opts.PageSize))
 	}
-	if pageToken != "" {
-		reqBuilder.PageToken(pageToken)
+	if opts.PageToken != "" {
+		query.Set("page_token", opts.PageToken)
 	}
+	if opts.IsSolved != nil {
+		query.Set("is_solved", strconv.FormatBool(*opts.IsSolved))
+	}
+	if opts.IsWhole != nil {
+		query.Set("is_whole", strconv.FormatBool(*opts.IsWhole))
+	}
+	apiPath := fmt.Sprintf("/open-apis/drive/v1/files/%s/comments?%s", url.PathEscape(opts.FileToken), query.Encode())
 
-	opts := UserTokenOption(userAccessToken)
-	resp, err := client.Drive.FileComment.List(Context(), reqBuilder.Build(), opts...)
+	tokenType, reqOpts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Get(Context(), apiPath, nil, tokenType, reqOpts...)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取评论列表失败: %w", err)
 	}
-
-	if !resp.Success() {
-		return nil, "", false, fmt.Errorf("获取评论列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	if err := CheckAPIResponse("获取评论列表", resp); err != nil {
+		return nil, "", false, err
 	}
 
-	var comments []*Comment
-	if resp.Data != nil && resp.Data.Items != nil {
-		for _, item := range resp.Data.Items {
-			comments = append(comments, &Comment{
-				CommentID:    StringVal(item.CommentId),
-				UserID:       StringVal(item.UserId),
-				CreateTime:   IntVal(item.CreateTime),
-				UpdateTime:   IntVal(item.UpdateTime),
-				IsSolved:     BoolVal(item.IsSolved),
-				SolvedTime:   IntVal(item.SolvedTime),
-				SolverUserID: StringVal(item.SolverUserId),
-				IsWhole:      BoolVal(item.IsWhole),
-				Quote:        StringVal(item.Quote),
-			})
-		}
+	var apiResp struct {
+		Data struct {
+			Items     []json.RawMessage `json:"items"`
+			HasMore   bool              `json:"has_more"`
+			PageToken string            `json:"page_token"`
+		} `json:"data"`
 	}
-
-	var nextPageToken string
-	var hasMore bool
-	if resp.Data != nil {
-		nextPageToken = StringVal(resp.Data.PageToken)
-		hasMore = BoolVal(resp.Data.HasMore)
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, "", false, fmt.Errorf("解析评论列表响应失败: %w", err)
 	}
+	comments, err := decodeCommentItems(apiResp.Data.Items)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return comments, apiResp.Data.PageToken, apiResp.Data.HasMore, nil
+}
 
-	return comments, nextPageToken, hasMore, nil
+// BatchGetComments 按评论 ID 批量获取评论（POST /open-apis/drive/v1/files/:file_token/comments/batch_query）。
+// 单次最多 100 个 ID，完整保留服务端 reply_list 结构。
+func BatchGetComments(fileToken, fileType string, commentIDs []string, userAccessToken string) ([]*Comment, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	apiPath := fmt.Sprintf("/open-apis/drive/v1/files/%s/comments/batch_query?file_type=%s",
+		url.PathEscape(fileToken), url.QueryEscape(fileType))
+	tokenType, reqOpts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Post(Context(), apiPath, map[string]any{"comment_ids": commentIDs}, tokenType, reqOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("批量获取评论失败: %w", err)
+	}
+	if err := CheckAPIResponse("批量获取评论", resp); err != nil {
+		return nil, err
+	}
+	var apiResp struct {
+		Data struct {
+			Items []json.RawMessage `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析批量评论响应失败: %w", err)
+	}
+	return decodeCommentItems(apiResp.Data.Items)
 }
 
 // CreateComment 创建评论
@@ -145,42 +312,25 @@ func CreateComment(fileToken string, fileType string, content string, userAccess
 	return "", nil
 }
 
-// GetComment 获取评论详情
+// GetComment 获取单条评论详情，完整保留服务端 reply_list 结构。
+//
+// 实测 GET /open-apis/drive/v1/files/:file_token/comments/:comment_id 对 docx 评论返回 1069307 not exist，
+// 因此与官方一致改走 comments/batch_query（单个 ID）。
 // userAccessToken 非空时使用 User Token，否则使用 App Token；个人文档/未给 App 授权时必须传 User Token。
 func GetComment(fileToken string, commentID string, fileType string, userAccessToken string) (*Comment, error) {
-	client, err := GetClient()
+	comments, err := BatchGetComments(fileToken, fileType, []string{commentID}, userAccessToken)
 	if err != nil {
 		return nil, err
 	}
-
-	req := larkdrive.NewGetFileCommentReqBuilder().
-		FileToken(fileToken).
-		CommentId(commentID).
-		FileType(fileType).
-		Build()
-
-	opts := UserTokenOption(userAccessToken)
-	resp, err := client.Drive.FileComment.Get(Context(), req, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("获取评论详情失败: %w", err)
+	for _, c := range comments {
+		if c != nil && c.CommentID == commentID {
+			return c, nil
+		}
 	}
-
-	if !resp.Success() {
-		return nil, fmt.Errorf("获取评论详情失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	if len(comments) == 1 && comments[0] != nil {
+		return comments[0], nil
 	}
-
-	if resp.Data == nil {
-		return nil, fmt.Errorf("评论不存在")
-	}
-
-	return &Comment{
-		CommentID:  StringVal(resp.Data.CommentId),
-		UserID:     StringVal(resp.Data.UserId),
-		CreateTime: IntVal(resp.Data.CreateTime),
-		IsSolved:   BoolVal(resp.Data.IsSolved),
-		IsWhole:    BoolVal(resp.Data.IsWhole),
-		Quote:      StringVal(resp.Data.Quote),
-	}, nil
+	return nil, fmt.Errorf("评论不存在: %s", commentID)
 }
 
 // 飞书 Open API 没有「删除整条评论」的端点（SDK fileComment 仅有
@@ -219,74 +369,64 @@ func PatchComment(fileToken, commentID, fileType string, isSolved bool, userAcce
 	return nil
 }
 
-// CommentReply 评论回复信息
+// CommentReply 评论回复信息。
+//
+// content 为可读文本（text_run 原文 + @user_id + 链接 URL）；elements 原样保留服务端
+// content.elements 结构（text_run / docs_link / person 等），供需要精确结构的调用方使用。
 type CommentReply struct {
-	ReplyID    string `json:"reply_id"`
-	UserID     string `json:"user_id,omitempty"`
-	Content    string `json:"content,omitempty"`
-	CreateTime int    `json:"create_time,omitempty"`
-	UpdateTime int    `json:"update_time,omitempty"`
+	ReplyID    string            `json:"reply_id"`
+	UserID     string            `json:"user_id,omitempty"`
+	Content    string            `json:"content,omitempty"`
+	Elements   []json.RawMessage `json:"elements,omitempty"`
+	CreateTime int               `json:"create_time,omitempty"`
+	UpdateTime int               `json:"update_time,omitempty"`
+	// Extra 回复的其他内容（如图片 token），服务端原始结构
+	Extra json.RawMessage `json:"extra,omitempty"`
 }
 
-// ListCommentReplies 获取评论回复列表
+// ListCommentReplies 获取评论回复列表（GET /open-apis/drive/v1/files/:file_token/comments/:comment_id/replies）。
 // userAccessToken 非空时使用 User Token（用户身份），否则使用 App Token（租户身份）。
 func ListCommentReplies(fileToken, commentID, fileType string, pageSize int, pageToken, userAccessToken string) ([]*CommentReply, string, bool, error) {
-	client, err := GetClient()
+	cli, err := GetClient()
 	if err != nil {
 		return nil, "", false, err
 	}
 
-	reqBuilder := larkdrive.NewListFileCommentReplyReqBuilder().
-		FileToken(fileToken).
-		CommentId(commentID).
-		FileType(fileType)
-
+	query := url.Values{}
+	query.Set("file_type", fileType)
 	if pageSize > 0 {
-		reqBuilder.PageSize(pageSize)
+		query.Set("page_size", strconv.Itoa(pageSize))
 	}
 	if pageToken != "" {
-		reqBuilder.PageToken(pageToken)
+		query.Set("page_token", pageToken)
 	}
+	apiPath := fmt.Sprintf("/open-apis/drive/v1/files/%s/comments/%s/replies?%s",
+		url.PathEscape(fileToken), url.PathEscape(commentID), query.Encode())
 
-	opts := UserTokenOption(userAccessToken)
-	resp, err := client.Drive.FileCommentReply.List(Context(), reqBuilder.Build(), opts...)
+	tokenType, reqOpts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Get(Context(), apiPath, nil, tokenType, reqOpts...)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取评论回复列表失败: %w", err)
 	}
-
-	if !resp.Success() {
-		return nil, "", false, fmt.Errorf("获取评论回复列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	if err := CheckAPIResponse("获取评论回复列表", resp); err != nil {
+		return nil, "", false, err
 	}
 
-	var replies []*CommentReply
-	if resp.Data != nil && resp.Data.Items != nil {
-		for _, item := range resp.Data.Items {
-			var content string
-			if item.Content != nil && item.Content.Elements != nil {
-				for _, el := range item.Content.Elements {
-					if el != nil && el.TextRun != nil && el.TextRun.Text != nil {
-						content += *el.TextRun.Text
-					}
-				}
-			}
-			replies = append(replies, &CommentReply{
-				ReplyID:    StringVal(item.ReplyId),
-				UserID:     StringVal(item.UserId),
-				Content:    content,
-				CreateTime: IntVal(item.CreateTime),
-				UpdateTime: IntVal(item.UpdateTime),
-			})
-		}
+	var apiResp struct {
+		Data struct {
+			Items     []commentReplyWire `json:"items"`
+			HasMore   bool               `json:"has_more"`
+			PageToken string             `json:"page_token"`
+		} `json:"data"`
 	}
-
-	var nextPageToken string
-	var hasMore bool
-	if resp.Data != nil {
-		nextPageToken = StringVal(resp.Data.PageToken)
-		hasMore = BoolVal(resp.Data.HasMore)
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, "", false, fmt.Errorf("解析评论回复列表响应失败: %w", err)
 	}
-
-	return replies, nextPageToken, hasMore, nil
+	replies := make([]*CommentReply, 0, len(apiResp.Data.Items))
+	for _, w := range apiResp.Data.Items {
+		replies = append(replies, w.toReply())
+	}
+	return replies, apiResp.Data.PageToken, apiResp.Data.HasMore, nil
 }
 
 // DeleteCommentReply 删除评论回复
@@ -359,47 +499,58 @@ func CreateCommentReply(fileToken, commentID, fileType, content, userAccessToken
 	if err != nil {
 		return nil, fmt.Errorf("创建评论回复失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("创建评论回复失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	// 先解析业务信封再看 HTTP 状态：飞书业务错误常随 HTTP 400 下发
+	if err := CheckAPIResponse("创建评论回复", resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-		Data struct {
-			ReplyID    string `json:"reply_id"`
-			UserID     string `json:"user_id"`
-			CreateTime int    `json:"create_time"`
-			UpdateTime int    `json:"update_time"`
-			Content    *struct {
-				Elements []struct {
-					Type    string `json:"type"`
-					TextRun *struct {
-						Text string `json:"text"`
-					} `json:"text_run,omitempty"`
-				} `json:"elements"`
-			} `json:"content,omitempty"`
-		} `json:"data"`
+		Data commentReplyWire `json:"data"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("创建评论回复失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
-	}
+	return apiResp.Data.toReply(), nil
+}
 
-	reply := &CommentReply{
-		ReplyID:    apiResp.Data.ReplyID,
-		UserID:     apiResp.Data.UserID,
-		CreateTime: apiResp.Data.CreateTime,
-		UpdateTime: apiResp.Data.UpdateTime,
+// UpdateCommentReply 整体替换一条评论回复的内容
+// （PUT /open-apis/drive/v1/files/:file_token/comments/:comment_id/replies/:reply_id?file_type=）。
+// elements 为服务端 v1 结构（text_run / docs_link / person）。只有回复作者身份可以修改，否则服务端返回 1069303。
+func UpdateCommentReply(fileToken, commentID, replyID, fileType string, elements []map[string]any, userAccessToken string) error {
+	cli, err := GetClient()
+	if err != nil {
+		return err
 	}
-	if apiResp.Data.Content != nil {
-		for _, el := range apiResp.Data.Content.Elements {
-			if el.TextRun != nil {
-				reply.Content += el.TextRun.Text
-			}
-		}
+	apiPath := fmt.Sprintf("/open-apis/drive/v1/files/%s/comments/%s/replies/%s?file_type=%s",
+		url.PathEscape(fileToken), url.PathEscape(commentID), url.PathEscape(replyID), url.QueryEscape(fileType))
+	body := map[string]any{"content": map[string]any{"elements": elements}}
+	tokenType, reqOpts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Put(Context(), apiPath, body, tokenType, reqOpts...)
+	if err != nil {
+		return fmt.Errorf("更新评论回复失败: %w", err)
 	}
-	return reply, nil
+	return CheckAPIResponse("更新评论回复", resp)
+}
+
+// ReactCommentReply 对评论回复添加或取消表情回应
+// （POST /open-apis/drive/v2/files/:file_token/comments/reaction?file_type=，body {action, reaction_type, reply_id}）。
+// action 为 add / delete；add 与 delete 都是幂等的，delete 只取消当前身份的回应。
+func ReactCommentReply(fileToken, fileType, replyID, reactionType, action, userAccessToken string) error {
+	cli, err := GetClient()
+	if err != nil {
+		return err
+	}
+	apiPath := fmt.Sprintf("/open-apis/drive/v2/files/%s/comments/reaction?file_type=%s",
+		url.PathEscape(fileToken), url.QueryEscape(fileType))
+	body := map[string]any{
+		"action":        action,
+		"reaction_type": reactionType,
+		"reply_id":      replyID,
+	}
+	tokenType, reqOpts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Post(Context(), apiPath, body, tokenType, reqOpts...)
+	if err != nil {
+		return fmt.Errorf("更新回复表情失败: %w", err)
+	}
+	return CheckAPIResponse("更新回复表情", resp)
 }
