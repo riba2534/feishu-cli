@@ -60,6 +60,8 @@ func GetClient() (*lark.Client, error) {
 		opts := []lark.ClientOptionFunc{
 			lark.WithOpenBaseUrl(cfg.BaseURL),
 			lark.WithHttpClient(wrapSDKHTTPClient()),
+			// token 缓存随 client 实例重建而丢弃，避免配置变更后复用旧配置的 token（见 instanceTokenCache）
+			lark.WithTokenCache(newInstanceTokenCache()),
 		}
 		if cfg.Debug {
 			opts = append(opts, lark.WithLogLevel(larkcore.LogLevelDebug))
