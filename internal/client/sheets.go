@@ -72,6 +72,9 @@ type CellStyle struct {
 	ForeColor  string      `json:"foreColor,omitempty"`  // 前景色
 	BorderType string      `json:"borderType,omitempty"` // 边框类型
 	Clean      bool        `json:"clean,omitempty"`      // 是否清除样式
+	// ResetFormatter 为 true 且 Formatter 为空时，显式下发 formatter=""，把单元格数字格式重置为常规。
+	// 用途：区域残留文本格式 "@" 时，V3 写入的数值会被存成文本（已实测），须先重置。
+	ResetFormatter bool `json:"-"`
 }
 
 // FontStyle 字体样式
@@ -1080,6 +1083,8 @@ func SetCellStyle(ctx context.Context, spreadsheetToken, rangeStr string, style 
 	}
 	if style.Formatter != "" {
 		appendStyle["formatter"] = style.Formatter
+	} else if style.ResetFormatter {
+		appendStyle["formatter"] = ""
 	}
 	if style.BackColor != "" {
 		appendStyle["backColor"] = style.BackColor

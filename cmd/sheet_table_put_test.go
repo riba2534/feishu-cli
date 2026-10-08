@@ -102,6 +102,31 @@ func TestSheetTablePut_AppendStartCellAndGrow(t *testing.T) {
 	}
 }
 
+// TestSheetTablePut_NumberColumnResetsTextFormat 数值列未指定格式时要先把格式重置为常规：
+// 区域残留文本格式 "@"（如先前按 string 列写过）时，V3 数值会被存成文本（已实测）。
+func TestSheetTablePut_NumberColumnResetsTextFormat(t *testing.T) {
+	m := newSheetMockServer(t)
+	m.sheets = `[{"sheet_id":"s1","title":"Sheet1","index":0,"grid_properties":{"row_count":10,"column_count":5}}]`
+	payload := `{"sheets":[{"columns":["code","amount"],"data":[["007",1.5]],"dtypes":{"amount":"float64"}}]}`
+	if _, err := runSheetCmdForTest(t, sheetTablePutCmd, []string{"shtTok", "s1"},
+		map[string]string{"sheets": payload, "output": "json"}); err != nil {
+		t.Fatal(err)
+	}
+	var styles []string
+	for _, r := range m.requests() {
+		if strings.HasSuffix(r.Path, "/style") {
+			styles = append(styles, string(r.Body))
+		}
+	}
+	joined := strings.Join(styles, "\n")
+	if !strings.Contains(joined, `"range":"s1!A2:A2"`) || !strings.Contains(joined, `"formatter":"@"`) {
+		t.Errorf("文本列应设 @ formatter: %s", joined)
+	}
+	if !strings.Contains(joined, `"range":"s1!B2:B2"`) || !strings.Contains(joined, `"formatter":""`) {
+		t.Errorf("数值列应先下发 formatter=\"\" 重置为常规: %s", joined)
+	}
+}
+
 // TestSheetFilterCreate_SendsColAndCondition filter create 必须带 col + condition（旧实现只传 range，实测必然 99992402）。
 func TestSheetFilterCreate_SendsColAndCondition(t *testing.T) {
 	m := newSheetMockServer(t)

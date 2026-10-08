@@ -171,12 +171,15 @@ dtype 映射（缺省/未知 → string）:
 		if dataEndRow >= dataStartRow {
 			for c, col := range spec.Columns {
 				formatter := client.FormatterForType(col)
-				if formatter == "" {
+				// 数值列未指定格式时也要处理：区域若残留文本格式 "@"（如先前按 string 列写过），
+				// V3 数值元素会被存成文本、table-get 回读为 string（已实测），故先把格式重置为常规。
+				reset := formatter == "" && col.Type == client.TableColTypeNumber
+				if formatter == "" && !reset {
 					continue
 				}
 				colL := client.IndexToColumn(col0 + c)
 				styleRange := fmt.Sprintf("%s!%s%d:%s%d", sheetID, colL, dataStartRow, colL, dataEndRow)
-				style := &client.CellStyle{Formatter: formatter}
+				style := &client.CellStyle{Formatter: formatter, ResetFormatter: reset}
 				if err := client.SetCellStyle(client.Context(), spreadsheetToken, styleRange, style, userAccessToken); err != nil {
 					return fmt.Errorf("设置列 %q 格式（%s）失败: %w", col.Name, formatter, err)
 				}
