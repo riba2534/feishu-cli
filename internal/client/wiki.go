@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -308,8 +307,15 @@ func GetWikiSpace(spaceID string, userAccessToken string) (*WikiSpaceDetail, err
 	}, nil
 }
 
-// AddWikiSpaceMember 添加知识空间成员
+// AddWikiSpaceMember 添加知识空间成员（发送通知，保持历史行为）。
 func AddWikiSpaceMember(spaceID, memberType, memberID, memberRole string, userAccessToken string) error {
+	return AddWikiSpaceMemberWithOptions(spaceID, memberType, memberID, memberRole, true, userAccessToken)
+}
+
+// AddWikiSpaceMemberWithOptions 添加知识空间成员，needNotification 控制是否给新成员发送通知
+// （query 参数 need_notification；官方 +member-add 的 --need-notification）。
+// 请求体只发 member_type / member_id / member_role，与官方一致（官方不在 body 中发送 type 字段）。
+func AddWikiSpaceMemberWithOptions(spaceID, memberType, memberID, memberRole string, needNotification bool, userAccessToken string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -324,7 +330,7 @@ func AddWikiSpaceMember(spaceID, memberType, memberID, memberRole string, userAc
 	req := larkwiki.NewCreateSpaceMemberReqBuilder().
 		SpaceId(spaceID).
 		Member(member).
-		NeedNotification(true).
+		NeedNotification(needNotification).
 		Build()
 
 	resp, err := client.Wiki.SpaceMember.Create(Context(), req, UserTokenOption(userAccessToken)...)
@@ -542,8 +548,9 @@ func DeleteWikiSpace(spaceID, userAccessToken string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("删除知识空间失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("删除知识空间失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	// 业务错误常随 HTTP 400/403 下发：先解析飞书信封里的 code，再看 HTTP 状态
+	if err := CheckAPIResponse("删除知识空间", resp); err != nil {
+		return "", err
 	}
 	var parsed struct {
 		Code int    `json:"code"`
@@ -573,8 +580,8 @@ func GetWikiDeleteSpaceTask(taskID, userAccessToken string) (*WikiDeleteSpaceTas
 	if err != nil {
 		return nil, fmt.Errorf("查询 delete_space 任务失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询 delete_space 任务失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("查询 delete_space 任务", resp); err != nil {
+		return nil, err
 	}
 	var parsed struct {
 		Code int    `json:"code"`
@@ -642,8 +649,8 @@ func DeleteWikiNode(spaceID, nodeToken, objType string, includeChildren bool, us
 	if err != nil {
 		return "", fmt.Errorf("删除知识库节点失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("删除知识库节点失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("删除知识库节点", resp); err != nil {
+		return "", err
 	}
 	var parsed struct {
 		Code int    `json:"code"`
@@ -675,8 +682,8 @@ func GetWikiDeleteNodeTask(taskID, userAccessToken string) (*WikiDeleteNodeTaskS
 	if err != nil {
 		return nil, fmt.Errorf("查询 delete_node 任务失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询 delete_node 任务失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("查询 delete_node 任务", resp); err != nil {
+		return nil, err
 	}
 	var parsed struct {
 		Code int    `json:"code"`
