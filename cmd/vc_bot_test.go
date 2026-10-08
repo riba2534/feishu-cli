@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -61,9 +62,9 @@ func TestVCBotFlagsRequired(t *testing.T) {
 		flags    []string
 		required string
 	}{
-		{"meeting-join", []string{"meeting-number", "password", "dry-run", "output", "user-access-token"}, "meeting-number"},
+		{"meeting-join", []string{"meeting-number", "password", "call-id", "action", "dry-run", "output", "user-access-token"}, "meeting-number"},
 		{"meeting-leave", []string{"meeting-id", "dry-run", "output", "user-access-token"}, "meeting-id"},
-		{"meeting-events", []string{"meeting-id", "start", "end", "page-size", "page-token", "dry-run", "output", "as", "user-access-token"}, "meeting-id"},
+		{"meeting-events", []string{"meeting-id", "start", "end", "page-size", "page-token", "page-all", "dry-run", "output", "as", "user-access-token"}, "meeting-id"},
 	}
 	for _, tc := range cases {
 		c := botSub(tc.name)
@@ -128,10 +129,15 @@ func TestVCBotHelpDocumentsTenantDefault(t *testing.T) {
 	}
 }
 
+// testVCMeetingID 测试用长数字 meeting_id（meeting-events 会校验正整数且拒绝 9 位会议号）
+const testVCMeetingID = "6911188411932033028"
+
 func newVCBotJoinTestCmd() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("meeting-number", "", "")
 	cmd.Flags().String("password", "", "")
+	cmd.Flags().String("call-id", "", "")
+	cmd.Flags().String("action", "join", "")
 	cmd.Flags().Bool("dry-run", false, "")
 	cmd.Flags().StringP("output", "o", "", "")
 	cmd.Flags().String("user-access-token", "", "")
@@ -154,6 +160,7 @@ func newVCBotEventsTestCmd() *cobra.Command {
 	cmd.Flags().String("end", "", "")
 	cmd.Flags().Int("page-size", 20, "")
 	cmd.Flags().String("page-token", "", "")
+	cmd.Flags().Bool("page-all", false, "")
 	cmd.Flags().Bool("dry-run", false, "")
 	cmd.Flags().StringP("output", "o", "", "")
 	cmd.Flags().String("as", "auto", "")
@@ -192,7 +199,7 @@ func vcBotTokenModeCases() []struct {
 			path:   "/open-apis/vc/v1/bots/leave",
 			newCmd: newVCBotLeaveTestCmd,
 			setup: func(t *testing.T, cmd *cobra.Command) {
-				mustSetFlag(t, cmd, "meeting-id", "m1")
+				mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 			},
 			run:      func(cmd *cobra.Command) error { return vcBotLeaveCmd.RunE(cmd, nil) },
 			response: `{"code":0,"msg":"success","data":null}`,
@@ -202,10 +209,10 @@ func vcBotTokenModeCases() []struct {
 			path:   "/open-apis/vc/v1/bots/events",
 			newCmd: newVCBotEventsTestCmd,
 			setup: func(t *testing.T, cmd *cobra.Command) {
-				mustSetFlag(t, cmd, "meeting-id", "m1")
+				mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 			},
 			run:      func(cmd *cobra.Command) error { return vcBotEventsCmd.RunE(cmd, nil) },
-			response: `{"code":0,"msg":"success","data":{"meeting_event_list":[],"has_more":false,"page_token":""}}`,
+			response: `{"code":0,"msg":"success","data":{"events":[],"has_more":false,"page_token":""}}`,
 		},
 	}
 }
@@ -259,12 +266,12 @@ func TestVCBotEventsAsBotIgnoresUserToken(t *testing.T) {
 		}
 		capturedAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"meeting_event_list":[],"has_more":false,"page_token":""}}`)
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"events":[],"has_more":false,"page_token":""}}`)
 	}))
 	defer cleanup()
 
 	cmd := newVCBotEventsTestCmd()
-	mustSetFlag(t, cmd, "meeting-id", "m1")
+	mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 	mustSetFlag(t, cmd, "as", "bot")
 	if err := vcBotEventsCmd.RunE(cmd, nil); err != nil {
 		t.Fatalf("meeting-events --as bot 返回错误: %v", err)
@@ -284,7 +291,7 @@ func TestVCBotEventsAsUserFailClosed(t *testing.T) {
 		t.Fatalf("config.Init: %v", err)
 	}
 	cmd := newVCBotEventsTestCmd()
-	mustSetFlag(t, cmd, "meeting-id", "m1")
+	mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 	mustSetFlag(t, cmd, "as", "user")
 	if err := vcBotEventsCmd.RunE(cmd, nil); err == nil || !strings.Contains(err.Error(), "--as user") {
 		t.Fatalf("--as user 缺 Token 应失败，实际: %v", err)
@@ -298,7 +305,7 @@ func TestVCBotEventsAsUserFailClosed(t *testing.T) {
 func TestVCBotEventsInvalidAsFailClosed(t *testing.T) {
 	isolateMsgTokenTestEnv(t)
 	cmd := newVCBotEventsTestCmd()
-	mustSetFlag(t, cmd, "meeting-id", "m1")
+	mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 	mustSetFlag(t, cmd, "as", "nobody")
 	mustSetFlag(t, cmd, "dry-run", "true")
 	if err := vcBotEventsCmd.RunE(cmd, nil); err == nil || !strings.Contains(err.Error(), "bot|user|auto") {
@@ -310,7 +317,7 @@ func TestVCBotEventsDryRunIncludesResolvedIdentity(t *testing.T) {
 	isolateVCBotEventsIdentityEnv(t)
 	t.Setenv("FEISHU_USER_ACCESS_TOKEN", "u-env-token")
 	cmd := newVCBotEventsTestCmd()
-	mustSetFlag(t, cmd, "meeting-id", "m1")
+	mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 	mustSetFlag(t, cmd, "as", "bot")
 	mustSetFlag(t, cmd, "dry-run", "true")
 	out, err := captureVCBotStdout(t, func() error { return vcBotEventsCmd.RunE(cmd, nil) })
@@ -425,7 +432,7 @@ func TestVCBotEventsAutoFailClosedOnRefreshError(t *testing.T) {
 		if strings.HasPrefix(r.URL.Path, "/open-apis/vc/v1/bots/events") {
 			atomic.AddInt32(&bizRequests, 1)
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"meeting_event_list":[],"has_more":false,"page_token":""}}`)
+			_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"events":[],"has_more":false,"page_token":""}}`)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/open-apis/auth/v3/tenant_access_token/internal") {
@@ -438,7 +445,7 @@ func TestVCBotEventsAutoFailClosedOnRefreshError(t *testing.T) {
 	defer cleanup()
 
 	cmd := newVCBotEventsTestCmd()
-	mustSetFlag(t, cmd, "meeting-id", "m1")
+	mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 	mustSetFlag(t, cmd, "as", "auto")
 	err := vcBotEventsCmd.RunE(cmd, nil)
 	if err == nil {
@@ -473,7 +480,7 @@ func TestVCBotEventsAutoFailClosedOnTokenFileError(t *testing.T) {
 	defer cleanup()
 
 	cmd := newVCBotEventsTestCmd()
-	mustSetFlag(t, cmd, "meeting-id", "m1")
+	mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 	mustSetFlag(t, cmd, "as", "auto")
 	if err := vcBotEventsCmd.RunE(cmd, nil); err == nil {
 		t.Fatal("token.json 损坏时应 fail-closed，不得静默切 Bot")
@@ -494,12 +501,12 @@ func TestVCBotEventsAutoNoUserFallsBackToBot(t *testing.T) {
 		}
 		capturedAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"meeting_event_list":[],"has_more":false,"page_token":""}}`)
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"events":[],"has_more":false,"page_token":""}}`)
 	}))
 	defer cleanup()
 
 	cmd := newVCBotEventsTestCmd()
-	mustSetFlag(t, cmd, "meeting-id", "m1")
+	mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 	mustSetFlag(t, cmd, "as", "auto")
 	token, identity, err := resolveVCBotEventsIdentity(cmd)
 	if err != nil || token != "" || identity != "bot" {
@@ -529,12 +536,12 @@ func TestVCBotEventsAsUserUsesUserToken(t *testing.T) {
 		}
 		capturedAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"meeting_event_list":[],"has_more":false,"page_token":""}}`)
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"events":[],"has_more":false,"page_token":""}}`)
 	})
 	defer cleanup()
 
 	cmd := newVCBotEventsTestCmd()
-	mustSetFlag(t, cmd, "meeting-id", "m1")
+	mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 	mustSetFlag(t, cmd, "as", "user")
 	if err := vcBotEventsCmd.RunE(cmd, nil); err != nil {
 		t.Fatalf("meeting-events --as user 返回错误: %v", err)
@@ -570,7 +577,7 @@ func TestVCBotEventsDryRunStaticIdentityNoNetworkNoTokenWrite(t *testing.T) {
 	for _, tc := range cases {
 		t.Run("as="+tc.as, func(t *testing.T) {
 			cmd := newVCBotEventsTestCmd()
-			mustSetFlag(t, cmd, "meeting-id", "m1")
+			mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 			mustSetFlag(t, cmd, "as", tc.as)
 			mustSetFlag(t, cmd, "dry-run", "true")
 			out, runErr := captureVCBotStdout(t, func() error { return vcBotEventsCmd.RunE(cmd, nil) })
@@ -596,7 +603,7 @@ func TestVCBotEventsDryRunStaticIdentityNoNetworkNoTokenWrite(t *testing.T) {
 
 	t.Run("as=invalid", func(t *testing.T) {
 		cmd := newVCBotEventsTestCmd()
-		mustSetFlag(t, cmd, "meeting-id", "m1")
+		mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 		mustSetFlag(t, cmd, "as", "nobody")
 		mustSetFlag(t, cmd, "dry-run", "true")
 		if err := vcBotEventsCmd.RunE(cmd, nil); err == nil || !strings.Contains(err.Error(), "bot|user|auto") {
@@ -625,12 +632,12 @@ func TestVCBotEventsDefaultsToUserToken(t *testing.T) {
 		}
 		capturedAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"meeting_event_list":[],"has_more":false,"page_token":""}}`)
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"events":[],"has_more":false,"page_token":""}}`)
 	})
 	defer cleanup()
 
 	cmd := newVCBotEventsTestCmd()
-	mustSetFlag(t, cmd, "meeting-id", "m1")
+	mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
 	if err := vcBotEventsCmd.RunE(cmd, nil); err != nil {
 		t.Fatalf("meeting-events 返回错误: %v", err)
 	}
@@ -639,14 +646,16 @@ func TestVCBotEventsDefaultsToUserToken(t *testing.T) {
 	}
 }
 
-// TestVCBotCommandsUseFlagUserToken 验证只有显式 --user-access-token 才切到 User Token。
-func TestVCBotCommandsUseFlagUserToken(t *testing.T) {
+// TestVCBotJoinLeaveRejectUserToken meeting-join / meeting-leave 仅支持 Bot 身份（官方 #2570）：
+// 显式传 --user-access-token 报用法错误且不发任何请求；meeting-events 仍可用显式 User Token。
+func TestVCBotJoinLeaveRejectUserToken(t *testing.T) {
 	for _, tc := range vcBotTokenModeCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			isolateMsgTokenTestEnv(t)
-
+			var hits int32
 			var capturedAuth string
 			cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+				atomic.AddInt32(&hits, 1)
 				if strings.HasPrefix(r.URL.Path, "/open-apis/auth/v3/tenant_access_token/internal") {
 					http.Error(w, "不应请求 tenant_access_token", http.StatusInternalServerError)
 					return
@@ -664,13 +673,176 @@ func TestVCBotCommandsUseFlagUserToken(t *testing.T) {
 			cmd := tc.newCmd()
 			tc.setup(t, cmd)
 			mustSetFlag(t, cmd, "user-access-token", testUserToken)
-			if err := tc.run(cmd); err != nil {
-				t.Fatalf("%s 返回错误: %v", tc.name, err)
+			err := tc.run(cmd)
+			if tc.name == "meeting-events" {
+				if err != nil {
+					t.Fatalf("%s 返回错误: %v", tc.name, err)
+				}
+				if capturedAuth != "Bearer "+testUserToken {
+					t.Fatalf("Authorization = %q, want %q", capturedAuth, "Bearer "+testUserToken)
+				}
+				return
 			}
-			if capturedAuth != "Bearer "+testUserToken {
-				t.Fatalf("Authorization = %q, want %q", capturedAuth, "Bearer "+testUserToken)
+			if err == nil || !strings.Contains(err.Error(), "仅支持 Bot 身份") {
+				t.Fatalf("%s 传 --user-access-token 应报错，实际: %v", tc.name, err)
+			}
+			if !clierr.HasKind(err, clierr.KindUsage) {
+				t.Fatalf("应为用法错误（exit 2），kinds=%v", clierr.Kinds(err))
+			}
+			if n := atomic.LoadInt32(&hits); n != 0 {
+				t.Fatalf("拒绝 User Token 时不应发请求，实际 %d 次", n)
 			}
 		})
+	}
+}
+
+// TestVCBotEventsTextReadsEvents 锁住 #6：文本模式读 data.events（官方 vc_meeting_events.go 与服务端字段），
+// 旧实现读 meeting_event_list，永远输出 0 条。
+func TestVCBotEventsTextReadsEvents(t *testing.T) {
+	isolateMsgTokenTestEnv(t)
+	t.Setenv("FEISHU_USER_ACCESS_TOKEN", "u-env-token")
+	cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"has_more":true,"page_token":"p2","events":[`+
+			`{"event_id":"e1","event_type":"participant_joined","event_time":"1790757108"},`+
+			`{"event_id":"e2","event_type":"transcript_received","event_time":"1790757109"}]}}`)
+	})
+	defer cleanup()
+
+	cmd := newVCBotEventsTestCmd()
+	mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
+	mustSetFlag(t, cmd, "as", "user")
+	out, err := captureVCBotStdout(t, func() error { return vcBotEventsCmd.RunE(cmd, nil) })
+	if err != nil {
+		t.Fatalf("meeting-events 返回错误: %v", err)
+	}
+	for _, want := range []string{"共 2 条", "participant_joined", "transcript_received", `"event_id":"e2"`, "--page-token p2"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("文本输出缺少 %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestVCBotEventsPageAll --page-all 合并多页 events，page_size 取 100，重复游标即停止。
+func TestVCBotEventsPageAll(t *testing.T) {
+	isolateMsgTokenTestEnv(t)
+	t.Setenv("FEISHU_USER_ACCESS_TOKEN", "u-env-token")
+	var calls int32
+	var sizes []string
+	cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		sizes = append(sizes, r.URL.Query().Get("page_size"))
+		switch r.URL.Query().Get("page_token") {
+		case "":
+			atomic.AddInt32(&calls, 1)
+			_, _ = fmt.Fprint(w, `{"code":0,"data":{"has_more":true,"page_token":"p2","events":[{"event_id":"e1"}]}}`)
+		case "p2":
+			atomic.AddInt32(&calls, 1)
+			// 服务端异常地回同一个游标：必须停止，不能死循环
+			_, _ = fmt.Fprint(w, `{"code":0,"data":{"has_more":true,"page_token":"p2","events":[{"event_id":"e2"}]}}`)
+		default:
+			http.Error(w, "unexpected token", http.StatusBadRequest)
+		}
+	})
+	defer cleanup()
+
+	cmd := newVCBotEventsTestCmd()
+	mustSetFlag(t, cmd, "meeting-id", testVCMeetingID)
+	mustSetFlag(t, cmd, "as", "user")
+	mustSetFlag(t, cmd, "page-all", "true")
+	mustSetFlag(t, cmd, "output", "json")
+	out, err := captureVCBotStdout(t, func() error { return vcBotEventsCmd.RunE(cmd, nil) })
+	if err != nil {
+		t.Fatalf("--page-all 返回错误: %v", err)
+	}
+	if n := atomic.LoadInt32(&calls); n != 2 {
+		t.Fatalf("应请求 2 页后因重复游标停止，实际 %d", n)
+	}
+	var parsed struct {
+		Events    []map[string]any `json:"events"`
+		HasMore   bool             `json:"has_more"`
+		PageToken string           `json:"page_token"`
+	}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("输出不是 JSON: %v\n%s", err, out)
+	}
+	if len(parsed.Events) != 2 || !parsed.HasMore || parsed.PageToken != "p2" {
+		t.Fatalf("合并结果不符: %+v", parsed)
+	}
+	for _, sz := range sizes {
+		if sz != "100" {
+			t.Fatalf("--page-all 应使用 page_size=100，实际 %v", sizes)
+		}
+	}
+}
+
+// TestValidateVCEventsMeetingID meeting-events 拒绝 9 位会议号与非数字 meeting_id（用法错误）。
+func TestValidateVCEventsMeetingID(t *testing.T) {
+	cases := []struct {
+		in      string
+		wantErr string
+	}{
+		{testVCMeetingID, ""},
+		{"", "必填"},
+		{"123456789", "9 位会议号"},
+		{"m1", "正整数"},
+		{"-5", "正整数"},
+	}
+	for _, tc := range cases {
+		err := validateVCEventsMeetingID(tc.in)
+		if tc.wantErr == "" {
+			if err != nil {
+				t.Errorf("%q: 意外错误 %v", tc.in, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !clierr.HasKind(err, clierr.KindUsage) {
+			t.Errorf("%q: err=%v, want 用法错误包含 %q", tc.in, err, tc.wantErr)
+		}
+	}
+}
+
+// TestVCBotJoinValidationAndDryRun 会议号必须 9 位数字；--call-id / --action start 进入请求体；dry-run 不联网。
+func TestVCBotJoinValidationAndDryRun(t *testing.T) {
+	isolateMsgTokenTestEnv(t)
+	var hits int32
+	cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		http.Error(w, "不应联网", http.StatusInternalServerError)
+	})
+	defer cleanup()
+
+	for _, bad := range []string{"12345678", "1234567890", "12345678a", ""} {
+		cmd := newVCBotJoinTestCmd()
+		mustSetFlag(t, cmd, "meeting-number", bad)
+		err := vcBotJoinCmd.RunE(cmd, nil)
+		if err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+			t.Errorf("会议号 %q 应为用法错误，实际 %v", bad, err)
+		}
+	}
+	cmd := newVCBotJoinTestCmd()
+	mustSetFlag(t, cmd, "meeting-number", "123456789")
+	mustSetFlag(t, cmd, "action", "bogus")
+	if err := vcBotJoinCmd.RunE(cmd, nil); err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+		t.Errorf("非法 --action 应为用法错误，实际 %v", err)
+	}
+
+	cmd = newVCBotJoinTestCmd()
+	mustSetFlag(t, cmd, "meeting-number", "123456789")
+	mustSetFlag(t, cmd, "call-id", "call-1")
+	mustSetFlag(t, cmd, "action", "start")
+	mustSetFlag(t, cmd, "dry-run", "true")
+	out, err := captureVCBotStdout(t, func() error { return vcBotJoinCmd.RunE(cmd, nil) })
+	if err != nil {
+		t.Fatalf("dry-run 失败: %v", err)
+	}
+	for _, want := range []string{`"call_id": "call-1"`, `"action": 2`, `"meeting_no": "123456789"`, `"as": "bot"`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("dry-run 预览缺少 %s:\n%s", want, out)
+		}
+	}
+	if n := atomic.LoadInt32(&hits); n != 0 {
+		t.Fatalf("校验失败与 dry-run 都不应联网，实际 %d 次", n)
 	}
 }
 
