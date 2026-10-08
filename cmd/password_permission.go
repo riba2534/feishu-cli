@@ -50,9 +50,13 @@ var passwordCreateCmd = &cobra.Command{
 		docToken := args[0]
 		docType, _ := cmd.Flags().GetString("doc-type")
 
-		password, err := client.CreatePublicPassword(docToken, docType)
+		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {
 			return err
+		}
+		password, err := client.CreatePublicPassword(docToken, docType, userToken)
+		if err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		fmt.Printf("文档密码创建成功！\n")
@@ -83,9 +87,13 @@ var passwordUpdateCmd = &cobra.Command{
 		docToken := args[0]
 		docType, _ := cmd.Flags().GetString("doc-type")
 
-		password, err := client.UpdatePublicPassword(docToken, docType)
+		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {
 			return err
+		}
+		password, err := client.UpdatePublicPassword(docToken, docType, userToken)
+		if err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		fmt.Printf("文档密码刷新成功！\n")
@@ -116,8 +124,12 @@ var passwordDeleteCmd = &cobra.Command{
 		docToken := args[0]
 		docType, _ := cmd.Flags().GetString("doc-type")
 
-		if err := client.DeletePublicPassword(docToken, docType); err != nil {
+		userToken, err := resolvePermIdentity(cmd)
+		if err != nil {
 			return err
+		}
+		if err := client.DeletePublicPassword(docToken, docType, userToken); err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		fmt.Printf("文档密码删除成功！\n")

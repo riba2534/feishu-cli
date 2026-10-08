@@ -135,14 +135,34 @@ var drivePermApplyCmd = &cobra.Command{
 			return fmt.Errorf("申请权限失败: %w", err)
 		}
 
-		// 直接打印响应（含 code/msg/data）
-		fmt.Println(string(resp.RawBody))
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return fmt.Errorf("HTTP %d", resp.StatusCode)
+		// 先解析业务信封再看 HTTP 状态：飞书业务错误常随 HTTP 400 下发，
+		// HTTP 200 + code!=0 也必须判失败（过去会打印响应后 exit 0）。
+		if err := client.CheckAPIResponse("申请权限", resp); err != nil {
+			return decoratePermApplyError(err)
 		}
+
+		// 成功：直接打印响应（含 code/msg/data）
+		fmt.Println(string(resp.RawBody))
 		return nil
 	},
+}
+
+// decoratePermApplyError 为申请权限的典型业务码追加中文指引（对齐官方 permApplyErrorGuidance），保留原错误链。
+func decoratePermApplyError(err error) error {
+	if guidance := permApplyErrorGuidance(err); guidance != "" {
+		return fmt.Errorf("%w\n提示：%s", err, guidance)
+	}
+	return err
+}
+
+func permApplyErrorGuidance(err error) string {
+	switch {
+	case client.HasAPICode(err, 1063006):
+		return "已达到申请次数上限：同一用户对同一文档每天最多申请 5 次，请等次日额度重置后再试"
+	case client.HasAPICode(err, 1063007):
+		return "该文档不接受权限申请（可能已关闭申请入口或申请的权限不适用），请核对目标文档与申请的权限，或直接联系文档所有者"
+	}
+	return ""
 }
 
 func init() {
