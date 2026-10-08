@@ -42,7 +42,10 @@ var createTaskCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		summary, _ := cmd.Flags().GetString("summary")
 		description, _ := cmd.Flags().GetString("description")
@@ -124,5 +127,6 @@ func init() {
 	createTaskCmd.Flags().String("origin-platform", "", "任务来源平台名称")
 	createTaskCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	createTaskCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(createTaskCmd)
 	mustMarkFlagRequired(createTaskCmd, "summary")
 }

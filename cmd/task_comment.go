@@ -41,7 +41,10 @@ var taskCommentAddCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		taskGuid := args[0]
 		content, _ := cmd.Flags().GetString("content")
@@ -142,6 +145,7 @@ func init() {
 	taskCommentAddCmd.Flags().String("reply-to", "", "回复评论的 ID（可选）")
 	taskCommentAddCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	taskCommentAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(taskCommentAddCmd)
 	mustMarkFlagRequired(taskCommentAddCmd, "content")
 
 	taskCommentCmd.AddCommand(taskCommentListCmd)

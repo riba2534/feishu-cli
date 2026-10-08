@@ -39,7 +39,10 @@ var taskSubtaskCreateCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		taskGuid := args[0]
 		summary, _ := cmd.Flags().GetString("summary")
@@ -133,6 +136,7 @@ func init() {
 	taskSubtaskCreateCmd.Flags().StringP("summary", "s", "", "子任务标题（必填）")
 	taskSubtaskCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	taskSubtaskCreateCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(taskSubtaskCreateCmd)
 	mustMarkFlagRequired(taskSubtaskCreateCmd, "summary")
 
 	taskSubtaskCmd.AddCommand(taskSubtaskListCmd)

@@ -29,7 +29,10 @@ var reopenTaskCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		taskGuid := args[0]
 
@@ -60,4 +63,5 @@ func init() {
 	taskCmd.AddCommand(reopenTaskCmd)
 	reopenTaskCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	reopenTaskCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(reopenTaskCmd)
 }

@@ -19,6 +19,8 @@ type TaskInfo struct {
 	CreatedAt   string `json:"created_at,omitempty"`
 	Creator     string `json:"creator,omitempty"`
 	OriginHref  string `json:"origin_href,omitempty"`
+	// AlreadyCompleted 仅 task complete 使用：任务此前已完成，本次未改写完成时间
+	AlreadyCompleted bool `json:"already_completed,omitempty"`
 }
 
 // CreateTaskOptions represents options for creating a task
@@ -281,8 +283,19 @@ func DeleteTask(taskGuid string, userAccessToken string) error {
 	return nil
 }
 
-// CompleteTask marks a task as completed
+// CompleteTask marks a task as completed.
+//
+// 幂等：先读取任务，已完成则直接返回（AlreadyCompleted=true），不再 PATCH——
+// 否则每次调用都会把完成时间改写为"现在"（对齐官方 task_complete 先读后写）。
 func CompleteTask(taskGuid string, userAccessToken string) (*TaskInfo, error) {
+	current, err := GetTask(taskGuid, userAccessToken)
+	if err != nil {
+		return nil, err
+	}
+	if current != nil && current.CompletedAt != "" {
+		current.AlreadyCompleted = true
+		return current, nil
+	}
 	return UpdateTask(taskGuid, UpdateTaskOptions{
 		Completed: true,
 	}, userAccessToken)

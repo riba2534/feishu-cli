@@ -42,7 +42,10 @@ var taskMemberAddCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		taskGuid := args[0]
 		membersStr, _ := cmd.Flags().GetString("members")
@@ -92,7 +95,10 @@ var taskMemberRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		taskGuid := args[0]
 		membersStr, _ := cmd.Flags().GetString("members")
@@ -137,11 +143,13 @@ func init() {
 	taskMemberAddCmd.Flags().String("members", "", "成员 ID 列表，逗号分隔（必填）")
 	taskMemberAddCmd.Flags().String("role", "assignee", "角色: assignee/follower")
 	taskMemberAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(taskMemberAddCmd)
 	mustMarkFlagRequired(taskMemberAddCmd, "members")
 
 	taskMemberCmd.AddCommand(taskMemberRemoveCmd)
 	taskMemberRemoveCmd.Flags().String("members", "", "成员 ID 列表，逗号分隔（必填）")
 	taskMemberRemoveCmd.Flags().String("role", "assignee", "角色: assignee/follower")
 	taskMemberRemoveCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(taskMemberRemoveCmd)
 	mustMarkFlagRequired(taskMemberRemoveCmd, "members")
 }

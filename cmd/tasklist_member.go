@@ -41,7 +41,10 @@ var tasklistMemberAddCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		tasklistGuid := args[0]
 		membersStr, _ := cmd.Flags().GetString("members")
@@ -91,7 +94,10 @@ var tasklistMemberRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		tasklistGuid := args[0]
 		membersStr, _ := cmd.Flags().GetString("members")
@@ -137,6 +143,7 @@ func init() {
 	tasklistMemberAddCmd.Flags().String("role", "editor", "角色: editor/viewer")
 	tasklistMemberAddCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistMemberAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(tasklistMemberAddCmd)
 	mustMarkFlagRequired(tasklistMemberAddCmd, "members")
 
 	tasklistMemberCmd.AddCommand(tasklistMemberRemoveCmd)
@@ -144,5 +151,6 @@ func init() {
 	tasklistMemberRemoveCmd.Flags().String("role", "editor", "角色: editor/viewer")
 	tasklistMemberRemoveCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistMemberRemoveCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(tasklistMemberRemoveCmd)
 	mustMarkFlagRequired(tasklistMemberRemoveCmd, "members")
 }

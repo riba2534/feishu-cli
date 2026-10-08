@@ -41,7 +41,10 @@ var taskReminderAddCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		taskGuid := args[0]
 		minutes, _ := cmd.Flags().GetInt("minutes")
@@ -76,7 +79,10 @@ var taskReminderRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		taskGuid := args[0]
 		idsStr, _ := cmd.Flags().GetString("ids")
@@ -108,10 +114,12 @@ func init() {
 	taskReminderCmd.AddCommand(taskReminderAddCmd)
 	taskReminderAddCmd.Flags().Int("minutes", 0, "提前提醒的分钟数（必填），0 表示截止时提醒")
 	taskReminderAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(taskReminderAddCmd)
 	mustMarkFlagRequired(taskReminderAddCmd, "minutes")
 
 	taskReminderCmd.AddCommand(taskReminderRemoveCmd)
 	taskReminderRemoveCmd.Flags().String("ids", "", "提醒 ID 列表，逗号分隔（必填）")
 	taskReminderRemoveCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(taskReminderRemoveCmd)
 	mustMarkFlagRequired(taskReminderRemoveCmd, "ids")
 }

@@ -41,7 +41,10 @@ var tasklistCreateCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		name, _ := cmd.Flags().GetString("name")
 		output, _ := cmd.Flags().GetString("output")
@@ -184,7 +187,10 @@ var tasklistDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		tasklistGuid := args[0]
 
@@ -215,7 +221,10 @@ var tasklistTaskAddCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		tasklistGuid := args[0]
 		taskIDsStr, _ := cmd.Flags().GetString("task-ids")
@@ -263,7 +272,10 @@ var tasklistTaskRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		tasklistGuid := args[0]
 		taskIDsStr, _ := cmd.Flags().GetString("task-ids")
@@ -374,6 +386,7 @@ func init() {
 	tasklistCreateCmd.Flags().StringP("name", "n", "", "清单名称（必填）")
 	tasklistCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistCreateCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(tasklistCreateCmd)
 	mustMarkFlagRequired(tasklistCreateCmd, "name")
 
 	tasklistCmd.AddCommand(tasklistGetCmd)
@@ -388,17 +401,20 @@ func init() {
 
 	tasklistCmd.AddCommand(tasklistDeleteCmd)
 	tasklistDeleteCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(tasklistDeleteCmd)
 
 	tasklistCmd.AddCommand(tasklistTaskAddCmd)
 	tasklistTaskAddCmd.Flags().String("task-ids", "", "任务 GUID 列表，逗号分隔（必填）")
 	tasklistTaskAddCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistTaskAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(tasklistTaskAddCmd)
 	mustMarkFlagRequired(tasklistTaskAddCmd, "task-ids")
 
 	tasklistCmd.AddCommand(tasklistTaskRemoveCmd)
 	tasklistTaskRemoveCmd.Flags().String("task-ids", "", "任务 GUID 列表，逗号分隔（必填）")
 	tasklistTaskRemoveCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistTaskRemoveCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(tasklistTaskRemoveCmd)
 	mustMarkFlagRequired(tasklistTaskRemoveCmd, "task-ids")
 
 	tasklistCmd.AddCommand(tasklistTasksCmd)
