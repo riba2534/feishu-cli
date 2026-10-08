@@ -223,8 +223,10 @@ feishu-cli auth login --recommend                                # 全部域（�
 | `token_expired` 且 refresh 可用 | 业务命令会自动刷新；也可重新登录 |
 | `needs_relogin` | refresh token 已过期，重新登录 |
 | `missing_refresh_token` | 开通 `offline_access` 后 `auth logout && auth login` |
-| `99991672` | access token 无效或过期，重新登录 |
-| `99991679` | 应用未开通 scope，先在开放平台开通权限 |
+| `99991672` | **应用**未开通所需 scope：重新登录修不好，按错误附带的开放平台链接为应用开通并发布 |
+| `99991679` | **用户**未授权所需 scope：`auth login --scope "<错误提示的 scope>"` 补授权 |
+| `99991668` + `not support` | 该接口不支持 User Token，改用 `--as bot` |
+| 退出码 `3` / `4` / `10` | `3` 鉴权或权限问题（按上两行处理）；`4` 网络错误（可重试）；`10` 危险操作需确认，获得用户同意后追加 `--yes` |
 | `token.json 未绑定 app_id` | 执行 `auth token --bind-legacy-app` 或重新 `auth login`，不要手改 token 文件把别的 App 填进去 |
 | `token.json 绑定的 app_id 与当前应用不一致` | 切回匹配的 `--profile` / `--bot-app-id`，或对该应用重新登录 |
 | `拒绝自定义远端 host` / `拒绝非 loopback 的 HTTP` | 默认只允许官方 HTTPS。确认不是配错 `base_url` 之后，才设 `FEISHU_ALLOW_CUSTOM_BASE_URL=1`（远端 HTTP 另需 `FEISHU_ALLOW_INSECURE_HTTP=1`） |

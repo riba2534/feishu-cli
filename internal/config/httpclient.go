@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/apidiag"
 )
 
 const defaultRedirectLimit = 10
@@ -47,7 +49,12 @@ func (t *policyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	return base.RoundTrip(req)
+	resp, err := base.RoundTrip(req)
+	if err == nil {
+		// 旁路记录飞书错误信封里的 log_id / 缺失 scope / 字段校验，供根命令打印诊断
+		apidiag.ObserveResponse(resp)
+	}
+	return resp, err
 }
 
 // RedirectPolicy 拒绝默认的 HTTPS→HTTP 与带 body 跨源重定向，并在跨源时剥离 Authorization。

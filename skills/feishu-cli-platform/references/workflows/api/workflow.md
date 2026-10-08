@@ -44,6 +44,10 @@ OpenAPI host：`open.feishu.cn` / `open.larksuite.com` / `open.larkoffice.com`�
 
 > 大整数精度：响应用 `UseNumber` 解析，飞书 19 位 `message_id`/`chat_id` 等不会被降级丢精度。
 
+> **业务错误不进 stdout**：响应 `code != 0`（即使随 HTTP 400 下发）或 HTTP 非 2xx 时，stdout 为空、`--jq/--format/-o` 不处理错误体；
+> stderr 输出 `飞书业务错误: code=..., msg=...`，并附 `log_id`、所需 scope、字段校验与修复建议。需要原始错误体调试时加 `--raw`（原样写 stdout / `-o`，退出码仍非 0）。
+> 退出码：`1` 业务错误，`2` 用法错误，`3` 鉴权/权限（99991672 应用未开通 scope、99991679 用户未授权、token 失效等），`4` 网络错误。
+
 ---
 
 ## 三步调研法（不知道 path 时）
