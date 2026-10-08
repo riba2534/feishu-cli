@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -52,6 +53,10 @@ Markdown 中由 'doc export' 产生的本地方言（> [!NOTE] 高亮块、<imag
 <mention-doc/>、<file token/>、<grid cols>、<span style> 颜色）会自动转换为 docs_ai 写法；
 无法无损写回的占位（<whiteboard token=... type="blank"/>、<bitable/>、<sheet token/>、未下载视频等）
 会 fail-closed 拒绝执行，避免把画板/表格写成空白。
+
+本地图片/附件: ![说明](./a.png)（相对 --markdown-file 所在目录）、![说明](@./a.png)、
+<img path="@./a.png"/>、<source path="@./r.pdf" name="r.pdf"/> 会自动上传并绑定（占位标记协议，
+>20MB 自动分片），仅支持 append/overwrite/insert_*/块级 replace_range；失败项清理占位块并非零退出。
 
 结果: 服务端返回 partial_success 或 failed 时以非零退出码结束，并输出 warnings 与 log_id。
 
@@ -104,7 +109,7 @@ func init() {
 	f.String("src-block-ids", "", "block_move_after / block_copy_insert_after 的源块 ID（逗号分隔）")
 	f.StringP("output", "o", "", "输出格式 (json)")
 	f.String("user-access-token", "", "User Access Token")
-	f.Bool("upload-images", false, "上传 Markdown 中的本地图片（暂不支持，请用网络图片 URL 或 doc media-insert）")
+	f.Bool("upload-images", false, "兼容旧参数：内容中的本地图片/附件会自动上传，可省略")
 	f.String("table-column-width", "auto",
 		"Markdown 表格列宽策略：auto | fixed | 像素列表如 80,200,*,120（* 表示该列走 auto）")
 	f.Int("revision-id", -1, "文档版本号（用于并发冲突保护，-1 表示自动基于当前版本）")
@@ -131,6 +136,7 @@ type contentUpdateParams struct {
 	revisionID   int
 	stdout       io.Writer
 	stderr       io.Writer
+	resources    []*localDocResource // 本地图片/附件（占位标记协议）
 }
 
 func (p *contentUpdateParams) out() io.Writer {
@@ -245,21 +251,16 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 本地资源与列宽指令：flag 与内容注释两条入口都须 fail closed 并给出迁移提示
-	if p.content != "" && p.format() == "markdown" {
-		if err := validateNoLocalResources(uploadImages, p.content); err != nil {
-			return err
-		}
-		if err := validateNoColumnWidthDirective(flags.Changed("table-column-width"), colWidthRaw, p.content); err != nil {
-			return err
-		}
-	} else {
-		if uploadImages {
-			return validateNoLocalResources(true, "")
-		}
-		if err := validateNoColumnWidthDirective(flags.Changed("table-column-width"), colWidthRaw, ""); err != nil {
-			return err
-		}
+	// 列宽指令：flag 与内容注释两条入口都须 fail closed 并给出迁移提示
+	colWidthContent := ""
+	if p.format() == "markdown" {
+		colWidthContent = p.content
+	}
+	if err := validateNoColumnWidthDirective(flags.Changed("table-column-width"), colWidthRaw, colWidthContent); err != nil {
+		return err
+	}
+	if uploadImages {
+		fmt.Fprintln(p.errOut(), "提示: content-update 会自动上传内容中的本地图片/附件，--upload-images 可省略")
 	}
 
 	// 本地导出方言 → docs_ai 写法（无法无损转换时 fail-closed，发生在任何网络请求之前）
@@ -272,6 +273,25 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(p.errOut(), "提示: 已将 doc export 本地方言转换为 docs_ai 写法（%s）\n", s)
 		}
 		p.content = converted
+	}
+
+	// 本地图片/附件 → 占位标签（离线校验文件存在与路径安全；上传绑定在写入成功后进行）
+	if p.content != "" {
+		baseDir := ""
+		if markdownFile != "" {
+			baseDir = filepath.Dir(markdownFile)
+		}
+		rewritten, resources, err := prepareLocalDocResources(p.content, p.format(), baseDir)
+		if err != nil {
+			return err
+		}
+		if len(resources) > 0 {
+			if !localResourceModes[p.mode] || (p.mode == "replace_range" && isPlainTextSelector(p.selEllipsis)) {
+				return clierr.Usagef("内容含本地图片/附件，只支持 --mode append / overwrite / insert_before / insert_after / replace_range（块级定位）；文本级替换无法插入图片")
+			}
+			p.content = rewritten
+			p.resources = resources
+		}
 	}
 
 	// 参数校验通过后再解析文档（wiki URL 需要一次 node_by_token 请求）
@@ -863,23 +883,44 @@ func (p *contentUpdateParams) sendUpdate(body map[string]any, revisionID int) (m
 //   - 成功：JSON 模式打印 data（含 log_id）；文本模式打印 successMsg，warnings 与 log_id 打到 stderr；
 //   - result=partial_success / failed：JSON 模式仍打印 data，随后返回非零错误（含 warnings 与 log_id）。
 func (p *contentUpdateParams) finishUpdate(data map[string]any, err error, failPrefix, successMsg string) error {
+	// 本地资源：写入成功（或部分成功、占位块已建出）后上传并绑定，失败项清理占位块
+	var resErr error
+	resData := data
+	if rerr, ok := client.AsDocsAIResultError(err); ok && rerr.Result == "partial_success" {
+		resData = rerr.Data
+	}
+	if len(p.resources) > 0 && resData != nil {
+		if rerr, ok := client.AsDocsAIResultError(err); err == nil || (ok && rerr.Result == "partial_success") {
+			okAll := finalizeLocalDocResources(p, resData, p.resources)
+			resData["local_resources"] = p.resources
+			if !okAll {
+				resErr = p.reportLocalResources(nil, p.resources, false)
+			}
+		}
+	}
 	if err != nil {
 		if rerr, ok := client.AsDocsAIResultError(err); ok {
 			if p.output == "json" && rerr.Data != nil {
 				if perr := printJSONTo(p.out(), rerr.Data); perr != nil {
 					return perr
 				}
+			} else if resErr != nil {
+				p.printLocalResourceLines()
 			}
 			return fmt.Errorf("%s: %w", failPrefix, err)
 		}
 		return fmt.Errorf("%s: %w", failPrefix, err)
 	}
 	if p.output == "json" {
-		return printJSONTo(p.out(), data)
+		if perr := printJSONTo(p.out(), data); perr != nil {
+			return perr
+		}
+		return resErr
 	}
 	fmt.Fprintln(p.out(), successMsg)
 	p.printWarnings(data)
-	return nil
+	p.printLocalResourceLines()
+	return resErr
 }
 
 // printWarnings 文本模式下把成功结果中的 warnings / log_id 打到 stderr（此前被静默吞掉）。

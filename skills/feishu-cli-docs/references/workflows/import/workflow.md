@@ -28,7 +28,7 @@
 5. **表格列宽**：默认按内容启发式，可用紧邻表格上方注释 `<!-- feishu-colwidth: ... -->` 或 CLI flag `--table-column-width` 覆盖（注释优先级高于 flag）；仅 `doc import` / `doc add` 支持，`doc content-update` 会 fail-closed 报错；完整规则（单位/优先级/clamp/适用范围）以 `references/doc-guide.md` 表格章节为权威
 6. **API 限流自动重试**：画板创建和图表导入遇到 HTTP 429 时自动重试，读取服务端 `x-ogw-ratelimit-reset` 响应头精确计算退避时间，采用指数退避策略，默认最多重试 10 次
 7. **并发控制**：图表和表格分别使用独立的 worker 池（默认图表 5、表格 3 并发）
-8. **表格单元格图片真嵌入（#164）**：Markdown 表格单元格内的本地/网络图片，会在表格填充完成后（阶段 2.5）真正嵌入为单元格内的 Image 子块，而非丢失或退化为文字。细节：纯图片单元格不会把图片说明（alt）串成多余的标题文字；嵌入失败或单元格对不齐的图片计入统计 `cell_image_failed` 并打印，不静默丢弃；上传失败的空图块会被清理并补占位文本。仅 `doc import` 走这条真嵌入管线；`doc add` 的单元格图片降级为 `[图片: 说明]` 占位文本，`content-update` 则会拒绝本地图片路径。JSON 输出新增 `cell_image_total/success/failed`
+8. **表格单元格图片真嵌入（#164）**：Markdown 表格单元格内的本地/网络图片，会在表格填充完成后（阶段 2.5）真正嵌入为单元格内的 Image 子块，而非丢失或退化为文字。细节：纯图片单元格不会把图片说明（alt）串成多余的标题文字；嵌入失败或单元格对不齐的图片计入统计 `cell_image_failed` 并打印，不静默丢弃；上传失败的空图块会被清理并补占位文本。仅 `doc import` 走这条真嵌入管线；`doc add` 的单元格图片降级为 `[图片: 说明]` 占位文本，`content-update` 则由服务端解析表格并经占位协议上传单元格内的本地图片。JSON 输出新增 `cell_image_total/success/failed`
 9. **部分失败非零退出**：图片/视频/表格/单元格图片写入失败、图表导入失败且降级为代码块也失败、嵌套子块创建失败时，命令在输出文档链接与统计后以退出码 1 结束；文本模式在 stderr 列出失败明细，JSON 模式输出 `partial_failure: true` 与 `failures` 数组（每项含 `kind`/`index`/`source`/`error`）。图表成功降级为代码块属于设计内降级，不计为失败。脚本/Agent 遇到非零退出时应读取 `failures`，按需用 `doc media-insert` 或 `doc content-update` 补齐，而不是重新导入整篇文档
 
 ## 核心概念

@@ -119,7 +119,8 @@ feishu-cli doc content-update <doc> --mode append --doc-format xml --content '<p
   画板可改写为 ```` ```mermaid ```` 代码块或 `<whiteboard type="mermaid">…</whiteboard>` 重新生成。
 - **结果判定**：服务端 `result=partial_success` 或 `failed` 时命令以退出码 1 结束，错误信息含 warnings 与 log_id；
   `-o json` 仍输出完整响应。`result=success` 但带 warnings 时在 stderr 打印 warnings 与 log_id。
-- **本地资源**：`content-update` 暂不支持本地图片/附件；用网络图片 URL，或写入后用 `doc media-insert` 插入本地文件。
+- **本地资源**：`content-update` 自动上传内容中的本地图片/附件（见下方「Markdown 图片」），只支持 append / overwrite /
+  insert_* / 块级 replace_range；文本级替换（str_replace、纯文本选择器）不能插入图片。
 - 用户说"修改/替换/更新某段"时用 replace_range / replace_all / str_replace，不要 append 导致重复。
 
 `--table-column-width`：**`content-update` 不支持自定义列宽**（原子更新协议限制），传非 `auto` 值或内容中含 `<!-- feishu-colwidth: ... -->` 注释都会 fail-closed 报错；需要控制列宽请改用 `feishu-cli doc import`。`doc add` 仍支持该 flag，取值与注释的完整规则（单位/优先级/clamp）以 `../import/references/doc-guide.md` 表格章节为权威。
@@ -130,13 +131,28 @@ feishu-cli doc content-update <doc> --mode append --doc-format xml --content '<p
 |---|---|
 | `doc import` | 默认上传本地/网络图片；表格单元格图片也走导入管线 |
 | `doc add` | 显式传 `--upload-images` 上传本地/网络图片；表格单元格图片降级为文字占位 |
-| `doc content-update` | 使用网络图片 URL，不传 `--upload-images`；本地资源和该 flag 都会被拒绝 |
+| `doc content-update` | 网络图片由服务端下载；本地图片/附件自动上传并绑定（`--upload-images` 可省略） |
+| `doc create --content` | 仅网络图片；带本地图片的 Markdown 改用 `doc import` |
 
 ```bash
-# with-image.md 中使用 ![说明](https://example.com/image.png) 这样的网络图片
-feishu-cli doc content-update <document_id> --mode append \
-  --markdown-file /tmp/with-image.md
+# 网络图片原样交给服务端；本地图片相对 --markdown-file 所在目录解析
+feishu-cli doc content-update <document_id> --mode append --markdown-file /tmp/with-image.md
 ```
+
+`content-update` 的本地资源写法（围栏代码与行内代码中的内容不处理）：
+
+| 写法 | 说明 |
+|---|---|
+| `![说明](./img.png)`、`![说明](/abs/img.png)` | 相对路径基于 `--markdown-file` 所在目录（内联 `--markdown` 时基于当前目录）；说明成为图片标题 |
+| `![说明](@./img.png)`、`![说明](<@./带 空格.png>)` | 官方写法，路径相对当前目录 |
+| `<img path="@./img.png" width="600" height="300"/>` | XML 写法，可指定显示尺寸 |
+| `<source path="@./report.pdf" name="报告.pdf"/>` | 本地附件 |
+
+流程（对齐官方占位标记协议，测试文档实测）：本地资源先改写为 `@lcli_img_…` / `@lcli_file_…` 占位标签 →
+服务端在 `document.new_blocks` 回传占位块 → 以占位块为父节点上传素材（>20MB 自动分片）→ `batch_update`
+`replace_image` / `replace_file` 绑定。任一资源失败时删除其占位块（附件连同外层视图块），命令以退出码 1 结束，
+JSON 输出 `local_resources` 逐项明细（`status`=bound/failed、`block_id`、`file_token`、`error`、`cleanup`）。
+文件不存在、路径越界或内容手写了保留占位标记时，在任何网络请求前以退出码 2 报错。
 
 单独插入图片或文件用 `doc media-insert`：
 

@@ -52,9 +52,9 @@
     {
       "id": 7,
       "workflows": ["write"],
-      "prompt": "local-image.md 含本地图片。直接运行 content-update --upload-images 能把它追加到现有文档吗？解释实际限制并给出合适的可选方案，暂不执行。",
-      "expected_output": "明确当前 content-update 会拒绝该 flag 和本地资源；按编辑意图选择网络 URL、doc add 或单素材插入。",
-      "expectations": ["明确 --upload-images 会被 content-update 拒绝，而不是承诺能上传", "说明直接删除 flag 仍不能使用本地图片路径", "给出网络 URL、doc add --upload-images 或 doc media-insert 等适配方案；不把 import 新建文档当作原地替换"],
+      "prompt": "local-image.md 含本地图片。直接运行 content-update --upload-images 能把它追加到现有文档吗？解释实际行为与前提条件，暂不执行。",
+      "expected_output": "说明 content-update 会自动上传本地图片（--upload-images 可省略），相对路径基于 --markdown-file 所在目录，需确保图片文件存在；给出 append 命令。",
+      "expectations": ["说明 content-update 的 append 会自动上传并绑定本地图片，--upload-images 不是必需的", "指出相对路径按 Markdown 文件所在目录解析，图片缺失时命令在发请求前报错", "使用 doc content-update <doc> --mode append --markdown-file 指向该文件；不把 import 新建文档当作原地替换"],
       "files": ["evals/fixtures/local-image.md"]
     },
     {
