@@ -943,6 +943,97 @@ func DownloadFileVersion(fileToken, version, outputPath, userAccessToken string,
 	return err
 }
 
+// DriveFileHistoryVersion 上传文件的一个历史版本（GET /drive/v1/files/:token/history）。
+type DriveFileHistoryVersion struct {
+	Version    string `json:"version"`
+	Name       string `json:"name,omitempty"`
+	EditedAt   string `json:"edited_at,omitempty"`
+	EditedBy   string `json:"edited_by,omitempty"`
+	SizeBytes  int64  `json:"size_bytes"`
+	ActionType string `json:"action_type,omitempty"` // upload / rename / delete_version / revert
+	IsDeleted  bool   `json:"is_deleted"`
+	Tag        int    `json:"tag,omitempty"`
+}
+
+// DriveFileHistoryPage 版本历史的一页。NextCursor 为下一页游标（最后一项的 edit_time）。
+type DriveFileHistoryPage struct {
+	Versions   []DriveFileHistoryVersion `json:"versions"`
+	HasMore    bool                      `json:"has_more"`
+	NextCursor string                    `json:"next_cursor,omitempty"`
+}
+
+func driveVersionActionLabel(t int) string {
+	switch t {
+	case 1:
+		return "upload"
+	case 2:
+		return "rename"
+	case 3:
+		return "delete_version"
+	case 4:
+		return "revert"
+	}
+	return fmt.Sprintf("type_%d", t)
+}
+
+// ListDriveFileHistory 列出上传文件的版本历史（only_tag=true，按 last_edit_time 游标翻页）。
+func ListDriveFileHistory(fileToken string, pageSize int, cursor, userAccessToken string) (*DriveFileHistoryPage, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	q := url.Values{}
+	q.Set("only_tag", "true")
+	q.Set("page_size", fmt.Sprintf("%d", pageSize))
+	if cursor != "" {
+		q.Set("last_edit_time", cursor)
+	}
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Get(Context(), "/open-apis/drive/v1/files/"+url.PathEscape(fileToken)+"/history?"+q.Encode(), nil, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("查询版本历史失败: %w", err)
+	}
+	if err := CheckAPIResponse("查询版本历史", resp); err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Data struct {
+			Items []struct {
+				Version    string    `json:"version"`
+				Name       string    `json:"name"`
+				EditTime   flexInt64 `json:"edit_time"`
+				EditUserID string    `json:"edit_user_id"`
+				Size       flexInt64 `json:"size"`
+				Type       int       `json:"type"`
+				IsDeleted  bool      `json:"is_deleted"`
+				Tag        int       `json:"tag"`
+			} `json:"items"`
+			HasMore bool `json:"has_more"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &parsed); err != nil {
+		return nil, fmt.Errorf("解析版本历史失败: %w", err)
+	}
+	page := &DriveFileHistoryPage{Versions: []DriveFileHistoryVersion{}, HasMore: parsed.Data.HasMore}
+	for _, it := range parsed.Data.Items {
+		if it.Version == "" {
+			continue
+		}
+		v := DriveFileHistoryVersion{
+			Version: it.Version, Name: it.Name, EditedBy: it.EditUserID, SizeBytes: int64(it.Size),
+			ActionType: driveVersionActionLabel(it.Type), IsDeleted: it.IsDeleted, Tag: it.Tag,
+		}
+		if it.EditTime != 0 {
+			v.EditedAt = fmt.Sprintf("%d", int64(it.EditTime))
+		}
+		page.Versions = append(page.Versions, v)
+	}
+	if page.HasMore && len(page.Versions) > 0 {
+		page.NextCursor = page.Versions[len(page.Versions)-1].EditedAt
+	}
+	return page, nil
+}
+
 // parseDownloadJSONError 判断 download 的 HTTP 200 响应是否为飞书业务错误体 {code,msg}。
 // 飞书 OpenAPI 业务错误响应带 Content-Type: application/json；成功的文件下载返回文件
 // MIME / octet-stream。故仅在 Content-Type 为 JSON 时才尝试解析业务错误，parse 出 code != 0
