@@ -16,11 +16,11 @@
 
 | 模式 | 典型命令 | 行为 |
 |---|---|---|
-| 读类 User 优先，可回退 Bot | doc read、msg list/get/mget/thread-messages、chat list、task get/list、calendar get/list/freebusy、file 读、wiki 读、board 读、sheet 全家桶 | 显式 User flag → User 环境变量 → profile token.json → config 的 User Token → Bot；损坏/刷新失败会在 stderr 告警后回退，不应误以为仍是原用户 |
-| 写类默认 Bot | doc create/import/add/content-update、msg send/reply/delete、comment reply 等 | 默认不加载 token.json；仅显式 User flag 或 User 环境变量切到用户。Sheet 写沿用上一行；支持 --as 的命令见下表 |
-| 必须 User | search docs/apps、approval 全部、task my/search、calendar rsvp、vc search/notes/recording/detail/note、minutes 全部、mail 写/签名/模板、drive upload/download/add-comment/search/secure-label | 无可用 User Token 时报错，不回退 Bot |
-| 仅显式 User flag | vc bot meeting-join/meeting-leave | 默认 Bot；只认 --user-access-token，忽略 User 环境变量和 token.json |
-| 固定 App | perm、chat create/link、user info/list、dept | 不支持用 User Token 替代 App 身份，按帮助查看参数 |
+| 读类 User 优先，可回退 Bot | doc read、msg list/get/mget/thread-messages、chat list、task get/list、calendar get/list/freebusy、file 读、wiki 读、board 读、sheet 全家桶、drive pull/push/status | 显式 User flag → User 环境变量 → profile token.json → config 的 User Token → Bot；损坏/刷新失败会在 stderr 告警后回退，不应误以为仍是原用户。sheet、drive pull/push/status、file list 另有 `--as`，不传保持此默认 |
+| 写类默认 Bot | doc create/import/add/content-update、msg send/reply/delete、comment reply、slides 写命令等 | 默认不加载 token.json；仅显式 User flag 或 User 环境变量切到用户。日历/任务写命令例外（默认 auto，见下表） |
+| 必须 User | search docs/apps、approval 全部、task my/search/related、calendar rsvp/event-reply、vc note transcript、mail 写/规则/线程/签名/模板、drive add-comment/search/secure-label、file quota、okr comment create、apps get/list/release | 无可用 User Token 时报错（exit 3），不回退 Bot。drive upload/download 默认同样要求 User，可 `--as bot` |
+| 仅 Bot | vc bot meeting-join/meeting-leave、msg merge-forward | 传 --user-access-token 会报用法错误（exit 2），接口只接受应用身份 |
+| 固定 App | chat create/link、user info/list、dept | 不支持用 User Token 替代 App 身份，按帮助查看参数 |
 
 `drive pull --delete-local` / `drive push --delete-remote` 是读类回退的例外：
 已配置 User 但不可用时直接报错；只有从未配置 User 的纯 Bot 场景才能使用 Bot。
@@ -31,7 +31,13 @@
 | 命令 | 默认 | 特别要求 |
 |---|---|---|
 | bitable 全部 | auto | Bot 定时任务显式 --as bot |
-| okr 全部 | bot | 端点支持情况不同；cycle list 仅支持 Tenant，其他端点按帮助选择 |
+| okr 全部 | bot | cycle list 默认查 v2 用户周期（两种身份都支持）；`--tenant` 查旧租户周期仅支持 Tenant |
+| perm 全部 | bot | 操作用户自己的文档用 `--as user` 或显式 `--user-access-token`（不读环境变量）；Bot 遇 1063004/1063002 会提示改用 User |
+| calendar create-event/update-event/delete-event/attendee/event-transfer、task/tasklist 写命令 | auto | 日程与任务是个人资源；操作应用自己的日历/任务时显式 --as bot |
+| msg reaction/pin、chat get/update/delete/member | auto | 外部群成员管理推荐 --as bot（需对外共享能力 App 且 Bot 已入群） |
+| wiki delete-space/node-copy | auto | 写身份：已配置 User 但不可用时直接失败 |
+| drive update-title/version-history/version-get | auto | — |
+| vc search/detail/recording/notes、vc note detail、vc meeting list-active、minutes search/get/download/apply-permission | user | 端点接受 Bot，Bot 需应用开通对应 scope（否则 99991672） |
 | markdown create/fetch/overwrite/patch/diff | auto | 使用 Drive 上传/下载 scope，不是 docx scope |
 | drive import/export/export-download/move/task-result | auto | 任务轮询和下载应沿用创建任务时的身份 |
 | search messages、msg search-chats | auto | current IM 端点支持两种身份；search docs/apps 仍必须 User |

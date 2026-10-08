@@ -6,6 +6,110 @@
 
 ## [Unreleased]
 
+对照飞书官方 CLI（larksuite/cli）逐领域审查后的全面对齐：修复一批"代码自洽但与服务端契约不符"的缺陷，
+补齐官方已有、本项目缺失的能力，并保留本项目更稳妥的设计（fail-closed 身份、host 白名单、本地转换器、画板全家桶等）。
+所有修复均用编译后的二进制在真实飞书环境回归（写操作只针对新建的测试资源）。
+
+### ⚠️ 行为变更（升级前请阅读）
+
+- **退出码分类**：0 成功 / 1 一般错误 / 2 用法错误 / 3 鉴权或权限 / 4 网络 / 10 需要确认 / 130 中断。错误文本不变；脚本若判断 `== 1` 需调整为 `!= 0` 或按类别处理。`auth check` 未通过由 1 改为 3。
+- **非交互删除必须带 `--yes`**：stdin 不是终端且未带 `--yes`（或命令级 `--force`）时，删除类操作以 10 退出且不执行。此前会打印"操作已取消"并 exit 0，Agent 会误判为删除成功。确认提示改写 stderr。
+- **日历与任务写命令默认身份由 Bot 改为 auto**：`calendar create-event/update-event/delete-event/attendee add|remove` 与 task/tasklist 写命令新增 `--as`，已登录即以本人身份操作；要操作应用自己的资源请显式 `--as bot`。`calendar event-reply` 改为必须 User Token。
+- **多维表格**：`record list` 默认返回 100 条（原 20 条且无提示），`has_more` 时输出 `next_offset` 并在 stderr 提示；`table/field/view list` 默认返回全量；workflow/form/dashboard list 未传 `--page-token` 时自动翻页；视图 group/sort/visible-fields 的 get/set 直接输出数组；`role` 输出去掉外层 `data`、`base_roles` 项由字符串变为对象；删除表单题目不带 `--keep-field` 时需要确认。
+- **电子表格**：`delete-rows/delete-cols/protect` 的 `--start`（0 起始）/`--end`（不含）按文档语义换算为接口口径——此前 `--start N` 会多删一行、`protect` 范围错位；范围不带子表前缀且表格有多个子表时报用法错误。
+- **文档**：`doc import` 部分失败（图片/表格/图表等）以 1 退出并在输出中列出失败明细；`content-update` 纯文本选择器改为文本级替换（不再覆盖整段）、块级模式多处命中报错、`partial_success` 非零退出；callout 背景色枚举修正（见"修复"）；`doc media-download` 默认不覆盖已有文件。
+- **邮件**：`mail message/messages/thread` 的正文字段默认输出解码后的明文（`--raw-body` 保留原值）；`draft-edit` 改为局部修改；`triage --page-size` 语义改为总条数（自动翻页）；`message-modify/message-trash` 超过 20 封自动分批。
+- **会议与妙记**：`vc bot meeting-join/leave` 仅支持 Bot（传 `--user-access-token` 报错）且会议号须为 9 位数字；`minutes get --with-artifacts` 的逐字稿改为写文件（`transcript_file`）。
+- **云盘**：下载默认不再有 5 分钟总时长限制（改为 60 秒空闲超时）；`drive download --output <目录>` 文件名按 Content-Disposition → 标题 → token 决定；push/pull 遇缺 scope、无权限、限流、参数错误时终止整批；`file delete` 以异步方式提交并默认轮询；`file quota` 需要 User Token。
+- **`api` 命令**：业务错误时 stdout 为空，错误与诊断写 stderr（`--raw` 仍原样输出响应体）。
+- **认证**：`--scope` 与 `--domain/--recommend` 可叠加（原报错）；批量申请一律剔除 `im:message.send_as_user`；`--device-code` 续轮询上限 600 秒；token.json 可能新增 `refresh_failure` 标记。
+- **OKR**：`okr cycle list` 默认查询 v2 用户周期（与 `cycle detail`、目标创建使用的 ID 一致），旧的租户周期用 `--tenant`。
+- **IM**：<!-- IM 合入后补充 -->
+
+### 新增
+
+**平台与工程**
+- `feishu-cli skills list/read/install`：技能内嵌二进制、与 CLI 版本严格配套；安装时解析符号链接、记录 `.feishu-cli-skills.json`、保护本地修改，`--prune-legacy` 只清理确认是旧版 feishu-cli 技能的目录。
+- `doctor` 新增 `skills` 检查（零网络检测本地技能与 CLI 版本漂移）；每个命令的 `--help` 末尾显示相关技能与工作流。
+- `feishu-cli update [--check|--dry-run|--target]`：查询并安装最新 release（sha256 校验、自检后原子替换，不做后台检查）。
+- 全局 `--yes`；`auth scopes`（应用已开通 scope 与逐项诊断）；`auth login --exclude`；授权域补齐 `okr`/`apps`/`markdown` 及命令实际所需 scope；`profile add`/`config init` 支持 `--app-secret-stdin` 与 `--probe`。
+- 统一资源 URL 解析：只按路径前缀识别类型，`--type` 与 URL 冲突时报错；识别 `/drive/shr/`、`/chat/drive/`、`/spreadsheets/` 等；`drive inspect` 传裸 token 时自动识别类型。
+- Bot 身份创建文档、文件夹、文件、表格、多维表格、知识库节点、演示文稿后，自动给当前 CLI 登录用户授予 `full_access`（输出 `permission_grant`）。
+- 文档链接按品牌生成（www.feishu.cn / www.larksuite.com）。
+- `make release-package VERSION=vX.Y.Z`、`make check-privacy`、GitHub Actions CI。
+
+**文档**
+- `content-update`：`--block-id`、`--start-block-id/--end-block-id`、`--mode str_replace`、`block_move_after`、`block_copy_insert_after`、`--doc-format xml`、本地图片/附件插入。
+- `doc read --engine docs_ai`（`--with-ids`、`--scope outline|range|keyword|section`）；`doc create --content`（docs_ai 服务端建文档）；`doc export --engine docs_ai`；`doc history list|revert|revert-status`。
+- 文档素材 >20MB 分片上传；`media-insert --width/--height`；`media-download --overwrite`。
+
+**电子表格**
+- `--as bot|user|auto`；表格参数接受 sheets/wiki URL；`--sheet-name`；`Sheet1!A1` 子表名前缀自动换算。
+- `insert-cols`、`update-dimension`（隐藏、行高列宽）、`move-dimension`、`update-sheet`、`freeze`、`filter update`、`replace --regex`。
+- `--range "3:5"`/`"B:D"`；删除类命令 `--dry-run`；`table-put --mode append/--start-cell`、自动扩容；图片素材 >20MB 分片上传。
+
+**多维表格**
+- `bitable resolve`（base/wiki/record/表单分享链接，`?table=` 判型）、`bitable block list`；`--base-token` 接受链接。
+- `record list --page-all`；`bitable create --table-name/--fields`、`table create --fields`。
+- 仪表盘块类型 ranking/nps 与 `--position`、`dashboard block get-data`；dashboard/form `share get/update`；附件 >20MB 分片上传。
+
+**云盘与知识库**
+- `drive update-title`、`drive version-history`、`drive version-get`；`task-result` 支持 `wiki_move/wiki_move_to_drive/wiki_delete_space`。
+- push/pull `--if-exists smart`、`--on-duplicate-remote`、status `--quick`；`file list`/`wiki nodes`/`wiki spaces`/`comment list` 分页参数。
+- `comment get/batch-get`、`comment reply update/react`；`drive add-comment` 支持 sheet/slides/bitable/file 锚点。
+- perm 全部子命令 `--as` 与 `--user-access-token`；`perm add --perm-type`（wiki）。
+
+**日历、任务、审批、OKR**
+- 重复日程 `--apply-to single|all|this-and-following`；`calendar event-share`、`event-transfer`；`attendee remove`、`--room-ids`；`create-event --attendee-ids`（失败回滚）/`--vchat`；`freebusy` 多人与空闲视图。
+- `approval task rollback/add-sign/remind`、`--page-all`；`okr objective/key-result create/update`、`okr comment list/create`；`task section`、`task related`、`task set-ancestor`、`tasklist search`。
+
+**邮件、会议、妙记**
+- `--attach`；`forward` 默认携带原附件；`triage --max` 自动翻页并补全摘要；`rule-*`（收信规则）、`thread-modify/thread-trash`、`template get/update/delete`。
+- `vc meeting list-active`；会议/纪要/妙记读命令 `--as`；`minutes get --summary/--todo/--chapter/--keyword/--transcript`；`minutes search --participant-ids me`。
+
+**Slides、画板、妙搭**
+- `slides add-slide/delete-slide/replace-slide/update-slide/screenshot`；`slides create --slide`（带图片占位自动上传）；`slides get --slide-number/--output-file`。
+- `apps get`、`apps release get/list`、`apps html-publish --wait`；`apps list --keyword`。
+- `board export-code --source`；`board update/svg-import/import --client-token`。
+
+**IM**
+<!-- IM 合入后补充 -->
+
+### 修复
+
+**数据安全**
+- `drive push --if-exists overwrite` 改为携带 file_token 原地覆盖：file_token、链接、协作者、评论、历史版本保留；此前先删后传，删除成功而上传失败时文件丢失。
+- `sheet delete-rows/delete-cols` 索引口径错误导致多删一行；`protect` 范围错位。
+- `doc content-update` 纯文本选择器整块替换导致段落其余文字丢失；结束锚点取最后一次出现可能删到文末；本地导出方言（画板占位、callout、图片 token）写回 docs_ai 会静默丢内容——现在转换或拒绝。
+- 删除表单题目默认连带删除整列数据却无提示。
+- `apps html-publish` 把 `.git` 目录打包发布到公网。
+- 输出/输入路径拒绝敏感目录（~/.ssh、~/.aws、~/.feishu-cli、/etc 等），不再误拒 `report..v2.json`。
+- 建块与画板写入的自动重试复用幂等 token（或回读确认），避免 5xx 重放产生重复块/重复图。
+
+**与服务端契约不符**
+- 知识库节点解析改用 node_by_token（obj_token、文档 URL 可直接解析，错误码分类提示）。
+- 业务错误随 HTTP 400 下发时先解析业务码：错误信息附带 log_id、缺失 scope、字段校验；99991672 不再提示重新登录，改为给出开放平台开通链接。
+- `api --data` 中的大整数（19 位 ID）按原始字面量发送，不再经 float64 舍入；电子表格写入同样保真。
+- 导入型 Office token 判定（27 位格式）修正，图片上传后可正常渲染。
+- callout 背景色枚举修正为 1 红 / 2 橙 / 3 黄 / 4 绿 / 5 蓝 / 6 紫 / 7 灰（此前整体错一位，NOTE 显示为浅紫）。
+- 多维表格：批量删除上限 200（原写 500）并自动分批；create/copy 文本输出正确打印 token；视图配置解包；字段列表跨页顺序不稳定时按 id 去重取全；限流 800004135 自动重试。
+- 电子表格：数字不再出现 `1e+06`；`table-put` 保留时分秒、空串写空单元格、数值列重置残留的文本格式；`write/append` 超过 5000 行自动分批；`filter create` 补齐 col 与 condition。
+- 云盘：Bot 下载流式化（无 100MB 上限、内存占用恒定），分片失败有界重试并断点续传、原子写；删除任务的 `fail` 状态识别为失败；导出/导入轮询容忍瞬时错误；评论列表输出正文、回复保留 @人与链接；`perm public-get` 改用 v2；异步删除失败时按身份提示原因。
+- 日历：全天日程起止不再为空；`freebusy` 默认当前用户并合并区间；重复日程删除/修改说明影响范围（修正帮助与文档的矛盾）。
+- 任务与审批：`task complete` 幂等；完成状态 flag 互斥；中文按字符截断；审批稀疏分页空页不再误报"没有找到"。
+- OKR：周期列表与目标操作使用同一套 v2 周期 ID。
+- 邮件：正文 base64url 解码；HTML 引用块转义；`In-Reply-To/References` 带尖括号并写 `X-LMS-Reply-To-Message-Id`；回复优先 Reply-To、支持回复自己发出的邮件；显示名按 RFC 5322 编码；`draft-edit` 不再丢回复头与附件；`triage --folder inbox` 不再 4038。
+- 会议与妙记：`vc note transcript` 按统一逐字稿协议重写；`meeting-events` 文本模式改读 `events`（原永远 0 条）；妙记搜索固定按创建时间倒序（翻页不再漏条）。
+- 画板与 Slides：`board import --syntax svg` 不再被当作 PlantUML（改走服务端 SVG 解析，生成可编辑节点）；空画板 `delete --all` 不再报错；`slides get` 接受 URL，`--revision-id 0` 明确拒绝。
+- 认证：scope 支持逗号分隔；`auth status --verify` 改为加锁刷新并校验 App 绑定；刷新失败按错误码分类（终态记录标记，不再每条命令重复刷新）；时间输出使用真实时区（RFC3339）；`create-app` 对齐注册协议（`expire_in`、Lark 租户品牌）。
+- 运行时：限流等待只向上抖动并支持 Retry-After；手写请求统一走共享连接池与受控客户端；Ctrl-C 可中断进行中的请求；拼错子命令给出建议；错误预览与落盘文件名按 UTF-8 字符边界截断。
+- IM：<!-- IM 合入后补充 -->
+
+### 技能与验证
+
+- 9 个领域技能同步上述行为变化，修正实测证伪的文档结论（bitable 视图配置 schema、data-query DSL、OKR "v2/cycles 不存在"、日历删除语义、考勤与任务示例、`Sheet1!` 写法、权限命令身份等）；各领域 SKILL.md 增加鉴权/scope 错误指引。
+- 新增 CI（gofmt / vet / test / check-skills / check-privacy）；隐私扫描接入 `make check-privacy`。
+
 ## [v1.41.0] - 2026-09-22
 
 ### 新增

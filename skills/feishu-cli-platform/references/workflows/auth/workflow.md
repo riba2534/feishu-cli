@@ -344,7 +344,7 @@ feishu-cli profile migrate --name work
 1. **目录 / User Token**：`--profile` > `FEISHU_PROFILE` > `~/.feishu-cli/active-profile` 指针 > 旧布局。指针缺失或失效且没有旧布局时，回退到 `profiles/` 下字典序第一个。
 2. **App 凭证**：`--bot-app-id` / `--bot-app-secret` > `FEISHU_APP_ID` / `FEISHU_APP_SECRET` > 上一条选中目录的 `config.yaml`。
 
-**不要把这些字段当成「本次命令实际用了哪个 token」**：本项目按命令分四类 token helper（读类 User 优先 Tenant 兜底、写类默认 Bot、必须 User Token、`--as` 显式切换），`--as bot`、默认 Bot 身份的写命令、只认 flag 的 `vc bot meeting-join`、固定读本地文件的 `auth status` 各走各的路径。CLI 只陈述可离线证明的事实（设置了哪些覆盖、候选目录是谁、文件在不在），实际身份要看目标命令自己的文档与 `--dry-run` 输出。
+**不要把这些字段当成「本次命令实际用了哪个 token」**：本项目按命令分四类 token helper（读类 User 优先 Tenant 兜底、写类默认 Bot、必须 User Token、`--as` 显式切换），`--as bot`、默认 Bot 身份的写命令、仅 Bot 的 `vc bot meeting-join`、固定读本地文件的 `auth status` 各走各的路径。CLI 只陈述可离线证明的事实（设置了哪些覆盖、候选目录是谁、文件在不在），实际身份要看目标命令自己的文档与 `--dry-run` 输出。
 
 `--profile` 不会压过 `FEISHU_APP_ID/FEISHU_APP_SECRET`，App 凭证覆盖也不会切换 `token.json`。`hint` 和 `token_from_profile` 任何时候都描述这组正交来源；stderr 只在**真错配**时出声，两种情形：
 
