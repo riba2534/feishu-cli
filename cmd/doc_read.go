@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/converter"
 	"github.com/spf13/cobra"
@@ -36,6 +37,21 @@ var docReadCmd = &cobra.Command{
   # 或直接按关键词定位（支持正则，多个词用 | 连接）
   feishu-cli doc read ABC123 --keyword "QPS|限流" --context 5
 
+docs_ai 引擎（服务端读取，可输出 block id，对齐官方 docs +fetch）：
+  --with-ids           输出带 block id 的 XML（可直接用于 doc content-update --block-id）
+  --engine docs_ai     显式切换引擎；--doc-format xml|markdown、--detail simple|with-ids|full
+  --scope full|outline|range|keyword|section
+                       range: --start-block-id / --end-block-id（-1 表示到文末）
+                       section: --start-block-id 标题块 ID，或 --heading 文本自动换成标题块 ID
+                       keyword: --keyword "a|b"，--context-before / --context-after 为兄弟块数
+  --max-depth N        outline 的标题层级上限；其余范围的子树深度（-1 不限）
+  使用 docs_ai 专属 flag 时自动切到 docs_ai 引擎；本地引擎的默认行为不变。
+
+  # 带 block id 读取某一节，再按 block id 精确更新
+  feishu-cli doc read ABC123 --with-ids --heading "性能优化"
+  feishu-cli doc read ABC123 --with-ids --scope keyword --keyword "QPS|限流" --context-after 1
+  feishu-cli doc read ABC123 --engine docs_ai --doc-format markdown   # 服务端 Markdown 全文
+
 提示:
   - --heading 按子串匹配标题文本，命中多个时取第一个并提示其余候选
   - block 级精确分页读取用 doc blocks；整篇导出用 doc export`,
@@ -49,6 +65,23 @@ var docReadCmd = &cobra.Command{
 		keyword, _ := cmd.Flags().GetString("keyword")
 		contextLines, _ := cmd.Flags().GetInt("context")
 
+		useDocsAI, err := wantsDocsAIRead(cmd)
+		if err != nil {
+			return err
+		}
+		if useDocsAI {
+			opts, err := buildDocsAIReadOptions(cmd)
+			if err != nil {
+				return err
+			}
+			userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+			documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+			if err != nil {
+				return err
+			}
+			return runDocReadDocsAI(cmd, documentID, userAccessToken, opts)
+		}
+
 		modes := 0
 		for _, on := range []bool{outline, heading != "", keyword != ""} {
 			if on {
@@ -56,7 +89,7 @@ var docReadCmd = &cobra.Command{
 			}
 		}
 		if modes != 1 {
-			return fmt.Errorf("请从 --outline / --heading / --keyword 中选择且仅选择一种模式")
+			return clierr.Usagef("请从 --outline / --heading / --keyword 中选择且仅选择一种模式（或用 --engine docs_ai / --with-ids 读取全文）")
 		}
 
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
@@ -293,4 +326,16 @@ func init() {
 	docReadCmd.Flags().String("keyword", "", "按内容正则定位，输出命中行及上下文")
 	docReadCmd.Flags().Int("context", 3, "--keyword 模式的上下文行数（默认 3）")
 	docReadCmd.Flags().String("user-access-token", "", "User Access Token")
+	docReadCmd.Flags().String("engine", "local", "读取引擎: local（本地块树转换，默认）| docs_ai（服务端读取，支持 block id）")
+	docReadCmd.Flags().Bool("with-ids", false, "docs_ai: 输出带 block id 的 XML（等价 --engine docs_ai --detail with-ids）")
+	docReadCmd.Flags().String("doc-format", "", "docs_ai: 输出格式 xml | markdown（--with-ids 时默认 xml，否则 markdown）")
+	docReadCmd.Flags().String("detail", "", "docs_ai: 详细程度 simple | with-ids | full（full 含样式与编辑元数据）")
+	docReadCmd.Flags().String("scope", "", "docs_ai: 读取范围 full | outline | range | keyword | section")
+	docReadCmd.Flags().String("start-block-id", "", "docs_ai: range/section 的起点块 ID")
+	docReadCmd.Flags().String("end-block-id", "", "docs_ai: range 的终点块 ID（-1 表示到文末）")
+	docReadCmd.Flags().Int("context-before", 0, "docs_ai: range/keyword/section 前置兄弟块数")
+	docReadCmd.Flags().Int("context-after", 0, "docs_ai: range/keyword/section 后置兄弟块数")
+	docReadCmd.Flags().Int("max-depth", -1, "docs_ai: outline 标题层级上限；其余范围子树深度（-1 不限）")
+	docReadCmd.Flags().Int("revision-id", -1, "docs_ai: 读取指定版本（-1 最新）")
+	docReadCmd.Flags().StringP("output", "o", "", "docs_ai: 输出格式（json 输出完整响应，含 block id、评论与引用表）")
 }
