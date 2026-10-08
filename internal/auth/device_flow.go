@@ -220,6 +220,8 @@ func PollDeviceToken(appID, appSecret, baseURL, deviceCode string, interval, exp
 				if refreshExpiresIn > 0 {
 					store.RefreshExpiresAt = now.Add(time.Duration(refreshExpiresIn) * time.Second)
 				}
+				// 服务端提示（如部分 scope 被静默裁剪），仅透传展示，不落盘
+				store.StatusMessage, _ = raw["status_message"].(string)
 				return store, nil
 			}
 		}

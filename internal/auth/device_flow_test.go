@@ -352,3 +352,22 @@ func TestUniqueScopeListSplitsCommaAndWhitespace(t *testing.T) {
 		t.Fatalf("PartitionScopes matched=%v missing=%v", matched, missing)
 	}
 }
+
+func TestPollDeviceToken_PreservesStatusMessage(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"u","refresh_token":"r","expires_in":7200,"scope":"a","status_message":"Some requested scopes were silently trimmed"}`))
+	}))
+	defer ts.Close()
+	token, err := PollDeviceToken("aid", "sec", ts.URL, "dc", 1, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token.StatusMessage != "Some requested scopes were silently trimmed" {
+		t.Fatalf("StatusMessage = %q", token.StatusMessage)
+	}
+	raw, _ := json.Marshal(token)
+	if strings.Contains(string(raw), "silently trimmed") {
+		t.Fatalf("status_message 不应落盘: %s", raw)
+	}
+}

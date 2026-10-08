@@ -49,6 +49,9 @@ func buildAuthorizationCompleteEvent(token *auth.TokenStore, summary *loginScope
 	if len(summary.Requested) > 0 {
 		event["requested_scope"] = strings.Join(summary.Requested, " ")
 	}
+	if token.StatusMessage != "" {
+		event["status_message"] = token.StatusMessage
+	}
 	warnings := []string{}
 	hints := []string{}
 	if !refreshPresent {
@@ -84,6 +87,9 @@ func printTokenSuccess(token *auth.TokenStore, summary *loginScopeSummary) {
 	}
 	if summary != nil && len(summary.Requested) > 0 {
 		fmt.Fprintf(os.Stderr, "  请求范围: %s\n", strings.Join(summary.Requested, " "))
+	}
+	if token.StatusMessage != "" {
+		fmt.Fprintf(os.Stderr, "  服务端提示: %s\n", token.StatusMessage)
 	}
 	if summary != nil && len(summary.Missing) > 0 {
 		fmt.Fprintf(os.Stderr, "  未授予:   %s\n", strings.Join(summary.Missing, " "))
