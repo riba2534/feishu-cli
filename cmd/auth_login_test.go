@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // TestFormatUserCode 测试 Device Flow 用户码格式化
@@ -129,5 +133,33 @@ func TestResolveRequestedScopeUsageErrors(t *testing.T) {
 		if got := exitCodeFor(err); got != 2 {
 			t.Fatalf("%s: 用法错误应 exit 2，得到 %d (%v)", c.name, got, err)
 		}
+	}
+}
+
+// --device-code 续轮询拿不到首次的 expires_in：本地上限必须足够长（600s），由服务端 expired_token 决定结束。
+func TestRunDeviceFlowResumeUses600sBudget(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var gotExpires, gotInterval int
+	var gotDeviceCode string
+	orig := pollDeviceTokenFn
+	pollDeviceTokenFn = func(appID, appSecret, baseURL, deviceCode string, interval, expiresIn int, onTick func(int, int)) (*auth.TokenStore, error) {
+		gotDeviceCode, gotInterval, gotExpires = deviceCode, interval, expiresIn
+		return nil, errors.New("stop")
+	}
+	t.Cleanup(func() { pollDeviceTokenFn = orig })
+
+	cfg := &config.Config{AppID: "cli_app", AppSecret: "sec", BaseURL: "https://open.feishu.cn"}
+	err := runDeviceFlow(cfg, true, "dc_resume", false, loginScopeOptions{})
+	if err == nil || err.Error() != "stop" {
+		t.Fatalf("应透传轮询错误: %v", err)
+	}
+	if gotDeviceCode != "dc_resume" || gotInterval != 5 || gotExpires != 600 {
+		t.Fatalf("续轮询参数 device_code=%q interval=%d expires=%d，期望 600s 上限", gotDeviceCode, gotInterval, gotExpires)
+	}
+
+	// --device-code 与任何授权范围参数同用是用法错误
+	err = runDeviceFlow(cfg, true, "dc_resume", false, loginScopeOptions{Exclude: []string{"a:b:c"}})
+	if err == nil || exitCodeFor(err) != 2 {
+		t.Fatalf("--device-code + --exclude 应为用法错误: %v", err)
 	}
 }

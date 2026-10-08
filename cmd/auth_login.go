@@ -88,6 +88,9 @@ func (o loginScopeOptions) hasAny() bool {
 // 本地上限只兜底防止无限等待（对齐官方 lark-cli 600s）。
 const resumePollExpiresIn = 600
 
+// pollDeviceTokenFn 轮询 token 端点，测试可替换。
+var pollDeviceTokenFn = auth.PollDeviceToken
+
 // runDeviceFlow 执行 Device Flow 授权（RFC 8628）。
 //
 // 根据 deviceCode / noWait 参数触发四种行为：默认阻塞轮询；--json 事件流；
@@ -162,7 +165,7 @@ func runDeviceFlow(cfg *config.Config, jsonOutput bool, deviceCode string, noWai
 		}
 		fmt.Fprintf(os.Stderr, "\r  轮询中... 已等待 %ds / %ds", elapsed, total)
 	}
-	token, err := auth.PollDeviceToken(
+	token, err := pollDeviceTokenFn(
 		appID, appSecret, baseURL,
 		deviceResp.DeviceCode, deviceResp.Interval, deviceResp.ExpiresIn,
 		onTick,
