@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -439,39 +438,6 @@ func CreateBoardNodes(whiteboardID string, nodesJSON string, opts CreateBoardNot
 	}
 
 	return apiResp.Data.IDs, nil
-}
-
-// DownloadBoardImageByURL downloads image from URL and saves to file
-func DownloadBoardImageByURL(imageURL string, outputPath string) error {
-	resp, err := http.Get(imageURL)
-	if err != nil {
-		return fmt.Errorf("下载图片失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("下载图片失败: HTTP %d", resp.StatusCode)
-	}
-
-	// Ensure directory exists
-	dir := filepath.Dir(outputPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("创建目录失败: %w", err)
-	}
-
-	// Write to file
-	file, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("创建文件失败: %w", err)
-	}
-	defer file.Close()
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		return fmt.Errorf("写入文件失败: %w", err)
-	}
-
-	return nil
 }
 
 // GetBoardNodes 获取画板的所有节点列表

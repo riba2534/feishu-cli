@@ -126,7 +126,8 @@ func downloadBearerURLByRange(action, reqURL, outputPath, bearerToken string, ti
 	}
 	defer cancel()
 
-	httpClient := &http.Client{}
+	// 带 Bearer 的分片请求走受控客户端：host 白名单 + 重定向剥离凭证 + 共享连接池；超时由 ctx 控制
+	httpClient := rawHTTPClient()
 	var outFile *os.File
 	var total int64 = -1
 	var nextStart int64

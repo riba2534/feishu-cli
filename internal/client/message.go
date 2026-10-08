@@ -361,14 +361,14 @@ func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, use
 	params.Set("with_sender_name", "true")
 
 	reqURL := fmt.Sprintf("%s/open-apis/im/v1/messages?%s", baseURL, params.Encode())
-	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(Context(), http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("获取消息列表失败: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+userAccessToken)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-	httpResp, err := http.DefaultClient.Do(req)
+	httpResp, err := rawHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("获取消息列表失败: %w", err)
 	}
@@ -522,14 +522,14 @@ func ResolveP2PChatID(openID, userAccessToken string) (string, error) {
 		return "", fmt.Errorf("反查 P2P chat_id 失败: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(Context(), http.MethodPost, reqURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("反查 P2P chat_id 失败: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+userAccessToken)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-	httpResp, err := http.DefaultClient.Do(req)
+	httpResp, err := rawHTTPClient().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("反查 P2P chat_id 失败: %w", err)
 	}
@@ -616,14 +616,14 @@ func getMessageWithUserToken(messageID, userAccessToken, cardContentType string)
 		params.Set("card_msg_content_type", cardContentType)
 	}
 	reqURL := fmt.Sprintf("%s/open-apis/im/v1/messages/%s?%s", baseURL, messageID, params.Encode())
-	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(Context(), http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("获取消息详情失败: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+userAccessToken)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-	httpResp, err := http.DefaultClient.Do(req)
+	httpResp, err := rawHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("获取消息详情失败: %w", err)
 	}
