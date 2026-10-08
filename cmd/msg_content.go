@@ -249,7 +249,7 @@ func (input messageContentInput) resolve() (string, string, error) {
 		content = client.CreateTextMessageContent(client.NormalizeAtMentions(input.text))
 	case input.markdown != "":
 		msgType = "post"
-		content = createMarkdownPostContent(input.markdown)
+		content = createMarkdownPostContent(client.NormalizeAtMentions(input.markdown))
 	case input.image != "":
 		msgType = "image"
 		key, err := resolveImageKey("--image", input.image)
@@ -286,6 +286,12 @@ func (input messageContentInput) resolve() (string, string, error) {
 			"image_key": imageKey,
 		})
 		content = string(data)
+	}
+
+	// --content / --content-file 的 text/post 消息体同样规范化 @ 标签（对齐官方 send/reply）；
+	// 必须在 JSON 层面逐字符串处理，直接对 JSON 串做正则替换会写入未转义的双引号。
+	if (input.content != "" || input.contentFile != "") && (msgType == "text" || msgType == "post") {
+		content = client.NormalizeAtMentionsInJSON(content)
 	}
 
 	if input.uploadImages && (msgType == "post" || msgType == "interactive") {

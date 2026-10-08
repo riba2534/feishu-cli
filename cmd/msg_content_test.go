@@ -309,3 +309,61 @@ func TestSendThreadIDFailsBeforeContentOrUpload(t *testing.T) {
 		t.Fatalf("--thread-id 应在检查图片/配置前失败并提示 reply，实际: %v", err)
 	}
 }
+
+// TestMessageContentResolveNormalizesAtMentions 验证 --markdown / --content / --content-file
+// 的 text/post 消息体与 --text 一样规范化 @ 标签，且产出的 JSON 合法。
+func TestMessageContentResolveNormalizesAtMentions(t *testing.T) {
+	dir := t.TempDir()
+	postFile := filepath.Join(dir, "post.json")
+	if err := os.WriteFile(postFile, []byte(`{"zh_cn":{"title":"","content":[[{"tag":"md","text":"<at open_id=\"ou_file\"> hi"}]]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		args     []string
+		wantType string
+		wantSub  string
+	}{
+		{"text", []string{"--text", "<at id=ou_text> hi"}, "text", `<at user_id=\"ou_text\">`},
+		{"markdown", []string{"--markdown", "<at id=ou_md/> **看下**"}, "post", `<at user_id=\"ou_md\">`},
+		{"content text", []string{"--content", `{"text":"<at id=ou_ct> hi"}`}, "text", `<at user_id=\"ou_ct\">`},
+		{"content post", []string{"--msg-type", "post", "--content", `{"zh_cn":{"content":[[{"tag":"text","text":"<at user_id=ou_cp />"}]]}}`}, "post", `<at user_id=\"ou_cp\">`},
+		{"content-file post", []string{"--msg-type", "post", "--content-file", postFile}, "post", `<at user_id=\"ou_file\">`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, input := newMessageContentTestCommand(t, tt.args...)
+			if err := input.validate(); err != nil {
+				t.Fatalf("validate() error = %v", err)
+			}
+			msgType, content, err := input.resolve()
+			if err != nil {
+				t.Fatalf("resolve() error = %v", err)
+			}
+			if msgType != tt.wantType {
+				t.Fatalf("msgType = %q, want %q", msgType, tt.wantType)
+			}
+			if !json.Valid([]byte(content)) {
+				t.Fatalf("content 不是合法 JSON: %s", content)
+			}
+			// json.Marshal 默认把 < > 转义为 \u003c \u003e，比较前还原
+			plain := strings.NewReplacer(`\u003c`, "<", `\u003e`, ">").Replace(content)
+			if !strings.Contains(plain, tt.wantSub) {
+				t.Fatalf("content 未规范化 @ 标签:\n%s\nwant contains %s", content, tt.wantSub)
+			}
+		})
+	}
+}
+
+// TestMessageContentResolveKeepsInteractiveAtTags 卡片 JSON 不做 @ 规范化（卡片语法不同）。
+func TestMessageContentResolveKeepsInteractiveAtTags(t *testing.T) {
+	raw := `{"elements":[{"tag":"markdown","content":"<at id=ou_card></at>"}]}`
+	_, input := newMessageContentTestCommand(t, "--msg-type", "interactive", "--content", raw)
+	_, content, err := input.resolve()
+	if err != nil {
+		t.Fatalf("resolve() error = %v", err)
+	}
+	if content != raw {
+		t.Fatalf("interactive 内容不应被改写: %s", content)
+	}
+}
