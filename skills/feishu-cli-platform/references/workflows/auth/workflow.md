@@ -13,6 +13,7 @@
 - [排错](#排错)
 - [环境诊断（doctor）](#环境诊断doctor)
 - [多 App Profile](#多-app-profileprofile)
+- [技能与 CLI 版本](#技能与-cli-版本skills--update)
 - [Agent 约定](#agent-约定)
 
 ## 推荐流程（人工 / 交互终端）
@@ -110,6 +111,7 @@ feishu-cli config get app_id
 feishu-cli config create-app --save
 feishu-cli doctor --json
 feishu-cli profile current
+feishu-cli skills install --dry-run
 ```
 
 ### `auth token` 导出 Token 给外部工具用（v1.29+）
@@ -242,7 +244,7 @@ feishu-cli doctor --only proxy
 feishu-cli doctor --only user_token,endpoint_open    # 多值，逗号分隔
 ```
 
-`doctor` 共 9 项检查；`--only` 支持单个值或逗号分隔多个值（typo 会被本地校验拒收）：
+`doctor` 共 10 项检查；`--only` 支持单个值或逗号分隔多个值（typo 会被本地校验拒收）：
 
 | 检查名 | 含义 |
 |---|---|
@@ -255,6 +257,7 @@ feishu-cli doctor --only user_token,endpoint_open    # 多值，逗号分隔
 | `proxy` | `HTTPS_PROXY` / `NO_PROXY` 是否会拦截 OpenAPI 域名 |
 | `dependencies` | 当前 Go 版本与编译依赖中的 Lark SDK 版本 |
 | `catalog` | OpenAPI catalog 来源（embedded/cache/runtime）、版本、service/method 数；`--offline` 时不拉 overlay |
+| `skills` | 本地技能目录（`--skills-dir` > `FEISHU_CLI_SKILLS_DIR` > `~/.claude/skills`）与当前 CLI 内嵌技能是否一致；只读本地文件，不联网 |
 
 `user_identity` 与 `bot_identity` 分别回答"用户态命令能否直接跑"和"应用态（`--as bot` / 无人值守）能否直接跑"：
 `bot_identity` 通过说明 app_id/app_secret 正确且应用已启用；`user_identity` 为 `warn`（未登录）或 `fail`（过期）时，按提示 `feishu-cli auth login`。
@@ -338,6 +341,29 @@ feishu-cli profile migrate --name work
 profile 名校验规则 `[A-Za-z0-9_-]{1,64}`（禁止 `.` / `..` / `profiles` / `cache` 等保留名），违反时 CLI 自身会报错。`profile rename` 会自动同步 active 与 previous 指针，不需要手动改文件。
 
 `auth logout` 会先调用飞书吊销端点使服务端 token 失效（优先吊销 refresh_token，失败仅告警不阻断），再清理当前 profile 的 token 和用户 profile 缓存。`--no-revoke` 可跳过服务端吊销、只删本地文件（缺 app_id/app_secret 时也会自动跳过吊销）。
+
+## 技能与 CLI 版本（skills / update）
+
+技能内容在编译期内嵌进二进制，与 CLI 版本严格配套。本地技能目录可能落后于 CLI（或反之），
+出现“技能里写的命令/参数在当前 CLI 不存在”时，先检查漂移：
+
+```bash
+feishu-cli doctor --only skills                      # 只读本地文件，不联网
+feishu-cli skills list                               # 内嵌技能、文件数、内容哈希、工作流
+feishu-cli skills read feishu-cli-docs               # 输出内嵌 SKILL.md（与当前 CLI 版本一致）
+feishu-cli skills read feishu-cli-platform/references/workflows/auth/references/identity.md
+feishu-cli skills install --dry-run                  # 预览：新建/更新/无变化/冲突
+feishu-cli skills install                            # 写入 ~/.claude/skills 并记录 .feishu-cli-skills.json
+feishu-cli skills install --dir /tmp/skills-test     # 指定目录（FEISHU_CLI_SKILLS_DIR 同效）
+```
+
+- 技能目录优先级：`--dir` > `FEISHU_CLI_SKILLS_DIR` > `~/.claude/skills`。写入前解析符号链接并打印真实路径；
+  `~/.agents/skills` 指向 `~/.claude/skills` 时两者是同一份数据，只需安装一次，不能当作冗余副本删除。
+- 只覆盖上次由 `skills install` 写入且未被本地修改的文件；有本地修改，或目录没有安装记录（npx/手动复制）
+  且内容不同时，不带 `--force` 整体拒绝。`--force` 只覆盖技能文件，额外文件（笔记、旧 `evals/`）保留。
+- 技能目录本身是符号链接（例如指向仓库开发目录）时视为外部管理，任何参数下都不写入、不删除。
+- 旧版 29 个技能目录默认只列出；`--prune-legacy` 仅删除 SKILL.md `name` 与旧技能名一致的普通目录。
+- 未安装技能的环境可直接用 `skills read` 读取当前版本的工作流，不必先安装。
 
 ## Agent 约定
 

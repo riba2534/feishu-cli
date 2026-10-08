@@ -67,6 +67,7 @@ var rootCmd = &cobra.Command{
   profile   多 App 配置切换（add/list/use/current/rename/remove/migrate）
   doctor    环境健康检查（6 项：config / user_token / endpoints / proxy / deps）
   config    配置管理（初始化配置）
+  skills    与本版本配套的 AI 技能（list/read/install，内嵌于二进制）
 
 注意：bitable 命令已切换到 base/v3 API，flag 使用 --base-token。
 
@@ -159,6 +160,9 @@ func configInitOptional(cmd *cobra.Command) bool {
 // shouldSkipConfigInit 只跳过纯本地元数据/配置管理命令。
 // auth status --verify 与 auth logout 需要当前 profile 的 App 凭证做刷新/吊销，必须返回 false。
 func shouldSkipConfigInit(cmd *cobra.Command) bool {
+	if cmd.Annotations[skipConfigInitAnnotation] == "1" {
+		return true
+	}
 	if cmd.HasSubCommands() && (cmd.RunE == nil && cmd.Run == nil || cmd.Annotations[groupGuardAnnotation] == "1") {
 		return true
 	}

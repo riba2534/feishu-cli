@@ -25,7 +25,7 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 
 | 意图 | 读取文件 |
 |---|---|
-| 登录、登出、scope 预检、Token、profile、config、doctor | `references/workflows/auth/workflow.md` |
+| 登录、登出、scope 预检、Token、profile、config、doctor、技能安装/漂移 | `references/workflows/auth/workflow.md` |
 | 调任意 OpenAPI、`--as`、分页和 dry-run | `references/workflows/api/workflow.md` |
 | 查询本地 OpenAPI path、参数和 scope | `references/workflows/schema/workflow.md` |
 | 搜索文档、消息或应用 | `references/workflows/search/workflow.md` |

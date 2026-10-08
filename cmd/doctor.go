@@ -63,6 +63,7 @@ var doctorCmd = &cobra.Command{
   proxy                HTTP(S)_PROXY 与 NO_PROXY 配置合理
   dependencies         Go 版本 / SDK 版本
   catalog              OpenAPI catalog 来源（embedded/cache/runtime）、版本、service/method 数
+  skills               本地技能目录与当前 CLI 内嵌技能是否一致（只读本地文件；--skills-dir 指定目录）
 
 输出：
   默认：pretty 表格
@@ -137,6 +138,11 @@ var doctorCmd = &cobra.Command{
 		// 7. catalog
 		if shouldRun("catalog", only) {
 			results = append(results, checkCatalog())
+		}
+
+		// 8. skills（本地技能与 CLI 版本漂移，零网络；见 doctor_skills.go）
+		if shouldRun("skills", only) {
+			results = append(results, checkSkills())
 		}
 
 		// 输出
