@@ -116,6 +116,9 @@ var deleteFileCmd = &cobra.Command{
 
 		status, timedOut, err := client.WaitDriveTaskCheckWithBound(taskID, userAccessToken)
 		if err != nil {
+			if status != nil && status.Failed() {
+				return deleteTaskFailedError(err, identity)
+			}
 			return withDrivePollResume(err, nextCmd)
 		}
 		if timedOut {
@@ -163,4 +166,19 @@ func init() {
 	deleteFileCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	deleteFileCmd.Flags().String("user-access-token", "", "User Access Token（可选，使用用户身份访问文件）")
 	mustMarkFlagRequired(deleteFileCmd, "type")
+}
+
+// deleteTaskFailedError 为异步删除任务失败补充原因提示。
+//
+// 异步删除（async=true）失败时 task_check 只返回 status=fail，不带原因；改为异步之前，
+// 同步删除会直接返回"无权限"等具体错误码。实测最常见的原因是身份不对：
+// Bot 无权删除用户自己创建的文件（如 User 身份 sheet create 建的表格）。
+func deleteTaskFailedError(err error, identity string) error {
+	if identity == "bot" {
+		return fmt.Errorf("%w\n提示：服务端未返回失败原因，最常见的是当前 Bot 身份无权删除该文件"+
+			"（Bot 只能删除自己创建或拥有管理权限的文件）。用户自有文件请加 --user-access-token 以用户身份删除，"+
+			"或用 feishu-cli perm list <token> --doc-type <type> --as user 确认 Bot 是否有管理权限", err)
+	}
+	return fmt.Errorf("%w\n提示：服务端未返回失败原因，常见原因是当前用户不是所有者且无管理权限，"+
+		"或文件已被删除；可用 feishu-cli drive inspect <token> 核对文件状态", err)
 }

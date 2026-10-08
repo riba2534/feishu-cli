@@ -147,3 +147,47 @@ func TestFileDeleteNonInteractiveDoesNotDelete(t *testing.T) {
 		t.Fatalf("--force 后应发出 1 次删除请求，实际 %d 次", hits)
 	}
 }
+
+// TestFileDeleteTaskFailedExplainsIdentity 验证异步删除任务 status=fail 时，
+// 错误信息补充身份原因提示（task_check 不返回失败原因，旧同步删除会直接给出无权限码）。
+func TestFileDeleteTaskFailedExplainsIdentity(t *testing.T) {
+	cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/open-apis/auth/v3/tenant_access_token/internal"):
+			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-fake","expire":7200}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/open-apis/drive/v1/files/shtcnFAKE":
+			_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"task_id":"task_fail"}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/open-apis/drive/v1/files/task_check":
+			_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"status":"fail"}}`)
+		default:
+			http.Error(w, "unexpected "+r.URL.Path, http.StatusNotFound)
+		}
+	})
+	defer cleanup()
+	t.Setenv("FEISHU_USER_ACCESS_TOKEN", "")
+
+	if err := deleteFileCmd.Flags().Set("type", "sheet"); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteFileCmd.Flags().Set("force", "true"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = deleteFileCmd.Flags().Set("type", "")
+		_ = deleteFileCmd.Flags().Set("force", "false")
+	})
+
+	var err error
+	captureStdout(t, func() {
+		err = deleteFileCmd.RunE(deleteFileCmd, []string{"shtcnFAKE"})
+	})
+	if err == nil {
+		t.Fatal("删除任务 status=fail 时应返回错误")
+	}
+	for _, want := range []string{"status=fail", "Bot 身份无权删除", "--user-access-token"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("错误信息缺少 %q: %v", want, err)
+		}
+	}
+}
