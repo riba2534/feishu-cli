@@ -514,6 +514,9 @@ func TestRunAPI_PreflightValidation(t *testing.T) {
 			if !strings.Contains(err.Error(), tc.wantErrSub) {
 				t.Errorf("错误信息 = %q，期望包含 %q", err.Error(), tc.wantErrSub)
 			}
+			if got := exitCodeFor(err); got != 2 {
+				t.Errorf("参数校验失败应为用法错误（退出码 2），得到 %d", got)
+			}
 			if hits := atomic.LoadInt32(&serverHits); hits != 0 {
 				t.Errorf("前置验证失败时不应发出任何网络请求，实际收到 %d 次请求", hits)
 			}

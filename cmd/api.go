@@ -17,6 +17,7 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/riba2534/feishu-cli/internal/runctx"
@@ -109,12 +110,12 @@ func init() {
 func runAPI(cmd *cobra.Command, args []string) error {
 	method := strings.ToUpper(strings.TrimSpace(args[0]))
 	if !isValidHTTPMethod(method) {
-		return fmt.Errorf("不支持的 HTTP method %q，可选: GET, POST, PUT, DELETE, PATCH", method)
+		return clierr.Usagef("不支持的 HTTP method %q，可选: GET, POST, PUT, DELETE, PATCH", method)
 	}
 
 	apiPath, embeddedQuery, err := normalizeAPIPath(args[1])
 	if err != nil {
-		return err
+		return clierr.Usage(err)
 	}
 
 	// 校验 --as 取值合法性（前置验证）
@@ -123,27 +124,27 @@ func runAPI(cmd *cobra.Command, args []string) error {
 	case "", "auto", "bot", "tenant", "app", "user":
 		// 合法
 	default:
-		return fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", apiAs)
+		return clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", apiAs)
 	}
 
 	if apiPageLimit < 0 {
-		return fmt.Errorf("--page-limit 必须 >= 0，得到 %d", apiPageLimit)
+		return clierr.Usagef("--page-limit 必须 >= 0，得到 %d", apiPageLimit)
 	}
 	if apiPageDelayMs < 0 {
-		return fmt.Errorf("--page-delay 必须 >= 0，得到 %d", apiPageDelayMs)
+		return clierr.Usagef("--page-delay 必须 >= 0，得到 %d", apiPageDelayMs)
 	}
 	if apiTimeoutSec <= 0 {
-		return fmt.Errorf("--timeout 必须 > 0，得到 %d", apiTimeoutSec)
+		return clierr.Usagef("--timeout 必须 > 0，得到 %d", apiTimeoutSec)
 	}
 
 	// 校验 --format / --jq 参数合法性（在网络请求与 token 刷新前验证）
 	if apiFormat != "" || apiJQ != "" {
 		if _, err := output.NewOptions(apiFormat, apiJQ); err != nil {
-			return err
+			return clierr.Usage(err)
 		}
 		if apiJQ != "" {
 			if _, err := gojq.Parse(apiJQ); err != nil {
-				return fmt.Errorf("jq 表达式解析失败: %w", err)
+				return clierr.Usagef("jq 表达式解析失败: %w", err)
 			}
 		}
 	}
@@ -158,7 +159,7 @@ func runAPI(cmd *cobra.Command, args []string) error {
 	// 解析 query 参数：优先合并 path 中内嵌的 query，再用 --params 追加/覆盖
 	queryParams, err := parseQueryParams(apiParams)
 	if err != nil {
-		return fmt.Errorf("解析 --params 失败: %w", err)
+		return clierr.Usagef("解析 --params 失败: %w", err)
 	}
 	for k, vals := range embeddedQuery {
 		if _, override := queryParams[k]; override {
@@ -172,20 +173,20 @@ func runAPI(cmd *cobra.Command, args []string) error {
 	// 解析 body（在网络调用前验证合法 JSON）
 	bodyBytes, err := loadAPIBody(apiData, apiDataFile)
 	if err != nil {
-		return err
+		return err // 互斥 / 敏感路径为用法错误（已打标签），读文件失败为一般错误
 	}
 	var body any
 	if len(bodyBytes) > 0 {
 		// 校验是合法 JSON（防止用户传 raw text 调一些 JSON-only API）
 		var probe any
 		if err := json.Unmarshal(bodyBytes, &probe); err != nil {
-			return fmt.Errorf("--data/--data-file 不是合法 JSON: %w", err)
+			return clierr.Usagef("--data/--data-file 不是合法 JSON: %w", err)
 		}
 		body = probe
 	}
 
 	if apiPageAll && apiOutput != "" && apiFormat == "" && apiJQ == "" {
-		return fmt.Errorf("--output 与 --page-all 不能同时用于二进制下载；去掉其中一个，或给 --page-all 加上 --format/--jq")
+		return clierr.Usagef("--output 与 --page-all 不能同时用于二进制下载；去掉其中一个，或给 --page-all 加上 --format/--jq")
 	}
 
 	// dry-run：静态检查 token 策略，打印请求后直接返回（不触发 token refresh，不写 token 文件，不发网络请求）
@@ -488,7 +489,7 @@ func stringifyQueryValue(v any) string {
 // --data-file 用 "-" 表示 stdin
 func loadAPIBody(inline, file string) ([]byte, error) {
 	if inline != "" && file != "" {
-		return nil, fmt.Errorf("--data 和 --data-file 不能同时使用")
+		return nil, clierr.Usagef("--data 和 --data-file 不能同时使用")
 	}
 	if inline != "" {
 		return []byte(inline), nil
@@ -534,7 +535,7 @@ func resolveAPIToken(cmd *cobra.Command, as string) ([]larkcore.AccessTokenType,
 		return []larkcore.AccessTokenType{larkcore.AccessTokenTypeUser}, userToken, nil
 
 	default:
-		return nil, "", fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", as)
+		return nil, "", clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
 	}
 }
 
@@ -567,7 +568,7 @@ func resolveAPITokenDryRun(cmd *cobra.Command, as string) ([]larkcore.AccessToke
 		return []larkcore.AccessTokenType{larkcore.AccessTokenTypeUser}, true, nil
 
 	default:
-		return nil, false, fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", as)
+		return nil, false, clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
 	}
 }
 

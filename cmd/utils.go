@@ -175,7 +175,7 @@ func resolveIdentityToken(cmd *cobra.Command) (string, error) {
 		}
 		return token, nil
 	default:
-		return "", fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", as)
+		return "", clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
 	}
 }
 
@@ -196,7 +196,7 @@ func validateIdentityAs(cmd *cobra.Command) error {
 	case "", "auto", "bot", "tenant", "app", "user":
 		return nil
 	default:
-		return fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", as)
+		return clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
 	}
 }
 
@@ -298,7 +298,7 @@ func validateEnum(value, fieldName string, allowedValues []string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("不支持的%s %q，可选值: %s", fieldName, value, strings.Join(allowedValues, ", "))
+	return clierr.Usagef("不支持的%s %q，可选值: %s", fieldName, value, strings.Join(allowedValues, ", "))
 }
 
 // mustMarkFlagRequired 标记 flag 为必填，如果失败则 panic
@@ -314,7 +314,7 @@ func mustMarkFlagRequired(cmd *cobra.Command, flags ...string) {
 // loadJSONInput 统一处理 --xxx 和 --xxx-file 两种 JSON 输入方式。
 func loadJSONInput(inlineValue, filePath, inlineFlag, fileFlag, label string) (string, error) {
 	if inlineValue != "" && filePath != "" {
-		return "", fmt.Errorf("--%s 和 --%s 不能同时使用", inlineFlag, fileFlag)
+		return "", clierr.Usagef("--%s 和 --%s 不能同时使用", inlineFlag, fileFlag)
 	}
 
 	if filePath != "" {
@@ -326,7 +326,7 @@ func loadJSONInput(inlineValue, filePath, inlineFlag, fileFlag, label string) (s
 	}
 
 	if strings.TrimSpace(inlineValue) == "" {
-		return "", fmt.Errorf("请通过 --%s 或 --%s 提供%s", inlineFlag, fileFlag, label)
+		return "", clierr.Usagef("请通过 --%s 或 --%s 提供%s", inlineFlag, fileFlag, label)
 	}
 
 	return inlineValue, nil
