@@ -149,7 +149,8 @@ jq -c 'select(.header.event_type=="im.message.receive_v1")' events.ndjson > rece
 
 **`--jq` 限制**：只识别 `.a.b.c` 形式的 map 取值（如 `.event.message`），不支持 `select` / 数组下标 / 管道。复杂过滤请用 `feishu-cli event consume ... | jq '<expr>'`。
 
-**`--output-dir` 限制**：必须是安全相对路径；不做 `~` 展开，不接受绝对路径或 `..` 路径段。
+**`--output-dir` 限制**：必须是安全相对路径；不做 `~` 展开，不接受绝对路径或 `..` 路径段，也不能落在
+`.ssh`、`.feishu-cli` 等敏感目录内（cwd 为家目录时的相对路径同样校验）。
 
 ### 4. `event status`：看本机活跃 consume 进程
 

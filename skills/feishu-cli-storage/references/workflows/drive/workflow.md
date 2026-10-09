@@ -201,7 +201,8 @@ feishu-cli drive task-result --scenario wiki_delete_node --task-id <task_id> --a
 
 把云盘文件夹与本地目录做单向镜像。**只镜像 type=file 条目**，docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不参与
 （没有等价本地二进制）。`--local-dir` 必须是**已存在的目录**且位于当前工作目录子树内（pull 前先 `mkdir -p`，否则报
-"--local-dir 不存在或无法访问"），符号链接越界会被拒绝。
+"--local-dir 不存在或无法访问"），符号链接越界会被拒绝；落在 `~/.ssh`、`~/.feishu-cli` 等敏感目录（含 cwd 为家目录时的
+`.ssh`）同样在联网前以退出码 2 拒绝，且先于 `--delete-local/--delete-remote` 的 `--yes` 确认检查。
 
 ```bash
 # status：只读，四个桶 new_local / new_remote / modified / unchanged，以及 detection=exact|quick

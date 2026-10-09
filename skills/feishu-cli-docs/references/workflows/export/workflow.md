@@ -36,9 +36,12 @@ feishu-cli sheet export <spreadsheet_token_or_url> --format markdown -o /tmp/she
 | 命令 | 未传输出路径时 |
 |---|---|
 | `doc export` | 打印到 stdout |
-| `wiki export` | 保存到 `/tmp/<节点标题>.md` |
+| `wiki export` | 保存到 `/tmp/<节点标题>.md`（标题里的 `/` 等字符替换为 `_`） |
 | `sheet export` | 当前目录 `<spreadsheet_token>.<xlsx\|csv\|md>` |
 | `doc export-file` | 当前目录 `<doc_token>.<type>` |
+
+输出路径（`-o`、`--assets-dir`、`--output-dir` 等）落在 `~/.ssh`、`~/.feishu-cli`、`/etc` 等敏感目录时，
+在联网前以退出码 2 拒绝，不会先创建导出任务；换用普通目录即可（完整规则见 `feishu-cli-platform` 的 agent-contract）。
 
 ### doc export 本地引擎参数
 

@@ -78,6 +78,11 @@ stderr 给出"需要确认：…"说明。处理顺序：
   `~/.feishu-cli`、`~/.lark-cli`；
 - 相对路径中含 `..` 路径段（`report..v2.json` 这类文件名不受影响）。
 
+校验发生在第一次网络请求（含 token 刷新、wiki 解析、创建导出任务）之前，被拒时远端没有任何副作用。
+覆盖 `-o`、`--output-path`、`--output-dir`、`--assets-dir`、`--snapshot`、`--local-dir` 等输出位置，
+以及 Markdown/JSON 源文件、`--xxx-file`、上传文件、`--path`、Markdown 引用的本地图片（单张图片被拒时计入
+该次导入的 failures，不影响整篇）。本地输入文件不存在、是目录或无权限读取同样以退出码 2 报错。
+
 换用普通工作目录（如任务专用的临时目录）即可，不要用符号链接绕过。
 
 ## dry-run 与重试
