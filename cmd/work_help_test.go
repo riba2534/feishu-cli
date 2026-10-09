@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
@@ -78,5 +79,32 @@ func TestOKRHelpScopesMatchVerifiedBehavior(t *testing.T) {
 		if !strings.Contains(c.Long, "User/Bot 均可") || !strings.Contains(c.Long, "99991679") {
 			t.Errorf("%s --help 应说明 User/Bot 均可调用、user 缺 scope 时 99991679", c.CommandPath())
 		}
+	}
+}
+
+// TestCalendarListPageSizeRange calendar list 的 --page-size 低于服务端最小值 50 时本地用法错误（exit 2）、
+// 不发请求；合法值透传；help 示例不再使用非法的 20。
+func TestCalendarListPageSizeRange(t *testing.T) {
+	if strings.Contains(listCalendarsCmd.Long, "--page-size 20") {
+		t.Fatal("calendar list --help 示例不应使用低于服务端最小值 50 的 --page-size 20")
+	}
+	rec := setupWorkCmdTest(t, "u-test", func(w http.ResponseWriter, r *http.Request, body string) {
+		_, _ = w.Write([]byte(`{"code":0,"data":{"calendar_list":[],"has_more":false}}`))
+	})
+	for _, size := range []string{"20", "49", "1001"} {
+		_, err := runWorkCmd(t, listCalendarsCmd, nil, map[string]string{"page-size": size})
+		if err == nil || exitCodeFor(err) != 2 || !strings.Contains(err.Error(), "50–1000") {
+			t.Fatalf("--page-size %s 应为用法错误（exit 2）: %v", size, err)
+		}
+	}
+	if n := len(rec.apiReqs()); n != 0 {
+		t.Fatalf("非法 --page-size 不应发出请求，实际 %d 个", n)
+	}
+	if _, err := runWorkCmd(t, listCalendarsCmd, nil, map[string]string{"page-size": "100", "output": "json"}); err != nil {
+		t.Fatalf("--page-size 100 应合法: %v", err)
+	}
+	reqs := rec.apiReqs()
+	if len(reqs) != 1 || !strings.Contains(reqs[0].Query, "page_size=100") {
+		t.Fatalf("合法 page_size 应透传: %+v", reqs)
 	}
 }
