@@ -10,6 +10,31 @@
 补齐官方已有、本项目缺失的能力，并保留本项目更稳妥的设计（fail-closed 身份、host 白名单、本地转换器、画板全家桶等）。
 所有修复均用编译后的二进制在真实飞书环境回归（写操作只针对新建的测试资源）。
 
+### 从 v1.x 升级到 v2.0.0（迁移指南）
+
+v2.0.0 是大版本：为对齐官方 CLI 与服务端契约，下列旧用法的行为有变化。纯新增的命令与参数完全兼容；
+"行为变更"一节逐条列出了全部变化，下表给出旧脚本的改法。
+
+| 旧用法 | v2 中的变化 | 改法 |
+|---|---|---|
+| `go install github.com/riba2534/feishu-cli@latest` | 模块路径带 `/v2` 后缀（Go 大版本规则），旧路径只能装到 v1.x | 改为 `go install github.com/riba2534/feishu-cli/v2@latest`；Release 包与 `install.sh` 不变 |
+| 已安装的 Claude Code 技能 | 技能与 CLI 版本配套，要求 v2.0.0+ | 升级后运行 `feishu-cli skills install`，`feishu-cli doctor --only skills` 检查 |
+| 脚本判断 `$? == 1` | 错误按类别返回 2 用法 / 3 鉴权 / 4 网络 / 10 需确认；`auth check` 未通过为 3 | 改为判断 `!= 0`，或按类别分支 |
+| 非交互执行删除类命令不带 `--yes` | 旧版打印"已取消"、exit 0 但并未删除；v2 exit 10 | 确认要删时加 `--yes`（或命令级 `--force`） |
+| 日历、任务写命令依赖默认 Bot 身份 | 默认 `--as auto`，已登录时以本人身份操作 | 要操作应用自己的日程/任务时显式加 `--as bot` |
+| `bitable record list` 默认取 20 条 | 默认 100 条，`has_more` 时输出 `next_offset` | 需要 20 条时加 `--limit 20`；取全部用 `--page-all` |
+| 解析 bitable 视图配置 get/set、`role` 输出的 jq | 视图配置直接输出数组；`role` 去掉外层 `data`，`base_roles` 项变为对象 | 按新结构调整 jq 路径 |
+| `search docs --offset N`、`--count 50` | Search v2 每页最多 20 条，`--offset` 大于 0 报用法错误 | 用上一页输出的 `--page-token` 翻页 |
+| 读取 `mail message/messages/thread` 的原始正文 | 正文默认解码为明文 | 需要原始 base64url 时加 `--raw-body` |
+| `user search --query` 取 `user_id` | 关键词搜索不再返回 `user_id`；`--email/--mobile` 的 `user_id` 改为真实 user_id（旧版是 open_id） | 需要 user_id 时用 `--email/--mobile`；原先把该字段当 open_id 用的改读 `open_id` |
+| `okr cycle list` 的租户周期 | 默认返回 v2 用户周期（可直接用于 `cycle detail` 和创建目标） | 仍要租户周期时加 `--tenant` |
+| `msg history` 在话题群中从 `items` 取回复 | `items` 只含根消息，回复在 `thread_replies` | 从 `thread_replies` 读取回复 |
+| `minutes get --with-artifacts` 读取逐字稿字段 | 逐字稿写入文件，输出 `transcript_file` 路径 | 读取 `transcript_file` 指向的文件（`--output-dir` 可指定目录） |
+| `board export-code --output-path` 重复导出到同一文件 | 目标已存在时报用法错误 | 需要覆盖时加 `--overwrite` |
+| `api` 出错时从 stdout 解析错误体 | 业务错误时 stdout 为空，错误与诊断写 stderr | 需要原始响应体时加 `--raw` |
+| `vc bot meeting-join/leave` 传 `--user-access-token` | 只支持 Bot；会议号必须为 9 位数字 | 去掉 User Token，传 9 位会议号 |
+| 输出到 `~/.ssh`、`~/.feishu-cli`、`/etc` 等目录，或输入文件不存在 | 发请求前以退出码 2 拒绝 | 改用普通目录；检查输入路径 |
+
 ### ⚠️ 行为变更（升级前请阅读）
 
 - **退出码分类**：0 成功 / 1 一般错误 / 2 用法错误 / 3 鉴权或权限 / 4 网络 / 10 需要确认 / 130 中断。错误文本不变；脚本若判断 `== 1` 需调整为 `!= 0` 或按类别处理。`auth check` 未通过由 1 改为 3。

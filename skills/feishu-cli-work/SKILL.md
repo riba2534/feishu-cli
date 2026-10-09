@@ -2,7 +2,7 @@
 name: feishu-cli-work
 description: >-
   飞书日历、任务、审批、考勤与 OKR：查忙闲与共同空闲、预订会议室、创建/修改/删除/回复日程（含参与人、重复日程范围、分享与转让组织者），管理任务、子任务、分组与清单，发起、撤回、通过、拒绝、转交、回退、加签、催办或抄送审批，查询打卡与考勤统计，查询 OKR 周期、创建或更新目标与关键结果、上报进展和评论。用户提到日程、会议室、待办任务、审批、打卡请假、OKR 时使用。不用于：通讯录查人和未封装接口的 schema/raw API（feishu-cli-platform）、邮件（feishu-cli-mail）、历史会议/录制/妙记（feishu-cli-meetings）、发送通知或监听审批实时事件（feishu-cli-messaging）。
-compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v2.0.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Bash(sleep:*) Read Write
 ---
 

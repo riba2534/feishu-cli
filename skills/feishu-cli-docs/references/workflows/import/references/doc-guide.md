@@ -1,7 +1,7 @@
 # 飞书 Markdown 兼容指南
 
 生成将导入飞书的 Markdown 前，按本指南检查。执行导入见 `../workflow.md`，编辑已有文档见 `../../write/workflow.md`。
-标注"实测"的结论来自 2026-10 用 feishu-cli v1.42.0 在测试文档上的 `doc import` 回归；服务端渲染能力可能继续变化，
+标注"实测"的结论来自 2026-10 用 feishu-cli v2.0.0 在测试文档上的 `doc import` 回归；服务端渲染能力可能继续变化，
 导入后以命令输出的 `diagram_fallback` / `failures` 为准。
 
 ## 快速检查

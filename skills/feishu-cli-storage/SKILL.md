@@ -2,7 +2,7 @@
 name: feishu-cli-storage
 description: >-
   飞书云空间：Drive 上传下载（大文件分块、断点续传、覆盖为新版本）、DOCX/XLSX 等二进制导入与异步导出任务、目录镜像 push/pull、链接与 token 类型解析、重命名、上传文件的版本历史与恢复、基础 file/media 操作、Wiki 知识空间与节点结构（创建、移动、复制、删除）及成员、文档评论与回复（含表格/幻灯片局部评论）、协作者/公开链接/分享密码/转移所有权/权限申请与密级标签。用户提到云盘、文件夹、上传下载、导入 Office 文件、知识库目录、评论、共享或权限时使用。不用于：读取或改写文档/Wiki 正文和云盘原生 .md 文件（feishu-cli-docs）、会议录制与妙记（feishu-cli-meetings）、搜索文档（feishu-cli-platform）。
-compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v2.0.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Read Write
 ---
 
