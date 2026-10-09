@@ -43,7 +43,7 @@ func TestReadImageLinuxToolOrder(t *testing.T) {
 		name      string
 		installed map[string]bool
 		run       func(name string, args ...string) ([]byte, string, error)
-		wantTool  string
+		wantCalls []string // 期望的命令调用顺序
 		wantErr   string
 	}{
 		{
@@ -55,7 +55,7 @@ func TestReadImageLinuxToolOrder(t *testing.T) {
 				}
 				return nil, "", errors.New("unexpected")
 			},
-			wantTool: "xclip",
+			wantCalls: []string{"xclip"},
 		},
 		{
 			name:      "xclip 失败时回退 wl-paste",
@@ -66,7 +66,7 @@ func TestReadImageLinuxToolOrder(t *testing.T) {
 				}
 				return testPNG, "", nil
 			},
-			wantTool: "wl-paste",
+			wantCalls: []string{"xclip", "wl-paste"},
 		},
 		{
 			name:      "xsel 输出不是 PNG 时报无图片",
@@ -82,7 +82,7 @@ func TestReadImageLinuxToolOrder(t *testing.T) {
 			run: func(name string, args ...string) ([]byte, string, error) {
 				return testPNG, "", nil
 			},
-			wantTool: "xsel",
+			wantCalls: []string{"xsel"},
 		},
 		{
 			name:      "工具存在但失败时保留 stderr，不误报未安装",
@@ -126,9 +126,12 @@ func TestReadImageLinuxToolOrder(t *testing.T) {
 			if err != nil || !bytes.Equal(data, testPNG) {
 				t.Fatalf("ReadImage = (%q, %v)", data, err)
 			}
-			last := (*calls)[len(*calls)-1]
-			if last.name != c.wantTool {
-				t.Fatalf("最终使用的工具 = %s，期望 %s（调用序列 %v）", last.name, c.wantTool, *calls)
+			var names []string
+			for _, call := range *calls {
+				names = append(names, call.name)
+			}
+			if strings.Join(names, ",") != strings.Join(c.wantCalls, ",") {
+				t.Fatalf("调用顺序 = %v，期望 %v", names, c.wantCalls)
 			}
 		})
 	}
