@@ -313,3 +313,34 @@ func TestContentUpdateDryRunNoNetwork(t *testing.T) {
 		}
 	}
 }
+
+// TestImgHrefSentToServerUnchanged create 与 content-update 的请求体中 <img href> 原样保留，只上传本地图片。
+func TestImgHrefSentToServerUnchanged(t *testing.T) {
+	setupDocWriteFixtures(t)
+	f := &fakeDocWriteServer{}
+	server := httptest.NewServer(f.handler(t))
+	t.Cleanup(server.Close)
+	initDocUpdateTestConfig(t, server.URL)
+	href := `<img href="https://img.example.com/w.png?sig=1" width="300" caption="远程"/>`
+
+	c := newDocCreateTestCmd(t, "--doc-format", "xml", "-o", "json", "--content", href+`<img path="@a.png"/>`)
+	var runErr error
+	captureStdout(t, func() { runErr = runDocCreateDocsAI(c, "u-test") })
+	if runErr != nil {
+		t.Fatalf("create 失败: %v", runErr)
+	}
+	if content, _ := f.creates[0]["content"].(string); !strings.HasPrefix(content, href) {
+		t.Fatalf("create 请求中 <img href> 应原样保留: %s", content)
+	}
+	if _, err := runContentUpdateFlags(t, "doxold", map[string]string{
+		"mode": "append", "doc-format": "xml", "user-access-token": "u-test", "markdown": href,
+	}); err != nil {
+		t.Fatalf("content-update 失败: %v", err)
+	}
+	if content, _ := f.puts[0]["content"].(string); content != href {
+		t.Fatalf("content-update 请求中 <img href> 应原样保留: %s", content)
+	}
+	if len(f.uploads) != 1 || len(f.batches) != 1 {
+		t.Fatalf("只应上传绑定 create 中的本地图片: uploads=%v batches=%d", f.uploads, len(f.batches))
+	}
+}

@@ -313,3 +313,37 @@ func TestLocalResourceStrictVsLenient(t *testing.T) {
 		t.Fatalf("注释应原样保留: %v %q", err, in.Content)
 	}
 }
+
+// TestImgHrefPassThrough <img href> 由服务端下载（v1.42 现有行为）：create（严格）与 content-update（宽松）都原样透传，
+// 不产生本地资源；严格模式只拒绝与 path / src / token 等混用。
+func TestImgHrefPassThrough(t *testing.T) {
+	chdirTemp(t)
+	writeSizedPNG(t, "a.png", 10, 10)
+	for _, strict := range []bool{true, false} {
+		for _, format := range []string{"xml", "markdown"} {
+			c := `<p>x</p><img href="https://img.example.com/a.png?sig=1&amp;v=2" width="600" alt="远程"/>![md](https://img.example.com/b.png)`
+			in, err := prepareDocsAIWriteInput(c, nil, docsAIWriteOptions{Format: format, Strict: strict})
+			if err != nil || in.Content != c || len(in.Resources) != 0 {
+				t.Fatalf("strict=%v format=%s: <img href> 应原样透传: %v %q", strict, format, err, in.Content)
+			}
+		}
+	}
+	strictBad := map[string]string{
+		`<img href="https://img.example.com/a.png" src="tok"/>`:     "href 不能与 src",
+		`<img href="https://img.example.com/a.png" token="t"/>`:     "href 不能与 token",
+		`<img href="https://img.example.com/a.png" img_key="k"/>`:   "href 不能与 img_key",
+		`<img href="https://img.example.com/a.png" url="u"/>`:       "href 不能与 url",
+		`<img path="@a.png" href="https://img.example.com/a.png"/>`: "不能与 href",
+		`<img path="@a.png" src="tok"/>`:                            "不能与 src",
+	}
+	for c, want := range strictBad {
+		if _, err := prepareDocsAIWriteInput(c, nil, docsAIWriteOptions{Format: "xml", Strict: true}); err == nil || !strings.Contains(err.Error(), want) || !clierr.HasKind(err, clierr.KindUsage) {
+			t.Errorf("strict %s 期望用法错误含 %q，得到 %v", c, want, err)
+		}
+	}
+	// content-update（宽松）保持 v1.42：href 与 src 混用也原样交给服务端
+	c := `<img href="https://img.example.com/a.png" src="tok"/>`
+	if in, err := prepareDocsAIWriteInput(c, nil, docsAIWriteOptions{Format: "xml"}); err != nil || in.Content != c {
+		t.Fatalf("宽松模式应原样透传: %v %q", err, in.Content)
+	}
+}

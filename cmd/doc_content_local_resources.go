@@ -38,6 +38,7 @@ import (
 //   - ![说明](@./img.png)、![说明](<@./带 空格.png>)：官方写法，路径相对当前目录；
 //   - ![说明](./img.png)、![说明](/abs/img.png)：本地导入写法，相对内容文件所在目录（内联内容相对当前目录）；
 //   - <img path="@./img.png" width="600"/>、<source path="@./report.pdf" name="报告.pdf"/>：XML 写法。
+//   - <img href="https://..."/> 与 ![](https://...) 不经 CLI，原样交给服务端下载（现有行为）。
 //     XML 内容来自文件且 @ 相对路径在当前目录不存在时，回退到内容文件所在目录（对齐官方）。
 //
 // 图片尺寸归一化（对齐官方 normalizeLocalDocImagePresentation）：<img> 的 width/height 一律改为图片真实像素，
@@ -264,6 +265,14 @@ func rewriteLocalResourceTag(raw, name string, opts docsAIWriteOptions, occurren
 	tag := parseStartTag(raw)
 	pathValue, hasPath := tag.get("path")
 	if !hasPath {
+		// <img href="https://..."/> 由服务端下载（v1.42 现有行为），原样透传；严格模式只拒绝与其他图片来源混用
+		if name == "img" && opts.Strict && tag.has("href") {
+			for _, conflict := range []string{"src", "token", "img_key", "img-key", "url"} {
+				if tag.has(conflict) {
+					return "", nil, clierr.Usagef("<img> 的 href 不能与 %s 同时使用（path / href / src 只能选一个）", conflict)
+				}
+			}
+		}
 		return raw, nil, nil
 	}
 	pathValue = strings.TrimSpace(pathValue)
