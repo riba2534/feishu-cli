@@ -70,9 +70,9 @@
     {"skill": "feishu-cli-platform", "workflow": "directory", "prefixes": [["user"], ["dept"]]},
 
     {"skill": "feishu-cli-docs", "workflow": "read", "prefixes": [["doc"], ["doc", "get"], ["doc", "blocks"], ["doc", "read"]]},
-    {"skill": "feishu-cli-docs", "workflow": "write", "prefixes": [["doc", "add"], ["doc", "add-board"], ["doc", "add-callout"], ["doc", "batch-update"], ["doc", "content-update"], ["doc", "create"], ["doc", "delete"], ["doc", "history"], ["doc", "media-insert"], ["doc", "table"], ["doc", "update"]]},
+    {"skill": "feishu-cli-docs", "workflow": "write", "prefixes": [["doc", "add"], ["doc", "add-board"], ["doc", "add-callout"], ["doc", "batch-update"], ["doc", "content-update"], ["doc", "create"], ["doc", "delete"], ["doc", "history"], ["doc", "media-insert"], ["doc", "resource"], ["doc", "table"], ["doc", "update"]]},
     {"skill": "feishu-cli-docs", "workflow": "import", "prefixes": [["doc", "import"]]},
-    {"skill": "feishu-cli-docs", "workflow": "export", "prefixes": [["doc", "export"], ["doc", "export-file"], ["doc", "media-download"]]},
+    {"skill": "feishu-cli-docs", "workflow": "export", "prefixes": [["doc", "export"], ["doc", "export-file"], ["doc", "media-download"], ["doc", "media-preview"]]},
     {"skill": "feishu-cli-docs", "workflow": "markdown", "prefixes": [["markdown"]]},
 
     {"skill": "feishu-cli-storage", "workflow": "drive", "prefixes": [["drive"], ["drive", "download"], ["drive", "export"], ["drive", "export-download"], ["drive", "import"], ["drive", "inspect"], ["drive", "move"], ["drive", "pull"], ["drive", "push"], ["drive", "status"], ["drive", "task-result"], ["drive", "update-title"], ["drive", "upload"], ["drive", "version-get"], ["drive", "version-history"], ["doc", "import-file"]]},

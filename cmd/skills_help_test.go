@@ -104,10 +104,10 @@ func TestSkillHelpGroupListsAllWorkflows(t *testing.T) {
 		want []string
 	}{
 		{[]string{"doc"}, []string{
-			"feishu-cli-docs/export:export,export-file,media-download",
+			"feishu-cli-docs/export:export,export-file,media-download,media-preview",
 			"feishu-cli-docs/import:import",
 			"feishu-cli-docs/read:blocks,get,read",
-			"feishu-cli-docs/write:add,add-board,add-callout,batch-update,content-update,create,delete,history,media-insert,table,update",
+			"feishu-cli-docs/write:add,add-board,add-callout,batch-update,content-update,create,delete,history,media-insert,resource,table,update",
 			"feishu-cli-storage/drive:import-file",
 			"feishu-cli-visual/htmlbox:htmlbox",
 		}},

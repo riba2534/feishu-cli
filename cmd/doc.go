@@ -17,6 +17,7 @@ var docCmd = &cobra.Command{
     export         导出文档为 Markdown（--download-images 落地图片/画板）
     export-file    导出文档为文件（PDF / Word / Excel）
     media-download 下载文档素材（图片 / 附件 / 画板缩略图，单个素材上限 100MB）
+    media-preview  预览文档素材（图片 / 附件 / 评论图片，保存源文件并自动补扩展名）
     history        历史版本：列出 / 回滚 / 查询回滚状态
   创建与导入
     create         创建新文档
@@ -28,6 +29,7 @@ var docCmd = &cobra.Command{
     add-board      添加空白画板
     add-callout    添加高亮块
     media-insert   插入图片或附件
+    resource       文档封面图：下载 / 设置（文件、HTTPS 图片、剪贴板）/ 删除
     htmlbox        妙笔BOX HTML 小组件块（create/update/get/delete，可跑动画/图表）
     update         更新单个块
     batch-update   批量更新块
