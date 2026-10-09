@@ -25,6 +25,9 @@
 - **认证**：`--scope` 与 `--domain/--recommend` 可叠加（原报错）；批量申请一律剔除 `im:message.send_as_user`；`--device-code` 续轮询上限 600 秒；token.json 可能新增 `refresh_failure` 标记。
 - **OKR**：`okr cycle list` 默认查询 v2 用户周期（与 `cycle detail`、目标创建使用的 ID 一致），旧的租户周期用 `--tenant`。
 - **IM**：`msg history` 在话题群只返回根消息（回复在 `thread_replies` 中，不再重复出现在 `items`）；`msg thread-messages` 的时间范围改为按秒在客户端过滤；`msg reaction/pin`、`chat get/update/delete` 新增 `--as`（默认 auto，未登录时可用 Bot）；`msg merge-forward` 固定使用应用身份；`chat member list` 新增 `users/bots/truncations` 字段（`items` 仍只含用户）；`user search --query` 改走 `contact/v3/users/search`，不再返回 `user_id`（需要时用 `--email/--mobile`）；`user search --email/--mobile` 的 `user_id` 字段改为真实 user_id（此前填的是 open_id）；`event consume` 同一应用单进程单连接并加单实例锁。
+- **搜索文档**：`search docs` 改走官方使用的 Search v2 端点（`POST /open-apis/search/v2/doc_wiki/search`）：每页最多 20 条（原 50），翻页改用 `--page-token`，`--offset` 大于 0 时报用法错误；`--owner-ids`/`--chat-ids`/`--docs-types` 映射为 v2 filter，输出字段保持兼容并新增 `page_token`。
+- **画板**：`board export-code --output-path` 目标文件已存在时默认报错，覆盖需加 `--overwrite`（此前静默覆盖）。
+- **其他**：`mail message/messages/thread --format` 只接受服务端取值（full/plain_text_full/metadata）；`doctor --only`、`auth token` 参数冲突、`--page-limit` 越界、非法 `--as` 取值等改为用法错误（退出码 2）。
 
 ### 新增
 
@@ -108,11 +111,13 @@
 - 运行时：限流等待只向上抖动并支持 Retry-After；手写请求统一走共享连接池与受控客户端；Ctrl-C 可中断进行中的请求；拼错子命令给出建议；错误预览与落盘文件名按 UTF-8 字符边界截断。
 - IM：话题群 `msg history` 线程回复重复输出、翻页被回复占用；`--markdown/--content` 的 @ 标签未规范化导致 @ 失效；`chat member list` 拿不到群内机器人；事件订阅按事件类型各开一条连接、与同应用其他连接争抢事件；设了 `--timeout/--max-events` 时 stdin EOF 仍提前退出；`msg history` 文本模式也全量拉取群成员；User 身份降级到搜索时提示语与身份不符且静默丢弃时间参数；`--user-email` 模糊匹配可能定位到错误的人；`search messages/chats` 丢弃服务端 notice；资源下载默认文件名改为服务端文件名。
 - 集成阶段：SDK token 缓存改为随 client 实例重建而丢弃（同一 app_id 切换 base_url 或轮换 secret 后不再复用旧 token）；异步删除任务失败时按身份提示原因；`table-put` 数值列写入前重置残留的文本格式。
+- 技能 review 阶段：`msg read-users` 已登录时必然失败（接口只收 Tenant）改用原始请求并新增 `--as`；`file version create/get/list` 兼容数字 status，避免创建成功后误报失败而重复建版本；妙记命令接受妙记链接，`vc notes` 在会议号/日历路径下也补拉纪要产物，产物部分失败时非零退出，`minutes download` 同批同名文件自动改名；邮件内联图片在 home 为软链接时不再被误拒；`--domain mail --recommend` 补收信规则 scope、slides 授权域补齐子命令 scope；`slides create` 按服务端返回统计页数；`calendar attendee remove` 的 dry-run 与真实请求一致；`okr comment create --select-all` 配 `--content-json` 时选区不再为空；`perm password` 遇 1063002 提示先开放链接；多处 help 与错误提示修正。
 
 ### 技能与验证
 
 - 9 个领域技能同步上述行为变化，修正实测证伪的文档结论（bitable 视图配置 schema、data-query DSL、OKR "v2/cycles 不存在"、日历删除语义、考勤与任务示例、`Sheet1!` 写法、权限命令身份等）；各领域 SKILL.md 增加鉴权/scope 错误指引。
 - 新增 CI（gofmt / vet / test / check-skills / check-privacy）；隐私扫描接入 `make check-privacy`。
+- 技能目录全面 review：逐条按新二进制 `--help`、源码与实跑核对 9 个技能；新增 Agent 调用契约（退出码、确认门禁、stdout/stderr、自动授权、目标解析）；`msg`/`chat`、`drive` → `comment`/`perm`/`search` 的内容按命令归属迁移，跨工作流命令组要求显式前缀并在 `--help` 列出全部相关工作流；身份表按 `--help` 核对；9 个 description 改为"能力 → 何时用 → 不用于"单行结构，trigger-evals 替换 17 条、boundary evals 新增 11 条，evals.json 为新增命令组补 21 条用例。**本次未运行模型触发评测**，改为静态核对触发词覆盖。
 
 ## [v1.41.0] - 2026-09-22
 
