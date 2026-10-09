@@ -39,7 +39,7 @@
 | `meeting_id` | 长数字串（如 `6911188411932033028`） | `vc search` 的 `items[].id`、`vc detail`、`vc meeting list-active` | `vc detail/notes/recording`、`meeting-events`、`meeting-leave` |
 | 会议号 | 恰好 9 位纯数字 | 用户口述、会议链接 | 只用于 `vc detail <会议号>`、`vc search --query <会议号>`、`meeting-join --meeting-number` |
 | `note_id` | 长数字串 | `vc detail`、`vc notes` | `vc note detail/transcript` |
-| `minute_token` | 字母数字（≥5 位），妙记 URL `/minutes/<token>` 的末段 | `vc detail`、`vc notes`、`vc recording`、`minutes search` | `minutes get/download/apply-permission`、`vc notes --minute-tokens` |
+| `minute_token` | 字母数字（≥5 位），妙记 URL `/minutes/<token>` 的末段（`minutes get/download`、`vc notes --minute-tokens` 也可直接传妙记链接） | `vc detail`、`vc notes`、`vc recording`、`minutes search` | `minutes get/download/apply-permission`、`vc notes --minute-tokens` |
 | 日历实例 ID | `<uuid>_0` 或 `<uuid>_<时间戳>` | `calendar agenda -o json` 的 `events[].event_id` | `vc notes/recording --calendar-event-ids` |
 | 文档 token | `note_doc` / `verbatim_doc` / `shared_docs` | `vc notes`、`vc note detail` | `doc export` |
 
@@ -84,7 +84,7 @@ feishu-cli auth check --scope "vc:meeting.search:read vc:note:read minutes:minut
    - 没有纪要但有妙记：`minutes get <minute_token> --transcript`（写文件）。
    - 两者都有且用户没指定：优先纪要逐字稿；用户明确说"妙记"时用妙记。
 3. **AI 摘要/待办/章节/关键词**：`minutes get <minute_token> --summary --todo ...` 只取需要的项。
-   `vc notes --with-artifacts` 会原样内联整份 AI 产物（含逐字稿全文，输出很大），且只对妙记路径生效。
+   `vc notes --with-artifacts` 会原样内联整份 AI 产物（含逐字稿全文，输出很大）。
    用户要现成总结时返回 AI 产物；要复盘、分析"谁说了什么"时读逐字稿原文。
 4. **会中与会后**：进行中的会议用 `vc meeting list-active` + `vc bot meeting-events`；会议结束后不要再拉会中事件
    （实测返回 120002/120003），改用 `vc detail` / `vc notes` 读会后产物。会议刚结束时纪要和妙记可能还在生成。
@@ -150,14 +150,14 @@ feishu-cli vc notes --calendar-event-ids <event_id> -o json
   transcript_path / hint`。
 - `note_display_type`：`normal`（逐字稿在 `verbatim_doc` 文档里）/ `unified`（用 `vc note transcript`）/ `unknown`。
 - 会议路径总会尝试经录制补 `minute_token`；没有纪要、纪要无权限（121005）、没有录制（121004）都写入 `hint`，不中断整批。
-- **`--with-artifacts` 与 `--download-transcript` 只作用于妙记路径**：`--minute-tokens`，或日历路径中没被会议路径覆盖的妙记。
-  `--meeting-ids` 和常见的日历路径会静默忽略这两个开关（实测无 `artifacts`、无 `transcript_path`）——先拿到
-  `minute_token`，再用 `--minute-tokens` 或 `minutes get`。
+- `--with-artifacts` 与 `--download-transcript` 三条路径都生效：`--meeting-ids` / `--calendar-event-ids` 先经录制解析出
+  `minute_token` 再拉取；会议没有录制（解析不到 `minute_token`）时写入 `hint` 并在 stderr 说明未获取。
 - `--with-artifacts` 原样输出 AI 产物接口的数据：实测包含 `keywords` 和逐字稿全文 `transcript`；没生成的
   `summary` 等字段可能缺失。
 - `--download-transcript` 写入 `{output-dir}/artifact-{标题}-{token}/transcript.txt`（带说话人和时间戳的纯文本），
-  `--output-dir` 默认当前目录；同一次调用中同一 `minute_token` 只下载一次。文件已存在且未加 `--overwrite` 时，
-  该项 `transcript_path` 变成 `下载失败: 文件已存在...`，`ok` 仍为 true、退出码为 0——要检查 `transcript_path` 的值。
+  `--output-dir` 默认当前目录；同一次调用中同一 `minute_token` 只下载一次。文件已存在且未加 `--overwrite` 时
+  该项逐字稿失败（`transcript_error` 说明原因）。
+- 任一条目失败（含已请求的 AI 产物 / 逐字稿获取或写文件失败）时该条目 `ok=false`、已取到的数据照常输出，命令以退出码 1 结束。
 
 ### vc note（按 note_id 操作单篇纪要）
 
@@ -207,7 +207,7 @@ feishu-cli minutes get obcnxxxx --wait-ready --wait-timeout 600
   返回原路径并在 stderr 提示。逐字稿为空时 `transcript_file` 为空串。
 - `-o json` 结构：`{minute, artifacts}`。`minute` 是原始接口数据，标题等字段在 `minute.minute.title / url /
   create_time / duration / owner_id`（时间与时长为毫秒）；`artifacts` 只含选中的键。
-- AI 产物接口失败时，JSON 输出 `{minute, artifacts_error}`、文本模式打印失败原因，退出码仍为 0——要检查 `artifacts_error`。
+- AI 产物接口失败时仍输出妙记基础信息（JSON 为 `{minute, artifacts_error}`），并以非零退出码结束：缺 scope / 无权限为 3，其余为 1。
 - `--wait-ready` 只在妙记或 AI 产物仍在生成（`2091003`）时按 `--wait-interval`（默认 10 秒）轮询，最长 `--wait-timeout`
   （默认 300 秒）；已就绪时立即返回，适合刚结束的会议。
 - 无权限（`2091005`，exit 3）时错误信息会提示 `minutes apply-permission`。
@@ -223,10 +223,9 @@ feishu-cli minutes download --minute-tokens obcnxxxx --url-only
 - `--minute-tokens` 必填，最多 50 条；批量请求自动限速。
 - `-o/--output` 是**保存路径**，不是输出格式（本命令没有 JSON 输出，`-o json` 会把文件存成名为 `json` 的文件）。
   单个 token 时可以是文件路径或目录，多个 token 时必须是目录；默认当前目录。
-- 文件名优先取服务端 Content-Disposition，其次按 Content-Type 推导扩展名，兜底 `<token>.media`。目标文件已存在时该项失败，
+- 文件名优先取服务端 Content-Disposition，其次按 Content-Type 推导扩展名，兜底 `<token>.media`。下载前已存在的同名文件让该项失败，
   加 `--overwrite` 才覆盖。
-- 批量下载时不要依赖同名去重：源码中同名检测发生在写盘之后，未加 `--overwrite` 时后一个文件会因"文件已存在"失败，
-  加了 `--overwrite` 则会先覆盖前一个文件再改名为 `<token>-<文件名>`。可能重名时逐个下载并用 `--output <文件路径>` 指定文件名。
+- 批量下载时同一批次内的同名文件在写盘前自动改名为 `name-2.ext`、`name-3.ext`，不会互相覆盖（`--overwrite` 也不会覆盖本批次已写出的文件）。
 - `--url-only` 只打印预签名下载链接，不落盘。部分失败时退出码仍为 0，全部失败才非 0。
 
 ### minutes apply-permission
@@ -374,6 +373,7 @@ Bot 路径的 scope 在飞书开放平台的应用权限管理页面开通并发
 | `120003` | 当前身份不在该会议中（实测对已结束会议也返回） | 核对 `--as` 与 `meeting_id` 来源；会议已结束改用 `vc detail` / `vc notes` |
 
 - 业务错误码随 HTTP 4xx 下发时也按业务码处理，错误信息附 `log_id` 便于排查；退出码：用法错误 2、鉴权或权限 3。
-- 批量命令（`vc notes/recording`、`minutes download`）部分失败时退出码为 0，要逐项检查 `ok` / `error`。
-- 所有逗号分隔的批量参数先去重，去重后超过 50 条直接报错；`minute_token` 前置校验为字母数字且至少 5 位。
+- 批量命令的退出码：`vc notes` 任一条目失败为 1；`vc recording`、`minutes download` 部分失败仍为 0、全部失败才非 0。都要逐项检查 `ok` / `error`。
+- 所有逗号分隔的批量参数先去重，去重后超过 50 条直接报错；`minute_token` 前置校验为字母数字且至少 5 位（妙记链接自动取末段），
+  参数错误一律为用法错误（退出码 2），且先于身份解析。
 - 刚结束的会议可能暂时查不到纪要或妙记；进行中的会议只能读会中事件。

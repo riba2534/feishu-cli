@@ -1,7 +1,7 @@
 # 飞书会话浏览与管理
 
-本工作流处理"读聊天记录 / 消息互动 / 管群"：`chat` 全部子命令，以及 `msg delete/get/history/list/mget/pin/pins/reaction/read-users/search-chats/thread-messages/unpin`。
-发送、回复、编辑新消息走 [`msg` 工作流](../msg/workflow.md)；构造卡片走 [`card` 工作流](../card/workflow.md)。
+本工作流处理"读聊天记录 / 消息互动 / 管群"：`chat` 全部子命令，以及 `msg flag/get/history/list/mget/pin/pins/reaction/read-users/resource-download/search-chats/thread-messages/unpin`。
+发送、回复、转发、加急，以及编辑和撤回已发消息走 [`msg` 工作流](../msg/workflow.md)；构造卡片走 [`card` 工作流](../card/workflow.md)。
 
 ## 目录
 
@@ -10,7 +10,9 @@
 - [端到端：拉一段时间窗的完整聊天记录](#端到端拉一段时间窗的完整聊天记录)
 - [单次调用：常用读命令](#单次调用常用读命令)
 - [搜群与定位](#搜群与定位)
-- [消息互动与撤回](#消息互动与撤回)
+- [下载消息资源](#下载消息资源)
+- [Reaction 与 Pin](#reaction-与-pin)
+- [消息书签（msg flag）](#消息书签msg-flag)
 - [群聊管理](#群聊管理)
 - [外部群操作](#外部群操作)
 - [踩坑速查](#踩坑速查)
@@ -28,22 +30,24 @@
 | 列出当前身份加入的所有群 | `chat list`（`--page-all` 拉全量） |
 | 看单条 / 批量消息、合并转发内容 | `msg get` / `msg mget` |
 | 看一个话题的全部回复 | `msg thread-messages <omt_xxx>` |
-| 谁读了 Bot 发出的消息 | `msg read-users <om_xxx>`（见[已读用户](#已读用户msg-read-users)） |
+| 谁读了 Bot 或本人发出的消息 | `msg read-users <om_xxx>`（见[已读用户](#已读用户msg-read-users)） |
 | 按关键词搜消息 | `search messages`（属于 `feishu-cli-platform`） |
-| Reaction / Pin / 撤回 | `msg reaction` / `msg pin` / `msg delete` |
+| 下载消息里的图片 / 文件 | `msg resource-download`（见[下载消息资源](#下载消息资源)） |
+| Reaction / Pin / 书签 | `msg reaction` / `msg pin` / `msg flag` |
+| 撤回、编辑已发消息 | `msg delete` / `msg edit`（属于 [`msg` 工作流](../msg/workflow.md)） |
 | 建群、改群、成员管理 | `chat create` / `chat update` / `chat member ...` |
 
 ## 身份
 
 | 命令 | 身份 |
 |---|---|
-| `msg get/list/mget/thread-messages`、`chat list` | User 优先、Bot 兜底：已登录用本人身份，未登录用 Bot（要求 Bot 在群里）；User Token 已配置但不可用时 stderr 告警后改用 Bot |
+| `msg get/list/mget/thread-messages/resource-download`、`chat list` | User 优先、Bot 兜底：已登录用本人身份，未登录用 Bot（要求 Bot 在群里）；User Token 已配置但不可用时 stderr 告警后改用 Bot |
 | `msg history`（群聊入口）、`chat member list/add/remove` | `--as bot\|user\|auto`，默认 auto，回退规则同上一行（不可用时告警后改用 Bot） |
 | `msg history --user-id/--user-email`（私聊入口） | 必须 User Token |
 | `msg reaction/pin/unpin/pins`、`chat get/update/delete`、`msg search-chats` | `--as bot\|user\|auto`，默认 auto：已登录用 User，未配置回退 Bot；**已配置但解析/刷新失败直接报错**，不静默切 Bot |
 | `chat create`、`chat link` | 固定 Bot（应用身份），不能切 User Token |
-| `msg read-users` | 接口支持 User 与 Bot，但当前 CLI 已登录时会本地报错，见[已读用户](#已读用户msg-read-users) |
-| `msg delete` | 默认 Bot；仅显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时以本人身份撤回 |
+| `msg read-users` | `--as bot\|user\|auto`，默认 auto（已配置但不可用时 fail-closed）；只能查调用身份自己发出的消息，按消息发送者选身份，见[已读用户](#已读用户msg-read-users) |
+| `msg flag create/list/cancel` | 必须 User（`im:feed.flag:read` / `im:feed.flag:write`） |
 
 - `--as bot` 时 Bot 必须在目标群内；`msg reaction remove` 只能删除同一身份添加的表情（实测跨身份删除返回 231007）。
 - 外部群里 Bot 通常不在群内，读外部群消息先确认 User 授权：
@@ -150,13 +154,13 @@ feishu-cli msg thread-messages omt_xxx --start-time 1704067200 --end-time 170415
 只能查**调用身份自己发出、7 天内**的消息：Bot 身份查 Bot 发的消息，User 身份查本人发的消息；调用者需在该会话中。
 只返回已读用户，不返回未读用户；外部群不支持。
 
-```bash
-# 未登录 User 时直接用（以 Bot 身份；-o json 输出 {items, has_more, page_token}；--page-size 1–100，默认 20）
-feishu-cli msg read-users om_xxx --user-id-type open_id -o json
+按消息发送者选身份：Bot 发的消息用 `--as bot`，本人发的消息用 `--as user`。默认 `--as auto` 在已登录时走 User，
+查 Bot 发的消息必须显式 `--as bot`；已配置 User 但解析/刷新失败时直接报错，不静默切 Bot。
+`-o json` 输出 `{items, has_more, page_token}`；`--page-size` 1–100，默认 20。
 
-# 已登录时当前版本底层 SDK 只接受应用身份，会在本地报 "tenant token type not match user access token"（实测）；
-# 改用透传并按消息发送者选身份：Bot 发的用 --as bot，本人发的用 --as user
-feishu-cli api GET /open-apis/im/v1/messages/om_xxx/read_users --params '{"user_id_type":"open_id"}' --as bot
+```bash
+feishu-cli msg read-users om_xxx --as bot --user-id-type open_id -o json    # Bot 发出的消息
+feishu-cli msg read-users om_xxx --as user -o json                          # 本人发出的消息
 ```
 
 ## 搜群与定位
@@ -176,7 +180,24 @@ feishu-cli msg search-chats --query "周会" --exclude-muted --page-all -o json
   原样透出搜索接口的枚举（与 `chat list` 的 group/topic 写法不同），`external: true` 只在外部群出现（内部群省略该字段）。
 - 关键词搜消息属于 `feishu-cli-platform` 的 `search messages`。
 
-## 消息互动与撤回
+## 下载消息资源
+
+```bash
+# 不传 -o：用服务端文件名保存到当前目录（拿不到时用 file_key + 按 MIME 推断的扩展名）
+feishu-cli msg resource-download om_xxx file_xxx --type file
+
+# 指定路径；大文件加长超时（默认 5m）
+feishu-cli msg resource-download om_xxx img_xxx --type image -o /tmp/photo.png
+feishu-cli msg resource-download om_xxx file_xxx --type file -o /tmp/large.zip --timeout 30m
+```
+
+- `--type image|file` 必填；`file_key` 从 `msg get <om_xxx> -o json` 的 `body.content` 里取
+  （`image_key`、`file_key`，post 附件区在 `files[].file_key`）。
+- 默认 User 优先：已登录时以本人身份下载，Bot 看不到的历史消息资源也能下；未登录时 Bot 需能看到该消息。
+- 按服务端文件名命名时不覆盖已存在的同名文件（自动追加 `_1`、`_2`）；`-o` 给了无扩展名的路径时只补扩展名。
+- 用户身份下载遇到大文件限制时会自动按 HTTP Range 分片下载并合并。
+
+## Reaction 与 Pin
 
 ```bash
 feishu-cli msg reaction add om_xxx --emoji-type THUMBSUP          # 默认 auto（已登录即本人）
@@ -187,14 +208,36 @@ feishu-cli msg reaction list om_xxx                               # 始终输出
 feishu-cli msg pin om_xxx                                         # 同样支持 --as bot|user|auto
 feishu-cli msg unpin om_xxx
 feishu-cli msg pins --chat-id oc_xxx                              # --start-time/--end-time 是毫秒
-
-feishu-cli msg delete om_xxx                                      # Bot 撤回自己发的消息
-feishu-cli msg delete om_xxx --user-access-token u-xxx            # 以本人身份撤回（如群主撤回群内消息）
 ```
 
-- `msg delete` 没有确认门禁，执行前核对 message_id。Bot 只能撤回自己发出的消息（230026），群主可撤回群内指定消息；
-  撤回时限由企业管理员设置，超时返回 230009；撤回群消息时 Bot 需在群内。批量发送的消息不能用此命令撤回。
-- 撤回后消息体 `body.content` 变成字面字符串（见 `references/output-quirks.md`）。
+## 消息书签（msg flag）
+
+把消息标记到用户的 Feed/书签（服务端称 message flag，`/open-apis/im/v1/flags`）。必须 User Token：
+`list` 需 `im:feed.flag:read`，`create/cancel` 需 `im:feed.flag:write`。
+
+```bash
+feishu-cli msg flag create om_xxx                                       # 消息层书签（默认 default + message）
+feishu-cli msg flag create om_xxx --flag-type feed                      # feed 层，自动按群模式选 thread / msg_thread
+feishu-cli msg flag create om_xxx --item-type msg_thread --flag-type feed
+feishu-cli msg flag list --page-size 50                                 # 始终输出 JSON，不接受 -o
+feishu-cli msg flag cancel om_xxx                                       # 默认取消消息层，并尽量取消 feed 层
+```
+
+CLI 用字符串，底层映射为 OpenAPI 整数枚举（`list` 输出里是整数）：
+
+| 字段 | CLI 字符串 | OpenAPI 整数 | 含义 |
+| --- | --- | --- | --- |
+| --item-type | default | 0 | 普通消息 |
+| --item-type | thread | 4 | 话题群（topic） |
+| --item-type | msg_thread | 11 | 普通群里的消息线程 |
+| --flag-type | message | 2 | 消息层书签（默认） |
+| --flag-type | feed | 1 | feed 层（侧边栏） |
+
+- 只支持 `default + message`、`thread + feed`、`msg_thread + feed` 三种组合，其余服务端拒绝。
+- 注意 `flag_type` 是 `1=feed / 2=message`，不要按顺序臆测成 `1=message`。
+- `list` 不接受 `--flag-type/--item-type`，输出含 `flag_items` / `delete_flag_items` / `messages` / `has_more` /
+  `page_token`，需要时在 `flag_items[*].flag_type` 上自行过滤。
+- `cancel` 显式传 `--item-type` 和 `--flag-type` 时只取消指定层；自动判断 feed 层失败时跳过并打印 warning。
 
 ## 群聊管理
 

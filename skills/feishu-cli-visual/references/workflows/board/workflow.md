@@ -98,8 +98,8 @@ feishu-cli board export-code $BOARD_ID --source
 ### 限制（详见 references/mermaid-engines.md）
 
 - 布局由服务端决定，不能指定落点坐标
-- CLI 对 Mermaid 的复杂度警告（par / ≥10 participant / ≥3 层 alt / ≥30 长行）只是提示：2026-10 复测
-  par、12 个 participant、3 层嵌套 alt 均能正常渲染；真正失败（Parse error / Invalid request parameter）时再改 `--engine local`
+- CLI 只在规模明显超出实测范围（≥20 participant / ≥6 个 alt 块 / ≥50 行长标签）时在 stderr 提示，不阻断执行；2026-10 复测
+  par、12 个 participant、3 层嵌套 alt 均能正常渲染。真正失败（Parse error / Invalid request parameter）时再改 `--engine local`
 - `board import` 失败直接报错，不会降级为代码块（降级只发生在 `doc import`）
 
 ---
@@ -285,7 +285,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 | `feishu-cli board clone <src> <dst>` | 克隆画板（目标应为空画板；默认 Bot 读源画板） | `--batch-size`（默认 10）`--interval`（默认 1s）`--filter-types` `--dry-run` |
 | `feishu-cli board upload-image <board_id> photo.png` | 图片转 image 节点（支持 jpeg/png/gif/webp/bmp/tiff，只读文件头取尺寸；EXIF Orientation 5-8 旋转的 JPEG——手机竖拍照片最常见——无法自动取尺寸，会报错要求显式 `--width/--height`） | `--x` `--y` `--width` `--height` `--dry-run` |
 | `feishu-cli board lint <board_id>` | 几何质检 | 无 |
-| `feishu-cli board export-code <board_id>` | 反向导出 SVG；`--source` 取回 Mermaid/PlantUML 源码 | `--output-path` `--merge` `--source` `--node-id` |
+| `feishu-cli board export-code <board_id>` | 反向导出 SVG；`--source` 取回 Mermaid/PlantUML 源码 | `--output-path` `--merge` `--source` `--node-id` `--overwrite`（输出文件已存在时默认报错） |
 | `feishu-cli board svg-export <board_id> --output-path board.svg` | 服务端整板渲染 SVG 快照 | `--output-path` `--overwrite`（目标已存在时必须） |
 
 ---

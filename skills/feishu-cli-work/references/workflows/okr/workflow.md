@@ -160,7 +160,7 @@ feishu-cli okr comment create --target-type objective --target-id <objective_id>
 ```
 
 - `--content` / `--notes` 纯文本自动包装为 v2 ContentBlock；需要 @人、链接时用 `--content-json` / `--notes-json` 传完整 v2 结构。
-- 目标/KR 评论必须且只能指定 `--selected-text` / `--select-all` / `--ref-comment-id` 之一（`--select-all` 发送 `selected_text="*"`）。
+- 目标/KR 评论必须且只能指定 `--selected-text` / `--select-all` / `--ref-comment-id` 之一（`--select-all` 发送的 `selected_text` 不是字面量 `"*"`，而是与 `--content` 纯文本等长（按字符计）的 `*` 串；改用 `--content-json` 时 CLI 拿不到纯文本，生成的串为空）。
 - 租户强制 OKR 分类时创建目标需带 `--category-id`：先 `feishu-cli api GET /open-apis/okr/v2/categories --as user` 查
   （该端点需用户 scope `okr:okr.setting:read`，缺失报 99991679）。
 - 验证状态：测试租户未开通 OKR 写 scope，以上写命令只做了 `--dry-run` 与单元测试，未做真实写入。

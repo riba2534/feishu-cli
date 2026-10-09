@@ -88,6 +88,14 @@
       "expected_output": "空远端名拒绝上传；两者都能保留 token 并对大于20MB的文件分片覆盖，但 .md 仍应使用 markdown overwrite：drive upload 未传 --name 会把远端改名为本地文件名，且默认要求 User Token。",
       "expectations": ["说明读取不到现有文件名时非零退出且不会自动重命名上传", "指向确认原名后显式 --name 或修复元数据读取", "25MB 的 .md 覆盖推荐 markdown overwrite（>20MB 自动分片且保留远端原名）；如提到 drive upload --file-token，说明它同样支持分片，但未传 --name 会改用本地文件名并默认需要 User Token"],
       "files": []
+    },
+    {
+      "id": 12,
+      "workflows": ["write"],
+      "prompt": "文档 doxcnxxx 被误改了，列出历史版本，回滚到昨天 15:00 之前最后那一版，并确认回滚真正完成；我在非交互环境执行。",
+      "expected_output": "doc history list doxcnxxx --page-all -o json 按 edit_time 定位 history_version_id；用户确认后 doc history revert --history-version-id <id> --yes；status=done 才算成功，running 时用 revert-status --task-id 继续查。",
+      "expectations": ["先用 doc history list 取 history_version_id，不把 revision_id 传给 revert", "revert 先 --dry-run 或向用户确认，非交互环境确认后才加 --yes（不带时退出码 10）", "以 status=done 判定成功，running 时用 doc history revert-status --task-id 查询，partial_failed/failed 非零退出", "说明 revert 默认 Bot 身份，Bot 无编辑权限时显式传本人 --user-access-token"],
+      "files": []
     }
   ]
 }

@@ -113,15 +113,16 @@ export FEISHU_APP_SECRET=xxx
 通过 **OAuth 2.0 Device Flow（RFC 8628）** 获取 User Access Token，用于搜索、审批任务查询等需要用户授权的功能。**无需配置重定向 URL 白名单**（v1.18+ 已删除 Authorization Code Flow）。
 
 **Token 使用策略**（按命令分四类，对应 `cmd/utils.go` 五个 helper；越来越多的命令提供 `--as bot|user|auto`，以命令 `--help` 为准）：
-- **读类 · User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`）：`msg history/list/get/mget/thread-messages/resource-download`、`chat list`、`doc read`、`task get/list/subtask list/comment list/tasklist get/list/tasks`、`calendar get/list/primary/freebusy/suggestion/room-find/event get/list/attendee list`、`file meta/stats/list/version list/get/download`、`board image/nodes/export-code/lint`、`user read`、`wiki get/nodes/spaces/export/member list`、`drive pull/push/status`、**sheet 全家桶**（所有 sheet 子命令含写）等。优先级链：`--user-access-token` → `FEISHU_USER_ACCESS_TOKEN` → `~/.feishu-cli/token.json`（过期自动刷新）→ `config.yaml` 的 `user_access_token` → App Token 兜底。**注意**：此 helper 在 token 损坏/刷新失败时会**在 stderr 告警后**切 Bot（不再静默；stdout 不受影响，`-o json` 管道安全），仍不适合身份敏感的 Markdown/Drive import-export-move。sheet、`drive pull/push/status/download/upload`、`file list` 另有 `--as`：不传保持上述默认，`--as bot` 强制 App Token（例如访问应用自己的表格），`--as user` 强制 User。
+- **读类 · User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`）：`msg list/get/mget/thread-messages/resource-download`、`chat list`、`doc read`、`doc history list/revert-status`、`task get/list/subtask list/comment list/tasklist get/list/tasks`、`calendar get/list/primary/freebusy/suggestion/room-find/event get/list/attendee list`、`file meta/stats/list/version list/get/download`、`board image/nodes/export-code/lint`、`wiki get/nodes/spaces/export/member list`、`drive pull/push/status`、**sheet 全家桶**（所有 sheet 子命令含写）等。优先级链：`--user-access-token` → `FEISHU_USER_ACCESS_TOKEN` → `~/.feishu-cli/token.json`（过期自动刷新）→ `config.yaml` 的 `user_access_token` → App Token 兜底。**注意**：此 helper 在 token 损坏/刷新失败时会**在 stderr 告警后**切 Bot（不再静默；stdout 不受影响，`-o json` 管道安全），仍不适合身份敏感的 Markdown/Drive import-export-move。sheet、`drive pull/push/status/download/upload`、`file list` 另有 `--as`：不传保持上述默认，`--as bot` 强制 App Token（例如访问应用自己的表格），`--as user` 强制 User。
   **破坏性操作例外**：`drive pull --delete-local` / `drive push --delete-remote` 走 `resolveOptionalUserTokenForDestructive`——已配置 User Token 但不可用时 **fail-closed 报错、拒绝降级 Bot**（Bot 视角远端条目更少、差集更大，会误删本地文件）。未配置 User Token 的纯 Bot 场景仍正常放行。
-- **写类 · 默认 Bot 身份**（`resolveOptionalUserToken`）：`doc create/import/add/content-update`、`msg send/reply/forward/delete`（Bot 自撤回）、`comment reply`、`file version revert`、`wiki move-to-drive`、`slides` 写命令等。**不会自动加载 token.json**，仅当显式传 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到 User Token。`msg merge-forward` 接口只接受 Tenant，固定 Bot。`vc bot meeting-join/leave` **仅 Bot**：传 `--user-access-token` 直接报用法错误（exit 2）。
+- **写类 · 默认 Bot 身份**（`resolveOptionalUserToken`）：`doc create/import/add/add-callout/add-board/content-update/media-insert`、`doc history revert`、`msg send/reply/forward/delete`（Bot 自撤回）、`comment reply`、`file version revert`、`wiki move-to-drive`、`slides` 写命令等。**不会自动加载 token.json**，仅当显式传 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到 User Token。`msg merge-forward` 接口只接受 Tenant，固定 Bot。`vc bot meeting-join/leave` **仅 Bot**：传 `--user-access-token` 直接报用法错误（exit 2）。
   **例外（v1.42+ 改为 `--as` 默认 auto）**：日历写命令（`calendar create-event/update-event/delete-event/attendee add|remove/event-transfer`）与任务/清单写命令——日程和任务是个人资源，用户从 `agenda`/`task my` 拿到的 ID 用 Bot 改删大概率无权限。
-- **必须 User Token**（`resolveRequiredUserToken` / `requireUserToken`）：`search docs/apps`、`approval` 全部（含 `task rollback/add-sign/remind`）、`task my/search/related`、`vc note transcript`、`mail` 写类与管理命令（`send/reply/forward/draft-*/message-modify/message-trash/rule-*/thread-*/template *`）、`drive secure-label/add-comment/search`、`calendar rsvp/event-reply`、`okr comment create`、`file quota`、`apps get/list/release` 等。失败直接报错（exit 3）。`drive upload/download` 默认同样要求 User，可用 `--as bot` 显式改用应用身份。
+- **必须 User Token**（`resolveRequiredUserToken` / `requireUserToken`）：`search docs/apps`、`approval` 全部（含 `task rollback/add-sign/remind`）、`task my/search/related`、`vc note transcript`、`mail` 写类与管理命令（`send/reply/forward/draft-*/message-modify/message-trash/rule-*/thread-*/template *`）、`drive secure-label/add-comment/search/apply-permission`、`wiki space-create`、`msg flag`、`user search --query`、`user search-bot`、`calendar rsvp/event-reply`、`okr comment create`、`file quota`、`apps` 全部等。失败直接报错（exit 3）。`drive upload/download` 默认同样要求 User，可用 `--as bot` 显式改用应用身份。
 - **身份可选 · `--as` 显式切换**（`resolveIdentityToken` / `resolveVCBotEventsIdentity`）：`--as bot|user|auto`，`auto` 为 User 优先、未配置回退 Bot，**已配置 User 但解析/刷新失败 fail-closed**（禁止静默切 Bot）；`--as bot` 强制 App Token（cron/无人值守）；`--as user` 强制 User Token（缺失报错）。身份在 `--dry-run` 之后才 resolve。按默认值分组：
-  - 默认 **auto**：`bitable` 全家桶、native Markdown 全家桶（`markdown create/fetch/overwrite/patch/diff`）、Drive `import/export/export-download/move/task-result/update-title/version-history/version-get`、`search messages`/`msg search-chats`、`calendar agenda/event-search` 与上述日历/任务写命令、`msg reaction/pin`、`chat get/update/delete/member`、`wiki delete-space/node-copy`、`attendance user-task`、`mail triage/message/messages/thread`（Bot 身份不支持 `mailbox="me"`，需显式指定邮箱）、`vc bot meeting-events`（dry-run 用 `HasUserTokenConfigured` 静态探测，不联网不写 token）。
+  - 默认 **auto**：`bitable` 全家桶、native Markdown 全家桶（`markdown create/fetch/overwrite/patch/diff`）、Drive `import/export/export-download/move/task-result/update-title/version-history/version-get`、`search messages`/`msg search-chats`、`calendar agenda/event-search` 与上述日历/任务写命令、`msg reaction/pin`、`msg read-users`（只能查调用身份自己发出的消息，查 Bot 发的须显式 `--as bot`）、`chat get/update/delete`、`wiki delete/delete-space/node-copy`、`attendance user-task`、`mail triage/message/messages/thread`（Bot 身份不支持 `mailbox="me"`，需显式指定邮箱）、`vc bot meeting-events`（dry-run 用 `HasUserTokenConfigured` 静态探测，不联网不写 token）。
+  - 默认 **auto 但告警回退**（已配置 User 不可用时 stderr 告警后改用 Bot，不 fail-closed）：`msg history`（群聊入口；`--user-id/--user-email` 私聊入口必须 User）、`chat member list/add/remove`、`wiki space-list`。
   - 默认 **user**：`vc search/detail/recording/notes`、`vc note detail`、`vc meeting list-active`、`minutes search/get/download/apply-permission`（实测端点接受 Bot，Bot 缺 scope 时报 99991672）。
-  - 默认 **bot**：`okr` 全家桶（OKR 的 user scope 通常未随默认登录域授予；`cycle list` 默认走 v2 用户周期、user/tenant 双支持，`--tenant` 查旧租户周期仅收 Tenant）、`perm` 全家桶（操作用户自己的文档用 `--as user` 或显式 `--user-access-token`，**不读** `FEISHU_USER_ACCESS_TOKEN`；Bot 无权时提示改用 User）。
+  - 默认 **bot**：`okr` 全家桶（OKR 的 user scope 通常未随默认登录域授予；`cycle list` 默认走 v2 用户周期、user/tenant 双支持，`--tenant` 查旧租户周期仅收 Tenant）、`perm` 全家桶（操作用户自己的文档用 `--as user` 或显式 `--user-access-token`，**不读** `FEISHU_USER_ACCESS_TOKEN`；Bot 无权时提示改用 User）、`user info`（`--as user` 走 basic_batch，只返回姓名类字段）。
 - **刷新失败**：refresh_token 终态错误（20026/20037/20064/20073）会在 token.json 记录 `refresh_failure` 标记，后续命令直接以 exit 3 提示重新登录，不再每次重复发起注定失败的刷新；20050 与网络错误重试一次。项目保持 fail-closed，**不会**清除 token 后静默切 Bot。
 - **审批任务查询**：`approval task query` 走 `GET /open-apis/approval/v4/tasks`，身份取当前 User Token，不再传 `user_id` query。
   `--topic` 仅接受 `todo`/`done`/`cc-unread`/`cc-read`（服务端 options 为 1/2/17/18）；`started`（topic=3）已被官方下线，CLI 前置报错并指向 `approval instance initiated`
@@ -145,7 +146,7 @@ export FEISHU_APP_SECRET=xxx
 
 ### Mermaid / PlantUML 图表转画板
 
-**推荐 Mermaid**，导入时自动转画板。支持 8 种 Mermaid 类型：flowchart（含 subgraph）、sequenceDiagram、classDiagram、stateDiagram-v2、erDiagram、gantt、pie、mindmap。PlantUML 支持时序图、活动图、类图、用例图、组件图、ER 图、思维导图等全部类型。
+**推荐 Mermaid**，导入时自动转画板。服务端可渲染 11 种 Mermaid 类型：flowchart/graph（含 subgraph）、sequenceDiagram、classDiagram、stateDiagram-v2、erDiagram、gantt、pie、mindmap、timeline、quadrantChart、xychart-beta（`journey`、`gitGraph` 等不支持，降级为代码块）。PlantUML 支持时序图、活动图、类图、用例图、组件图、ER 图、思维导图等全部类型。
 
 ### 表格智能处理
 
@@ -357,9 +358,8 @@ feishu-cli approval task {rollback|add-sign|remind} ... ; feishu-cli approval ta
 | 批量创建块 | 每次最多 50 | 自动分批 |
 | API 频率限制 | 429 | 自动重试 + 指数退避 |
 | 图表并发 | worker 池 | 默认 5 并发 |
-| Mermaid 花括号 | `{text}` 识别为菱形 | 自动降级为代码块 |
-| Mermaid par 语法 | 飞书不支持 | 用 `Note over X` 替代 |
-| Mermaid 复杂度 | 10+ participant + 2+ alt + 30+ 长标签 | 重试后降级 |
+| Mermaid 不支持的图类型 | `journey`、`gitGraph` 等服务端不渲染 | 直接降级为代码块（`diagram_fallback` 计数），不重试 |
+| Mermaid 语法错误 | Parse error / Invalid request parameter | 不重试，降级为代码块 |
 | sheet filter | 需完整 col+condition | API 限制 |
 | 图片插入 | 素材上传 + Image 块引用 | 失败时创建占位块 |
 | shell 转义 | zsh 中 `!` 转义为 `\!` | 已在代码中处理 |
@@ -398,6 +398,9 @@ Agent 的路由上下文；按功能点持续拆分会增加触发冲突和维�
 | 工作管理 | `feishu-cli-work`：calendar/task/tasklist/approval/attendance/okr |
 | 邮箱 | `feishu-cli-mail` |
 | 会议与妙记 | `feishu-cli-meetings`：vc/minutes |
+
+命令身份规则的维护入口是 `skills/feishu-cli-platform/references/workflows/auth/references/identity.md`；退出码、确认门禁（退出码 10）、
+stdout/stderr 约定与目标实体解析写在同目录的 `agent-contract.md`。领域 SKILL.md 只放指针，不重复维护身份表。
 
 ### 支持的 URL 格式
 
@@ -513,9 +516,9 @@ FEISHU_APP_ID=cli_对外共享App FEISHU_APP_SECRET=xxx feishu-cli <命令> --as
 
 生成将导入飞书的 Markdown 前，必须参考 `skills/feishu-cli-docs/references/workflows/import/references/doc-guide.md`。核心检查项：
 
-- **Mermaid**：普通标签禁止字面花括号 `{}`；`A{判断}` 条件菱形合法。禁止 `par...and...end`、方括号冒号加双引号、sequenceDiagram 参与者 ≤ 8
+- **Mermaid**：用 11 种受支持的图类型（`journey`、`gitGraph` 不支持）；普通标签含花括号、方括号内冒号、`par...and...end`、10+ participant 的时序图实测均可渲染，超大图为可读性拆分；`quadrantChart` 轴标签用英文
 - **SVG**：使用恰好三个反引号的 `svg` fence，导入时转换为画板节点
-- **PlantUML**：无行首缩进、无 `skinparam`、类图无可见性标记（`+ - # ~`）
+- **PlantUML**：必须有 `@startuml` / `@enduml`；行首缩进、`skinparam`、类图可见性标记实测均可渲染
 - **表格**：超 9 行自动走"9 行初始表 + `insert_table_row` 追加"策略保持单 block 连贯；列 > 9 按列组拆分
 - **图片**：默认 `--upload-images` 上传，关闭时创建占位块
 - **公式**：行内 `$...$`、块级 `$$...$$`（块级降级为行内）

@@ -14,7 +14,7 @@
 ## 日历
 
 ```bash
-feishu-cli calendar list [-o json]          # --page-size 最小 50（服务端校验），默认 50
+feishu-cli calendar list [-o json]          # --page-size 取值 50–1000（服务端最小 50），默认 50
 feishu-cli calendar get <calendar_id> [-o json]
 feishu-cli calendar primary [-o json]       # 当前身份的主日历
 ```

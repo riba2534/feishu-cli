@@ -19,8 +19,8 @@
 
 | 模式 | 典型命令 | 行为 |
 |---|---|---|
-| 读类：User 优先，可回退 Bot | doc read/export、msg list/get/mget/thread-messages/read-users/resource-download、chat list、task get/list、calendar get/list/get-event/list-events/freebusy、file meta/stats/download、wiki 读、board 读、slides get；以及不传 `--as` 的 sheet、drive pull/push/status、file list | 显式 flag → `FEISHU_USER_ACCESS_TOKEN` → profile token.json → config 的 `user_access_token` → Bot。已配置 User 但损坏、未绑定 App 或刷新失败时，stderr 告警后改用 Bot；此时结果是 Bot 视角（可能为空或无权限），不要当作本人的结果 |
-| 写类：默认 Bot | doc create/import/add/content-update、msg send/reply/forward/delete、comment reply、slides 写命令、file/wiki 写命令等 | 不读 token.json；仅显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到用户。日历/任务写命令例外（auto，见下表） |
+| 读类：User 优先，可回退 Bot | doc read/export、doc history list/revert-status、msg list/get/mget/thread-messages/resource-download、chat list、task get/list、calendar get/list/get-event/list-events/freebusy、file meta/stats/download、wiki 读、board 读、slides get；以及不传 `--as` 的 sheet、drive pull/push/status、file list | 显式 flag → `FEISHU_USER_ACCESS_TOKEN` → profile token.json → config 的 `user_access_token` → Bot。已配置 User 但损坏、未绑定 App 或刷新失败时，stderr 告警后改用 Bot；此时结果是 Bot 视角（可能为空或无权限），不要当作本人的结果 |
+| 写类：默认 Bot | doc create/import/content-update/media-insert、doc add/add-callout/add-board、doc history revert、msg send/reply/forward/delete、comment reply、slides 写命令、file/wiki 写命令等 | 不读 token.json；仅显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到用户。日历/任务写命令例外（auto，见下表） |
 | 必须 User | search docs/apps、approval 全部、apps 全部、task my/search/related、calendar rsvp/event-reply、msg flag、vc note transcript、mail 写/规则/签名/模板/thread-modify/thread-trash、drive add-comment/search/secure-label/apply-permission、file quota、wiki space-create、user search `--query`、user search-bot、okr comment create | 无可用 User Token 时报错（退出码 3），不回退 Bot。drive upload/download 不传 `--as` 时同样要求 User，可显式 `--as bot` |
 | 仅 Bot | vc bot meeting-join/meeting-leave | 不读任何 User Token；显式传 `--user-access-token` 报用法错误（退出码 2） |
 | 仅 Bot（忽略 User Token） | msg merge-forward | 传入的 User Token（flag 或环境变量）被忽略并在 stderr 提示，仍以 Bot 执行 |
@@ -40,6 +40,7 @@
 | calendar create-event/update-event/delete-event/attendee add·remove/event-share/event-transfer、task/tasklist 写命令（含 set-ancestor） | auto | 日程与任务是个人资源；操作应用自己的日历/任务时显式 `--as bot` |
 | calendar agenda、calendar event-search | auto | primary 日历与当前身份对应，不能混用两种身份的日历 ID |
 | msg reaction add/list/remove、msg pin/unpin/pins、chat get/update/delete | auto | reaction remove 只能删除同一身份添加的表情 |
+| msg read-users | auto | 只能查调用身份自己发出的消息：按消息发送者选身份，Bot 发的用 `--as bot`，本人发的用 `--as user`；auto 在已登录时走 User，查 Bot 发的消息必须显式 `--as bot` |
 | chat member list/add/remove、msg history（`--container-id`）、wiki space-list | auto（告警回退） | 已配置 User 但不可用时 stderr 告警后改用 Bot（不 fail-closed）。外部群推荐 `--as bot`（需对外共享能力 App 且 Bot 已入群）。`msg history --user-id/--user-email`（单聊）始终需要 User |
 | wiki delete、wiki delete-space、wiki node-copy | auto | 已配置 User 但不可用时直接失败 |
 | drive update-title/version-history/version-get | auto | — |

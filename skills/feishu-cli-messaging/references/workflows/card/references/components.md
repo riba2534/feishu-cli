@@ -185,7 +185,7 @@
 **坑点**：
 - `img_list` 长度必须与 `combination_mode` 严格匹配，多/少都会渲染失败
 - 每张图必须使用已经取得的卡片 `img_key`，或配合 `--upload-images` 使用存在的本地路径
-- `feishu-cli media upload` 返回文档素材 `file_token`，**不能**当作卡片 `img_key`
+- `file upload` / `drive upload`（云盘文件）与 `media upload`（文档素材）返回的都是 `file_token`，**不能**当作卡片 `img_key`
 - `msg send --upload-images` 会上传并替换 `img.img_key` 与
   `img_combination.img_list[].img_key` 中的本地路径
 - 客户端 7.4+ 才支持；老版本会回退为单图列表

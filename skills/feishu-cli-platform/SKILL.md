@@ -1,18 +1,9 @@
 ---
 name: feishu-cli-platform
 description: >-
-  仅用于飞书 CLI 的平台基础能力，不是所有飞书请求的通用兜底。覆盖配置初始化、OAuth 登录与
-  Token/Profile 管理、doctor 诊断、
-  OpenAPI schema 查询、api 通用透传、全局搜索以及用户和部门查询。用户提到登录飞书、
-  Device Flow、scope、User/Tenant Token、Token 过期、profile、doctor、99991672/99991679、
-  查询 API path/参数/scope、raw api、调用未封装 OpenAPI、搜索文档/消息/应用或查询用户、邮箱、
-  部门时必须使用本 Skill。明确禁止用于文档正文、云盘文件、消息/群聊、Sheet/Bitable、
-  画板/展示、日历/任务/审批/考勤/OKR、邮箱或会议/妙记；这些业务操作交给对应领域 Skill。
-  这里的“全局搜索”仅指 `search docs/messages/apps`，不包括在审批、会议、邮箱等业务域内查询。
-  业务审批定义/实例/待办使用 feishu-cli-work，会议/妙记业务使用 feishu-cli-meetings。
-  但明确查询 schema 或调用未封装 raw OpenAPI 时仍使用本 Skill，即使端点属于 approval/vc。
+  飞书 CLI 平台基础能力，不是飞书请求的通用兜底：配置与多 Profile、Device Flow 登录、Token 与 scope 预检、应用侧 scope 开通诊断、doctor、技能安装与 CLI 升级、OpenAPI schema 查询与 api 透传、全局搜索（文档含文件夹/知识库/创建者筛选、消息、应用），按邮箱或手机号查用户、部门与机器人。用户提到登录飞书、Token 过期、99991672/99991679、切换 profile、技能与 CLI 版本漂移、调用未封装接口、跨飞书搜文档或消息、查 open_id 时使用；查 schema 或发 raw API 时即使端点属于审批或会议也用本 Skill。不用于文档、云盘与权限、消息、表格、可视化、日历/任务/审批/OKR、邮件和会议等业务操作，分别使用 feishu-cli-docs/storage/messaging/data/visual/work/mail/meetings。
 compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
-allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Bash(curl:*) Bash(python3:*) Read Write
+allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Read Write
 ---
 
 # 飞书平台能力
@@ -28,10 +19,11 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 | 登录、登出、scope 预检、应用已开通 scope 诊断（`auth scopes`）、Token、profile、config、doctor、技能安装/漂移（`skills`）、CLI 升级（`update`） | `references/workflows/auth/workflow.md` |
 | 调任意 OpenAPI、`--as`、分页和 dry-run | `references/workflows/api/workflow.md` |
 | 查询本地 OpenAPI path、参数和 scope | `references/workflows/schema/workflow.md` |
-| 搜索文档、消息或应用 | `references/workflows/search/workflow.md` |
+| 全局搜索文档（含 `drive search` 按文件夹/知识库/创建者精筛）、消息或应用 | `references/workflows/search/workflow.md` |
 | 查询用户、邮箱、手机号、部门，搜索机器人（`user search-bot`） | `references/workflows/directory/workflow.md` |
 
 涉及身份选择，或遇到 Token、身份、scope 报错（如 99991663/99991668/99991672/99991679）时读取 `references/workflows/auth/references/identity.md`，排错表见 `references/workflows/auth/workflow.md`；`auth check` 不是 Bot 权限检查。
+判断命令成败、编写脚本或遇到退出码 10（需确认）时读取 `references/workflows/auth/references/agent-contract.md`。
 
 Schema 只负责发现接口；API 负责执行请求。通常先查 schema，再调用 api。
 
@@ -42,7 +34,7 @@ Schema 只负责发现接口；API 负责执行请求。通常先查 schema，�
 3. 多 Bot / 不确定当前应用时先 `profile list --json`；单次用 `--profile <name>`，不改默认指针。环境变量覆盖了目标 App 时，沿用已有授权在本次进程移除对应覆盖，或用 `--bot-app-id/--bot-app-secret` 指定正确凭证，不修改用户全局环境。
 4. `api` 的所有写请求均可先用 CLI 本地 `--dry-run` 预览；预览不代表服务端接受。其他命令按各自帮助选择验证方式。
 5. 搜索与通讯录结果默认只读取；用户要求后续写操作时再切换到对应领域 Skill。
-6. 按退出码判断失败类型（所有命令通用）：`0` 成功、`1` 业务错误、`2` 用法错误（未知命令/flag、参数或本地路径校验失败）、`3` 鉴权/权限、`4` 网络（可重试）、`10` 危险操作需确认（获得用户同意后追加全局 `--yes` 重跑）、`130` 被中断。错误与诊断（log_id、所需 scope、修复建议）只写 stderr。
+6. 退出码、确认门禁（退出码 10 须经用户同意才追加 `--yes`）、stdout/stderr 约定与目标实体解析见 `references/workflows/auth/references/agent-contract.md`。
 
 ## 领域边界
 
@@ -50,3 +42,9 @@ Schema 只负责发现接口；API 负责执行请求。通常先查 schema，�
 - 云盘、知识库、评论和权限：`feishu-cli-storage`
 - 消息、群聊、卡片和事件：`feishu-cli-messaging`
 - Sheet/Bitable：`feishu-cli-data`
+- 画板、Slides、HTMLBox 与妙搭应用：`feishu-cli-visual`
+- 日历、任务、审批、考勤和 OKR：`feishu-cli-work`
+- 飞书邮箱：`feishu-cli-mail`
+- 视频会议与妙记：`feishu-cli-meetings`
+
+查 schema 或用 `api` 透传未封装端点时即使端点属于上述业务域也留在本 Skill；业务命令本身交给对应领域 Skill。

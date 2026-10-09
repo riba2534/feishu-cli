@@ -48,6 +48,8 @@ feishu-cli board import <whiteboard_id> "graph TD; A-->B" \
 | `--overwrite` | 先清空**整张画板**（含其他图表）再写入 | 关 |
 | `--client-token` | 幂等键（≥10 字符），仅 `--engine local` 生效；服务端引擎传了报用法错误（exit 2） | 空 |
 | `--source-type` | `file` 或 `content` | `file` |
+| `--parse-mode` | 服务端解析模式，原样下发为 `parse_mode`（≤0 时按 1 处理） | `1` |
+| `--dry-run` | 只打印将下发的参数（engine、syntax/syntax_type、parse_mode、overwrite 等），不调用 API | 关 |
 | `<source>` | source-type=content 时直接传图表源码；source-type=file 时传文件路径 | 必填 |
 
 ### diagram-type 映射
@@ -67,7 +69,7 @@ feishu-cli board import <whiteboard_id> "graph TD; A-->B" \
 ## 取回图表源码
 
 服务端导入的 Mermaid / PlantUML 图表在 section 节点上保留 `syntax.code`，可原样取回再编辑（多个图表时不带
-`--node-id` 会列出候选并以 exit 2 退出；`--output-path` 已存在时直接覆盖）：
+`--node-id` 会列出候选并以 exit 2 退出；`--output-path` 已存在时默认报错、不覆盖，加 `--overwrite` 覆盖）：
 
 ```bash
 feishu-cli board export-code <whiteboard_id> --source                          # 只有一个图表时直接打印

@@ -1,7 +1,7 @@
 ---
 name: feishu-cli-meetings
 description: >-
-  查询飞书历史视频会议、纪要、AI 摘要、逐字稿和录制，按 minute token 读取或下载妙记，操作会议机器人入会/离会及查询会议事件。创建日程、找共同空闲时间和预订会议室使用 feishu-cli-work。
+  飞书视频会议与妙记：按时间、参会人或关键词检索历史会议，查询进行中的会议，获取会议纪要、智能纪要、AI 摘要/待办/章节与逐字稿，查询录制并下载妙记音视频和逐字稿，搜索妙记与申请妙记权限，操作会议机器人入会/离会并查询会议事件。用户提到会议纪要、妙记、minute token、逐字稿、录制、会议机器人或 meeting_id 时使用。不用于：创建日程、找共同空闲时间和预订会议室（feishu-cli-work）；未封装接口的 schema/raw API（feishu-cli-platform）。
 compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Read Write
 ---
@@ -33,9 +33,11 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
    `meeting-events` / `meeting-leave` 要长数字 `meeting_id`。
 3. 读逐字稿先看纪要类型：`normal` 用 `doc export <verbatim_doc>`，`unified` 用 `vc note transcript <note_id>`，
    只有妙记时用 `minutes get <minute_token> --transcript`（写文件）。
-4. `vc notes --with-artifacts/--download-transcript` 只对 `--minute-tokens` 生效，`--meeting-ids` 会静默忽略；
+4. `vc notes --with-artifacts/--download-transcript` 三条路径都生效：`--meeting-ids` / `--calendar-event-ids` 先经录制解析
+   `minute_token`，会议没有录制时写入 `hint` 并在 stderr 说明；
    只要摘要、待办等时用 `minutes get --summary --todo ...`，不要拉整份产物。
-5. 批量命令部分失败时退出码仍为 0，逐项检查 `ok`、`error`、`hint`、`transcript_path` 与 `artifacts_error`。
+5. `vc notes` 任一条目失败（含已请求的产物或逐字稿）以退出码 1 结束、已取数据照常输出；`minutes get` 产物失败时输出
+   `artifacts_error` 并非零退出；`vc recording`、`minutes download` 部分失败仍为 0、全部失败才非 0——都要逐项检查 `ok` / `error`。
 6. `minutes apply-permission` 会通知妙记所有者，机器人入会/离会对参会人可见：执行前征得用户同意，验证参数用 `--dry-run`。
 7. 会议结束后不要再用 `meeting-events`，改读 `vc detail` / `vc notes` 的会后产物；会中事件先 `vc meeting list-active` 拿 `meeting_id`。
 
@@ -45,4 +47,4 @@ User 路径业务命令前预检，例如搜索会议并读取妙记逐字稿（
 feishu-cli auth check --scope "vc:meeting.search:read vc:note:read minutes:minutes:readonly minutes:minutes.artifacts:read"
 ```
 
-遇到 Token、身份或 scope 报错（如 99991663/99991668/99991672/99991679）时，读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md` 确认应使用的身份与预检方式，排错表见 `../feishu-cli-platform/references/workflows/auth/workflow.md`。
+删除、覆盖类命令返回退出码 10 时，向用户确认目标与影响后追加全局 `--yes` 重跑，不要自行添加。身份或 scope 报错（如 99991663/99991668/99991672/99991679）读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md`；判断成败、编写脚本或处理确认门禁读取 `../feishu-cli-platform/references/workflows/auth/references/agent-contract.md`。

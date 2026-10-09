@@ -83,7 +83,7 @@ feishu-cli sheet filter-view condition delete --token shtcnxxxxxx --sheet-id 0b1
 | `color` | `backColor` `foreColor` | 颜色，如 `'["#FF0000"]'` |
 
 - `text` **没有**等值比较（`equal` / `equals` 报 1310236 Wrong Filter Value）；按值精确筛选用 `multiValue` + `equal`
-  （`--help` 只列出 4 种 filter-type，`multiValue` 由 CLI 原样透传，实测可用）。
+  （`--filter-type` 取值由 CLI 原样透传给服务端）。
 - `lessEqual` / `greaterEqual` / `lessThan` 等写法报 1310236，用 `lessOrEqual` / `greaterOrEqual`。
 - `hiddenValue` 实测不可用：filter-view 条件报 `1310251 break change not support hiddenValue filter type`，
   `sheet filter create` 报 1310236。要隐藏某些值，改用 `multiValue` 列出要保留的值。

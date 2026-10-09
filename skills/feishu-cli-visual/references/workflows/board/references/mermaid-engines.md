@@ -28,8 +28,8 @@
 - 标准 Mermaid（思维导图 / 时序图 / 类图 / 饼图 / 流程图 / 甘特图） → 默认 `server`
 - 服务端返回 Parse error / Invalid request parameter → 改 `local`
 - 不想要 section 分组、需要离线转换后检查节点 JSON → `local`
-- CLI 的复杂度警告（建议改 `--engine local` 或 svg-import）是保守提示，先照常走 `server`，真失败再切；
-  不要按提示改用 `svg-import`（那会把整图变成一个不可拆的 svg 节点）
+- CLI 的复杂度提示是保守信号，先照常走 `server`，真遇到 Parse error 再切 `--engine local`；
+  不要改用 `svg-import`（那会把整图变成一个不可拆的 svg 节点）
 
 ---
 
@@ -42,24 +42,22 @@
 
 ---
 
-## CLI 内置复杂度警告
+## CLI 内置复杂度提示
 
-feishu-cli 在 `board import --syntax mermaid --engine server`（默认）时会**自动诊断**复杂度，向 stderr 输出警告：
+feishu-cli 在 `board import --syntax mermaid --engine server`（默认）时会估算规模，只有明显超出实测可渲染范围才向 stderr 提示：
 
-```bash
-$ feishu-cli board import $BOARD_ID complex_seq.mmd --syntax mermaid
-⚠ Mermaid 复杂度警告: 含 par 语法 2 次（飞书服务端不支持）
-  服务端可能渲染失败，建议改 --engine local 或改用 svg-import
+```text
+⚠ Mermaid 复杂度提示: participant 数 22 ≥ 20
+  服务端渲染可能失败；先照常导入，真遇到 Parse error 再加 --engine local 改用本地引擎（生成的节点仍可编辑）
 ```
 
-检测维度：
+检测维度（`par` 已实测可渲染，不再提示）：
 
-- `par ` 出现次数 → ≥ 1 立即警告
-- `participant` 出现次数 → ≥ 10 警告
-- `alt ` / `\nalt` 出现次数 → ≥ 3 警告
-- 长行（>60 字符）数 → ≥ 30 警告
+- `participant` / `actor` 声明数 → ≥ 20 提示
+- `alt` 块数 → ≥ 6 提示
+- 长行（>60 字节）数 → ≥ 50 提示
 
-警告**不阻断执行**，只是 stderr 提示。`board import` 失败时直接报错退出，不会降级为代码块（降级只发生在 `doc import`）。
+提示**不阻断执行**，只是 stderr 提示。`board import` 失败时直接报错退出，不会降级为代码块（降级只发生在 `doc import`）。
 
 ---
 
@@ -95,7 +93,7 @@ sequenceDiagram
   Gateway ->> Frontend: response
 ```
 
-- `server`：2026-10 复测可正常渲染（section 内含 life_line、connector 与 `combined_fragment`），CLI 仍会打印 par 复杂度警告
+- `server`：2026-10 复测可正常渲染（section 内含 life_line、connector 与 `combined_fragment`），CLI 不再对 par 打印复杂度提示
 - `local`：whiteboard-cli 同样输出 life_line + connector + combined_fragment
 
 ### 示例 3：架构图（建议直接走路径 E 或 SVG）

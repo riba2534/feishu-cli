@@ -1,14 +1,15 @@
 # 飞书云盘增强（Drive）
 
 `drive` 命令组覆盖云盘文件的增强能力：大文件分块上传与原地覆盖、流式下载与断点续传、重命名、
-上传文件的版本历史、异步导入导出与续查、文件夹移动、富文本/局部评论、目录单向镜像、v2 范围搜索、
-密级标签、权限申请与 URL/token 解析。`doc import-file`（本地文件导入为云文档的简单入口）也归本工作流。
+上传文件的版本历史、异步导入导出与续查、文件夹移动、目录单向镜像与 URL/token 解析。
+`doc import-file`（本地文件导入为云文档的简单入口）也归本工作流。
 
 边界：
-- 基础 CRUD（list/mkdir/copy/delete/meta/quota/版本回滚）见 `../file-media/workflow.md`；协作者与公开权限见
-  `../perm/workflow.md`；评论的列出、回复、编辑、解决见 `../comment/workflow.md`（本文件只负责 `drive add-comment` 创建评论）。
+- 基础 CRUD（list/mkdir/copy/delete/meta/quota/版本回滚）见 `../file-media/workflow.md`；协作者、公开权限、
+  申请权限（`drive apply-permission`）与密级标签（`drive secure-label`）见 `../perm/workflow.md`；评论（含 `drive add-comment`
+  创建富文本/局部评论）见 `../comment/workflow.md`。
 - 文档正文读取与 Markdown 导入导出（`doc export/import`、`markdown *`）属于 `feishu-cli-docs`；
-  全局 `search docs/messages/apps` 属于 `feishu-cli-platform`。
+  全局 `search docs/messages/apps` 与按文件夹/知识库精筛的 `drive search` 属于 `feishu-cli-platform` 的 search 工作流。
 
 ## 目录
 
@@ -27,7 +28,6 @@
 | `drive import/export/export-download/move/task-result/update-title/version-history/version-get` | auto | User 优先；未配置 User 时用 Bot；**已配置但解析/刷新失败 fail-closed**，不静默切 Bot |
 | `drive pull/push/status` | User 优先，不可用时 stderr 告警后回退 Bot | 带 `--delete-local/--delete-remote` 时 fail-closed；`--as` 显式指定 |
 | `drive inspect` | User 优先，回退 Bot | 无 `--as`；只读 |
-| `drive add-comment/search/secure-label/apply-permission` | 必须 User Token | 无 `--as`，缺 Token 直接报错 |
 
 - 续查异步任务（`task-result`、`export-download`）沿用创建任务时的身份；超时输出的 `next_command` 已带 `--as`，换身份查询常见"任务不存在/无权限"。
 - User Token 缺 drive 读 scope 时返回 `99991679`（如 `drive:drive` / `drive:drive:readonly` / `space:document:retrieve` 任选其一），
@@ -37,7 +37,7 @@
 
 ## 命令速查
 
-### 0. 解析 URL / token 与权限申请
+### 0. 解析 URL / token
 
 ```bash
 feishu-cli drive inspect --url "https://xxx.feishu.cn/docx/doxcnxxx"
@@ -45,19 +45,11 @@ feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx"   # 自动 
 feishu-cli drive inspect --url doxcnxxx -o json                        # 裸 token：query_by_token 自动识别类型（含 wiki 节点）
 feishu-cli drive inspect --url doxcnxxx --type docx -o json            # 裸 token + 显式类型，跳过识别
 TOKEN=$(feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx" -o json | jq -r '.token')
-
-# 向文档所有者申请权限（所有者收到审批卡片）
-feishu-cli drive apply-permission --token "https://xxx.feishu.cn/docx/doxcnxxx" --perm view --remark "申请理由"
-feishu-cli drive apply-permission --token doxcnxxx --type docx --perm edit --remark "需要协作编辑"
-feishu-cli drive apply-permission --token "https://xxx.feishu.cn/docx/doxcnxxx" --perm view --dry-run
 ```
 
 - `inspect` 的参数是 `--url`（也接受裸 token），不接受位置参数。输出 `type/title/token/url`；wiki 输入额外带
   `wiki_node`（node_token/obj_token/obj_type/space_id），裸 token 自动识别时带 `detected_by=query_by_token`，
   节点在回收站/已删除时带 `token_status`。
-- `apply-permission`：`--perm` 只有 `view` / `edit`（默认 view）；该端点未收录在飞书文档站，但服务端实测可用
-  （调研方法见 [`embedded-api-discovery.md`](../../../../feishu-cli-platform/references/workflows/api/references/embedded-api-discovery.md)）。
-  业务错误一律非零退出：`1063006` = 同一用户对同一文档每天最多申请 5 次；`1063007` = 该文档不接受权限申请。
 
 **URL 解析规则（inspect / apply-permission / export / add-comment / update-title / download，以及 import 的 `--folder-token` 通用）**：
 - 只按 URL **路径前缀**识别类型：`/docx/`、`/doc/`、`/docs/`、`/sheets/`、`/spreadsheets/`、`/base/`、`/bitable/`、
@@ -184,54 +176,7 @@ feishu-cli drive move --file-token boxcnxxx --type file --dry-run
 - 超时返回 `task_id` 与带 `--as` 的 `next_command`，用 `drive task-result --scenario task_check` 接力（任务已创建，不要重复提交）。
 - 轮询期间单次查询失败视为瞬时错误继续；遇限流（99991400）立即停止并在错误里给出续查命令；每次查询都失败时报错。
 
-### 6. 富文本评论（drive add-comment）
-
-```bash
-# 全文评论（裸 token 默认按 docx 处理）
-feishu-cli drive add-comment --doc doxcnxxx --content '[{"type":"text","text":"需要修改标题"}]'
-
-# wiki URL：自动解析到底层文档
-feishu-cli drive add-comment --doc "https://xxx.feishu.cn/wiki/wikcnxxx" \
-  --content '[{"type":"text","text":"收到"}]'
-
-# 局部评论（锚定到 docx block；block_id 可用 doc blocks 获取）
-feishu-cli drive add-comment --doc doxcnxxx --block-id doxcnblockxxx \
-  --content '[{"type":"text","text":"这段重写"}]'
-
-# 富文本：文本 + 提及用户 + 飞书文档链接
-feishu-cli drive add-comment --doc doxcnxxx --content '[
-  {"type":"text","text":"请 "},
-  {"type":"mention_user","mention_user":"ou_xxx"},
-  {"type":"text","text":" 查看 "},
-  {"type":"link","link":"https://xxx.feishu.cn/docx/doxcnyyy"}
-]'
-
-# 电子表格单元格评论（--block-id <sheetId>!<cell>，必填）
-feishu-cli drive add-comment --doc shtcnxxx --type sheet --block-id a281f9!D6 \
-  --content '[{"type":"text","text":"这个数需要核对"}]'
-
-# 多维表格记录评论（--block-id <table-id>!<record-id>!<view-id>，必填）
-feishu-cli drive add-comment --doc "https://xxx.feishu.cn/base/bascnxxx" \
-  --block-id tblxxx!recxxx!vewxxx --content '[{"type":"text","text":"请补充"}]'
-
-# 幻灯片元素评论（--block-id <slide-block-type>!<xml-id>，必填）
-feishu-cli drive add-comment --doc "https://xxx.feishu.cn/slides/sldxxx" \
-  --block-id shape!bPq --content '[{"type":"text","text":"配色再调一下"}]'
-
-# 云盘文件全文评论（服务端仅支持部分扩展名，如 .md/.txt/.json/.csv/.pptx/.png/.jpg/.zip）
-feishu-cli drive add-comment --doc boxcnxxx --type file --content '[{"type":"text","text":"已阅"}]'
-```
-
-- 目标：裸 token 用 `--type`（docx/doc/sheet/slides/bitable/file，默认 docx）；URL 按路径识别
-  （docx/doc/sheets/slides/base/file/wiki）；wiki 节点支持底层 obj_type 为 docx/doc/sheet/slides/bitable/file，mindnote 等报错。
-- 锚点：docx 局部评论用 `--block-id <block_id>`；sheet/slides/bitable **必须**带对应格式的 `--block-id`（不支持 `--full`）；
-  doc（旧版）与 file 只支持全文评论；`--full` 强制全文评论。
-- 元素：`text`；`mention_user`（open_id 放 `mention_user` 或 `text` 字段）；`link`（URL 放 `link` 或 `text` 字段，
-  建议只放飞书云文档链接）。所有 `text` 合计 ≤10000 字符（拆成多个元素不能绕过，超限返回 1069302），CLI 本地预检。
-- 输出 `data.comment_id` / `data.reply_id`、`is_whole`、`resolved_by`。全文评论（`is_whole=true`）**不能再被回复**
-  （`comment reply add` 返回 1069302，实测），需要后续讨论时创建局部评论。
-
-### 7. 通用异步任务查询
+### 6. 通用异步任务查询
 
 ```bash
 feishu-cli drive task-result --scenario import --ticket <ticket>
@@ -252,7 +197,7 @@ feishu-cli drive task-result --scenario wiki_delete_node --task-id <task_id> --a
   以 Bot 查询时会对新文档补做一次自动授权（`permission_grant`）。
 - 续查时带上原命令输出里的 `--as`。
 
-### 8. 本地 ↔ 云盘单向镜像（pull/push/status）
+### 7. 本地 ↔ 云盘单向镜像（pull/push/status）
 
 把云盘文件夹与本地目录做单向镜像。**只镜像 type=file 条目**，docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不参与
 （没有等价本地二进制）。`--local-dir` 必须是**已存在的目录**且位于当前工作目录子树内（pull 前先 `mkdir -p`，否则报
@@ -303,45 +248,6 @@ feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --delete-remote
 - **1062507 按目录隔离**：push 命中 `1062507`（单个父文件夹直接子节点超 1500）时，把该目录标记为已满，其下（含子树）条目
   跳过并标记失败，**其余未满目录继续镜像**；收尾列出已满目录清单——先清理/归档这些文件夹或把本地文件拆到更细的子目录再重跑。
 
-### 9. v2 端点搜索（drive search，扁平 filter）
-
-走 `/open-apis/search/v2/doc_wiki/search`，比 `search docs`（v1）支持更丰富的扁平 filter，必须 User Token：
-
-```bash
-feishu-cli drive search --query "季度报告" --doc-types DOCX,SHEET --sort edit_time
-feishu-cli drive search --query "API 设计" --folder-tokens fldxxx,fldyyy     # 限定云盘文件夹
-feishu-cli drive search --query "RFC" --space-ids 7012345678901234567       # 限定知识空间
-feishu-cli drive search --query "项目周会" --only-title
-feishu-cli drive search --query "复盘" --creator-ids ou_xxx,ou_yyy
-feishu-cli drive search --query "决策" --chat-ids oc_xxx --sharer-ids ou_xxx
-feishu-cli drive search --query "阻塞" --only-comment
-feishu-cli drive search --query "项目" --page-size 20 -o json
-feishu-cli drive search --query "项目" --page-token "<上一页 page_token>"
-```
-
-- `--doc-types` 取值大写：`DOC` / `DOCX` / `SHEET` / `BITABLE` / `MINDNOTE` / `FILE` / `WIKI` / `FOLDER` / `CATALOG` / `SLIDES` / `SHORTCUT`。
-- `--folder-tokens` 与 `--space-ids` 互斥；`--sort`：default / edit_time / edit_time_asc / open_time / create_time；
-  `--page-size` 1-20（默认 15）；`--query` 可空（纯按 filter 浏览）。
-- 标题里的 `<h>...</h>` 高亮标记 CLI 自动剥离；JSON 顶层带 `total`、`has_more`、`page_token`、`items`。
-
-### 10. 密级标签（secure-label）
-
-查看/设置云文档密级标签，**必须 User Token**，需要 `docs:secure_label:readonly` / `docs:secure_label:write_only`。
-
-```bash
-# 先查当前用户可用的标签 id（不要用显示名）
-feishu-cli drive secure-label list --page-size 10 --lang zh
-feishu-cli drive secure-label list --output json
-
-# 把文档设置为指定密级（--label-id 用 list 返回的数字 id）
-feishu-cli drive secure-label set doxcnxxx --type docx --label-id 7217780879644737539
-```
-
-- `list`：`--page-size` 1-10，`--lang` 支持 zh/en/ja，有更多时用 `--page-token` 续翻。
-- `set`：`--type` 默认 docx，可选 doc/docx/sheet/file/bitable/mindnote/slides；`--label-id` 必须是数字 id（如 list 返回的
-  id），不要传 `内部(D)` 这类显示名。
-- **密级降级需审批**：命中 `1063013` 时需到文档界面完成降级审批，重试 API 不会绕过审批。
-
 ## 典型工作流
 
 ### 工作流 A：大文件分块上传
@@ -387,11 +293,6 @@ feishu-cli drive import --file big_sheet.xlsx --type sheet --folder-token fldxxx
 不要仅因文件超过 20MB 就改成 Bitable；目标类型以用户需求为准。CSV 上限另计：Sheet 20MB、Bitable 100MB；更大的 CSV 若需保留
 Sheet，应先转换为 XLSX。
 
-### 工作流 E：没有权限时申请
-
-碰到「没有权限查看此文档」时，先 `drive inspect --url <url>` 确认类型与 token（可选），再
-`drive apply-permission --token <url> --perm view --remark "<理由>"`；先 `--dry-run` 预览。理由会显示在所有者收到的审批卡片上。
-
 ## 与老命令的对照
 
 | 老命令 | 新 drive 命令 | 差异 |
@@ -401,7 +302,6 @@ Sheet，应先转换为 XLSX。
 | `file move` | `drive move` | drive 支持 `--as`、文件夹移动自动轮询 task_check、省略目标时取真实根目录 |
 | `doc export-file`（feishu-cli-docs） | `drive export` | drive 增加 markdown 快捷路径、`--sub-id`、wiki 解析、resume |
 | `doc import-file` | `drive import` | drive 支持 slides/base、官方大小矩阵、`--as`、resume |
-| `comment add` | `drive add-comment` | drive 支持富文本、wiki 解析、局部/单元格/幻灯片/记录评论 |
 
 老命令仍可用（写类默认 Bot，显式 `--user-access-token` 才切 User），需要上述增强能力时用 `drive`。
 
@@ -417,14 +317,10 @@ Sheet，应先转换为 XLSX。
 | `drive export-download` | `drive:file:download` |
 | `drive import` | `docs:document:import`、`drive:file:upload` |
 | `drive move` | `space:document:move` |
-| `drive add-comment` | `docs:document.comment:create`、`docs:document.comment:write_only`；wiki URL 还需 `wiki:node:read`；docx 局部评论还需 `docx:document:readonly` |
 | `drive task-result` | `drive:drive.metadata:readonly`（`import`/`export` 另需对应导入导出 scope；`wiki_*` 需 `wiki:space:read` 或 `wiki:wiki`） |
 | `drive pull` / `status` | `drive:drive.metadata:readonly`、`drive:file:download`（`status --quick` 不需要下载 scope） |
 | `drive push` | `drive:drive.metadata:readonly`、`drive:file:upload`、`space:folder:create`；带 `--delete-remote` 还需 `space:document:delete` |
-| `drive search` | `search:docs:read` |
-| `drive secure-label list` / `set` | `docs:secure_label:readonly` / `docs:secure_label:write_only` |
 | `drive inspect` | `drive:drive.metadata:readonly`；wiki URL 还需 `wiki:node:read` |
-| `drive apply-permission` | `docs:permission.member:apply`（或任一大权限：`drive:drive` / `docs:doc` / `docx:document` 等） |
 
 各命令的身份见「[身份与预检](#身份与预检)」。
 

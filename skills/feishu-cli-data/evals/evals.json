@@ -48,6 +48,30 @@
       "expected_output": "分享开启与范围限制分两次 share update（或用 form patch 的 shared 字段），关闭高级权限使用 --is-advanced=false 或 advperm disable。",
       "expectations": ["表单分享用 form share update 分别执行 --enabled 与 --access-scope tenant（每次一个字段），或用 form patch --shared --shared-limit tenant_editable", "开启后用 form share get 读回确认 access_scope", "关闭高级权限使用 bitable advperm disable 或 bitable update --is-advanced=false，不写成 --is-advanced false", "命令使用 --base-token，不使用 --app-token"],
       "files": []
+    },
+    {
+      "id": 7,
+      "workflows": ["bitable"],
+      "prompt": "有两个链接：https://xxx.feishu.cn/wiki/wikcnxxx（知识库里挂的多维表格）和 https://xxx.feishu.cn/base/bascnxxx?table=blkxxx，帮我拿到 base_token 和 table_id 后列出记录。",
+      "expected_output": "两个链接都先 bitable resolve --url 解析；?table= 是选中的顶层块，只有输出 table_id 时才用于 record list --base-token --table-id。",
+      "expectations": ["对两个链接都先执行 bitable resolve --url", "说明 ?table= 不一定是数据表，不能直接当 --table-id，只有 resolve 输出 table_id 时才使用", "后续命令使用 --base-token，不使用 --app-token"],
+      "files": []
+    },
+    {
+      "id": 8,
+      "workflows": ["sheet"],
+      "prompt": "在 /sheets/shtcnxxx 的子表 0b12 里隐藏第 2–4 列、冻结前两行，并把第 10 行移到第 3 行之前。",
+      "expected_output": "sheet update-dimension --range \"B:D\" --hidden、sheet freeze --rows 2、sheet move-dimension --range \"10\" --target 3（--range 为 1 起始两端包含）。",
+      "expectations": ["隐藏列使用 sheet update-dimension --range \"B:D\" --hidden", "冻结使用 sheet freeze --rows 2（或 update-sheet --frozen-rows 2）", "移动行使用 sheet move-dimension --range \"10\" --target 3"],
+      "files": []
+    },
+    {
+      "id": 9,
+      "workflows": ["sheet"],
+      "prompt": "在子表 0b12 的 C 列前插入 2 列，再删除第 20–22 行；删除前先让我看实际会删哪几行。",
+      "expected_output": "sheet insert-cols --range \"C:D\"；sheet delete-rows --range \"20:22\" --dry-run 核对后再执行；--start/--end 写法为 0 起始且不含 end。",
+      "expectations": ["插入列使用 sheet insert-cols ... --range \"C:D\"（或 --start 2 --end 4）", "删除前先 sheet delete-rows ... --range \"20:22\" --dry-run 核对实际行号", "若改用 --start/--end，写成 --start 19 --end 22（0 起始、不含 end），不写成 --start 20"],
+      "files": []
     }
   ]
 }

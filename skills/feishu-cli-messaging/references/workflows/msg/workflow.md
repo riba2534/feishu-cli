@@ -1,6 +1,6 @@
 # 飞书消息发送
 
-用 feishu-cli 发送、回复、编辑、转发、合并转发、加急消息，管理消息书签，下载消息中的资源。
+用 feishu-cli 发送、回复、转发、合并转发、加急消息，以及编辑、撤回已发送的消息。
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
@@ -14,8 +14,7 @@
 - [回复与话题](#回复与话题)
 - [编辑已发送的消息](#编辑已发送的消息)
 - [转发、合并转发与加急](#转发合并转发与加急)
-- [下载消息资源](#下载消息资源)
-- [消息书签（msg flag）](#消息书签msg-flag)
+- [撤回消息（msg delete）](#撤回消息msg-delete)
 - [执行流程](#执行流程)
 - [限制与错误处理](#限制与错误处理)
 - [参考文档](#参考文档)
@@ -26,9 +25,9 @@ CLI 路径不等于工作流归属：`feishu-cli msg` 下的子命令按动作�
 
 | 动作类型 | 子命令 | 归属工作流 |
 | --- | --- | --- |
-| 发送与改写 | `send` / `reply` / `edit` / `forward` / `merge-forward` / `urgent` / `flag` / `resource-download` | 本文档（`msg` 工作流） |
-| 读取 | `history` / `list` / `get` / `mget` / `thread-messages` / `search-chats` / `read-users` / `pins` | [`chat` 工作流](../chat/workflow.md) |
-| 互动与撤回 | `reaction` / `pin` / `unpin` / `delete` | [`chat` 工作流](../chat/workflow.md) |
+| 发送与已发消息管理 | `send` / `reply` / `forward` / `merge-forward` / `urgent` / `edit` / `delete` | 本文档（`msg` 工作流） |
+| 读取与资源下载 | `history` / `list` / `get` / `mget` / `thread-messages` / `search-chats` / `read-users` / `pins` / `resource-download` | [`chat` 工作流](../chat/workflow.md) |
+| 互动与书签 | `reaction` / `pin` / `unpin` / `flag` | [`chat` 工作流](../chat/workflow.md) |
 
 构造卡片 JSON 走 [`card` 工作流](../card/workflow.md)；拉一段时间窗的群消息用 chat 工作流的端到端脚本
 `../chat/scripts/fetch_chat_history.py`。
@@ -40,8 +39,7 @@ CLI 路径不等于工作流归属：`feishu-cli msg` 下的子命令按动作�
 | `msg send` / `reply` / `forward` | 默认 Bot（App Token），不自动加载 `token.json`；仅显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时以本人身份发送 |
 | `msg edit` / `urgent` | 仅 Bot，只能操作本应用 Bot 发出的消息 |
 | `msg merge-forward` | 仅 Bot；传入的 User Token 会被忽略并在 stderr 提示 |
-| `msg resource-download` | User 优先、Bot 兜底：已登录用本人身份（能看到该消息即可），未登录用 Bot（Bot 需能看到该消息）；User Token 不可用时 stderr 告警后改用 Bot |
-| `msg flag create/list/cancel` | 必须 User（`im:feed.flag:read` / `im:feed.flag:write`） |
+| `msg delete` | 默认 Bot（撤回 Bot 自己发的消息）；仅显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时以本人身份撤回 |
 
 Bot 发消息需要 `im:message:send_as_bot`（或 `im:message`），且 Bot 必须在目标群内。以本人身份发送需要
 `im:message.send_as_user`，`auth login` 的批量申请会剔除这个 scope；只有用户明确要求"以我的名义发"时才使用。
@@ -349,51 +347,16 @@ feishu-cli msg urgent om_xxx --user-id-type open_id --user-ids ou_xxx,ou_yyy
 - `urgent` 对 Bot 自己发出的消息加急，`--urgent-type app|sms|phone`（默认 app）；不支持批量消息 ID（`bm_xxx`）。
   短信、电话加急打扰强，执行前确认用户列表和方式。
 
-## 下载消息资源
+## 撤回消息（msg delete）
 
 ```bash
-# 不传 -o：用服务端文件名保存到当前目录（拿不到时用 file_key + 按 MIME 推断的扩展名）
-feishu-cli msg resource-download om_xxx file_xxx --type file
-
-# 指定路径；大文件加长超时（默认 5m）
-feishu-cli msg resource-download om_xxx img_xxx --type image -o /tmp/photo.png
-feishu-cli msg resource-download om_xxx file_xxx --type file -o /tmp/large.zip --timeout 30m
+feishu-cli msg delete om_xxx                                      # Bot 撤回自己发的消息
+feishu-cli msg delete om_xxx --user-access-token u-xxx            # 以本人身份撤回（如群主撤回群内消息）
 ```
 
-- `--type image|file` 必填；`file_key` 从 `msg get <om_xxx> -o json` 的 `body.content` 里取
-  （`image_key`、`file_key`，post 附件区在 `files[].file_key`）。
-- 默认 User 优先：已登录时以本人身份下载，Bot 看不到的历史消息资源也能下；未登录时 Bot 需能看到该消息。
-- 按服务端文件名命名时不覆盖已存在的同名文件（自动追加 `_1`、`_2`）；`-o` 给了无扩展名的路径时只补扩展名。
-- 用户身份下载遇到大文件限制时会自动按 HTTP Range 分片下载并合并。
-
-## 消息书签（msg flag）
-
-把消息标记到用户的 Feed/书签（服务端称 message flag，`/open-apis/im/v1/flags`）。必须 User Token：
-`list` 需 `im:feed.flag:read`，`create/cancel` 需 `im:feed.flag:write`。
-
-```bash
-feishu-cli msg flag create om_xxx                                       # 消息层书签（默认 default + message）
-feishu-cli msg flag create om_xxx --flag-type feed                      # feed 层，自动按群模式选 thread / msg_thread
-feishu-cli msg flag create om_xxx --item-type msg_thread --flag-type feed
-feishu-cli msg flag list --page-size 50                                 # 始终输出 JSON，不接受 -o
-feishu-cli msg flag cancel om_xxx                                       # 默认取消消息层，并尽量取消 feed 层
-```
-
-CLI 用字符串，底层映射为 OpenAPI 整数枚举（`list` 输出里是整数）：
-
-| 字段 | CLI 字符串 | OpenAPI 整数 | 含义 |
-| --- | --- | --- | --- |
-| --item-type | default | 0 | 普通消息 |
-| --item-type | thread | 4 | 话题群（topic） |
-| --item-type | msg_thread | 11 | 普通群里的消息线程 |
-| --flag-type | message | 2 | 消息层书签（默认） |
-| --flag-type | feed | 1 | feed 层（侧边栏） |
-
-- 只支持 `default + message`、`thread + feed`、`msg_thread + feed` 三种组合，其余服务端拒绝。
-- 注意 `flag_type` 是 `1=feed / 2=message`，不要按顺序臆测成 `1=message`。
-- `list` 不接受 `--flag-type/--item-type`，输出含 `flag_items` / `delete_flag_items` / `messages` / `has_more` /
-  `page_token`，需要时在 `flag_items[*].flag_type` 上自行过滤。
-- `cancel` 显式传 `--item-type` 和 `--flag-type` 时只取消指定层；自动判断 feed 层失败时跳过并打印 warning。
+- `msg delete` 没有确认门禁，执行前核对 message_id。Bot 只能撤回自己发出的消息（230026），群主可撤回群内指定消息；
+  撤回时限由企业管理员设置，超时返回 230009；撤回群消息时 Bot 需在群内。批量发送的消息不能用此命令撤回。
+- 撤回后消息体 `body.content` 变成字面字符串（见 chat 工作流的 [输出怪癖说明](../chat/references/output-quirks.md)）。
 
 ## 执行流程
 
@@ -431,4 +394,4 @@ CLI 用字符串，底层映射为 OpenAPI 整数枚举（`list` 输出里是整
 
 - `references/message_content.md`：各消息类型的 content JSON 结构
 - `references/card_schema.md`：interactive 发送格式与 v1 历史卡片排障；新卡片构造见 [`card` 工作流](../card/workflow.md)
-- 读消息详情、批量获取（`msg get/mget`，默认带 `card_texts`）见 [`chat` 工作流](../chat/workflow.md)
+- 读消息详情、批量获取（`msg get/mget`，默认带 `card_texts`）、下载消息资源（`msg resource-download`）和消息书签（`msg flag`）见 [`chat` 工作流](../chat/workflow.md)

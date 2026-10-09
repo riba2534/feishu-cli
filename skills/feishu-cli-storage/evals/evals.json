@@ -48,6 +48,22 @@
       "expected_output": "drive import --type sheet --as bot --dry-run，超过20MB只改变上传方式。",
       "expectations": ["命令使用 drive import --file big_sheet.xlsx --type sheet --as bot --dry-run", "说明 XLSX 的800MB上限与CSV的Sheet 20MB/Bitable 100MB上限不同", "计划先分片上传再创建 type=sheet 的导入任务，不改为 Bitable"],
       "files": []
+    },
+    {
+      "id": 7,
+      "workflows": ["drive"],
+      "prompt": "云盘上传文件 boxcnxxx 被同事覆盖成了新版本，列出它的版本历史，把上一版下载到 ./old/ 做对比。",
+      "expected_output": "drive version-history --file-token boxcnxxx -o json 取 version（长数字，非 tag），再 drive version-get --file-token boxcnxxx --version <version> --output ./old/。",
+      "expectations": ["使用 drive version-history --file-token boxcnxxx，有更多时用 next_cursor 配 --cursor 续翻", "下载用 drive version-get --file-token boxcnxxx --version <version> --output ./old/", "说明 version 是长数字，不与 file version 的在线文档命名版本混用"],
+      "files": []
+    },
+    {
+      "id": 8,
+      "workflows": ["comment"],
+      "prompt": "文档 doxcnxxx 的评论 comment_xxx 下，Bot 写的回复 reply_xxx 要改成“已修复”；另一条同事写的回复 reply_yyy 用我本人身份点个赞。先预览。",
+      "expected_output": "comment reply update doxcnxxx comment_xxx reply_xxx --text \"已修复\" --dry-run（默认 App 身份，须与作者一致）；comment reply react doxcnxxx reply_yyy --emoji THUMBSUP 显式传本人 --user-access-token。",
+      "expectations": ["修改回复使用 comment reply update <file_token> <comment_id> <reply_id> --text", "说明回复只能由作者身份修改：Bot 写的回复用默认 App 身份，否则返回 1069303", "表情回应用 comment reply react <file_token> <reply_id> --emoji THUMBSUP（区分大小写），本人身份需显式 --user-access-token", "先用 --dry-run 预览"],
+      "files": []
     }
   ]
 }

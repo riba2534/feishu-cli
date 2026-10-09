@@ -39,7 +39,8 @@ feishu-cli mail rule-delete --rule-id <rule_id> --yes
 
 - `rule-update/enable/disable` 先读取当前规则，只覆盖显式传入的字段再整体写回（服务端为 PUT 全量语义，无乐观锁）；
   未传 `--match` 时保持原匹配方式。传入条件/动作时整体替换对应列表，不是追加。
-- `--enable/--disable`、`--stop-after-match/--continue-after-match` 成对互斥。
+- `rule-create` 只有 `--disable`（默认启用）与 `--stop-after-match`（默认命中后继续执行后续规则）两个开关；
+  `rule-update` 才有成对互斥的 `--enable/--disable`、`--stop-after-match/--continue-after-match`，不传时保持原值。
 - `rule-reorder` 二选一：`--rule-ids` 给完整顺序（必须恰好包含全部现有规则各一次），或 `--move-rule-id` 搭配
   `--before-rule-id/--after-rule-id/--to-top/--to-bottom` 之一。
 - 所有写操作支持 `--dry-run`，且优先于确认。`rule-create`、`rule-reorder --rule-ids`、`rule-delete` 的预览给出完整请求；
