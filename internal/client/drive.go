@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1447,146 +1448,164 @@ type FileVersionInfo struct {
 	ParentType  string `json:"parent_type,omitempty"`
 }
 
-func versionToInfo(v *larkdrive.Version) *FileVersionInfo {
-	if v == nil {
+// flexString 兼容服务端以 JSON 字符串或数字返回的字段。
+// 文件版本接口文档把 status 标为 string，实测创建成功时返回数字（如 "status":0），
+// SDK 的 *string 字段会在服务端已成功创建后解析失败，导致 CLI 报错、用户重试建出重复版本。
+type flexString string
+
+func (f *flexString) UnmarshalJSON(b []byte) error {
+	raw := strings.TrimSpace(string(b))
+	switch {
+	case raw == "" || raw == "null":
+		*f = ""
+		return nil
+	case raw[0] == '"':
+		var v string
+		if err := json.Unmarshal(b, &v); err != nil {
+			return err
+		}
+		*f = flexString(v)
+		return nil
+	case raw == "true" || raw == "false":
+		*f = flexString(raw)
 		return nil
 	}
+	var n json.Number
+	if err := json.Unmarshal(b, &n); err != nil {
+		return fmt.Errorf("字段既不是字符串也不是数字: %s", raw)
+	}
+	*f = flexString(n.String())
+	return nil
+}
+
+// rawFileVersion 是文件版本接口 data（或 data.items[]）的宽松解析结构。
+type rawFileVersion struct {
+	Name        flexString `json:"name"`
+	Version     flexString `json:"version"`
+	ParentToken flexString `json:"parent_token"`
+	OwnerID     flexString `json:"owner_id"`
+	CreatorID   flexString `json:"creator_id"`
+	CreateTime  flexString `json:"create_time"`
+	UpdateTime  flexString `json:"update_time"`
+	Status      flexString `json:"status"`
+	ObjType     flexString `json:"obj_type"`
+	ParentType  flexString `json:"parent_type"`
+}
+
+func (v rawFileVersion) info() *FileVersionInfo {
 	return &FileVersionInfo{
-		Name:        StringVal(v.Name),
-		Version:     StringVal(v.Version),
-		ParentToken: StringVal(v.ParentToken),
-		OwnerID:     StringVal(v.OwnerId),
-		CreatorID:   StringVal(v.CreatorId),
-		CreateTime:  StringVal(v.CreateTime),
-		UpdateTime:  StringVal(v.UpdateTime),
-		Status:      StringVal(v.Status),
-		ObjType:     StringVal(v.ObjType),
-		ParentType:  StringVal(v.ParentType),
+		Name:        string(v.Name),
+		Version:     string(v.Version),
+		ParentToken: string(v.ParentToken),
+		OwnerID:     string(v.OwnerID),
+		CreatorID:   string(v.CreatorID),
+		CreateTime:  string(v.CreateTime),
+		UpdateTime:  string(v.UpdateTime),
+		Status:      string(v.Status),
+		ObjType:     string(v.ObjType),
+		ParentType:  string(v.ParentType),
 	}
 }
 
-// CreateFileVersion 创建文件版本
+func fileVersionsPath(fileToken string) string {
+	return "/open-apis/drive/v1/files/" + url.PathEscape(fileToken) + "/versions"
+}
+
+// CreateFileVersion 创建文件版本（POST /open-apis/drive/v1/files/:file_token/versions）。
+// 不走 SDK：SDK 把 status 声明为 string，而服务端返回数字，会在创建成功后解析失败。
 func CreateFileVersion(fileToken, objType, name string, userAccessToken ...string) (*FileVersionInfo, error) {
-	client, err := GetClient()
+	cli, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
-
-	version := larkdrive.NewVersionBuilder().
-		Name(name).
-		ObjType(objType).
-		Build()
-
-	req := larkdrive.NewCreateFileVersionReqBuilder().
-		FileToken(fileToken).
-		Version(version).
-		Build()
-
-	resp, err := client.Drive.FileVersion.Create(Context(), req, UserTokenOption(firstString(userAccessToken))...)
+	tokenType, opts := resolveTokenOpts(firstString(userAccessToken))
+	body := map[string]any{"name": name, "obj_type": objType}
+	resp, err := cli.Post(Context(), fileVersionsPath(fileToken), body, tokenType, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("创建文件版本失败: %w", err)
 	}
-
-	if !resp.Success() {
-		return nil, fmt.Errorf("创建文件版本失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	if err := CheckAPIResponse("创建文件版本", resp); err != nil {
+		return nil, err
 	}
-
-	if resp.Data == nil {
-		return nil, fmt.Errorf("创建文件版本成功但未返回数据")
+	var parsed struct {
+		Data *rawFileVersion `json:"data"`
 	}
-
-	return &FileVersionInfo{
-		Name:        StringVal(resp.Data.Name),
-		Version:     StringVal(resp.Data.Version),
-		ParentToken: StringVal(resp.Data.ParentToken),
-		OwnerID:     StringVal(resp.Data.OwnerId),
-		CreatorID:   StringVal(resp.Data.CreatorId),
-		CreateTime:  StringVal(resp.Data.CreateTime),
-		UpdateTime:  StringVal(resp.Data.UpdateTime),
-		Status:      StringVal(resp.Data.Status),
-	}, nil
+	if err := json.Unmarshal(resp.RawBody, &parsed); err != nil {
+		// 服务端已返回成功：不能让用户误以为失败而重试（会建出重复版本）
+		return nil, fmt.Errorf("文件版本已创建成功，但解析响应失败（请勿重试，可用 file version list 查看）: %w", err)
+	}
+	if parsed.Data == nil {
+		return nil, fmt.Errorf("创建文件版本成功但未返回数据（请勿重试，可用 file version list 查看）")
+	}
+	return parsed.Data.info(), nil
 }
 
-// GetFileVersion 获取文件版本详情
+// GetFileVersion 获取文件版本详情（GET /open-apis/drive/v1/files/:file_token/versions/:version_id）。
 func GetFileVersion(fileToken, versionID, objType string, userAccessToken ...string) (*FileVersionInfo, error) {
-	client, err := GetClient()
+	cli, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
-
-	req := larkdrive.NewGetFileVersionReqBuilder().
-		FileToken(fileToken).
-		VersionId(versionID).
-		ObjType(objType).
-		Build()
-
-	resp, err := client.Drive.FileVersion.Get(Context(), req, UserTokenOption(firstString(userAccessToken))...)
+	tokenType, opts := resolveTokenOpts(firstString(userAccessToken))
+	q := url.Values{}
+	q.Set("obj_type", objType)
+	apiPath := fileVersionsPath(fileToken) + "/" + url.PathEscape(versionID) + "?" + q.Encode()
+	resp, err := cli.Get(Context(), apiPath, nil, tokenType, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("获取文件版本失败: %w", err)
 	}
-
-	if !resp.Success() {
-		return nil, fmt.Errorf("获取文件版本失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	if err := CheckAPIResponse("获取文件版本", resp); err != nil {
+		return nil, err
 	}
-
-	if resp.Data == nil {
+	var parsed struct {
+		Data *rawFileVersion `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &parsed); err != nil {
+		return nil, fmt.Errorf("解析文件版本失败: %w", err)
+	}
+	if parsed.Data == nil {
 		return nil, fmt.Errorf("文件版本不存在")
 	}
-
-	return &FileVersionInfo{
-		Name:        StringVal(resp.Data.Name),
-		Version:     StringVal(resp.Data.Version),
-		ParentToken: StringVal(resp.Data.ParentToken),
-		OwnerID:     StringVal(resp.Data.OwnerId),
-		CreatorID:   StringVal(resp.Data.CreatorId),
-		CreateTime:  StringVal(resp.Data.CreateTime),
-		UpdateTime:  StringVal(resp.Data.UpdateTime),
-		Status:      StringVal(resp.Data.Status),
-	}, nil
+	return parsed.Data.info(), nil
 }
 
-// ListFileVersions 列出文件版本
+// ListFileVersions 列出文件版本（GET /open-apis/drive/v1/files/:file_token/versions）。
 func ListFileVersions(fileToken, objType string, pageSize int, pageToken string, userAccessToken ...string) ([]*FileVersionInfo, string, bool, error) {
-	client, err := GetClient()
+	cli, err := GetClient()
 	if err != nil {
 		return nil, "", false, err
 	}
-
-	reqBuilder := larkdrive.NewListFileVersionReqBuilder().
-		FileToken(fileToken).
-		ObjType(objType)
-
+	tokenType, opts := resolveTokenOpts(firstString(userAccessToken))
+	q := url.Values{}
+	q.Set("obj_type", objType)
 	if pageSize > 0 {
-		reqBuilder.PageSize(pageSize)
+		q.Set("page_size", strconv.Itoa(pageSize))
 	}
 	if pageToken != "" {
-		reqBuilder.PageToken(pageToken)
+		q.Set("page_token", pageToken)
 	}
-
-	resp, err := client.Drive.FileVersion.List(Context(), reqBuilder.Build(), UserTokenOption(firstString(userAccessToken))...)
+	resp, err := cli.Get(Context(), fileVersionsPath(fileToken)+"?"+q.Encode(), nil, tokenType, opts...)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取文件版本列表失败: %w", err)
 	}
-
-	if !resp.Success() {
-		return nil, "", false, fmt.Errorf("获取文件版本列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	if err := CheckAPIResponse("获取文件版本列表", resp); err != nil {
+		return nil, "", false, err
 	}
-
+	var parsed struct {
+		Data struct {
+			Items     []rawFileVersion `json:"items"`
+			PageToken string           `json:"page_token"`
+			HasMore   bool             `json:"has_more"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &parsed); err != nil {
+		return nil, "", false, fmt.Errorf("解析文件版本列表失败: %w", err)
+	}
 	var versions []*FileVersionInfo
-	if resp.Data != nil && resp.Data.Items != nil {
-		for _, v := range resp.Data.Items {
-			versions = append(versions, versionToInfo(v))
-		}
+	for _, v := range parsed.Data.Items {
+		versions = append(versions, v.info())
 	}
-
-	var nextPageToken string
-	var hasMore bool
-	if resp.Data != nil {
-		nextPageToken = StringVal(resp.Data.PageToken)
-		hasMore = BoolVal(resp.Data.HasMore)
-	}
-
-	return versions, nextPageToken, hasMore, nil
+	return versions, parsed.Data.PageToken, parsed.Data.HasMore, nil
 }
 
 // DeleteFileVersion 删除文件版本
