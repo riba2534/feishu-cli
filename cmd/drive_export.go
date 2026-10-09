@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
@@ -279,7 +280,7 @@ var driveExportCmd = &cobra.Command{
 		fileName = ensureExportFileExtension(sanitizeExportName(fileName, sourceToken), fileExtension)
 		savedPath := filepath.Join(outputDir, fileName)
 		if _, err := os.Stat(savedPath); err == nil && !overwrite {
-			return fmt.Errorf("文件已存在: %s（使用 --overwrite 覆盖）", savedPath)
+			return clierr.Usagef("文件已存在: %s（使用 --overwrite 覆盖）", savedPath)
 		}
 		if err := client.DownloadExportFile(status.FileToken, savedPath, token); err != nil {
 			nextCmd := driveExportDownloadRetryCommand(status.FileToken, outputDir, fileName, token)
@@ -446,7 +447,7 @@ var driveExportDownloadCmd = &cobra.Command{
 			return fmt.Errorf("创建 --output-dir 失败: %w", err)
 		}
 		if _, err := os.Stat(savedPath); err == nil && !overwrite {
-			return fmt.Errorf("文件已存在: %s（使用 --overwrite 覆盖）", savedPath)
+			return clierr.Usagef("文件已存在: %s（使用 --overwrite 覆盖）", savedPath)
 		}
 
 		if err := client.DownloadExportFile(fileToken, savedPath, token); err != nil {

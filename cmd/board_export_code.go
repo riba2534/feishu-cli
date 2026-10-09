@@ -56,6 +56,10 @@ var boardExportCodeCmd = &cobra.Command{
 			if err := validateOutputPath(outputPath, ""); err != nil {
 				return err
 			}
+			// 已存在且未 --overwrite 同样在请求之前拒绝（写入前还会再检查一次）
+			if err := ensureBoardExportWritable(outputPath, overwrite); err != nil {
+				return err
+			}
 		}
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
@@ -255,7 +259,7 @@ func ensureBoardExportWritable(outputPath string, overwrite bool) error {
 		return nil
 	}
 	if _, err := os.Stat(outputPath); err == nil {
-		return fmt.Errorf("输出文件 %s 已存在，加 --overwrite 覆盖", outputPath)
+		return clierr.Usagef("输出文件 %s 已存在，加 --overwrite 覆盖", outputPath)
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
@@ -50,7 +51,7 @@ func writeMarkdownExportFile(outputDir, fileName string, data []byte, overwrite 
 		return "", err
 	}
 	if _, err := os.Stat(target); err == nil && !overwrite {
-		return "", fmt.Errorf("文件已存在: %s（使用 --overwrite 覆盖）", target)
+		return "", clierr.Usagef("文件已存在: %s（使用 --overwrite 覆盖）", target)
 	}
 	if err := safefile.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return "", fmt.Errorf("创建 --output-dir 失败: %w", err)
