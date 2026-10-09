@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/v2/internal/config"
 )
 
 // regServers 为 feishu / lark 两个品牌各起一个 httptest 注册端点，并记录每个品牌收到的 action。

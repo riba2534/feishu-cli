@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/config"
-	"github.com/riba2534/feishu-cli/internal/event"
+	"github.com/riba2534/feishu-cli/v2/internal/config"
+	"github.com/riba2534/feishu-cli/v2/internal/event"
 	"github.com/spf13/cobra"
 )
 

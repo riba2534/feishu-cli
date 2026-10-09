@@ -16,7 +16,7 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/v2/internal/config"
 )
 
 // 卡片消息内容返回格式枚举值（OAPI 参数 card_msg_content_type 的取值）

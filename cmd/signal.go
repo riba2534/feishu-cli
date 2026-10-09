@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 )
 
 // interruptGracePeriod 收到第一次 SIGINT/SIGTERM 后，等待命令借 context 取消自行收尾的时长。

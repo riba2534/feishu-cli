@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/client"
-	"github.com/riba2534/feishu-cli/internal/runctx"
+	"github.com/riba2534/feishu-cli/v2/internal/client"
+	"github.com/riba2534/feishu-cli/v2/internal/runctx"
 )
 
 func resetInterruptState(t *testing.T) {

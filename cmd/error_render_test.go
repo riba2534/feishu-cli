@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/apidiag"
+	"github.com/riba2534/feishu-cli/v2/internal/apidiag"
 )
 
 // TestRenderErrorDiagnosticsFromRegistry 回归：`doc get <非法 id>` 过去只输出

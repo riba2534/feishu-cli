@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 )
 
 // logf 输出日志到 stderr，避免污染 stdout 的 JSON 输出

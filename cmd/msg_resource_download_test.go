@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/v2/internal/client"
 )
 
 func TestResolveResourceDownloadName(t *testing.T) {

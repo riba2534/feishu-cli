@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 )
 
 // TestSheetInsertCols_Conversion insert-cols 与 insert-rows 同口径：--range "C:D" → startIndex 2, endIndex 4。

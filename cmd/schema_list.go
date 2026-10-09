@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/internal/registry"
+	"github.com/riba2534/feishu-cli/v2/internal/registry"
 	"github.com/spf13/cobra"
 )
 

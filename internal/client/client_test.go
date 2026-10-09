@@ -12,8 +12,8 @@ import (
 	"time"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
-	"github.com/riba2534/feishu-cli/internal/auth"
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/v2/internal/auth"
+	"github.com/riba2534/feishu-cli/v2/internal/config"
 	"github.com/spf13/viper"
 )
 

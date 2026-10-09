@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 )
 
 // fakeDocsAI 是一个最小的 docs_ai 服务端：内存中保存文档的 Markdown 序列化，

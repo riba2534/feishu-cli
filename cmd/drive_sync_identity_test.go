@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
-	"github.com/riba2534/feishu-cli/internal/config"
-	"github.com/riba2534/feishu-cli/internal/profile"
+	"github.com/riba2534/feishu-cli/v2/internal/auth"
+	"github.com/riba2534/feishu-cli/v2/internal/config"
+	"github.com/riba2534/feishu-cli/v2/internal/profile"
 )
 
 // 复现：token.json 存在且 access_token 仍有效，但没有 app_id（旧版布局），

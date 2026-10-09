@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/internal/clierr"
-	"github.com/riba2534/feishu-cli/internal/safefile"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/safefile"
 )
 
 // messageInputStdin 是 --text/--markdown/--content 取值为 "-" 时读取的输入流（测试可替换）。

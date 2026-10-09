@@ -3,14 +3,14 @@ package client
 import (
 	"errors"
 	"fmt"
-	"github.com/riba2534/feishu-cli/internal/textutil"
+	"github.com/riba2534/feishu-cli/v2/internal/textutil"
 	"net/http"
 	"net/url"
 	"strings"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
-	"github.com/riba2534/feishu-cli/internal/apidiag"
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/v2/internal/apidiag"
+	"github.com/riba2534/feishu-cli/v2/internal/config"
 )
 
 // APIError 飞书 OpenAPI 业务错误（含 HTTP 非 2xx 但响应体是飞书 JSON 信封的情况）。

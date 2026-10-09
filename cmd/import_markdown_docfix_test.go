@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
-	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/riba2534/feishu-cli/v2/internal/converter"
 )
 
 // docxMock 模拟导入涉及的 docx / drive / board 接口，并按 2026-10 实测的服务端约束拒绝非法建块：

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/auth"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 	"github.com/spf13/cobra"
 )
 

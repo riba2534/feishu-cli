@@ -3,7 +3,7 @@ package client
 import (
 	"net/http"
 
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/v2/internal/config"
 )
 
 // rawHTTPClient 返回手写 HTTP 请求（绕过 SDK、自带 Bearer 头）使用的受控客户端：

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/runctx"
+	"github.com/riba2534/feishu-cli/v2/internal/runctx"
 )
 
 // 限流重置 header 名称

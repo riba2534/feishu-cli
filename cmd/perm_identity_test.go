@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/client"
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/client"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 )
 
 // P1-7：perm 不传 --as 保持默认 Bot（不被 FEISHU_USER_ACCESS_TOKEN 静默切换）；--as / --user-access-token 显式切换。

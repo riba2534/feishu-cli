@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/selfupdate"
+	"github.com/riba2534/feishu-cli/v2/internal/selfupdate"
 )
 
 // fakeRelease 模拟 GitHub release：302 跳转 + checksums.txt + 规范命名的 tar.gz。

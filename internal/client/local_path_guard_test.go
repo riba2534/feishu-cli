@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 )
 
 // guardHome 把 HOME 指向临时目录并建好 ~/.ssh 下的一个"凭证"文件，返回该文件路径。

@@ -13,10 +13,10 @@ import (
 	"time"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
-	"github.com/riba2534/feishu-cli/internal/client"
-	"github.com/riba2534/feishu-cli/internal/clierr"
-	"github.com/riba2534/feishu-cli/internal/converter"
-	"github.com/riba2534/feishu-cli/internal/safefile"
+	"github.com/riba2534/feishu-cli/v2/internal/client"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/converter"
+	"github.com/riba2534/feishu-cli/v2/internal/safefile"
 )
 
 // content-update 插入本地图片/附件（对齐官方 local_doc_resources 的占位标记协议，测试文档实测）：

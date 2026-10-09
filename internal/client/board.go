@@ -14,7 +14,7 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 
-	"github.com/riba2534/feishu-cli/internal/safefile"
+	"github.com/riba2534/feishu-cli/v2/internal/safefile"
 )
 
 // boardImageContentTypeExt 画板缩略图响应 Content-Type → 文件扩展名。

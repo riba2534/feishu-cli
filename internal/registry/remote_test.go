@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/profile"
+	"github.com/riba2534/feishu-cli/v2/internal/profile"
 )
 
 // TestMain 置位 inTestBinary，替代生产代码里的 testing.Testing()：

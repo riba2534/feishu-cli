@@ -14,7 +14,7 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkokr "github.com/larksuite/oapi-sdk-go/v3/service/okr/v1"
-	"github.com/riba2534/feishu-cli/internal/safefile"
+	"github.com/riba2534/feishu-cli/v2/internal/safefile"
 )
 
 // --------- OKR 业务结构（输出层）---------

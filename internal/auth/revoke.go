@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/config"
-	"github.com/riba2534/feishu-cli/internal/runctx"
+	"github.com/riba2534/feishu-cli/v2/internal/config"
+	"github.com/riba2534/feishu-cli/v2/internal/runctx"
 )
 
 // accountsBaseFor 按 baseURL 选择 OAuth accounts 域（吊销 / 设备流端点所在域）。

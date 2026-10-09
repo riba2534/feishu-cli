@@ -6,7 +6,7 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 )
 
 // MkdirAll 创建用户指定的输出目录：先按 ValidateOutputPath 拒绝敏感目录，再 os.MkdirAll。

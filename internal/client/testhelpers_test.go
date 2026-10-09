@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/v2/internal/config"
 )
 
 // setupTestConfig 让 client 指向 httptest 服务器（共用：rawapi / bitable_v1 / search_enrich 测试）。

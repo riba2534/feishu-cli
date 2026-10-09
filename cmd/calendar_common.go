@@ -6,12 +6,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/internal/client"
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/client"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
-// calendarWriteAsHelp 日历/任务写命令的 --as 说明（默认 auto 是 v1.42 起的行为变更）
+// calendarWriteAsHelp 日历/任务写命令的 --as 说明（默认 auto 是 v2.0 起的行为变更）
 const calendarWriteAsHelp = "身份: auto(默认；已登录用 User Token，未配置回退 Bot，已配置但不可用 fail-closed) | user | bot（操作应用自身资源或无人值守时显式传 --as bot）"
 
 // addWriteAsFlag 为日历/任务写命令注册 --as（默认 auto）。

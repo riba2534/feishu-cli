@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/v2/internal/auth"
+	"github.com/riba2534/feishu-cli/v2/internal/config"
 )
 
 // TestFormatUserCode 测试 Device Flow 用户码格式化

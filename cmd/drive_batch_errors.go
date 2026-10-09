@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/riba2534/feishu-cli/internal/client"
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/client"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 )
 
 // driveBatchFailure 是 drive push/pull 单项失败的分类结果（对齐官方 drive_push.go 的批量失败分级）。

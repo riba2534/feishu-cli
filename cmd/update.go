@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/selfupdate"
+	"github.com/riba2534/feishu-cli/v2/internal/selfupdate"
 	"github.com/spf13/cobra"
 )
 

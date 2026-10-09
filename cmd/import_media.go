@@ -11,8 +11,8 @@ import (
 	"time"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
-	"github.com/riba2534/feishu-cli/internal/client"
-	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/riba2534/feishu-cli/v2/internal/client"
+	"github.com/riba2534/feishu-cli/v2/internal/converter"
 )
 
 // createdBlockNode 记录一个已在服务端创建的块：转换节点、块 ID、父块 ID 与服务端返回的块

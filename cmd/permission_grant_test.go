@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
-	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/v2/internal/auth"
+	"github.com/riba2534/feishu-cli/v2/internal/client"
 )
 
 // stubPermissionGrant 替换当前用户解析与授权调用，并捕获 stderr 告警。

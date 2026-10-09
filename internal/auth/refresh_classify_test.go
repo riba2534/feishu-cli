@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 )
 
 // scriptedTokenServer 按顺序返回预设响应；step.hangup=true 时读完请求后直接断开连接（请求已发出、无响应）。

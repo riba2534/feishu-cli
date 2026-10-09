@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/v2/internal/clierr"
 )
 
 // approvalPageAllMax --page-all 的翻页上限（审批列表是稀疏分页，空页不代表结束）

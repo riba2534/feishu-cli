@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	larksheets "github.com/larksuite/oapi-sdk-go/v3/service/sheets/v3"
-	"github.com/riba2534/feishu-cli/internal/safefile"
+	"github.com/riba2534/feishu-cli/v2/internal/safefile"
 )
 
 // ==================== 浮动图片：获取 / 更新 / 上传 / 写入 (V3 + drive + V2 values_image) ====================

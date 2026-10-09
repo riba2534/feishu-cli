@@ -7,7 +7,7 @@ import (
 	"time"
 
 	larktask "github.com/larksuite/oapi-sdk-go/v3/service/task/v2"
-	"github.com/riba2534/feishu-cli/internal/safefile"
+	"github.com/riba2534/feishu-cli/v2/internal/safefile"
 )
 
 // TaskInfo represents simplified task information

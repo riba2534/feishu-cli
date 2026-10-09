@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/apidiag"
+	"github.com/riba2534/feishu-cli/v2/internal/apidiag"
 )
 
 const defaultRedirectLimit = 10

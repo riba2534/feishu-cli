@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
-	"github.com/riba2534/feishu-cli/internal/profile"
+	"github.com/riba2534/feishu-cli/v2/internal/auth"
+	"github.com/riba2534/feishu-cli/v2/internal/profile"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

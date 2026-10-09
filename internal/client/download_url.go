@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/safefile"
+	"github.com/riba2534/feishu-cli/v2/internal/safefile"
 )
 
 // DownloadOptions 预签名 URL 下载选项

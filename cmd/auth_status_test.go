@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/v2/internal/auth"
+	"github.com/riba2534/feishu-cli/v2/internal/config"
 )
 
 // writeVerifyToken 在临时 HOME 的旧布局目录写入 token.json，返回文件路径。
