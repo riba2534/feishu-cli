@@ -143,34 +143,33 @@ header → 首屏结论 → 关键证据 → 必要详情 → 真实行动 → �
 ### 步骤六：离线校验
 
 先将 JSON 写到临时文件，例如 `/tmp/alert-card.json`。
-以下命令以仓库根目录为工作目录；Skill 安装到其它位置时，用本文件已解析出的实际目录替换
-`skills/feishu-cli-messaging/references/workflows/card` 前缀。
+以下 `scripts/` 路径相对本工作流目录（`workflow.md` 所在目录）解析；执行时换成解析后的实际路径。
 
 草稿允许明确占位符：
 
 ```bash
-python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+python3 scripts/lint_card.py \
   --allow-placeholders /tmp/alert-card.json
 ```
 
 准备发送时必须使用严格的发送候选检查：
 
 ```bash
-python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+python3 scripts/lint_card.py \
   --strict /tmp/alert-card.json
 ```
 
 需要机器可读报告：
 
 ```bash
-python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+python3 scripts/lint_card.py \
   --strict --json /tmp/alert-card.json
 ```
 
 发送候选包含任意本地图片时（Markdown、`img.img_key` 或 `img_combination`）：
 
 ```bash
-python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+python3 scripts/lint_card.py \
   --strict --upload-images /tmp/alert-card.json
 ```
 

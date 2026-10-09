@@ -30,8 +30,8 @@ CLI 路径不等于工作流归属：`feishu-cli msg` 下的子命令按动作�
 | 读取 | `history` / `list` / `get` / `mget` / `thread-messages` / `search-chats` / `read-users` / `pins` | [`chat` 工作流](../chat/workflow.md) |
 | 互动与撤回 | `reaction` / `pin` / `unpin` / `delete` | [`chat` 工作流](../chat/workflow.md) |
 
-构造卡片 JSON 走 [`card` 工作流](../card/workflow.md)；拉一段时间窗的群消息走 chat 工作流的
-`scripts/fetch_chat_history.py`。
+构造卡片 JSON 走 [`card` 工作流](../card/workflow.md)；拉一段时间窗的群消息用 chat 工作流的端到端脚本
+`../chat/scripts/fetch_chat_history.py`。
 
 ## 身份与权限
 

@@ -145,7 +145,6 @@ v1 的 column.width 可以直接写数字；v2 必须用 `"width": "weighted"` +
 - [ ] header.icon 按新结构组织
 - [ ] markdown 里 `[text]($urlVal)` → `<link>` 标签
 - [ ] large spacing：如果是 16px 语义，改 `extra_large`
-- [ ] 从仓库根跑
-      `python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py --strict <card.json>`
+- [ ] 运行 card 工作流的 `scripts/lint_card.py --strict <card.json>`（`scripts/` 相对工作流目录）
       做发送候选检查
 - [ ] 发到飞书 7.20+ 客户端验证渲染
