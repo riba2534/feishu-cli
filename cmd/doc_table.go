@@ -10,7 +10,7 @@ var docTableCmd = &cobra.Command{
 	Short: "文档表格操作",
 	Long: `文档内嵌表格操作命令组，支持插入/删除行列、合并/取消合并单元格。
 
-所有操作需要指定文档 ID 和表格块 ID（Block 类型 31）。
+所有操作需要指定文档 ID（或 /docx/、/wiki/ URL）和表格块 ID（Block 类型 31）。
 
 子命令:
   insert-row      插入行

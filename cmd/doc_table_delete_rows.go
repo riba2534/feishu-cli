@@ -9,12 +9,12 @@ import (
 )
 
 var docTableDeleteRowsCmd = &cobra.Command{
-	Use:   "delete-rows <document_id> <table_block_id>",
+	Use:   "delete-rows <document_id|url> <table_block_id>",
 	Short: "删除表格中的行",
 	Long: `删除指定范围的行（左闭右开区间）。
 
 参数:
-  document_id     文档 ID
+  document_id     文档 ID 或 URL（/wiki/ URL 自动解析为底层文档）
   table_block_id  表格块 ID（Block 类型 31）
   --start         起始行索引（包含，0 表示第一行）
   --end           结束行索引（不包含）
@@ -43,12 +43,16 @@ func runDocTableDeleteRows(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	documentID := args[0]
 	tableBlockID := args[1]
 	start, _ := cmd.Flags().GetInt("start")
 	end, _ := cmd.Flags().GetInt("end")
 	output, _ := cmd.Flags().GetString("output")
 	userAccessToken := resolveOptionalUserToken(cmd)
+	// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+	if err != nil {
+		return err
+	}
 
 	if start < 0 {
 		return fmt.Errorf("起始索引不能为负数")
@@ -57,7 +61,7 @@ func runDocTableDeleteRows(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("结束索引必须大于起始索引")
 	}
 
-	err := client.DeleteTableRows(documentID, tableBlockID, start, end, userAccessToken)
+	err = client.DeleteTableRows(documentID, tableBlockID, start, end, userAccessToken)
 	if err != nil {
 		return fmt.Errorf("删除行失败: %w", err)
 	}

@@ -9,12 +9,12 @@ import (
 )
 
 var docTableMergeCellsCmd = &cobra.Command{
-	Use:   "merge-cells <document_id> <table_block_id>",
+	Use:   "merge-cells <document_id|url> <table_block_id>",
 	Short: "合并表格单元格",
 	Long: `合并指定范围的单元格（左闭右开区间）。
 
 参数:
-  document_id     文档 ID
+  document_id     文档 ID 或 URL（/wiki/ URL 自动解析为底层文档）
   table_block_id  表格块 ID（Block 类型 31）
   --row-start     起始行索引（包含）
   --row-end       结束行索引（不包含）
@@ -45,7 +45,6 @@ func runDocTableMergeCells(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	documentID := args[0]
 	tableBlockID := args[1]
 	rowStart, _ := cmd.Flags().GetInt("row-start")
 	rowEnd, _ := cmd.Flags().GetInt("row-end")
@@ -53,6 +52,11 @@ func runDocTableMergeCells(cmd *cobra.Command, args []string) error {
 	colEnd, _ := cmd.Flags().GetInt("col-end")
 	output, _ := cmd.Flags().GetString("output")
 	userAccessToken := resolveOptionalUserToken(cmd)
+	// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+	if err != nil {
+		return err
+	}
 
 	if rowStart < 0 || colStart < 0 {
 		return fmt.Errorf("起始索引不能为负数")
@@ -64,7 +68,7 @@ func runDocTableMergeCells(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("列结束索引必须大于起始索引")
 	}
 
-	err := client.MergeTableCells(documentID, tableBlockID, rowStart, rowEnd, colStart, colEnd, userAccessToken)
+	err = client.MergeTableCells(documentID, tableBlockID, rowStart, rowEnd, colStart, colEnd, userAccessToken)
 	if err != nil {
 		return fmt.Errorf("合并单元格失败: %w", err)
 	}

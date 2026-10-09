@@ -9,14 +9,14 @@ import (
 )
 
 var exportFileCmd = &cobra.Command{
-	Use:   "export-file <doc_token>",
+	Use:   "export-file <doc_token|url>",
 	Short: "导出文档为文件",
 	Long: `将飞书云文档导出为指定格式的文件（PDF、DOCX、XLSX 等）。
 
 这是一个异步操作：创建导出任务 → 轮询任务状态 → 下载导出文件。
 
 参数:
-  doc_token     文档的 Token
+  doc_token     文档的 Token 或 URL（/docx/、/sheets/、/base/ 按路径推断 --doc-type；/wiki/ 自动解析为底层文档）
 
 选项:
   --type        导出格式（pdf/docx/xlsx，必填）
@@ -37,6 +37,7 @@ var exportFileCmd = &cobra.Command{
 示例:
   # 导出文档为 PDF
   feishu-cli doc export-file doccnXXX --type pdf -o output.pdf
+  feishu-cli doc export-file https://xxx.feishu.cn/wiki/wikcnXXX --type docx -o output.docx
 
   # 导出电子表格为 Excel
   feishu-cli doc export-file shtcnXXX --type xlsx --doc-type sheet -o report.xlsx`,
@@ -46,17 +47,36 @@ var exportFileCmd = &cobra.Command{
 			return err
 		}
 
-		docToken := args[0]
 		fileType, _ := cmd.Flags().GetString("type")
 		docType, _ := cmd.Flags().GetString("doc-type")
 		outputPath, _ := cmd.Flags().GetString("output")
 
+		// 获取可选的 User Access Token
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+
+		// 支持裸 token 与 URL：/docx/ /sheets/ /base/ 等按路径推断类型，/wiki/ 解包为底层文档。
+		// 显式 --doc-type 与 URL 推断冲突时报错；裸 token 沿用 --doc-type（默认 docx）。
+		explicitType := ""
+		if cmd.Flags().Changed("doc-type") {
+			explicitType = docType
+		}
+		res, err := resolveResourceArg(args[0], resourceArgOptions{
+			ArgName:         "<doc_token|url>",
+			ExplicitType:    explicitType,
+			DefaultType:     docType,
+			Allowed:         []string{client.ResourceTypeDoc, client.ResourceTypeDocx, client.ResourceTypeSheet, client.ResourceTypeBitable},
+			ResolveWiki:     true,
+			UserAccessToken: userAccessToken,
+		})
+		if err != nil {
+			return err
+		}
+		noteWikiResolved(res)
+		docToken, docType := res.Token, res.Type
+
 		if outputPath == "" {
 			outputPath = fmt.Sprintf("%s.%s", docToken, fileType)
 		}
-
-		// 获取可选的 User Access Token
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		// 创建导出任务
 		fmt.Printf("正在创建导出任务...\n")

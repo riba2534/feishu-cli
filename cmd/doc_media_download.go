@@ -32,6 +32,8 @@ var docMediaDownloadCmd = &cobra.Command{
   --timeout   下载超时时间（默认 5m，大文件可设置更长如 30m、1h）
   --overwrite 目标文件已存在时覆盖（默认拒绝覆盖并报错）
 
+单个素材上限 100MB：超过时报错，且不会留下半截文件或改动已存在的同名文件。
+
 输出文件名没有扩展名时（含默认的 token 文件名），按下载内容识别类型自动补扩展名
 （png/jpg/gif/webp/bmp/pdf/docx/xlsx/pptx/zip/mp4/txt 等）。
 

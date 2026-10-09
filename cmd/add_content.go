@@ -16,14 +16,14 @@ import (
 )
 
 var addContentCmd = &cobra.Command{
-	Use:   "add <document_id> [source]",
+	Use:   "add <document_id|url> [source]",
 	Short: "向文档添加内容块",
 	Long: `向飞书文档添加内容块。
 
 内容可以是 JSON 格式的块对象数组或 Markdown 格式文本。
 
 参数:
-  <document_id>        文档 ID（必填）
+  <document_id>        文档 ID 或 URL（必填；/wiki/ URL 自动解析为底层文档）
   [source]             源文件路径（与 --content 二选一）
   --content, -c        内容字符串
   --content-file       内容文件路径
@@ -54,7 +54,6 @@ var addContentCmd = &cobra.Command{
 			return err
 		}
 
-		documentID := args[0]
 		contentStr, _ := cmd.Flags().GetString("content")
 		contentFile, _ := cmd.Flags().GetString("content-file")
 		contentType, _ := cmd.Flags().GetString("content-type")
@@ -69,6 +68,11 @@ var addContentCmd = &cobra.Command{
 			return errFlag
 		}
 		userAccessToken := resolveOptionalUserToken(cmd)
+		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
+		}
 
 		// Get source from args or flags
 		var source string

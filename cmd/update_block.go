@@ -11,11 +11,11 @@ import (
 )
 
 var updateBlockCmd = &cobra.Command{
-	Use:   "update <document_id> <block_id>",
+	Use:   "update <document_id|url> <block_id>",
 	Short: "更新文档中的块",
 	Long: `更新飞书文档中已有的块内容。
 
-内容应为 JSON 格式的更新请求体。
+内容应为 JSON 格式的更新请求体。文档可传 ID 或 URL（/docx/、/wiki/，wiki 自动解析为底层文档）。
 
 示例:
   feishu-cli doc update DOC_ID BLOCK_ID --content '{"update_text_elements":{"elements":[{"text_run":{"content":"已更新"}}]}}'
@@ -26,11 +26,15 @@ var updateBlockCmd = &cobra.Command{
 			return err
 		}
 
-		documentID := args[0]
 		blockID := args[1]
 		contentStr, _ := cmd.Flags().GetString("content")
 		contentFile, _ := cmd.Flags().GetString("content-file")
 		userAccessToken := resolveOptionalUserToken(cmd)
+		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
+		}
 
 		// Get content from file or flag
 		var contentJSON string

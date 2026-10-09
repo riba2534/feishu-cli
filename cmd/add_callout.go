@@ -20,12 +20,12 @@ var calloutTypeConfig = map[string]int{
 }
 
 var addCalloutCmd = &cobra.Command{
-	Use:   "add-callout <document_id> <content>",
+	Use:   "add-callout <document_id|url> <content>",
 	Short: "添加高亮块",
 	Long: `向飞书文档添加高亮块（Callout）。
 
 参数:
-  <document_id>    文档 ID（必填）
+  <document_id>    文档 ID 或 URL（必填；/wiki/ URL 自动解析为底层文档）
   <content>        高亮块内容（必填）
   --parent-id      父块 ID，空表示根级别，默认空
   --index          插入位置索引，-1 表示末尾，默认 -1
@@ -57,7 +57,6 @@ var addCalloutCmd = &cobra.Command{
 			return err
 		}
 
-		documentID := args[0]
 		content := args[1]
 		parentID, _ := cmd.Flags().GetString("parent-id")
 		index, _ := cmd.Flags().GetInt("index")
@@ -65,6 +64,11 @@ var addCalloutCmd = &cobra.Command{
 		icon, _ := cmd.Flags().GetString("icon")
 		output, _ := cmd.Flags().GetString("output")
 		userAccessToken := resolveOptionalUserToken(cmd)
+		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
+		}
 
 		// 获取 callout 类型配置
 		bgColor, ok := calloutTypeConfig[calloutType]
