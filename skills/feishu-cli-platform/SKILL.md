@@ -25,11 +25,11 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 
 | 意图 | 读取文件 |
 |---|---|
-| 登录、登出、scope 预检、Token、profile、config、doctor、技能安装/漂移、CLI 升级 | `references/workflows/auth/workflow.md` |
+| 登录、登出、scope 预检、应用已开通 scope 诊断（`auth scopes`）、Token、profile、config、doctor、技能安装/漂移（`skills`）、CLI 升级（`update`） | `references/workflows/auth/workflow.md` |
 | 调任意 OpenAPI、`--as`、分页和 dry-run | `references/workflows/api/workflow.md` |
 | 查询本地 OpenAPI path、参数和 scope | `references/workflows/schema/workflow.md` |
 | 搜索文档、消息或应用 | `references/workflows/search/workflow.md` |
-| 查询用户、邮箱、手机号、部门 | `references/workflows/directory/workflow.md` |
+| 查询用户、邮箱、手机号、部门，搜索机器人（`user search-bot`） | `references/workflows/directory/workflow.md` |
 
 涉及身份选择，或遇到 Token、身份、scope 报错（如 99991663/99991668/99991672/99991679）时读取 `references/workflows/auth/references/identity.md`，排错表见 `references/workflows/auth/workflow.md`；`auth check` 不是 Bot 权限检查。
 
@@ -37,8 +37,8 @@ Schema 只负责发现接口；API 负责执行请求。通常先查 schema，�
 
 ## 执行规则
 
-1. 仓库开发优先使用刚编译的 `bin/feishu-cli`（`make build`）或 `./feishu-cli`；安装环境使用 PATH 中的 `feishu-cli`。
-2. 先确定执行身份。`auth check --scope` 只检查当前 profile 的本地 User Token，不能验证 Bot 权限或显式 Token；Bot 的权限看应用配置和实际接口结果。不要回显真实 Token。
+1. 仓库开发优先使用刚编译的 `bin/feishu-cli`（`make build`）或 `./feishu-cli`；安装环境使用 PATH 中的 `feishu-cli`。技能与 CLI 版本不一致时（命令或 flag 对不上），以 `--help` 为准，并用 `feishu-cli skills read <技能> <相对路径>` 读取与当前二进制配套的文档；每个命令 `--help` 末尾会列出相关技能与工作流。
+2. 先确定执行身份。`auth check --scope` 只检查当前 profile 的本地 User Token，不能验证 Bot 权限或显式 Token；应用侧是否开通（区分 99991672 应用未开通与 99991679 用户未授权）用 `auth scopes --scope`，Bot 能否访问具体资源以实际接口结果为准。不要回显真实 Token。
 3. 多 Bot / 不确定当前应用时先 `profile list --json`；单次用 `--profile <name>`，不改默认指针。环境变量覆盖了目标 App 时，沿用已有授权在本次进程移除对应覆盖，或用 `--bot-app-id/--bot-app-secret` 指定正确凭证，不修改用户全局环境。
 4. `api` 的所有写请求均可先用 CLI 本地 `--dry-run` 预览；预览不代表服务端接受。其他命令按各自帮助选择验证方式。
 5. 搜索与通讯录结果默认只读取；用户要求后续写操作时再切换到对应领域 Skill。
