@@ -23,7 +23,8 @@ var sheetFilterCreateCmd = &cobra.Command{
 
 接口要求同时提供筛选范围、筛选列与条件（只传范围会返回 99992402 col/condition is required）：
   --col           设置条件的列字母（须在范围内，如 B）
-  --filter-type   hiddenValue | number | text | color
+  --filter-type   multiValue | hiddenValue | number | text | color（原样透传服务端；multiValue 为多值筛选，
+                  --expected 传值列表，如 '["待办","处理中"]'）
   --compare-type  比较类型（如 less、beginsWith、between；hiddenValue 不需要）
   --expected      筛选参数 JSON 字符串数组（如 '["6"]'）
 
@@ -90,7 +91,7 @@ func readSheetFilterCondition(cmd *cobra.Command) (*client.SheetFilterCondition,
 	col := strings.ToUpper(strings.TrimSpace(flagString(cmd, "col")))
 	filterType := strings.TrimSpace(flagString(cmd, "filter-type"))
 	if col == "" || filterType == "" {
-		return nil, clierr.Usagef("筛选需要 --col（列字母，如 B）与 --filter-type（hiddenValue/number/text/color）")
+		return nil, clierr.Usagef("筛选需要 --col（列字母，如 B）与 --filter-type（multiValue/hiddenValue/number/text/color）")
 	}
 	if dr, err := client.ParseDimRange(col); err != nil || dr.Major != "COLUMNS" || dr.Start != dr.End {
 		return nil, clierr.Usagef("--col 必须是单个列字母（如 B），得到 %q", col)
@@ -109,7 +110,7 @@ func readSheetFilterCondition(cmd *cobra.Command) (*client.SheetFilterCondition,
 
 func addSheetFilterConditionFlags(c *cobra.Command) {
 	c.Flags().String("col", "", "设置条件的列字母（如 B）（必填）")
-	c.Flags().String("filter-type", "", "筛选类型: hiddenValue, number, text, color（必填）")
+	c.Flags().String("filter-type", "", "筛选类型: multiValue, hiddenValue, number, text, color（必填）")
 	c.Flags().String("compare-type", "", "比较类型（如 less, beginsWith, between）")
 	c.Flags().String("expected", "", `筛选参数 JSON 字符串数组（如 '["6"]'）`)
 }

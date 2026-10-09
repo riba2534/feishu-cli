@@ -23,6 +23,7 @@ var sheetFilterViewConditionCreateCmd = &cobra.Command{
 	Long: `在筛选视图上创建一个筛选条件。
 
 condition-id 为列字母（如 E）。expected 为筛选参数 JSON 数组（如 '["6"]'）。
+filter-type 可选 multiValue（多值筛选，expected 传值列表）、hiddenValue、number、text、color，原样透传服务端。
 
 示例:
   feishu-cli sheet filter-view condition create --token shtcnxxxxxx --sheet-id 0b1212 \
@@ -238,7 +239,7 @@ func init() {
 
 	// create
 	addSheetConditionCommonFlags(sheetFilterViewConditionCreateCmd, true, true)
-	sheetFilterViewConditionCreateCmd.Flags().String("filter-type", "", "筛选类型: hiddenValue, number, text, color")
+	sheetFilterViewConditionCreateCmd.Flags().String("filter-type", "", "筛选类型: multiValue, hiddenValue, number, text, color")
 	sheetFilterViewConditionCreateCmd.Flags().String("compare-type", "", "比较类型（如 less, beginsWith, between）")
 	sheetFilterViewConditionCreateCmd.Flags().String("expected", "", `筛选参数 JSON 数组（如 '["6"]'）`)
 
@@ -247,7 +248,7 @@ func init() {
 
 	// update
 	addSheetConditionCommonFlags(sheetFilterViewConditionUpdateCmd, true, true)
-	sheetFilterViewConditionUpdateCmd.Flags().String("filter-type", "", "筛选类型: hiddenValue, number, text, color")
+	sheetFilterViewConditionUpdateCmd.Flags().String("filter-type", "", "筛选类型: multiValue, hiddenValue, number, text, color")
 	sheetFilterViewConditionUpdateCmd.Flags().String("compare-type", "", "比较类型")
 	sheetFilterViewConditionUpdateCmd.Flags().String("expected", "", `筛选参数 JSON 数组（如 '["6"]'）`)
 

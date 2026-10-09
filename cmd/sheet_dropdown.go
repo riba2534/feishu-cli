@@ -36,7 +36,11 @@ options 用逗号分隔多个选项，每项 ≤ 100 字符；如需选项内出
   feishu-cli sheet dropdown set --token shtcnxxxxxx --range "0b1212!C1:C100" \
       --options-json '["a, b","c"]'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken, _ := cmd.Flags().GetString("token")
+		// --spreadsheet-token 为兼容别名（与 get/update/delete 一致），同时指定不同值时报错
+		spreadsheetToken, err := readSheetSpreadsheetToken(cmd)
+		if err != nil {
+			return err
+		}
 		rangeStr, _ := cmd.Flags().GetString("range")
 		optionsCSV, _ := cmd.Flags().GetString("options")
 		optionsJSON, _ := cmd.Flags().GetString("options-json")
@@ -44,7 +48,7 @@ options 用逗号分隔多个选项，每项 ≤ 100 字符；如需选项内出
 		multiple, _ := cmd.Flags().GetBool("multiple")
 
 		if spreadsheetToken == "" || rangeStr == "" {
-			return fmt.Errorf("--token、--range 均为必填项")
+			return fmt.Errorf("--token/--spreadsheet-token、--range 均为必填项")
 		}
 
 		if strings.TrimSpace(optionsJSON) != "" && strings.TrimSpace(optionsCSV) != "" {
@@ -113,6 +117,7 @@ func init() {
 	sheetDropdownCmd.AddCommand(sheetDropdownSetCmd)
 
 	sheetDropdownSetCmd.Flags().String("token", "", "电子表格 token（必填）")
+	sheetDropdownSetCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名，与 --token 等价）")
 	sheetDropdownSetCmd.Flags().String("range", "", "单元格范围，前缀可写 sheetId 或子表名（如 0b1212!A1:A100）（必填）")
 	sheetDropdownSetCmd.Flags().String("options", "", "下拉选项，逗号分隔（与 --options-json 二选一）")
 	sheetDropdownSetCmd.Flags().String("options-json", "", `下拉选项 JSON 数组，如 '["a","b,c"]'（选项含逗号时使用）`)
