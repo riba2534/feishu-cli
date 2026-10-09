@@ -1,97 +1,70 @@
-# 飞书消息发送技能
+# 飞书消息发送
 
-通过 feishu-cli 发送飞书消息、回复、转发、合并转发、加急和下载消息资源。
+用 feishu-cli 发送、回复、编辑、转发、合并转发、加急消息，管理消息书签，下载消息中的资源。
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
 ## 目录
 
-- [职责边界](#与-chat-工作流的职责边界)
-- [核心概念](#核心概念)
+- [适用范围与 chat 工作流的边界](#适用范围与-chat-工作流的边界)
+- [身份与权限](#身份与权限)
 - [消息类型选择](#消息类型选择)
-- [身份说明](#身份说明)
+- [内容输入](#内容输入)
 - [发送命令](#发送命令)
+- [回复与话题](#回复与话题)
+- [编辑已发送的消息](#编辑已发送的消息)
+- [转发、合并转发与加急](#转发合并转发与加急)
+- [下载消息资源](#下载消息资源)
+- [消息书签（msg flag）](#消息书签msg-flag)
 - [执行流程](#执行流程)
-- [权限要求](#权限要求)
-- [注意事项](#注意事项)
-- [错误处理](#错误处理)
-- [批量获取消息](#批量获取消息)
-- [资源下载](#下载消息资源)
-- [话题消息](#话题thread消息)
+- [限制与错误处理](#限制与错误处理)
 - [参考文档](#参考文档)
-- [消息书签](#消息书签msg-flagv123-新增)
 
-## 与 chat 工作流的职责边界
+## 适用范围与 chat 工作流的边界
 
-> **重要：CLI 路径 ≠ 工作流归属。** `feishu-cli msg` 下的子命令按**动作类型**划分到本技能的不同子工作流，不按 CLI 路径划分。
->
-> | 动作类型 | 子命令 | 归属工作流 |
-> | --- | --- | --- |
-> | **发送类** | `send` / `reply` / `forward` / `merge-forward` / `urgent` / `flag` / `resource-download` | 本文档（`msg` 工作流） |
-> | **读取类** | `history` / `list` / `get` / `mget` / `thread-messages` / `search-chats` / `read-users` / `pins` | [`chat` 工作流](../chat/workflow.md) |
-> | **互动类** | `reaction` / `pin` / `unpin` / `delete` | [`chat` 工作流](../chat/workflow.md) |
->
-> 端到端拉一段时间窗的群消息（含话题展开、名字反解、卡片解析）直接跑：
-> ```bash
-> python3 skills/feishu-cli-messaging/references/workflows/chat/scripts/fetch_chat_history.py oc_xxx --since 24h
-> ```
+CLI 路径不等于工作流归属：`feishu-cli msg` 下的子命令按动作类型分到两个工作流。
 
-## 核心概念
+| 动作类型 | 子命令 | 归属工作流 |
+| --- | --- | --- |
+| 发送与改写 | `send` / `reply` / `edit` / `forward` / `merge-forward` / `urgent` / `flag` / `resource-download` | 本文档（`msg` 工作流） |
+| 读取 | `history` / `list` / `get` / `mget` / `thread-messages` / `search-chats` / `read-users` / `pins` | [`chat` 工作流](../chat/workflow.md) |
+| 互动与撤回 | `reaction` / `pin` / `unpin` / `delete` | [`chat` 工作流](../chat/workflow.md) |
 
-### 消息架构
+构造卡片 JSON 走 [`card` 工作流](../card/workflow.md)；拉一段时间窗的群消息用 chat 工作流的端到端脚本
+`../chat/scripts/fetch_chat_history.py`。
 
-飞书消息 API 的 `content` 字段是一个 **JSON 字符串**（不是 JSON 对象）。`msg send` 和
-`msg reply` 共用以下输入方式：
+## 身份与权限
 
-| 输入方式 | 参数 | 适用场景 |
-|---------|------|---------|
-| 快捷文本 | `--text "内容"` | 纯文本消息，最简单 |
-| Markdown | `--markdown "..."` | 自动包装为 post |
-| 发送文件 | `--file <路径或 file_key>` 或 `-f` | 本地文件自动上传并作为附件发送（限 30MB） |
-| 发送图片 | `--image <路径或 image_key>` | 本地图片自动上传并发送（限 10MB） |
-| 发送语音 | `--audio <路径或 file_key>` | 本地 Opus/Ogg Opus 自动上传 |
-| 发送视频 | `--video <路径或 file_key> --video-cover <路径或 image_key>` | MP4 + 必填封面 |
-| 内联 JSON | `--content '{"key":"val"}'` 或 `-c` | 简单 JSON，一行搞定 |
-| JSON 文件 | `--content-file file.json` | 复杂消息（卡片、富文本等） |
+| 命令 | 身份 |
+| --- | --- |
+| `msg send` / `reply` / `forward` | 默认 Bot（App Token），不自动加载 `token.json`；仅显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时以本人身份发送 |
+| `msg edit` / `urgent` | 仅 Bot，只能操作本应用 Bot 发出的消息 |
+| `msg merge-forward` | 仅 Bot；传入的 User Token 会被忽略并在 stderr 提示 |
+| `msg resource-download` | User 优先、Bot 兜底：已登录用本人身份（能看到该消息即可），未登录用 Bot（Bot 需能看到该消息）；User Token 不可用时 stderr 告警后改用 Bot |
+| `msg flag create/list/cancel` | 必须 User（`im:feed.flag:read` / `im:feed.flag:write`） |
 
-**互斥**：`content/content-file/text/markdown/file/image/audio/video` 只能指定一个；
-`video-cover` 只能且必须与 `video` 同时使用。快捷参数会推断消息类型，若显式
-`--msg-type` 与推断结果冲突，会在上传和发送前报错。
-
-### 接收者类型
-
-| --receive-id-type | 说明 | 示例 |
-|-------------------|------|------|
-| email | 邮箱地址 | user@example.com |
-| open_id | Open ID | ou_xxx |
-| user_id | User ID | xxx |
-| union_id | Union ID | on_xxx |
-| chat_id | 群聊 ID | oc_xxx |
+Bot 发消息需要 `im:message:send_as_bot`（或 `im:message`），且 Bot 必须在目标群内。以本人身份发送需要
+`im:message.send_as_user`，`auth login` 的批量申请会剔除这个 scope；只有用户明确要求"以我的名义发"时才使用。
 
 ## 消息类型选择
 
-### 决策树（Claude 未指定类型时自动选择）
+需要结构化层级或操作入口时用 `interactive`；短回复、原文转达用 `text`；Markdown 排版用 `post`。
+用户已指定消息类型时沿用其要求。
 
-按内容和用户要求选择载体。需要结构化层级或操作入口时用 `interactive`；短回复、原文转达用 `text`，Markdown 排版用 `post`。
-
-```
+```text
 用户需求
 ├─ 有结构化字段、图表或真实操作入口的通知/报告/告警 → interactive（卡片）
-├─ 发送已上传的图片/文件/音视频 → image/file/audio/media
+├─ 发送图片/文件/音视频 → image/file/audio/media
 ├─ 分享群聊或用户名片 → share_chat/share_user
 └─ 原文转达、简短回复或用户明确指定：
    ├─ 简短纯文本 → text
    └─ Markdown 或富文本 → post
 ```
 
-卡片支持多列和交互，但不必为一句简短回复增加卡片设计步骤。用户已指定消息类型时沿用其要求。
-
-### 消息类型一览
-
-| 类型 | 说明 | content 格式 | 大小限制 |
+| 类型 | 说明 | content 格式 | 请求体上限 |
 |------|------|-------------|---------|
 | text | 纯文本 | `{"text":"内容"}` | 150 KB |
-| post | 富文本 | `{"zh_cn":{"title":"","content":[[...]]}}` | 150 KB |
+| post | 富文本 | `{"zh_cn":{"title":"","content":[[...]]}}` | 30 KB |
 | image | 图片 | `{"image_key":"img_xxx"}` | — |
 | file | 文件 | `{"file_key":"file_v2_xxx"}` | — |
 | audio | 语音 | `{"file_key":"file_v2_xxx"}` | — |
@@ -101,141 +74,138 @@
 | share_chat | 群名片 | `{"chat_id":"oc_xxx"}` | — |
 | share_user | 个人名片 | `{"user_id":"ou_xxx"}` | — |
 
-> `system` 系统分割线（仅 p2p）CLI `--msg-type` 白名单暂未收录，需要时用
-> `feishu-cli api POST /open-apis/im/v1/messages` 直接透传。
+`system` 系统分割线（仅 p2p）不在 `--msg-type` 白名单内，需要时用
+`feishu-cli api POST /open-apis/im/v1/messages` 透传，见 `references/message_content.md`。
 
-## 身份说明
+## 内容输入
 
-本技能以**发送类命令**为主，默认使用 **App Token（Bot 身份）**，无需登录。
-- **必需 User Token**：`msg flag` 收藏/书签子命令（`im:feed.flag:read/write`），见末尾"消息书签"章节。
-- **优先 User Token + Tenant 兜底**：`msg resource-download` 已登录时自动用 User Token 下载（要求你能看到该消息），未登录则尝试 App Token（要求 Bot 能看到该消息）。
+### 输入参数与互斥
 
-> 其他子命令（reaction/pin/delete/history/list/get/mget/thread-messages/search-chats）的 Token 策略见 [`chat` 工作流](../chat/workflow.md)。
+`msg send` 和 `msg reply` 共用以下内容参数。飞书消息的 `content` 是 **JSON 字符串**，快捷参数会替你包装。
+
+| 输入方式 | 参数 | 说明 |
+|---------|------|------|
+| 纯文本 | `--text` / `-t` | 推断为 text |
+| Markdown | `--markdown` | 包装成 post 的 `md` 段落，并做样式归一（见下） |
+| 文件 | `--file` / `-f` | 本地路径（≤30 MB，自动上传）或 `file_xxx` |
+| 图片 | `--image` | 本地路径（≤10 MB，JPEG/PNG/BMP/GIF/TIFF/WebP）或 `img_xxx` |
+| 语音 | `--audio` | 本地 `.opus` / Ogg Opus `.ogg` 或 `file_xxx`；上传时自动解析时长 |
+| 视频 | `--video` + `--video-cover` | 本地 MP4（或 `file_xxx`）+ 必填封面；上传时自动解析时长 |
+| 内联 JSON | `--content` / `-c` | 需配合 `--msg-type` |
+| JSON 文件 | `--content-file` | 复杂 post / 卡片 |
+| 附件区 | `--attachment` | 把文件放进 post 底部附件区，见[附件区](#附件区--attachment) |
+
+- `content/content-file/text/markdown/file/image/audio/video` 只能指定一个；`--video-cover` 只能且必须与 `--video` 同用。
+- 快捷参数会推断消息类型，显式 `--msg-type` 与推断结果冲突时在上传和发送前报错。
+- 远程 URL 不会被下载：`--image/--file/--audio/--video` 只接受本地路径或飞书资源 key。
+- 本地路径优先于 key 前缀：当前目录下真的存在 `img_logo.png` 这类文件时，仍按本地文件上传。
+- IM 的 `file_key` / `image_key` 与云盘 `file_token` 不是同一种 token：不要先 `file upload` / `media upload`
+  再把返回值当作消息资源 key。
+
+### 统一输入：@文件、stdin 与 @@ 转义
+
+`--text` / `--markdown` / `--content` 三个参数支持（`msg edit` 同样适用）：
+
+| 写法 | 含义 |
+| --- | --- |
+| `--markdown @report.md` | 读取文件内容（去掉 UTF-8 BOM，≤4 MB） |
+| `--text -` | 从 stdin 读取（三个参数里只能有一个用 `-`） |
+| `--text "@@abc"` | 发送字面量 `@abc` |
+| `--text "@张三 你好"` | 文件不存在时按原文发送（`--text/--markdown` 兼容旧写法；像路径时 stderr 提示） |
+
+`--content @file` 找不到文件直接报错（JSON 不可能以 `@` 开头）。长 Markdown 优先用 `@file`，可避开 shell 对
+`!`、反引号的转义问题。`--content-file` 本身就是文件路径，不需要 `@`。
+
+```bash
+cat note.txt | feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx --text -
+```
+
+### 接收者类型
+
+| --receive-id-type | 示例 |
+|-------------------|------|
+| email | user@example.com |
+| open_id | ou_xxx |
+| user_id | xxx |
+| union_id | on_xxx |
+| chat_id | oc_xxx |
+
+`thread_id`（`omt_xxx`）不是合法接收者，见[回复与话题](#回复与话题)。
 
 ## 发送命令
 
-### 基础格式
+### 基础格式、预览与输出
 
 ```bash
 feishu-cli msg send \
   --receive-id-type <type> \
   --receive-id <id> \
   [--msg-type <msg_type>] \
-  [--text "<text>" | --markdown "<markdown>" | --file <path-or-key> | --image <path-or-key> | \
-   --audio <path-or-key> | --video <path-or-key> --video-cover <path-or-key> | \
-   --content '<json>' | --content-file <file.json>] \
-  [--idempotency-key <key>]
+  [--text ... | --markdown ... | --file ... | --image ... | --audio ... | \
+   --video ... --video-cover ... | --content '<json>' | --content-file <file.json>] \
+  [--attachment <file>] [--upload-images] [--idempotency-key <key>] [--dry-run] [-o json]
 ```
 
-### 幂等键（--idempotency-key，防重发）
+- `--dry-run`：只打印将要发送的请求（含身份），**不上传本地文件**（用 `img_dryrun_N` / `file_dryrun_N`
+  占位）、不发送。`--markdown` 的样式归一和 @ 规范化在预览里就能看到。
+- `-o json` 输出 `{message_id, chat_id, create_time}`；`msg reply -o json` 另含 `parent_message_id`，
+  进入话题时还有 `thread_id`。文本模式只打印消息 ID 和会话 ID。
 
-`--idempotency-key` 在 `msg send` 和 `msg reply` 中都映射到 API 的 `uuid`。发送接口对同一
-key 去重；回复接口保证同一 key 的请求在 1 小时内至多成功回复一条。它适用于重试、定时任务
-和可能重复触发的自动化场景。
+### 幂等键（--idempotency-key）
+
+`--idempotency-key` 在 `msg send` 和 `msg reply` 中都映射到 API 的 `uuid`：发送接口对同一 key 去重；
+回复接口保证同一 key 1 小时内至多成功回复一条。适用于重试、定时任务和可能重复触发的自动化。
 
 ```bash
-# 相同 key 调用两次，第二次不会重复发送，返回与第一次相同的 message_id
+# 相同 key 调用两次，第二次不会重复发送
 feishu-cli msg send --receive-id-type email --receive-id user@example.com \
   --text "对账通知" --idempotency-key "bill-2026-07-22"
 ```
 
-- 长度上限 **50 字符**（按 Unicode 字符 / rune 计数，非字节，中文键不会被误拒），超限本地直接报错，不发请求。
-- 键由调用方自行保证唯一/可复现：同一逻辑消息用固定键（幂等），不同消息用不同键，否则会被误判为重复而丢弃。
-- 不传该 flag 时行为不变（每次都新发）。
-- 本地媒体在提交消息前上传，因此进程级重试可能再次上传并取得新 key；幂等键保证的是
-  **可见消息不重复**，不是上传请求只执行一次。
+- 上限 50 字符（按字符计，中文不会被误拒），超限本地报错、不发请求。
+- 同一逻辑消息用固定键，不同消息用不同键，否则会被当作重复而丢弃。
+- 本地媒体在提交消息前上传，重试可能再次上传并得到新 key；幂等键保证的是**可见消息不重复**。
 
-### file 类型（直发文件）
+### text 与 @ 提及
 
 ```bash
-# 直接发送本地文件（自动上传，限 30MB）
-feishu-cli msg send \
-  --receive-id-type email \
-  --receive-id user@example.com \
-  --file /path/to/report.pdf
-```
-
-自动推断文件 MIME 类型（opus/mp4/pdf/doc/xls/ppt），未知类型使用 `stream`。IM file_key 与 Drive
-file_token 不是同一种 token，不能先用 `file upload` 再把返回值当作 file_key。超过 30MB 时应压缩、
-拆分、改发云盘链接，或让用户从飞书客户端发送。
-
-若 `.mp4` / `.opus` 明确通过 `--file` 发送，CLI 会按普通 `stream` 附件上传，避免飞书因
-上传类型与 `msg_type=file` 不匹配而返回 230055。要让它呈现为视频或语音，使用 `--video`
-或 `--audio`。
-
-### image 类型（直发图片）
-
-```bash
-# 直接发送本地图片（自动上传，限 10MB）
-feishu-cli msg send \
-  --receive-id-type chat_id \
-  --receive-id oc_xxx \
-  --image /path/to/screenshot.png
-```
-
-支持 JPEG、PNG、BMP、GIF、TIFF、WebP 格式。
-
-### audio / media 类型
-
-```bash
-# 语音消息：飞书仅接受 Opus
-feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
-  --audio /path/to/voice.opus
-
-# 视频消息：MP4 与封面缺一不可
-feishu-cli msg reply om_xxx \
-  --video /path/to/demo.mp4 \
-  --video-cover /path/to/cover.png \
-  --idempotency-key "demo-video-reply-001"
-```
-
-音频支持 `.opus` 与 Ogg Opus `.ogg`；MP3/WAV 需要先转换为 Opus，或者使用 `--file` 作为普通
-附件发送。视频快捷参数只接受 MP4。图片/文件/音视频也可直接传当前 App 可用的
-`img_xxx` / `file_xxx`，此时跳过上传。
-
-本地路径优先于资源 key 前缀：如果当前相对路径基准下确实存在 `img_logo.png`、
-`file_report.pdf` 等文件，即使文件名以 `img_` / `file_` 开头，CLI 仍会先上传本地文件；
-只有不存在同名本地路径时，才按飞书资源 key 解释。
-
-### text 类型
-
-```bash
-# 最简形式（默认 msg-type 为 text）
-feishu-cli msg send \
-  --receive-id-type email \
-  --receive-id user@example.com \
+feishu-cli msg send --receive-id-type email --receive-id user@example.com \
   --text "你好，这是一条测试消息"
 ```
 
-text 类型支持的内联 @ 语法：
-- `@` 用户：`<at user_id="ou_xxx">Tom</at>` —— `ou_xxx` 必须是真实 open_id
+- `@` 用户：`<at user_id="ou_xxx">Tom</at>`（必须是真实 open_id；@ 机器人同理，换成机器人 open_id）
 - `@` 所有人：`<at user_id="all"></at>`
-- `@` 机器人：与 @ 用户语法相同，把 `ou_xxx` 换成机器人 open_id 即可
-
-**只能用 open_id**：`<at email="...">` 在 text 消息里**不会触发 @ entity**（飞书 IM 客户端会把邮箱字符串自动渲染成超链接，看起来像 @ 但没有通知、不是真的提及）。需要 @ 邮箱用户，先查 open_id：
+- `<at email="...">` 不会产生真正的 @ 提醒。按邮箱 @ 人先查 open_id：
 
 ```bash
-# 第一步：查 open_id
 feishu-cli user search --email user@example.com -o json
-# 第二步：用真实 open_id @ 人
 feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
   --text '<at user_id="ou_xxx">Alice</at> 你好'
 ```
 
-**容错（text / post 消息）**：`msg send` / `msg reply` 会自动修正 AI 易写错的 @ 标签格式（对齐官方），下列写法都会被规范化为标准 `<at user_id="...">`：
-- `<at id=ou_xxx>`（缺引号 / 用 `id` 而非 `user_id`）
-- `<at open_id="ou_xxx"/>`（自闭合 / 用 `open_id`）
-- `<at user_id=ou_xxx/>`（自闭合无引号）
+**@ 标签规范化**：`--text`、`--markdown`，以及 msg_type 为 text/post 的 `--content` / `--content-file`，
+发送前会把 AI 常写错的形式统一成 `<at user_id="...">`，例如 `<at id=ou_xxx>`、`<at open_id="ou_xxx"/>`、
+`<at user_id=ou_xxx/>`。JSON 内容按字符串逐个处理，不会破坏转义；interactive 卡片 JSON 不处理。
 
-覆盖范围：`--text`、`--markdown`，以及 `msg_type` 为 text / post 时的 `--content` / `--content-file`。
-JSON 消息体按"解码 → 逐个字符串规范化 → 重新编码"处理，插入的双引号会被正确转义，不会破坏 JSON；
-无需修正时原样发送（不改变键顺序与格式）。`interactive` 卡片 JSON 不做处理。
+text 类型不渲染加粗、链接等格式；需要排版用 `--markdown` 或 post。
 
-**注意**：text 类型**不支持**富文本样式（加粗、斜体、下划线、删除线、超链接等均不会渲染）。如需格式排版，请使用 `post` 类型。
+### Markdown（--markdown）
 
-### post 类型（富文本）
+`--markdown` 包装成 post 的单个 `md` 段落。发送前做样式归一（对齐官方 CLI）：
 
-推荐使用 `md` 标签承载 Markdown，一个 `md` 标签独占一个段落：
+- 原文含 H1~H3 时降级标题：H1→H4、H2~H6→H5（不含 H1~H3 时标题保持不变）；
+- 连续标题之间、表格前后补空行；代码块内容不改动；
+- post 的 `md` 只能渲染 `img_xxx` 图片：外链和其他图片引用会被**移除**并在 stderr 提示；
+  本地图片加 `--upload-images` 自动上传后保留。
+
+```bash
+feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx --markdown @weekly.md --dry-run
+```
+
+### post（富文本 JSON）
+
+需要标题、多段落或混合 tag 时用 `--msg-type post --content-file`。推荐用 `md` tag 承载 Markdown，
+一个 `md` 独占一个段落；`--content-file` 不做 `--markdown` 的样式归一。
 
 ```bash
 cat > /tmp/msg.json << 'EOF'
@@ -250,308 +220,215 @@ cat > /tmp/msg.json << 'EOF'
 }
 EOF
 
-feishu-cli msg send \
-  --receive-id-type email \
-  --receive-id user@example.com \
-  --msg-type post \
-  --content-file /tmp/msg.json
+feishu-cli msg send --receive-id-type email --receive-id user@example.com \
+  --msg-type post --content-file /tmp/msg.json
 ```
 
-post 支持的 tag 类型：
+post 的 tag：`text`（style 支持 bold/italic/underline/lineThrough）、`a`、`at`、`img`、`media`、`emotion`、
+`hr`、`code_block`、`md`。完整结构见 `references/message_content.md`。
 
-| tag | 说明 | 主要属性 |
-|-----|------|---------|
-| text | 文本 | text, style（bold/italic/underline/lineThrough） |
-| a | 超链接 | text, href |
-| at | @用户 | user_id, user_name |
-| img | 图片 | image_key, width, height |
-| media | 视频 | file_key, image_key |
-| emotion | 表情 | emoji_type |
-| hr | 分割线 | — |
-| code_block | 代码块 | language, text |
-| md | Markdown | text（独占段落，推荐使用） |
+### 附件区（--attachment）
+
+`--attachment <本地路径或 file_key>`（可重复或逗号分隔）把文件放进 post 底部的附件区（顶层 `files`）：
+
+- 可与 `--markdown`、或 `--msg-type post` 的 `--content/--content-file` 同用；单独使用时发送只含附件的 post。
+- 不能与 `--text`、`--file/--image/--audio/--video` 同用；`--content` 已含 `files` 时不能再加。
+- 本地文件按普通附件上传（`.mp4/.opus` 也按普通文件，不解析时长）；文件名、大小由服务端回填。
+
+```bash
+feishu-cli msg send --receive-id-type email --receive-id user@example.com \
+  --markdown @report.md --attachment ./data.csv
+```
 
 ### 图片自动上传（--upload-images）
 
-`msg send` 与 `msg reply` 都支持 `--upload-images`，扫描 **post / interactive** 消息中的本地图片引用，
-上传到飞书 IM 图床并替换为当前 App 可用的 key 后再发送。
+`msg send` / `msg reply` 的 `--upload-images` 扫描 post / interactive 内容（含 `--markdown`）里的本地图片，
+上传到 IM 图床并替换成当前 App 可用的 key 后再发送。
 
 | 维度 | 行为 |
 | --- | --- |
-| 触发条件 | 仅当 `--msg-type post` 或 `--msg-type interactive` 时生效，其他类型即使传也忽略 |
-| 适用语法 | `![alt](path)`、post 的 `img.image_key`、Card V2 的 `img.img_key` 和 `img_combination.img_list[].img_key`；URL 和已有 key 不改写 |
-| 路径解析 | `~/` 相对于当前用户主目录；普通相对路径以 `--content-file` 所在目录为 basePath；用 `--content` 内联 JSON 时以**当前工作目录**为 basePath |
-| 失败处理 | 任一文件缺失、内容不是受支持图片或上传失败时立即返回错误，不调用发消息 API；修复后使用同一幂等键重试 |
-| 进度提示 | 上传 > 0 张时 stderr 打印 `已自动上传 N 张本地图片` |
+| 生效范围 | `--markdown`，以及 msg_type 为 post / interactive 的 `--content` / `--content-file`；其他类型忽略 |
+| 识别位置 | Markdown `![alt](path)`、post 的 `img.image_key`、Card V2 的 `img.img_key` 与 `img_combination.img_list[].img_key`；URL 和已有 key 不改写 |
+| 路径基准 | `~/` 展开为主目录；`--content-file` 以文件所在目录为基准；`--markdown` 与 `--content`（含 `@file`）以**当前工作目录**为基准 |
+| 失败处理 | 任一文件缺失、不是受支持图片或上传失败时立即报错，不调用发消息 API；修复后用同一幂等键重试 |
+| 预览 | `--dry-run` 不上传，stderr 提示实际发送时才替换 |
 
 ```bash
-# post 内嵌本地图：自动上传相对路径 ./diagrams/foo.png
 feishu-cli msg send --receive-id-type email --receive-id user@example.com \
   --msg-type post --content-file /path/to/post.json --upload-images
 
-# interactive 卡片可直接在 img_key 写本地素材路径
 feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
   --msg-type interactive --content-file /tmp/card.json --upload-images
 ```
 
-> 不需要预先调 `feishu-cli media upload`：该命令返回文档 `file_token`，不是卡片图片 key。
-> `--upload-images` 已包装“上传 + 替换 + 发送”的全流程。需要把图片当作独立 `image` 消息
-> 发送时，直接用 `--image <path>`。
+不需要预先调 `feishu-cli media upload`：它返回的是文档素材 token，不是消息图片 key。
 
-### interactive 类型（卡片消息）
-
-卡片消息有三种发送方式：
-
-**方式一：完整 Card JSON（仅发送；复杂卡片先按 [`card` 工作流](../card/workflow.md) 生成）**
+### image / file / audio / media
 
 ```bash
-cat > /tmp/card.json << 'EOF'
-{
-  "schema": "2.0",
-  "header": {
-    "template": "blue",
-    "title": {"tag": "plain_text", "content": "任务完成通知"}
-  },
-  "body": {
-    "direction": "vertical",
-    "elements": [
-      {"tag": "markdown", "content": "**项目**: feishu-cli\n**状态**: 已完成\n**负责人**: <at id=all></at>"}
-    ]
-  }
-}
-EOF
+# 图片、文件：本地路径自动上传
+feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx --image /path/to/screenshot.png
+feishu-cli msg send --receive-id-type email --receive-id user@example.com --file /path/to/report.pdf
 
-feishu-cli msg send \
-  --receive-id-type email \
-  --receive-id user@example.com \
-  --msg-type interactive \
-  --content-file /tmp/card.json
+# 语音只接受 Opus；视频必须 MP4 + 封面
+feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx --audio /path/to/voice.opus
+feishu-cli msg reply om_xxx --video /path/to/demo.mp4 --video-cover /path/to/cover.png \
+  --idempotency-key "demo-video-reply-001"
 ```
 
-**方式二：template_id**
+- 文件按扩展名推断上传类型（opus/mp4/pdf/doc/xls/ppt，其余 `stream`）。超过 30 MB 时压缩、拆分、改发云盘链接，
+  或让用户从客户端发送。
+- `.mp4` / `.opus` 通过 `--file` 发送时按普通 `stream` 附件上传，避免 230055（上传类型与 `msg_type=file`
+  不匹配）；要呈现为视频或语音用 `--video` / `--audio`。
+- MP3/WAV 需先转为 Opus，或用 `--file` 当附件发；非 MP4 视频先转码，或用 `--file`。
+
+### interactive（卡片）
+
+三种 content：
+
+| 方式 | content | 说明 |
+| --- | --- | --- |
+| 完整 Card JSON 2.0 | `{"schema":"2.0","header":...,"body":...}` | 先按 [`card` 工作流](../card/workflow.md) 生成并用 `lint_card.py` 校验 |
+| 模板 | `{"type":"template","data":{"template_id":"...","template_variable":{...}}}` | 引用卡片搭建工具的模板 |
+| 卡片实体 | `{"type":"card","data":{"card_id":"..."}}` | 引用已创建的卡片 |
 
 ```bash
-cat > /tmp/card.json << 'EOF'
-{
-  "type": "template",
-  "data": {
-    "template_id": "AAqk1xxxxxx",
-    "template_variable": {"name": "张三", "status": "已完成"}
-  }
-}
-EOF
-
-feishu-cli msg send \
-  --receive-id-type email \
-  --receive-id user@example.com \
-  --msg-type interactive \
-  --content-file /tmp/card.json
+feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx \
+  --msg-type interactive --content-file /tmp/card.json --upload-images --idempotency-key "card-001"
 ```
 
-**方式三：card_id**
+- `type=template` / `type=card` 是引用信封，不能交给只接受完整 Card JSON 2.0 的 linter；需核对真实
+  template_id/card_id、模板变量和当前应用可用性，不要擅自重建已有卡片。
+- 不要在本工作流新写 v1（`elements/action/note`）卡片；v1 结构只用于历史排障，见 `references/card_schema.md`。
+- 回调按钮需要应用接收 `card.action.trigger`（可用 [`event` 工作流](../event/workflow.md) 消费）；没有回调处理时只用 URL 按钮。
 
-```bash
-feishu-cli msg send \
-  --receive-id-type email \
-  --receive-id user@example.com \
-  --msg-type interactive \
-  --content '{"type":"card","data":{"card_id":"7371713483664506900"}}'
-```
-
-#### Interactive 卡片职责边界
-
-本工作流负责发送 interactive 消息。完整 Card JSON 2.0 由 card 工作流构造并校验；
-`type=template` / `type=card` 是引用信封，不能把信封交给只接受完整 Card JSON 2.0 的 linter。
-引用信封需检查真实 template_id/card_id、模板变量和当前应用可用性，不应擅自重建已有卡片。
-
-- 结构化或美观卡片必须先按 [`card` 工作流](../card/workflow.md) 生成 v2 JSON（schema=2.0）。
-- 本技能发送：feishu-cli msg send --msg-type interactive --content-file <card.json>。
-- 不要在本技能内新写 v1 elements/action/note 卡片模板；旧 v1 示例仅用于历史兼容排查。
-
-### 统一输入、附件区与编辑
-
-- `--text` / `--markdown` / `--content` 都支持 `@文件路径` 读文件、`-` 读 stdin（三者中只能有一个用 stdin）；
-  长 Markdown 优先用 `@file`，避免 shell 转义 `!`、反引号等字符。字面以 `@` 开头的文本写成 `@@...`；
-  `--text`/`--markdown` 的 `@xxx` 若不是存在的文件，按原文发送（兼容 "@张三 你好"）。
-- `--markdown` 发送前会做样式归一（对齐官方）：H1→H4、H2~H6→H5，连续标题与表格前后补空行；
-  post 的 md 只能渲染 `img_xxx` 图片，其余图片引用会被移除并在 stderr 提示，本地图片加 `--upload-images` 自动上传。
-- `--attachment <file_key 或本地路径>`（可重复/逗号分隔）把文件放进 post 的附件区；可与 `--markdown` 或 post
-  `--content` 同用，单独使用时发送只含附件的 post。音视频文件上传时会自动解析时长。
-- `--text` / `--markdown` / `--content` 中的 `<at>` 标签统一规范化，AI 常写的转义形式不会导致 @ 失效。
-- `msg send/reply` 输出 `message_id`、`chat_id`、`create_time`；`--dry-run` 只打印请求（本地文件不上传，用占位 key）。
-- `msg edit <message_id> --text|--markdown|--content` 编辑已发送的 text/post 消息（PUT，仅能编辑本身份发送的消息）。
-
-```bash
-feishu-cli msg send --receive-id-type email --receive-id user@example.com --markdown @report.md --attachment ./data.csv
-cat note.txt | feishu-cli msg send --receive-id-type chat_id --receive-id oc_xxx --text -
-feishu-cli msg edit om_xxx --text "更正后的内容"
-```
-
-## 执行流程
-
-### 回复、转发、合并转发与加急
+## 回复与话题
 
 ```bash
 feishu-cli msg reply om_xxx --text "收到" --idempotency-key "ack-001"
 feishu-cli msg reply om_xxx --image /path/to/photo.png --idempotency-key "photo-001"
-feishu-cli msg reply om_xxx --file /path/to/report.pdf
+feishu-cli msg reply om_xxx --msg-type interactive --content-file card.json --upload-images
+```
+
+- 飞书 create message 不支持 `thread_id`。要在已有话题追加消息，回复话题内任一 `om_xxx`：目标已在话题中时，
+  回复默认进入同一话题。
+- 普通消息群里要开启新话题时加 `--reply-in-thread`。
+- `msg reply` 只接受 `om_xxx`；传 `omt_xxx` 或 `msg send --thread-id` 会在上传和调用 API 前报错。
+- 读取话题回复属于 [`chat` 工作流](../chat/workflow.md)（`msg thread-messages <omt_xxx>`）。
+
+## 编辑已发送的消息
+
+`msg edit <om_xxx>` 改写本应用 Bot 已发送的 text / post 消息（PUT），**只能用 Bot 身份**，不接受 User Token；
+卡片消息不在范围内。
+
+```bash
+feishu-cli msg edit om_xxx --text "更正：会议改到 15:00"
+feishu-cli msg edit om_xxx --markdown @notice.md --dry-run
+feishu-cli msg edit om_xxx --markdown "**最终版**" --set-attachments ./final.pdf
+```
+
+- 内容参数 `--text` / `--markdown` / `--content`（配 `--msg-type text|post`）三选一，同样支持 `@file`、`-`、`@@`；
+  `--markdown` 同样做样式归一，可配 `--upload-images`。
+- 不能改变消息类型（text 只能改成 text，post 只能改成 post）；飞书对可编辑次数和时间窗口有限制。
+- 编辑会替换整条消息内容。只改正文（不带附件参数）时，post 原有附件区会保留。
+- `--set-attachments`（本地路径或 file_key，可重复）**覆盖**附件区，`--clear-attachments` 清空附件区，二者互斥。
+  **只传附件参数、不传正文时，正文会被清空**；要保留正文必须同时传完整的 `--markdown` / `--content`。
+- `-o json` 输出 `{message_id, chat_id, create_time, update_time}`。
+
+## 转发、合并转发与加急
+
+```bash
 feishu-cli msg forward om_xxx --receive-id user@example.com --receive-id-type email
 feishu-cli msg merge-forward --receive-id oc_xxx --receive-id-type chat_id --message-ids om_xxx,om_yyy
 feishu-cli msg urgent om_xxx --user-id-type open_id --user-ids ou_xxx,ou_yyy
 ```
 
-`forward` 转发一条原消息；`merge-forward` 把多条 message ID 合并成一条转发消息（接口**只支持 Bot 身份**：
-传入的 User Token 会被忽略并在 stderr 提示，Bot 需能看到这些消息且在目标会话中）；`urgent` 针对已经
-发送的 message ID 发应用内、短信或电话加急。加急前确认用户列表和方式，避免误打扰。
-
-### 发送消息流程
-
-1. **确定接收者**：使用用户明确指定、当前上下文已确认或已授权配置中的真实接收者；缺少时先补齐。`user@example.com` 只是示例，不是默认收件人。
-2. **选择消息类型**：
-   - 用户明确指定类型 → 使用指定类型
-   - 结构化或美观通知 → 先按 [`card` 工作流](../card/workflow.md) 构造 JSON，再用 `interactive` 发送
-   - 用户明确要求纯文本/富文本，或内容很短 → 使用 `text` / `post`
-3. **准备内容**：纯文本用 `--text`；Markdown 用 `--markdown`；卡片 JSON 用 `--content-file`；
-   图片/附件/语音/视频分别用 `--image` / `--file` / `--audio` / `--video + --video-cover`
-4. **发送并检查结果**：确认命令退出码为 0 且返回非空 `message_id`；不要仅凭上传成功判定消息成功
-
-## 权限要求
-
-| 权限 | 说明 |
-|------|------|
-| `im:message` | 消息读写（发送/回复/转发） |
-| `im:message:send_as_bot` | 以机器人身份发送消息 |
-
-## 注意事项
-
-| 限制 | 说明 |
-|------|------|
-| text 大小限制 | 单条最大 150 KB |
-| 卡片/富文本大小限制 | 单条最大 30 KB |
-| system 消息 | CLI `--msg-type` 暂不支持，仅 p2p 会话有效；需用 `feishu-cli api` 透传 |
-| sticker 消息 | 仅支持转发收到的表情包，不支持自行上传 |
-| 卡片按钮回调 | 按钮的交互回调需应用服务端支持，CLI 发送的按钮仅 url 跳转有效 |
-| API 频率限制 | 请求过快返回 429，等待几秒后重试 |
-| 删除消息 | 仅能删除机器人发送的消息 |
-
-## 错误处理
-
-| 错误 | 原因 | 解决 |
-|------|------|------|
-| `content format of a post type is incorrect` | post 类型 JSON 格式错误 | 确保格式为 `{"zh_cn":{"title":"","content":[[...]]}}` |
-| `invalid receive_id` | 接收者 ID 无效 | 检查 --receive-id-type 和 --receive-id 是否匹配 |
-| `bot has no permission` | 机器人无权限 | 确认应用有 `im:message:send_as_bot` 权限 |
-| `rate limit exceeded` | API 限流 | 等待几秒后重试 |
-| `user not found` | 用户不存在 | 检查邮箱或 ID 是否正确 |
-| `card content too large` | 卡片 JSON 超过 30 KB | 精简卡片内容或拆分为多条消息 |
-| `Bot/User can NOT be out of the chat` | Bot 不在目标群内 | 添加 `--user-access-token` 切换为 User 身份重试 |
-
-## 批量获取消息
-
-> 读消息详情和批量获取消息见 [`chat` 工作流](../chat/workflow.md)。`msg get/list/history/mget` 默认请求 `user_card_content` 并额外提取 `card_texts`，该行为和排错说明维护在 `chat` 工作流中，避免发送与读取职责混在一起。
+- `forward` 转发一条消息；默认 Bot 身份，Bot 需能看到原消息。
+- `merge-forward` 把多条消息合并成一条转发；只用 Bot 身份，Bot 需能看到这些消息且在目标会话中。
+  `--receive-id-type` 默认 `email`，发到群时显式写 `chat_id`。
+- `urgent` 对 Bot 自己发出的消息加急，`--urgent-type app|sms|phone`（默认 app）；不支持批量消息 ID（`bm_xxx`）。
+  短信、电话加急打扰强，执行前确认用户列表和方式。
 
 ## 下载消息资源
 
-下载消息中的图片或文件附件。
-
 ```bash
-# 下载消息中的图片
-feishu-cli msg resource-download <message_id> <file_key> --type image -o /tmp/photo.png
+# 不传 -o：用服务端文件名保存到当前目录（拿不到时用 file_key + 按 MIME 推断的扩展名）
+feishu-cli msg resource-download om_xxx file_xxx --type file
 
-# 下载消息中的文件
-feishu-cli msg resource-download <message_id> <file_key> --type file -o /tmp/attachment.pdf
-
-# Bot 不可见但当前用户可见的历史消息资源，可显式用 User Token
-feishu-cli msg resource-download <message_id> <file_key> --type file --user-access-token u-xxx -o /tmp/attachment.pdf
-
-# 下载大文件时指定超时时间
-feishu-cli msg resource-download <message_id> <file_key> --type file --user-access-token u-xxx -o /tmp/large.bin --timeout 30m
+# 指定路径；大文件加长超时（默认 5m）
+feishu-cli msg resource-download om_xxx img_xxx --type image -o /tmp/photo.png
+feishu-cli msg resource-download om_xxx file_xxx --type file -o /tmp/large.zip --timeout 30m
 ```
 
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `<message_id>` | 消息 ID | 必填 |
-| `<file_key>` | 资源的 file_key | 必填 |
-| `--type` | 资源类型 `image`/`file` | 必填 |
-| `-o, --output` | 输出文件路径 | — |
-| `--user-access-token` | 使用用户身份下载用户可见、但 Bot 不可见的历史消息资源 | — |
-| `--timeout` | 下载超时时间（Go duration 格式，如 `10m`、`30m`、`1h`） | `5m` |
+- `--type image|file` 必填；`file_key` 从 `msg get <om_xxx> -o json` 的 `body.content` 里取
+  （`image_key`、`file_key`，post 附件区在 `files[].file_key`）。
+- 默认 User 优先：已登录时以本人身份下载，Bot 看不到的历史消息资源也能下；未登录时 Bot 需能看到该消息。
+- 按服务端文件名命名时不覆盖已存在的同名文件（自动追加 `_1`、`_2`）；`-o` 给了无扩展名的路径时只补扩展名。
+- 用户身份下载遇到大文件限制时会自动按 HTTP Range 分片下载并合并。
 
-> **file_key 来源**：通过 `msg get <message_id>` 获取消息详情，从 content 中提取 `image_key` 或 `file_key`。
-> 使用用户身份直连下载时，如遇到飞书大文件限制，会自动使用 HTTP Range 分片下载并合并。
+## 消息书签（msg flag）
 
-## 话题（Thread）消息
-
-### 发送到已有话题
-
-飞书 create message 的 `receive_id_type` 不支持 `thread_id`。要在已有话题内追加消息，必须
-回复话题内的 `om_xxx` 消息 ID；不能把 `omt_xxx` 传给 `msg send`。
+把消息标记到用户的 Feed/书签（服务端称 message flag，`/open-apis/im/v1/flags`）。必须 User Token：
+`list` 需 `im:feed.flag:read`，`create/cancel` 需 `im:feed.flag:write`。
 
 ```bash
-# 目标消息已在话题中时，默认进入同一话题
-feishu-cli msg reply om_xxx --text "话题内继续聊"
-
-# 图片/文件/卡片沿用同一 reply 内容模型
-feishu-cli msg reply om_xxx --image /path/to/photo.png --idempotency-key "topic-photo-001"
-feishu-cli msg reply om_xxx --msg-type interactive --content-file card.json --upload-images
+feishu-cli msg flag create om_xxx                                       # 消息层书签（默认 default + message）
+feishu-cli msg flag create om_xxx --flag-type feed                      # feed 层，自动按群模式选 thread / msg_thread
+feishu-cli msg flag create om_xxx --item-type msg_thread --flag-type feed
+feishu-cli msg flag list --page-size 50                                 # 始终输出 JSON，不接受 -o
+feishu-cli msg flag cancel om_xxx                                       # 默认取消消息层，并尽量取消 feed 层
 ```
 
-旧 `msg send --thread-id omt_xxx ...` 会在上传媒体和调用飞书 API 前直接报错，并提示迁移到
-`msg reply <om_xxx>`。
-
-### 回复时开启话题
-
-`msg reply` 支持 `--reply-in-thread`（`reply_in_thread=true`）：
-
-```bash
-# 在非话题群聊中，以话题形式回复某条消息（会开启一个新话题）
-feishu-cli msg reply om_xxx --text "这里开个话题" --reply-in-thread
-
-# 目标消息已经属于话题时，通常不需要 --reply-in-thread
-```
-
-### 话题回复列表
-
-获取话题回复属于读取消息，见 [`chat` 工作流](../chat/workflow.md)。`omt_xxx` 可用于
-`msg thread-messages` 等读取/转发能力；话题内发送使用 `msg reply <om_xxx>`。
-
-## 参考文档
-
-- `references/message_content.md`：各消息类型的 content JSON 结构详解
-- `references/card_schema.md`：interactive 发送格式与历史卡片排障；新增卡片构造见 [`card` 工作流](../card/workflow.md)
-
-## 消息书签（msg flag，v1.23+ 新增）
-
-服务端称 message flag，用于把消息加 Feed 标记，把消息推上用户 Feed/书签。
-对应 HTTP API `POST/GET/PATCH /open-apis/im/v1/flags`。需 User Access Token：`list` 需要 `im:feed.flag:read`，`create/cancel` 需要 `im:feed.flag:write`。
-
-### 命令速查
-
-- `feishu-cli msg flag create <message_id>` — 创建消息层书签（默认 `--item-type default --flag-type message`）
-- `feishu-cli msg flag create <message_id> --flag-type feed` — feed 层书签，自动读取 `chat_mode` 判断 `thread` / `msg_thread`
-- `feishu-cli msg flag create <message_id> --item-type msg_thread --flag-type feed` — feed 层书签（显式指定普通群线程）
-- `feishu-cli msg flag list [--page-size 50] [--page-token xxx]` — 列当前用户的书签
-- `feishu-cli msg flag cancel <message_id> [--item-type ... --flag-type ...]` — 默认尽量取消消息层 + feed 层；显式传 item/flag 时只取消指定层
-
-### 关键枚举（服务端真值，绝勿按 0/1/2 顺序臆造）
-
-CLI flag 用字符串，底层映射到 OpenAPI 整数枚举：
+CLI 用字符串，底层映射为 OpenAPI 整数枚举（`list` 输出里是整数）：
 
 | 字段 | CLI 字符串 | OpenAPI 整数 | 含义 |
 | --- | --- | --- | --- |
 | --item-type | default | 0 | 普通消息 |
-| --item-type | thread | 4 | topic-style 话题群 |
-| --item-type | msg_thread | 11 | 普通群消息线程 |
+| --item-type | thread | 4 | 话题群（topic） |
+| --item-type | msg_thread | 11 | 普通群里的消息线程 |
 | --flag-type | message | 2 | 消息层书签（默认） |
-| --flag-type | feed | 1 | feed 层（侧边栏书签） |
+| --flag-type | feed | 1 | feed 层（侧边栏） |
 
-> ⚠️ **反向陷阱**：网上某些第三方教程把 `flag_type: 1=message / 2=feed` 写反了。本项目以**飞书 OpenAPI 官方真值**为准（`1=feed / 2=message`，见上表）。`list` 命令输出里也是这套真值，写代码处理 JSON 时认上面这张表。
->
-> `list` 命令不接受 `--flag-type/--item-type` 作为入参（list 是全量返回），只能在输出 `flag_items[*].flag_type` 字段上过滤。要看自己有哪些书签直接 `feishu-cli msg flag list -o json`。
+- 只支持 `default + message`、`thread + feed`、`msg_thread + feed` 三种组合，其余服务端拒绝。
+- 注意 `flag_type` 是 `1=feed / 2=message`，不要按顺序臆测成 `1=message`。
+- `list` 不接受 `--flag-type/--item-type`，输出含 `flag_items` / `delete_flag_items` / `messages` / `has_more` /
+  `page_token`，需要时在 `flag_items[*].flag_type` 上自行过滤。
+- `cancel` 显式传 `--item-type` 和 `--flag-type` 时只取消指定层；自动判断 feed 层失败时跳过并打印 warning。
 
-支持的组合（其余服务端拒绝）：
-- `default + message`：消息层书签，最常见
-- `thread + feed`：topic-style 话题群 feed 层
-- `msg_thread + feed`：普通群消息线程 feed 层
+## 执行流程
 
-源码引用：`internal/client/flag.go:23-28`（本仓库权威定义）。
+1. **确定接收者**：使用用户明确指定、上下文已确认或已授权配置中的真实接收者；缺少时先补齐。
+   `user@example.com` 只是示例，不是默认收件人。
+2. **选择消息类型**：用户指定的类型优先；结构化或美观通知先按 [`card` 工作流](../card/workflow.md)
+   构造并校验 JSON，再以 `interactive` 发送；短内容用 `text` / `post`。
+3. **准备内容**：纯文本 `--text`；Markdown `--markdown @file`；卡片 `--content-file`；图片/附件/语音/视频
+   用 `--image` / `--file` / `--audio` / `--video + --video-cover`；附件区用 `--attachment`。
+4. **预览**：内容复杂或含本地素材时先 `--dry-run` 核对请求体。
+5. **发送并检查结果**：退出码为 0 且返回非空 `message_id` 才算成功；不要仅凭上传成功判定。
+   失败重试使用同一 `--idempotency-key`。
+
+## 限制与错误处理
+
+| 限制 | 说明 |
+|------|------|
+| 请求体大小 | text 150 KB；post 与卡片 30 KB |
+| 本地上传 | 文件 ≤30 MB，图片 ≤10 MB |
+| sticker | 只能转发收到的表情包，不能上传 |
+| system 消息 | `--msg-type` 不支持，需 `feishu-cli api` 透传，仅 p2p 有效 |
+| 频率限制 | 429 时 CLI 自动退避重试；仍失败时稍后再试 |
+
+| 错误 | 原因 | 解决 |
+|------|------|------|
+| `content format of a post type is incorrect` | post JSON 结构错误 | 确认为 `{"zh_cn":{"title":"","content":[[...]]}}` |
+| `invalid receive_id` | 接收者 ID 与类型不匹配 | 核对 `--receive-id-type` 与 `--receive-id` |
+| `bot has no permission` | 应用缺发送权限 | 开通 `im:message:send_as_bot` 并发布版本 |
+| `Bot/User can NOT be out of the chat` | Bot 不在目标群 | 用 `chat member list <chat_id> --member-types bot` 确认，请群管理员把 Bot 拉进群；不要擅自改用本人身份发送 |
+| `user not found` | 用户不存在或应用无法查看该用户 | 检查邮箱或 ID |
+| 230025 `message content reaches its limit` | 请求体超限（text 150 KB；post、卡片 30 KB；用 template_id 时模板数据也计入） | 精简内容或拆分多条 |
+| 230055 | 上传类型与 msg_type 不匹配 | 普通附件用 `--file`，语音/视频用 `--audio` / `--video` |
+
+## 参考文档
+
+- `references/message_content.md`：各消息类型的 content JSON 结构
+- `references/card_schema.md`：interactive 发送格式与 v1 历史卡片排障；新卡片构造见 [`card` 工作流](../card/workflow.md)
+- 读消息详情、批量获取（`msg get/mget`，默认带 `card_texts`）见 [`chat` 工作流](../chat/workflow.md)

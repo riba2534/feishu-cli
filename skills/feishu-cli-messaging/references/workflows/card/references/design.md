@@ -63,7 +63,7 @@ header 同家族的 hex 做强调色，让卡片观感一体。
 
 ### 1.2 markdown 内嵌色的三条铁律
 
-```
+```text
 铁律 1：<font color='red'> 只用来点关键数字、关键状态
 铁律 2：一张卡片的主用色总数不超过 3 种
 铁律 3：副文本、备注用 <font color='grey'> 压平视觉权重
@@ -95,8 +95,10 @@ header.text_tag_list 放 1-3 个标签，颜色按优先级：
 | 进行中 | `blue` |
 | 完成 / 通过 | `green` |
 | 等待 / 排队 | `yellow` |
-| 已过期 / 归档 | `grey` |
+| 已过期 / 归档 | `neutral` |
 | 品牌 / 特殊 | `purple` / `violet` |
+
+标签的灰色用 `neutral`：官方颜色枚举里 `text_tag` / `<text_tag>` 没有 `grey`。
 
 ---
 
@@ -104,7 +106,7 @@ header.text_tag_list 放 1-3 个标签，颜色按优先级：
 
 ### 2.1 垂直密度（vertical_spacing 四级节奏）
 
-```
+```text
 extra_large (16px) — 大章节切换（很少用）
 large       (12px) — 小章节之间、图表之间
 medium      (8px)  — 默认节奏（body.vertical_spacing 推荐值）
@@ -120,7 +122,7 @@ small       (4px)  — 紧密排列的行（如多个 text_tag、连续短行）
 
 并排放多个组件时，用 column_set。常见几种搭配：
 
-```
+```text
 【等分并排】flex_mode: "bisect"（2 列）/ "trisect"（3 列）
 【自适应并排】flex_mode: "none" + 每列 width: "weighted" weight: N
 【响应式】flex_mode: "flow"（窄屏自动换行）
@@ -136,7 +138,7 @@ small       (4px)  — 紧密排列的行（如多个 text_tag、连续短行）
 
 用户看卡片的眼动轨迹是 Z 字：
 
-```
+```text
 ┌─────────────────────────────┐
 │ HEADER（template 色）       │  ← 第一眼：是什么卡片
 ├─────────────────────────────┤
@@ -172,7 +174,7 @@ small       (4px)  — 紧密排列的行（如多个 text_tag、连续短行）
 
 当卡片内容多于 200 字 / 3 屏信息时，优先把次要信息折起来：
 
-```
+```text
 顶部 3 屏 = 即时可见信息（结论 + 核心指标）
 折叠面板 = 详情 / 原因 / 附加说明 / 历史数据
 ```
@@ -192,7 +194,7 @@ small       (4px)  — 紧密排列的行（如多个 text_tag、连续短行）
 
 ### 3.3 一张"重卡片"的组件搭配
 
-```
+```text
 header (template=purple)
 ├─ 副标题 + 3 个 text_tag
 │
@@ -229,11 +231,11 @@ header (template=purple)
 
 - 每张卡片**最多一个 header icon**
 - 用 `standard_icon` + `token`，从飞书图标库选
-- 建议：
-  - 通知类 → `bell_filled`
-  - 成功类 → `check-circle_filled`
-  - 警告类 → `warning_filled`
-  - 数据类 → `chart_outlined`
+- 建议（示意，使用前在官方图标库核对 token 是否存在）：
+  - 通知类 → `bell_outlined`
+  - 成功类 → `done_outlined`
+  - 警告类 → `warning_outlined`
+  - 信息/数据类 → `info_outlined`
 
 **彩色图标（`_colorful` 后缀）**：token 必须从下表按**完整字符串**照抄，**禁止按名称规律自行拼接**
 （拼出来的 token 不渲染且不报错，如 `mail_colorful`/`notice_colorful` 都是无效 token）；
@@ -250,13 +252,13 @@ header (template=purple)
 | 审批 | `approval_colorful` | 通用 AI | `ai-common_colorful` |
 
 全量图标枚举（数百个）以官方图标库为准：
-https://open.larkoffice.com/document/feishu-cards/enumerations-for-icons
+`https://open.feishu.cn/document/feishu-cards/enumerations-for-icons`
 
 ### 4.2 markdown 里的 emoji
 
 正文里用 emoji 代替 icon，更灵活：
 
-```
+```text
 🎯 核心定位  📊 数据指标  ✨ 新功能  ⚠️ 注意
 🔥 最亮眼改进  📋 清单  💡 提示  🚀 发布
 🛡️ 安全  💰 价格  📦 版本  📡 来源
@@ -289,14 +291,14 @@ collapsible_panel.header.icon 用 `down-small-ccm_outlined`（展开时 icon_exp
 
 ### ❌ 反模式 1：堆砌组件
 
-```
+```text
 header + 5 段 markdown + 3 段 div + 2 个 chart + 8 个 button
 ```
 卡片太长用户不看。→ 折叠次要信息到 collapsible_panel。
 
 ### ❌ 反模式 2：配色混乱
 
-```
+```text
 red header + orange text_tag + green font + blue link + purple button
 ```
 → 确定一个主色（header.template），强调色不超过 2 个。
@@ -320,7 +322,7 @@ header 不设 template，默认黑色，看起来像未装修的卡片。→ 任
 
 ### ❌ 反模式 7：饱和色折叠标题条
 
-```
+```text
 collapsible_panel.header.background_color = "blue" / "purple" / "red"
 ```
 
@@ -331,7 +333,7 @@ collapsible_panel.header.background_color = "blue" / "purple" / "red"
 
 ## 七、一页速查
 
-```
+```text
 配色：1 主色（template）+ ≤2 强调色 + grey 压平
 折叠：标题条用白色/浅色 surface，主色只用于标题字、图标或细边框
 布局：body.vertical_spacing="medium" + hr 切章节 + column_set 破单调

@@ -1,40 +1,38 @@
 # 读消息相关命令的输出怪癖速查
 
-> 这些差异不在 OpenAPI 文档里，全部来自实战。改动 `msg history / thread-messages / get`
-> 相关代码或写脚本前先扫一眼，避免重复踩。
+> 这些差异不在 OpenAPI 文档里，来自 CLI 源码与实战。写解析脚本前先扫一眼，避免重复踩。
 
 ## 1. JSON key 大小写不统一
 
 | 命令 | 顶层 key 风格 | 字段示例 |
 |---|---|---|
 | `msg history -o json` | snake_case | `items` / `has_more` / `page_token` / `sender_names` |
-| `msg thread-messages` | **PascalCase** | `Items` / `HasMore` / `PageToken` |
-| `msg search-chats -o json` | **PascalCase** | `Items` / `HasMore` / `PageToken` |
-| `msg get -o json` / `msg mget` | snake_case | 单条/批量消息详情 |
+| `msg get -o json` / `msg mget` | snake_case | `message` 或 `messages` + `sender_names` |
+| `msg thread-messages` | **PascalCase** | `Items` / `HasMore` / `PageToken`（没有 `sender_names`） |
+| `msg search-chats -o json` | **PascalCase** | `Items` / `HasMore` / `PageToken`，服务端提示在小写 `notice` |
+| `chat list -o json` / `chat member list` | snake_case | `items` / `has_more` / `page_token` |
 
-写翻页循环时务必两套都试一下。脚本里用 `d.get("items") or d.get("Items") or []`、
-`d.get("page_token") or d.get("PageToken") or ""` 兼容。
+写翻页循环时两套都要兼容：`d.get("items") or d.get("Items") or []`、
+`d.get("page_token") or d.get("PageToken") or ""`。
 
 ## 2. 输出 flag 是否被接受
 
 | 命令 | `-o json` | 默认输出 |
 |---|---|---|
-| `msg history` | ✅ 必须显式传 | 文本摘要 |
-| `msg thread-messages` | ❌ **加了会报 `unknown shorthand flag: 'o'`** | **默认就是 JSON** |
-| `msg search-chats` | ✅ | 文本摘要 |
-| `msg get` / `msg mget` | ✅ | 文本摘要 |
-| `chat get` | ❌ 也不接受 `--output` | 文本（无 JSON 模式） |
+| `msg history` / `msg list` / `msg get` / `msg read-users` | ✅ 需显式传 | 文本摘要 |
+| `msg search-chats` / `chat list` | ✅ 需显式传 | 文本摘要 |
+| `msg thread-messages` / `msg mget` / `msg reaction list` / `msg pins` / `msg flag list` / `chat get` / `chat member list` | ❌ 传了报 `unknown shorthand flag: 'o'` | **始终 JSON** |
 | `user info` | ✅ | 文本 |
 
-`thread-messages` 的设计早于 `-o json` 通用化，源码里直接 `printJSON`，因此既不接受
-flag 也不能切回文本。脚本里**不要给它传 `-o json`**。
+脚本里**不要给始终输出 JSON 的命令传 `-o json`**。
 
 ## 3. 时间参数
 
 | 命令 | `--start-time` / `--end-time` |
 |---|---|
-| `msg history` | **秒**（unix timestamp），服务端过滤 |
+| `msg history` / `msg list` | **秒**（unix timestamp），服务端过滤 |
 | `msg thread-messages` | **秒**（也兼容毫秒 / RFC3339 / YYYY-MM-DD），**客户端本地过滤当前页** |
+| `msg pins` | **毫秒** |
 
 历史文档曾写 `thread-messages` 用毫秒：实测服务端对 thread 容器**忽略**时间范围，传什么都不生效。
 现在 CLI 不再把时间发给服务端，而是按消息 `create_time` 在本地过滤（结束时间含整秒边界），
@@ -90,23 +88,17 @@ system 消息 `body.content` 形如：
 把 `template` 里的 `{key}` 替换成同对象其他字段（list 用逗号 join，str 直接替换，
 `divider_text` 跳过）。否则会看到一串带占位符的英文模板。
 
-## 7. Bot 的 sender.id 与 sender_names 不互通
+## 7. Bot 发送者的 ID
 
-群里 Bot 发消息时：
+群里 Bot 发消息时 sender 是 app_id：
 
 ```json
 {"sender": {"id": "cli_xxx", "id_type": "app_id", "sender_type": "app"}}
 ```
 
-而 `sender_names` 用 **open_id** 索引，例如：
-
-```json
-{"ou_xxx": "Bot 显示名"}
-```
-
-`cli_xxx` 是 app_id，与同一 Bot 的 `ou_xxx` open_id 是两套 ID。`user info cli_xxx`
-查不到。脚本里直接把 `id_type=app_id` 的发送者映射到调用方提供的 bot 名字（通常就是
-群里那个 bot 的固定显示名），不要试图反解。
+`sender_names` 按 sender.id 索引，Bot 的键就是 `cli_xxx`（服务端回填显示名），可以直接查。
+`cli_xxx` 与同一 Bot 的 `ou_xxx` open_id 是两套 ID，`user info cli_xxx` 查不到；`sender_names` 里没有时
+（例如解析 `thread-messages` 输出），再映射到调用方提供的 Bot 名字。
 
 ## 8. interactive 卡片 v2 schema 的解析路径
 
@@ -139,35 +131,31 @@ c.body.elements[]                       → 主体（递归处理）
 兜底：API 已抽取的 `body.card_texts`（数组）可以作为 fallback，但 v2 schema 完整解析
 通常更完整。
 
-## 9. 名字反解三级降级
+## 9. 名字反解降级顺序
 
 按可靠性 + 成本排序：
 
-1. **`mentions[]`** 字段（消息自带）：`{"id": "ou_xxx", "id_type": "open_id", "name": "张三"}`，
-   且 `key` 字段是 text 消息里的 `@_user_N` 占位符 → 真名映射，**不受外部租户隔离限制**，
-   首选。
-2. **`sender_names`** 字段（history/thread-messages 顶层）：飞书后端反解的子集，**仅覆盖
-   少数发送者**（实战中 26 个发送者只反解出 2~3 个），用作起点。
-3. **`user info <ou_xxx> -o json`**：跨企业用户必返 `code=41050, msg=no user authority error`。
-   外部群（`external=true`）几乎全部命中，静默跳过即可。
-4. **bot app_id（`cli_xxx`）**：单独映射成你提前知道的 bot 名字。
+1. **`sender_names`**（`msg history` / `msg get` / `msg mget` 顶层）：服务端回填显示名，含 Bot 与跨租户外部用户，首选。
+2. **`mentions[]`**（消息自带）：`{"id": "ou_xxx", "id_type": "open_id", "name": "张三", "key": "@_user_1"}`，
+   `key` 是 text 消息里的 `@_user_N` 占位符；被 @ 的人只能从这里拿名字。
+3. **`user info <ou_xxx> -o json`**：跨企业用户返回 `code=41050, msg=no user authority error`，静默跳过。
+4. **bot app_id（`cli_xxx`）**：`sender_names` 缺失时映射成已知的 Bot 名字。
 
-剩余实在反解不到的，保留 `ou_xxx` 原样显示，不要伪造名字。
+剩余实在反解不到的，保留原 ID 显示，不要伪造名字。
 
 ## 10. 话题群的判断
 
-`chat get oc_xxx` 能拿 `chat_mode`，但**对外部群常返 `code=232033, msg=The operator or
-invited bots does NOT have the authority to manage external chats.`**。
-
-更可靠的判断方式：拉一页 history 后看消息字段——若 `items[].thread_id` 几乎所有非 system
-消息都有，就是话题群（`chat_mode=thread`）；否则普通群。话题群每条主消息可对应 0~N 条
-线程回复，需逐个 `msg thread-messages <tid>` 展开。
+- `chat list -o json` 的 `items[].chat_mode` 为 `topic` 即话题群（`group` 为普通群）；`msg search-chats` 的
+  `chat_mode` 原样透出搜索接口的枚举，写法不同。
+- `chat get oc_xxx`（始终输出 JSON）也有 `chat_mode`，但外部群常返回 `232033`。
+- 兜底：拉一页 history 后看消息字段——几乎所有非 system 消息都带 `thread_id` 的是话题群。
 
 ## 11. 话题群的"完整"含义
 
-`msg history` 默认**不展开线程**，只返回每个 thread 的根消息（一条主消息 = 一个 thread）。
-回复要单独 `msg thread-messages <tid>` 拉。如果只读 history 就报"群里 24 小时只有 25 条
-消息"是错的——93 条线程回复全漏了。
+`msg history` 对群聊容器只取话题根消息（`only_thread_root_messages=true`），并**默认展开**每个话题的回复到
+顶层 `thread_replies`（每话题 50 条、累计 500 条上限，`thread_has_more` 标记未拉完的话题）。只读 `items`
+会漏掉全部回复；显式 `--expand-threads=false` 或某话题 `thread_has_more=true` 时，需要再用
+`msg thread-messages <omt_xxx>` 翻页补齐。
 
 ## 12. 翻页的稳健写法
 
@@ -184,11 +172,11 @@ feishu-cli msg history --container-id oc_xxx --container-id-type chat \
 为什么 **Asc**：从老到新翻页时，一旦命中 `has_more=false` 就肯定到当前结尾，逻辑清晰；
 默认的 Desc + `start-time` 在某些版本里会先返回最新页，再往前翻反而绕。
 
-## 13. Token 路径（实战观察）
+## 13. Token 路径
 
-`msg history` / `msg thread-messages` 在 CLAUDE.md 中归类为"读类 · User 优先 + Tenant 兜底"，
-未登录时回落 App Token（要求 Bot 在群里）。外部群 Bot 通常**不在群里**，所以读外部群
-**必须登录 User Token**：
+`msg list/get/mget/thread-messages` 是"读类 · User 优先 + Bot 兜底"；`msg history` 群聊入口用 `--as`（默认 auto，
+User Token 不可用时 stderr 告警后改用 Bot），私聊入口（`--user-id/--user-email`）必须 User。未登录时回落 Bot
+要求 Bot 在群里；外部群 Bot 通常**不在群里**，读外部群先确认 User 授权：
 
 ```bash
 feishu-cli auth check --scope "im:message:readonly im:message.group_msg:get_as_user"
@@ -197,9 +185,11 @@ feishu-cli auth login --domain chat --recommend
 
 ## 14. 错误码速查
 
-| code | msg | 何处出现 | 处理 |
-|---|---|---|---|
-| 232033 | does NOT have the authority to manage external chats | `chat get` 外部群 | 改用消息字段判断话题群 |
-| 41050 | no user authority error | `user info <跨企业 ou_xxx>` | 静默跳过，靠 mentions 兜底 |
-| 99992354 | not a valid open_message_id | `msg get om_xxx` 用了不存在/不属于本租户的 id | 检查 message_id 来源 |
-| 1062507 | 文件夹子节点 ≤ 1500 | 不在读消息路径，列出仅作参考 | — |
+| code / 报错 | 何处出现 | 处理 |
+|---|---|---|
+| 232033 `does NOT have the authority to manage external chats` | `chat get/member list` 等外部群操作 | 读 `external-chat.md`；判断话题群改用 §10 的其他方式 |
+| 41050 `no user authority error` | `user info <跨企业 ou_xxx>` | 静默跳过，靠 `sender_names` / `mentions` |
+| 99992354 `not a valid open_message_id` | `msg get/mget` 等用了不存在或不属于本租户的 message_id | 检查 message_id 来源 |
+| 231007 `no permission to delete this reaction` | `msg reaction remove` 用了与添加时不同的身份 | 换回添加表情时的身份（`--as`） |
+| 230026 / 230009 | `msg delete`：Bot 只能撤回自己的消息 / 超过企业设置的撤回时限 | 换有权限的身份，或放弃撤回 |
+| `tenant token type not match user access token` | 已登录时执行 `msg read-users`（底层 SDK 只接受应用身份，本地报错） | 用 `feishu-cli api GET /open-apis/im/v1/messages/<om_xxx>/read_users --as bot`（本人发的消息用 `--as user`） |

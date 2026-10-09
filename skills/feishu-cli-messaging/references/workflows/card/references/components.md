@@ -9,7 +9,7 @@
 - [展示组件](#展示组件) — markdown / div / hr / img / img_combination / chart / table / person / person_list / audio / video / avatar
 - [容器组件](#容器组件) — column_set / collapsible_panel / form / interactive_container
 - [交互组件](#交互组件) — button / input（含多行）/ 静态与人员选择 / 图片选择 / date_picker / overflow / checker
-- [通用布局属性](#通用布局属性-v2-新增) — margin / padding / spacing / align / element_id
+- [通用布局属性](#通用布局属性v2-新增) — margin / padding / spacing / align / element_id
 - [颜色枚举](#颜色枚举)
 - [标题组件 header](#标题组件-header)
 
@@ -27,7 +27,7 @@
   "update_multi": true,              // v2 只支持 true（共享卡片）
   "enable_forward": true,            // 是否允许转发
   "enable_forward_interaction": false, // 转发后是否保留回传交互
-  "width_mode": "fill",              // compact(400px) | fill(撑满) | 省略(600px)
+  "width_mode": "fill",              // default(600px，省略时同此) | compact(400px) | fill(撑满)
   "use_custom_translation": false,   // 是否用自定义翻译
   "streaming_mode": false,           // 流式更新（v2 新增）
   "streaming_config": {              // 仅 streaming_mode=true 时用
@@ -35,7 +35,7 @@
     "print_step": { "default": 2 },
     "print_strategy": "fast"          // fast | delay
   },
-  "summary": { "content": "AI 生成中..." }, // 聊天列表预览文案；这里只支持 content
+  "summary": { "content": "AI 生成中..." }, // 聊天列表预览文案；本项目 linter 只接受 content
   "locales": ["en_us", "ja_jp"],     // 生效的多语言白名单
   "style": {                         // 自定义字号和颜色
     "text_size": { "cus-0": { "default": "medium", "pc": "medium", "mobile": "large" } },
@@ -68,6 +68,7 @@
 ### 约束
 - **单卡片最多 200 个元素**（含 tag=plain_text 的元素）
 - 卡片 JSON 总字节数 **≤ 30 KB**
+- 单卡最多 5 个 `table`；容器嵌套不超过 5 层
 
 ---
 
@@ -220,7 +221,7 @@
 ```json
 {
   "tag": "table",
-  "page_size": 5,                   // 分页大小
+  "page_size": 5,                   // 每页行数，1–10
   "row_height": "low",              // low | middle | high
   "header_style": {
     "background_style": "grey",
@@ -243,6 +244,7 @@
 
 **坑点**：
 - table **不能嵌套在任何组件里**，只能直接放在 `body.elements`
+- 单卡最多 5 个 table，每个 table 最多 50 列
 - 要在折叠面板/分栏里展示表格 → 用 `markdown` 表格语法（`| 列1 | 列2 |\n|---|---|`）替代
 - `rows` 里的 key 必须和 `columns.name` 完全一致
 
@@ -283,22 +285,22 @@
 {
   "tag": "audio",
   "background_style": "default",
-  "file_key": "file_v2_real_audio"
+  "file_key": "file_v2_xxx"
 }
 ```
 
 ```json
 {
   "tag": "video",
-  "file_key": "file_v2_real_video",
-  "cover": { "img_key": "img_v2_real_cover" }
+  "file_key": "file_v2_xxx",
+  "cover": { "img_key": "img_v2_xxx" }
 }
 ```
 
 ```json
 {
   "tag": "avatar",
-  "user_id": "ou_real",
+  "user_id": "ou_xxx",
   "size": "medium"
 }
 ```
@@ -365,6 +367,8 @@
 **嵌套规则**：
 - 最多嵌 **5 层**
 - `column.elements` 不能放 `form` 和 `table`
+- 项目 linter 要求 `column_set` 显式写出 `flex_mode`、`background_style`、`horizontal_spacing`，
+  且 `column_set` 本身不写 `width`（列宽写在 `column` 上）
 - 嵌套时上层 `background_style` 覆盖下层
 
 **最常用组合**：
@@ -388,13 +392,13 @@
     "corner_radius": "5px"
   },
   "header": {
-    "title": {                       // 支持 plain_text 或 markdown（含 lark_md）
+    "title": {                       // 只支持 plain_text 或 markdown（不是 lark_md）
       "tag": "markdown",
       "content": "<font color='blue'>**面板标题**</font>"
     },
     "background_color": "white",     // 标题条不铺饱和语义色
     "vertical_align": "center",
-    "padding": "4px 8px",
+    "padding": "4px 8px 4px 8px",    // 单值或四值，不接受两值
     "position": "top",               // top | bottom（标题位置）
     "width": "fill",                 // fill | auto | auto_when_fold（V7.32+）
     "icon": {
@@ -577,7 +581,7 @@
   "tag": "select_person",
   "name": "owner",
   "placeholder": { "tag": "plain_text", "content": "选择负责人" },
-  "initial_user": "ou_real",
+  "initial_user": "ou_xxx",
   "behaviors": [{ "type": "callback", "value": { "field": "owner" } }]
 }
 ```
@@ -596,8 +600,8 @@
   "aspect_ratio": "16:9",
   "multi_select": false,
   "options": [
-    { "img_key": "img_v2_real_a", "value": "cover_a" },
-    { "img_key": "img_v2_real_b", "value": "cover_b" }
+    { "img_key": "img_v2_xxx1", "value": "cover_a" },
+    { "img_key": "img_v2_xxx2", "value": "cover_b" }
   ],
   "selected_values": ["cover_a"]
 }
@@ -758,7 +762,7 @@ Content-Type: application/json
 **template 枚举（13 种）**：
 `blue` / `wathet` / `turquoise` / `green` / `yellow` / `orange` / `red` / `carmine` / `violet` / `purple` / `indigo` / `grey` / `default`
 
-**text_tag_list**：最多 3 个标签，超出不显示。color 支持的枚举同上。
+**text_tag_list**：最多 3 个标签，超出不显示。color 支持的枚举同上，但标签的灰色用 `neutral`（标签枚举没有 `grey`）。
 
 **多语言**：用 `i18n_text_tag_list` 替代 text_tag_list，key 用语种代码（`zh_cn` / `en_us` / `ja_jp` / `zh_hk` / `zh_tw`）。
 
@@ -793,4 +797,4 @@ Content-Type: application/json
 ## 进阶：自定义样式 与 多语言
 
 - **自定义字号/颜色**：在 `config.style.text_size.cus-N` / `config.style.color.cus-N` 定义后，组件 `text_size`、`color` 字段引用 `cus-N` 即可全卡复用。颜色项支持 `light_mode` / `dark_mode` 双值，自动适配深色模式。
-- **多语言**：v2 已废弃 v1 的 `i18n_elements`（全局多语言），改用**局部多语言**：文本对象使用 `i18n: { "zh_cn": "...", "en_us": "...", "ja_jp": "..." }` 代替 `content`；header 的 text_tag_list 对应 `i18n_text_tag_list`；可在 `config.locales` 数组里声明白名单语种。客户端按用户语言自动选取。`config.summary` 只写 `content`，不要添加 `i18n_content`。
+- **多语言**：v2 已废弃 v1 的 `i18n_elements`（全局多语言），改用**局部多语言**：文本对象使用 `i18n: { "zh_cn": "...", "en_us": "...", "ja_jp": "..." }` 代替 `content`；header 的 text_tag_list 对应 `i18n_text_tag_list`；可在 `config.locales` 数组里声明白名单语种。客户端按用户语言自动选取。`config.summary` 只写 `content`：官方结构另列有 `summary.i18n_content`，但本项目未实测，`lint_card.py` 会把它报为错误。

@@ -2,7 +2,7 @@
 
 本文件汇集所有原子组件。每个组件的字段值引用 `basic.md` 的 token 系统：颜色查 §1、间距查 §2、字体查 §3、表面查 §4、文案查 §5。
 
-> 本文件只定义视觉/组件字段；schema 必填与校验见 `../../components.md` 与 `../../../scripts/lint_card.py`。不要复制样例卡里缺 `alt`、缺 `disabled`、缺 `background_style/flex_mode` 或包含 `summary.i18n_content` 的无效写法。
+> 本文件只定义视觉/组件字段；schema 必填与校验见 `../../components.md` 与 `../../../scripts/lint_card.py`。不要复制样例卡里缺 `alt`、缺 `disabled`、缺 `background_style/flex_mode` 或包含 `summary.i18n_content`（项目 linter 会报错）的写法。
 
 **标准模块顺序**（按需裁剪、顺序不变）：Cover Header → Split Hero 通栏总结高亮块（可选，紧跟标题区） → Key Point Columns 2-3 色重点分栏（可选，使用时必须紧跟 Split Hero） → 顶部说明 markdown（可选；使用高亮聚合时置于其后，或并入 Split Hero 的一行说明） → Notice Band / Surface Card → Metric Section / Media List / Review Form & Actions / Collapsible Digest → Footer Note。
 

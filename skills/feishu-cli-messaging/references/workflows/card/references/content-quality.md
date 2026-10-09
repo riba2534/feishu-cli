@@ -26,10 +26,10 @@
 ### 草稿
 
 草稿允许 `__MONITOR_URL__`、`TODO_OWNER_ID` 这类机器可查的占位符，但要同时给用户一份
-未决项清单。草稿检查使用：
+未决项清单。草稿检查使用（`scripts/` 相对 card 工作流目录解析）：
 
 ```bash
-python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+python3 scripts/lint_card.py \
   --allow-placeholders /tmp/card-draft.json
 ```
 
@@ -41,7 +41,7 @@ python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.
 发送候选不得带占位符、示例 ID 或示例 URL：
 
 ```bash
-python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+python3 scripts/lint_card.py \
   --strict /tmp/card-final.json
 ```
 
