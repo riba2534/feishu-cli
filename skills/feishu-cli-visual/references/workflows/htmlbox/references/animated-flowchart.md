@@ -24,7 +24,7 @@
 ### 2. 生成 HTML
 
 ```bash
-python3 skills/feishu-cli-visual/references/workflows/htmlbox/scripts/animate_diagram.py \
+python3 scripts/animate_diagram.py \
   --pattern pattern.json \
   --out animated-diagram.html
 ```

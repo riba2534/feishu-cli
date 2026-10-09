@@ -2,7 +2,10 @@
 
 这是从实战中沉淀的"血泪教训"，每个陷阱都让一张完整复杂的画板渲染失败过。把节点上传成功 ≠ 画板呈现正确，下面三个陷阱是导致"实际渲染和预期不符"的最常见根因。
 
-如果你在做 SVG → 原生节点（路径 C）或 Mermaid 本地引擎（路径 B），**所有这三个陷阱都会踩到**——`scripts/svg_to_board.py` 已经把这三个修复内置成 5 步管道，能用一键脚本就别手写。
+手工上传 whiteboard-cli 输出（路径 C 本地管道、路径 B Mermaid 本地引擎）时**三个陷阱都会踩到**——`scripts/svg_to_board.py`
+已经把这三个修复内置成 5 步管道，能用一键脚本就别手写；`board import --engine local` 不修 z_index、不裁剪。
+服务端解析 `board import --syntax svg` 按 SVG 顺序自动赋 z_index（无陷阱 1），CLI 重试前回读去重（无陷阱 3），
+但**不裁剪画布外元素**（陷阱 2 仍在，先在 SVG 里删掉画布外元素）。
 
 ---
 
@@ -26,7 +29,7 @@ SVG 的"画家算法"语义是「先画在底、后画在上」，但飞书不�
 ### 验证
 
 ```bash
-./feishu-cli board nodes <board_id> 2>/dev/null \
+feishu-cli board nodes <board_id> 2>/dev/null \
   | jq '[.data.nodes[] | {z:.z_index, t:.type, w:.width, h:.height, fill:.style.fill_color}] | sort_by(.z) | .[0:5]'
 ```
 
@@ -71,7 +74,7 @@ json.dump(data, open("nodes.json", "w"))
 ### 验证
 
 ```bash
-./feishu-cli board nodes <board_id> 2>/dev/null \
+feishu-cli board nodes <board_id> 2>/dev/null \
   | jq '[.data.nodes[] | (.x + .width)] | max'
 ```
 
@@ -80,35 +83,19 @@ json.dump(data, open("nodes.json", "w"))
 
 ```bash
 # 找具体的溢出节点
-./feishu-cli board nodes <board_id> 2>/dev/null \
+feishu-cli board nodes <board_id> 2>/dev/null \
   | jq '[.data.nodes[] | select(.x + .width > 1600 or .y + .height > 900)] | length'
 ```
 
 ### 修复
 
-上传前过滤 / 截断超出节点：
+上传前过滤 / 截断超出节点，边界取完整 viewBox `min-x min-y width height`（原点可以非零或为负）：
 
-```python
-def trim_overflow(nodes, vw, vh):
-    kept = []
-    for n in nodes:
-        x = float(n.get("x", 0) or 0)
-        y = float(n.get("y", 0) or 0)
-        w = float(n.get("width", 0) or 0)
-        h = float(n.get("height", 0) or 0)
-        if x >= vw or y >= vh or (x + w) <= 0 or (y + h) <= 0:
-            continue   # 完全在外 → 删
-        # svg 节点截断会扭曲渲染（svg_code 与节点 width 绑定）→ 直接删
-        if (x + w > vw or y + h > vh) and n.get("type") == "svg":
-            continue
-        # composite_shape 等几何节点 → 截断
-        if x + w > vw:
-            n["width"] = vw - x
-        if y + h > vh:
-            n["height"] = vh - y
-        kept.append(n)
-    return kept
-```
+- 完全在 viewBox 外 → 删除
+- `svg` 节点越界 → 删除（`svg_code` 与节点宽高绑定，截断会扭曲渲染）
+- composite_shape 等几何节点越界 → 截断宽高；复合节点内部子坐标保持原样
+
+实现见 `scripts/svg_to_board.py` 的 `step3_trim_overflow`，不要自己按 0 原点重写。
 
 ### 一键修复
 
@@ -130,17 +117,17 @@ def trim_overflow(nodes, vw, vh):
 ### 根因
 
 经典踩坑场景：
-1. 脚本调用 `feishu-cli board create-notes` 返回多行 JSON 输出
-2. 脚本用 `out.strip().split("\n")[-1]` 取最后一行解析 → 失败（最后一行只是 `}`）
+1. 脚本调用 `feishu-cli board create-notes` 返回多行 JSON 输出（`{"count":N,"node_ids":[...],"whiteboard_id":...}`）
+2. 脚本用 `out.strip().split("\n")[-1]` 取最后一行解析 → 失败（最后一行只是 `}`）；或请求超时、结果不明
 3. 脚本认为"上传失败"，自动重试或人工再跑一次
 4. **但 API 调用其实成功了**——飞书后端已经创建了节点
-5. 重试一次 → 节点翻倍
+5. 不带 client_token 重试一次 → 节点翻倍
 
 ### 验证
 
 ```bash
 # 拉真实节点数与预期对比
-ACTUAL=$(./feishu-cli board nodes <board_id> 2>/dev/null | jq '.data.nodes | length')
+ACTUAL=$(feishu-cli board nodes <board_id> 2>/dev/null | jq '.data.nodes | length')
 EXPECTED=$(jq '.nodes | length' nodes.json)
 echo "actual=$ACTUAL expected=$EXPECTED ratio=$(echo "scale=2; $ACTUAL / $EXPECTED" | bc)"
 ```
@@ -152,13 +139,14 @@ echo "actual=$ACTUAL expected=$EXPECTED ratio=$(echo "scale=2; $ACTUAL / $EXPECT
 #### A. 已翻倍：清空重传
 
 ```bash
-./feishu-cli board delete <board_id> --all
+feishu-cli board delete <board_id> --all
 python3 scripts/svg_to_board.py drawing.svg <board_id>
 ```
 
-#### B. 防止再发生：用容错 JSON 解析
+#### B. 防止再发生：client_token + 容错解析
 
-不要 `split("\n")[-1]`。改为从 stdout 找 `{ ... }` 主块：
+每批带固定的 `--client-token`（≥10 字符）：同一 token 重放时服务端直接返回首次创建的节点 ID，不会再建一份
+（实测 10 分钟后重放仍返回原节点）。解析输出时不要 `split("\n")[-1]`，改为从 stdout 找 `{ ... }` 主块：
 
 ```python
 def parse_json_loose(stdout):
@@ -173,16 +161,13 @@ def parse_json_loose(stdout):
         return None
 ```
 
-并且：**rc=0 时无论解析是否成功都按"上传成功"计数**——因为 rc=0 表示 feishu-cli 内部已确认 API 返回成功，HTTP 层面没问题。
+rc=0 但解析不出有效的 `count` 时，按"结果不确定"处理：先 `board nodes` 回读核对，不要换 token 重传。
 
 ### 一键修复
 
-`scripts/svg_to_board.py` 的 Step 4 已内置容错解析：
-
-```python
-# 见 scripts/svg_to_board.py 中的 parse_create_notes_response()
-# rc=0 但解析失败 → 按 len(chunk) 成功计，避免重试导致翻倍
-```
+`scripts/svg_to_board.py` 的 Step 4 已内置：每批 client_token 由画板 ID + 本批节点内容决定，`count` 无法确认的批次
+标为未完成并以退出码 3 结束、不自动重传。核对后原样重跑同一命令即可补齐——已落地的批次返回原节点，不会翻倍
+（实测同一 SVG 连跑两次，画板节点数不变）。
 
 ---
 
@@ -193,7 +178,7 @@ def parse_json_loose(stdout):
 ### Step 1：拉节点总览
 
 ```bash
-./feishu-cli board nodes <board_id> 2>/dev/null \
+feishu-cli board nodes <board_id> 2>/dev/null \
   | jq '.data.nodes | {total: length, types: ([.[].type] | group_by(.) | map({k:.[0],n:length}))}'
 ```
 
@@ -202,14 +187,14 @@ def parse_json_loose(stdout):
 ### Step 2：看 z_index 分布
 
 ```bash
-./feishu-cli board nodes <board_id> 2>/dev/null \
+feishu-cli board nodes <board_id> 2>/dev/null \
   | jq '[.data.nodes[].z_index] | {min:min, max:max, distinct:length}'
 ```
 
 判断：最小 z 是 0 吗？distinct 数量 ≈ 总节点数吗？
 
 ```bash
-./feishu-cli board nodes <board_id> 2>/dev/null \
+feishu-cli board nodes <board_id> 2>/dev/null \
   | jq '[.data.nodes[] | {z:.z_index, t:.type, w:.width}] | sort_by(.z) | .[0:5]'
 ```
 
@@ -218,7 +203,7 @@ def parse_json_loose(stdout):
 ### Step 3：看坐标范围
 
 ```bash
-./feishu-cli board nodes <board_id> 2>/dev/null \
+feishu-cli board nodes <board_id> 2>/dev/null \
   | jq '[.data.nodes[]] | {x_min: ([.[].x] | min), x_max: ([.[].x] | max), x_w_max: ([.[] | (.x + .width)] | max), y_min: ([.[].y] | min), y_h_max: ([.[] | (.y + .height)] | max)}'
 ```
 
@@ -231,7 +216,7 @@ def parse_json_loose(stdout):
 ### Step 5：拉缩略图人工目检
 
 ```bash
-./feishu-cli board image <board_id> /tmp/check   # 自动按实际格式补扩展名（通常 JPEG）
+feishu-cli board image <board_id> /tmp/check   # 自动按实际格式补扩展名（通常 JPEG）
 ```
 
 注意：**缩略图也有渲染上限**。如果上面 1-4 都正常但缩略图缺东西，可能是飞书缩略图服务的限制——直接进飞书画板编辑器看真实渲染。
@@ -244,6 +229,6 @@ def parse_json_loose(stdout):
 |------|----------|
 | z_index 错乱 | 上传前按数组 index 显式赋 `z_index = i` |
 | viewBox 溢出 | 上传前过滤 `x+w > viewBox_w` 的节点 |
-| 节点翻倍 | rc=0 一律按成功，错也别重试；已翻倍 → delete --all 后重传 |
+| 节点翻倍 | 每批带固定 `--client-token`，结果不明先回读、用同一 token 重跑；已翻倍 → delete --all 后重传 |
 
 或者更简单：**直接用 `scripts/svg_to_board.py`，三个修复都内置了**。

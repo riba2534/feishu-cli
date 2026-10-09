@@ -3,8 +3,6 @@
 把一份 HTML（单文件或整目录）按官方三段协议发布成妙搭应用，拿到 `release_id`，
 再用 `--wait` 或 `apps release get` 确认发布完成并拿到访问链接 `online_url`。
 
-> **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
-
 ## 前置条件
 
 - **认证**：所有 `apps` 命令都需要 **User Access Token**
@@ -12,8 +10,8 @@
 - **登录**：`auth login` 是增量授权，补授 spark scope 不会丢掉已有授权：
 
 ```bash
-feishu-cli auth check --scope "spark:app:write"          # 先预检当前是否已有
-feishu-cli auth login --scope "spark:app:read spark:app:write"
+feishu-cli auth check --scope "spark:app:read spark:app:write"   # 先预检当前是否已有
+feishu-cli auth login --scope "spark:app:read spark:app:write"   # 或 auth login --domain apps
 ```
 
 `apps list --keyword <名称>` 用于按应用名定位 app_id；用户已给出 `app_xxx` 或妙搭链接时直接提取，不要无目的地全量枚举。
@@ -60,10 +58,13 @@ feishu-cli apps html-publish --app-id app_xxx --path ./dist --allow-sensitive  #
 - **三段协议**（退役单 POST `/upload_and_release_html_code`）：GET `pre_release` 解析 `upload_url`/`tos_path` → 对预签名 URL PUT tar.gz（**不携带飞书 Authorization**）→ POST `/apps/{id}/releases` body `{"tos_path":...}` 返回 `release_id`
 - **打包方式**：`--path` 整个打包成单个 in-memory tar.gz；未压缩 ≤ 200MB、打包后 tar.gz ≤ 20MB、单个 `.html` 文件 ≤ 10MB（妙搭服务端硬约束，超限客户端提前拦截并点名文件，`--dry-run` 回填 `oversize_html`）
 - **凭证文件防呆**：默认拦截 `.env` / `.env.*` / `.npmrc` / `.netrc` / `.git-credentials` / `.aws/credentials` / `.docker/config.json` / `.kube/config`，命中即非零退出（`--dry-run` 也拦）；确实要发布加 `--allow-sensitive`
-- **`--dry-run`**：只展示三段计划 + 打包清单，不获取 token、不访问网络、不上传
+- **`--dry-run`**：只展示三段计划 + 打包清单，不获取 token、不访问网络、不上传。缺 `index.html`、单个 `.html` 超 10MB
+  等问题不会让 dry-run 失败（仍 exit 0），而是输出 `would_block: true` 与 `block_reasons`——实跑前必须确认 `would_block=false`
+- **真实发布前取得用户明确同意**：发布会把内容放到妙搭线上环境；只是验证打包时停在 `--dry-run`
 - 不加 `--wait` 时返回里取 `.release_id`，再按下一节查询发布结果
 - **`--wait`**：每 20 秒查询一次（`--wait-timeout` 默认 5m），结果见下一节的状态表；输出为 release 详情 + `wait.outcome`
-  （`finished` / `failed` / `pending_approval` / `timeout` / `stopped`），`failed` 非零退出
+  （`finished` / `failed` / `pending_approval` / `timeout` / `stopped`）。只有 `failed` 非零退出，其余都是 exit 0，
+  要读 `wait.outcome` 判断；`timeout` 表示仍在发布，用 `apps release get` 继续查同一 `release_id`，不要重新发布
 
 ### 3. 发布结果 `apps release get` / `apps release list`
 
@@ -106,18 +107,20 @@ feishu-cli apps access-scope-set --app-id app_xxx --scope specific \
 
 - `--scope` 三选一：`specific`（部分人员，映射后端 `Range`）/ `public`（互联网公开，映射 `All`）/ `tenant`（组织内，映射 `Tenant`）
 - `specific`：必须配 `--targets`（统一格式，发请求时自动拆成后端的 users/departments/chats）
-- `public`：必须显式给 `--require-login`（true/false，不能依赖默认）
+- `public`：必须显式给 `--require-login`（true/false，不能依赖默认）；设为互联网公开前先向用户确认
 - `tenant`：不接受其它 flag
 
 ## app_id 怎么来
 
 - 自己刚 `apps create` 的：从返回的 `.app.app_id` 取（CLI 已剥掉 `data` 外层）
 - 别人/已有的应用：让用户给妙搭应用链接，从 `https://miaoda.feishu.cn/app/app_xxx` 里 `/app/` 后面那段提取，或直接给 `app_xxx` 字符串
-- 只知道应用名：`feishu-cli apps list --keyword <名称>`（可加 `--ownership mine`、`--app-type html`），多个候选时展示名称、app_id、updated_at 让用户确认
+- 只知道应用名：`feishu-cli apps list --keyword <名称>`（可加 `--ownership mine|shared`、`--app-type html`；list 只收小写类型值），多个候选时展示名称、app_id、updated_at 让用户确认
 
 ## 输出与排错
 
-- 所有命令支持 `--format json|pretty|table|ndjson|csv` + `--jq`，写命令支持 `--dry-run`（`--dry-run` 同样尊重 `--format/--jq`）
+- 所有命令支持 `--format json|pretty|table|ndjson|csv` + `--jq`；除 `access-scope-get` 外都有 `--dry-run`（同样尊重 `--format/--jq`）
+- 用法错误（`--app-type`/`--status`/`--page-size` 取值非法、`html-publish` 与 `release get` 的 `--app-id` 不是 `app_` 开头）exit 2；
+  缺 spark scope 报 99991679，exit 3
 - 输出已剥掉飞书响应的 `data` 外层：`apps create` 直接是 `{"app":{"app_id":...}}`（jq 用 `.app.app_id`），`apps html-publish` 直接是 `{"release_id":...}`（jq 用 `.release_id`；加 `--wait` 时为 release 详情）
 - 业务错误 `code=400002577` / `90002` = 应用不存在或无权访问（核对 app_id）；`code=400000059` = app_type 不支持 html-publish；`code=90001` = 服务端构建失败（用 `--dry-run` 检查打包文件清单）
 - TOS PUT 4xx/5xx 会中止、不调用 release-create；5xx 可重试同一条命令换新预签名 URL。不要把飞书 Authorization 带到 TOS。

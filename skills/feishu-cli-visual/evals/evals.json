@@ -21,10 +21,11 @@
         "board"
       ],
       "prompt": "画一张飞书架构图，要求每个节点都能单独编辑，已有 drawing.svg。给出推荐管线。",
-      "expected_output": "选择 board 的 SVG 到原生节点管线和 svg_to_board.py。",
+      "expected_output": "选择 board 的 SVG 到原生节点管线：默认 board import --syntax svg，画布外元素需裁剪时改用 scripts/svg_to_board.py。",
       "expectations": [
-        "选择 SVG 到原生可编辑节点路径",
-        "命令使用迁移后的 svg_to_board.py 路径"
+        "选择 SVG 到原生可编辑节点路径，不用 board svg-import 单节点",
+        "默认命令为 board import <board_id> drawing.svg --syntax svg",
+        "说明需要裁剪画布外元素时改用相对工作流目录的 scripts/svg_to_board.py"
       ],
       "files": []
     },

@@ -94,6 +94,24 @@ class UploadResultTests(unittest.TestCase):
                 self.assertNotIn("✓", log.getvalue())
                 self.assertIn("未自动重传", log.getvalue())
 
+    def test_each_batch_carries_deterministic_client_token(self):
+        nodes = [{"type": "composite_shape", "x": i} for i in range(3)]
+        calls = []
+        def run(cmd):
+            calls.append(cmd)
+            with open(cmd[4], encoding="utf-8") as batch:
+                return 0, '{"count":%d}' % len(json.load(batch)), ""
+        for _ in range(2):  # 原样重跑：同画板、同内容 → 同 token，服务端返回已落地节点
+            with mock.patch.object(svg_to_board, "run", side_effect=run), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                svg_to_board.step4_upload(copy.deepcopy(nodes), "board_fixture", "feishu-cli", 2, 0)
+        tokens = [cmd[cmd.index("--client-token") + 1] for cmd in calls]
+        self.assertEqual(len(tokens), 4)
+        self.assertEqual(tokens[:2], tokens[2:])
+        self.assertNotEqual(tokens[0], tokens[1])
+        self.assertTrue(all(len(t) >= 10 for t in tokens))
+        self.assertNotEqual(tokens[0], svg_to_board.batch_client_token("other_board", nodes[:2]))
+
     def test_partial_upload_main_exits_nonzero(self):
         node = {"type": "composite_shape", "x": 10, "y": 10, "width": 20, "height": 20}
         with tempfile.TemporaryDirectory() as tmp:

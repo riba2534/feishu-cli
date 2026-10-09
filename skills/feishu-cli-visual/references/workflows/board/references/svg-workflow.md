@@ -1,6 +1,7 @@
 # SVG → 飞书原生节点完整工作流
 
-把一张 SVG 翻译成 N 个独立的飞书画板节点，让**每个矢量元素都可以单独点击编辑**。本文档解释为什么这是首选路径、5 步标准流程是什么、SVG 元素到飞书节点的映射规则，以及性能边界。
+把一张 SVG 翻译成 N 个独立的飞书画板节点，让**每个矢量元素都可以单独点击编辑**。本文档说明服务端解析与本地管道怎么选、
+本地 5 步管道做了什么、SVG 元素到飞书节点的映射规则，以及性能边界。
 
 适用场景：飞轮 / 鱼骨 / 路线图 / Dashboard / 海报 / Mobile UI / 户型图 / 地铁图 / 插画 / 周期表 / 机芯 / 赛博朋克 / 任意 AI 设计图。
 
@@ -10,7 +11,7 @@
 
 - [服务端解析 vs 本地管道](#0-服务端-svg-解析-vs-本地管道ab-实测)
 - [为什么不用单节点](#1-为什么不用-board-svg-import-单节点)
-- [标准工作流](#2-5-步标准工作流)
+- [标准工作流](#2-标准工作流生成-svg--本地-5-步管道)
 - [一键脚本](#3-一键脚本scriptssvg_to_boardpy)
 - [翻译映射](#4-svg-元素--飞书节点翻译映射)
 - [节点密度](#5-节点密度参考14-张实战图)
@@ -24,21 +25,25 @@
 - **服务端解析**：`feishu-cli board import <board_id> drawing.svg --syntax svg`（`syntax_type=3`，一条命令）
 - **本地管道**：`scripts/svg_to_board.py`（whiteboard-cli 翻译 → 修 z_index → 裁剪溢出 → 分批 create-notes）
 
-同一批 SVG 在测试画板上的实测对比（whiteboard-cli 0.2.13）：
+同一批 SVG 在测试画板上的实测对比（2026-10，whiteboard-cli 0.2.13；两条路径的节点类型、坐标几乎一致，
+服务端与 whiteboard-cli 走的是同一套翻译规则）：
 
 | 维度 | 服务端解析 `--syntax svg` | 本地管道 svg_to_board.py |
 |------|------------------------|-------------------------|
-| 简单图（6 元素：rect/text/circle/line/曲线 path/polygon） | 6 个节点：round_rect、text_shape、ellipse、straight connector、**curve connector（保留曲率）**、polygon → image 节点 | 6 个节点，类型一致；polygon → svg 节点 |
-| 飞轮图（70 节点：渐变背景 + group + 曲线箭头 + 40 根柱子） | 70 节点，z_index 0..57 与 SVG 顺序一致，渲染与本地管道几乎一致 | 70 节点，渲染一致 |
-| 720+ 元素城市夜景（45 KB） | 723 节点约 1 秒落板，背景/窗户层级正确 | 未测（同类图在本地管道需分批上传） |
-| 不支持的属性 | 渐变 `fill=url(#id)` 取首个色、自定义 `stroke-dasharray` 降级，响应 `degraded_attributes` 逐条列出 | 静默按 whiteboard-cli 规则转换 |
-| viewBox 外的元素 | **原样保留**（画布外会多出一块） | Step 3 自动裁剪 |
-| 依赖 / 速度 | 无本地依赖，1 次请求 | 需 whiteboard-cli，多次请求 |
+| rect / circle / text / line / group | round_rect、ellipse、text_shape、straight connector、group + 子节点 | 同左 |
+| 曲线 path（`Q` 自环、`C` 三次贝塞尔） | curve connector，渲染与原图一致；三次贝塞尔的曲率更贴近原图 | curve connector，渲染正常，三次贝塞尔略平缓 |
+| 弧线 `A`、不规则/三角 polygon | image 节点（服务端栅格化） | svg 节点 |
+| 折线 polyline、`M L L` path | connector（`right_angled_polyline`），按原折点渲染 | 同左 |
+| z_index | 按 SVG 顺序自动赋值 | Step 2 显式赋 `z_index = 序号` |
+| 渐变 `fill=url(#id)`、自定义 `stroke-dasharray` | 渐变取首个色、虚线改为 `dash`，`-o json` 输出 `degraded_attributes` 逐条列出 | 不报告降级；渐变写入 `style.fill_gradient`，缩略图同样显示为单色 |
+| viewBox 外的元素 | **原样保留**（画布外会多出一块） | Step 3 自动删除/截断 |
+| 1500 个 rect（93 KB） | 1 次请求约 3 秒，1501 节点 | 未测（需分批上传） |
+| 依赖 / 幂等 | 无本地依赖；不收 client_token，CLI 重试前回读去重 | 需 whiteboard-cli；每批带确定性 client_token，原样重跑不翻倍 |
 
 结论：
 
-1. 默认用服务端解析——同等可编辑性，曲线连接保留得更好，还能拿到降级清单；
-2. SVG 有画布外元素、需要离线 `--dry-run` 预检节点、或要和 z_index/溢出修复规则精确对齐时，用本地管道；
+1. 默认用服务端解析——可编辑性与本地管道相同，一条命令、无本地依赖，还能拿到降级清单；
+2. SVG 有画布外元素需要裁掉、需要离线 `--dry-run` 预检节点、或要精确控制 z_index 时，用本地管道；
 3. 单节点 `board svg-import` 仍只用于小图标（见下一节）。
 
 ---
@@ -71,11 +76,14 @@
 2. **不要求编辑的展示元素**
 3. **viewBox 极小（< 200×200）的小元素**
 
-其他情况一律用 5 步管道。
+其他情况都拆成原生节点：默认 `board import --syntax svg`，需要裁剪溢出时用 5 步管道（见第 0 节）。
 
 ---
 
-## 2. 5 步标准工作流
+## 2. 标准工作流（生成 SVG + 本地 5 步管道）
+
+服务端解析只需要生成 SVG 后执行 `board import <board_id> drawing.svg --syntax svg -o json`；
+下面的 Step 2–5 是本地管道 `scripts/svg_to_board.py` 内部做的事，手工排障时可对照。
 
 ### Step 1: 生成 SVG
 
@@ -95,7 +103,9 @@
   - `<foreignObject>`（飞书不支持 HTML 嵌入）
   - 外链 `<image href="https://...">`（改用 `board upload-image`）
   - 复杂动画 `<animate>` `<animateTransform>`（飞书静态画板不支持）
-  - **用曲线 `<path>`（贝塞尔 `Q`/`C`、弧 `A`）画连接线 / 自环 / 弧线箭头**——whiteboard-cli 转节点时曲率会丢失，退化成直线甚至悬空在节点旁（实测：状态机 `healthy` 自环用 `M..Q..` 画，渲染成一条飘在节点上方、不连回节点的孤立直线）。**画自环 / 弧线 / 曲线连接一律用多段 `<line>` 或 `<polyline>` 折线拼**（直线 → connector，渲染稳定，箭头三角用小 `<polygon>`）。纯装饰性的曲线填充图形（如插画里的山脊、花瓣，非连接语义）可保留，会转 svg 节点。
+- **曲线连接线**：2026-10 复测（whiteboard-cli 0.2.13 与服务端解析）`Q`/`C` 曲线 path 转为 curve connector，
+  状态机自环、S 形曲线都按原形渲染；弧线 `A` 转为 svg/image 节点，形状正确但不再是连线。早期版本曾把自环渲染成
+  悬空直线——落板后若曲线连线异常，改用多段 `<line>` / `<polyline>` 折线拼（转 connector，箭头三角用小 `<polygon>`）。
 
 #### 极坐标 / 三角函数布局（飞轮 / 雷达图）
 
@@ -137,6 +147,7 @@ whiteboard-cli -i drawing.svg -f svg -t openapi -o nodes.json
 ### Step 3: 修复 z_index ⭐⭐⭐ 关键
 
 **为什么必须做**：whiteboard-cli 输出节点不带 z_index，飞书 API 自动分配是无序的（详见 `pitfalls.md` 陷阱 1）。
+服务端解析会按 SVG 顺序自动赋值，不需要这一步。
 
 ```python
 import json
@@ -153,25 +164,9 @@ json.dump(data, open("nodes.json", "w"))
 
 **为什么必须做**：超出 viewBox 的节点会显示为"半截楼"诡异图形（详见 `pitfalls.md` 陷阱 2）。
 
-```python
-def trim_overflow(nodes, vw, vh):
-    kept = []
-    for n in nodes:
-        x = float(n.get("x", 0))
-        y = float(n.get("y", 0))
-        w = float(n.get("width", 0))
-        h = float(n.get("height", 0))
-        if x >= vw or y >= vh or (x + w) <= 0 or (y + h) <= 0:
-            continue
-        if (x + w > vw or y + h > vh) and n.get("type") == "svg":
-            continue   # svg 节点截断会扭曲渲染，直接删
-        if x + w > vw:
-            n["width"] = vw - x
-        if y + h > vh:
-            n["height"] = vh - y
-        kept.append(n)
-    return kept
-```
+规则（`svg_to_board.py` 的 `step3_trim_overflow`）：按完整 viewBox `min-x min-y width height` 判断边界（支持非零/负原点）——
+完全在外的节点删除；部分越界的几何节点截断宽高；越界的 `svg` 节点直接删除（`svg_code` 与节点宽高绑定，截断会扭曲渲染）；
+复合节点内部子坐标保持原样。服务端解析不做这一步，画布外元素需要先在 SVG 里删掉。
 
 ### Step 5: 分批 create-notes 上传
 
@@ -188,13 +183,14 @@ sleep 0.3
 ...
 ```
 
-注意：rc=0 一律按成功，**不要因 stdout 解析失败而重试**（详见 `pitfalls.md` 陷阱 3）。
+注意：手工分批时给每批带固定的 `--client-token`（≥10 字符）；输出无法解析或超时等结果不明时，先 `board nodes` 回读核对，
+再用**同一个 token** 重跑该批，不要换 token 重传（详见 `pitfalls.md` 陷阱 3）。
 
 ---
 
 ## 3. 一键脚本：`scripts/svg_to_board.py`
 
-5 步全自动管道。强烈推荐用这个而不是手写：
+5 步全自动管道，需要本地裁剪/预检时用它而不是手写：
 
 ```bash
 # 基础用法（自动从 SVG 解析 viewBox）
@@ -206,6 +202,9 @@ python3 scripts/svg_to_board.py drawing.svg <board_id> --viewbox 1600x900
 # 自定义批次和节流
 python3 scripts/svg_to_board.py drawing.svg <board_id> --batch 200 --interval 0.5
 
+# CLI 不在 PATH 时指定路径
+python3 scripts/svg_to_board.py drawing.svg <board_id> --feishu-cli ./bin/feishu-cli
+
 # dry-run：跑 Step 1-3 但不上传（调试用）
 python3 scripts/svg_to_board.py drawing.svg <board_id> --dry-run
 
@@ -216,41 +215,42 @@ python3 scripts/svg_to_board.py drawing.svg <board_id> --keep-overflow
 退出码：
 - `0` 全部成功
 - `1` whiteboard-cli 或 feishu-cli 不可用
-- `2` SVG 解析失败 / viewBox 无法识别
-- `3` 部分批次上传失败
+- `2` SVG 解析失败 / viewBox 无法识别 / 修剪后无节点
+- `3` 有批次失败、不完整或结果不确定，或回读验证未完成——先 `board nodes` 核对；补传时原样重跑同一命令
+  （每批 client_token 由画板 ID + 本批内容决定，已落地的批次返回原节点，不会翻倍）
 
-脚本输出示例：
+脚本输出示例（实跑）：
 
 ```
-  viewBox = 1600.0x900.0
+  viewBox = 0.0 0.0 800.0 500.0
 
 === Step 1: whiteboard-cli 翻译 SVG → 节点 JSON ===
-  翻译成功：1984 个节点
-  类型分布：{'composite_shape': 1919, 'connector': 48, 'svg': 9, 'text_shape': 8}
+  翻译成功：15 个节点
+  类型分布：{'composite_shape': 8, 'text_shape': 2, 'connector': 2, 'svg': 2, 'group': 1}
 
 === Step 2: 修 z_index（画家算法） ===
-  已为 1984 个节点显式赋 z_index = 0..1983
+  已为 15 个节点显式赋 z_index = 0..14
 
-=== Step 3: 修剪 viewBox 溢出（1600.0x900.0） ===
-  保留 1977，删除 7 个完全溢出节点，截断 0 个边缘节点
+=== Step 3: 修剪 viewBox 溢出（原点 0.0,0.0，800.0x500.0） ===
+  保留 14，删除 1 个完全溢出节点，截断 1 个边缘节点
 
 === Step 4: 分批上传（batch=300 interval=0.3s） ===
-  ✓ 批 0-300 上传 300
-  ✓ 批 300-600 上传 300
-  ...
+  ✓ 批 0-14 上传 14
+  已确认创建：14/14（失败或未确认 0）
 
-=== Step 5: 验证 ===
-  画板节点数：1977（期望 ≈ 1977）
+=== Step 5: 回读验证（节点总数下限检查） ===
+  画板节点总数：14（含已有节点；已确认新增 14）
   类型分布：{...}
+  节点总数下限检查通过；不能据此确认每个新增节点的内容或是否重复
 
-========== 完成（87.3s）==========
+========== 完成（2.7s）==========
 ```
 
 ---
 
 ## 4. SVG 元素 → 飞书节点翻译映射
 
-whiteboard-cli 的翻译规则（实测整理）：
+whiteboard-cli 的翻译规则（2026-10 用 0.2.13 实测整理；服务端解析规则相同，只是把 svg 节点换成 image 节点）：
 
 | SVG 元素 | 飞书节点 type | 子类型 / 关键字段 | 备注 |
 |----------|--------------|------------------|------|
@@ -259,14 +259,15 @@ whiteboard-cli 的翻译规则（实测整理）：
 | `<circle>` | `composite_shape` | `composite_shape.type: ellipse` | 内部按 ellipse 统一 |
 | `<ellipse>` | `composite_shape` | `composite_shape.type: ellipse` |  |
 | `<text>` | `text_shape` | `text.text / font_size / font_weight / text_color / horizontal_align` | text-anchor 映射 |
-| `<line>` | `connector` | `connector.start.position / end.position` | 直线 |
-| `<path d="M ... L ... L ...">` 简单 | `connector` 或 `svg` | 视情况 | 折线可能转 connector |
-| `<path>` 复杂 | `svg` | `svg.svg_code` 保留 path 标签 | 含弧线 / 曲线 |
-| `<polygon>` 三角形 | `composite_shape` | `composite_shape.type: triangle` | 识别为三角形 |
-| `<polygon>` 不规则 | `svg` | `svg.svg_code` 保留 polygon | 多边形 |
-| `<polyline>` | `connector` 或 `svg` | 视点数 | |
-| `<g>` | `group` | 嵌套节点保留为 children | |
-| `<defs>` / `<linearGradient>` | 不直接转节点 | 但被 `<path>` / `<rect>` 内嵌引用时随 svg 节点保留 | 渐变只在 svg 节点内有效 |
+| `<line>` | `connector` | `connector.shape: straight` | 直线 |
+| `<path d="M ... L ... L ...">` 折线 | `connector` | `connector.shape: right_angled_polyline` + `turning_points` | 按原折点渲染 |
+| `<path>` 含 `Q` / `C` 曲线 | `connector` | `connector.shape: curve` | 曲率保留 |
+| `<path>` 含 `A` 弧线、闭合填充路径 | `svg` | `svg.svg_code` 保留 path 标签 | 服务端解析为 image 节点 |
+| `<polygon>`（含三角形） | `svg` | `svg.svg_code` 保留 polygon | 不会识别为 triangle 形状；服务端为 image 节点 |
+| `<polyline>` | `connector` | `connector.shape: right_angled_polyline` | |
+| `<g>` | `group` | 子节点带 `parent_id` 指向 group | |
+| `<linearGradient>` 被 `<rect>` 引用 | `composite_shape` | `style.fill_gradient` | 服务端解析取首个色并报 `degraded_attributes` |
+| `stroke-dasharray` | 边框 | `style.border_style: dash` | 自定义虚线模式不保留 |
 
 ### 翻译边界情况
 
@@ -276,7 +277,7 @@ whiteboard-cli 的翻译规则（实测整理）：
 - `opacity`：转为 `style.fill_opacity` / `style.border_opacity`
 - `font-family`：飞书强制用自家字体（Noto / 苹方），不保留自定义字体
 - `<use>`：不支持（whiteboard-cli 可能展开，可能丢失）
-- 曲线 `<path>`（`Q`/`C` 贝塞尔、`A` 弧）：作**连接线 / 自环**用时曲率易丢、退化为直线或悬空 → 改用多段 `<line>` / `<polyline>` 折线；作**填充形状**用时转 svg 节点尚可保留
+- 曲线 `<path>`：`Q`/`C` 转 curve connector，`A` 弧转 svg/image 节点（见上表）；落板后曲线连线异常时改用多段 `<line>` / `<polyline>` 折线
 
 ---
 
@@ -343,7 +344,8 @@ whiteboard-cli 的翻译规则（实测整理）：
 - [ ] **节点数对**：`board nodes <id> | jq '.data.nodes | length'` 接近 nodes.json
 - [ ] **z_index 最小是大背景**：参考 `pitfalls.md` Step 2
 - [ ] **无 viewBox 溢出**：`max(x+w) ≤ viewBox_w`
-- [ ] **缩略图主要元素都在**：`board image <id> /tmp/check`（自动补实际扩展名，通常 .jpg）后看
+- [ ] **缩略图主要元素都在**：`board image <id> /tmp/check`（自动补实际扩展名，通常 .jpg）后看；写入后缩略图可能滞后
+  10–20 秒，拿到旧图时稍后重下
 - [ ] **lint 质量分 ≥ 0.85**：`board lint <id>`；节点 >600 时 over_capacity 固定扣 0.2 属预期，按 ≥ 0.65 评估
 
 如其中任何一项不通过，回到 `pitfalls.md` 排障。
@@ -356,5 +358,5 @@ whiteboard-cli 的翻译规则（实测整理）：
 |------|------|
 | 让大图里的小元素可点击编辑 | 默认 `board import --syntax svg`；需裁剪溢出时用 5 步管道 + `scripts/svg_to_board.py` |
 | 简单图标 / 印章 | `board svg-import`（单节点） |
-| 200-2000 节点的复杂图 | 5 步管道，没问题 |
+| 200-2000 节点的复杂图 | 两条路径都可（服务端 1500 节点实测约 3 秒） |
 | > 2000 节点 | 先考虑简化或拆图 |
