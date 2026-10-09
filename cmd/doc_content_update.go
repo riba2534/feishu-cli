@@ -809,29 +809,8 @@ func getPageChildren(documentID, userAccessToken string) ([]*larkdocx.Block, err
 }
 
 // ============================================================
-// 本地资源检查（Fail Closed）
+// 列宽指令检查（Fail Closed）
 // ============================================================
-
-// localResourceRegex 匹配 Markdown 图片与文件链接 ![alt](target)
-var localResourceRegex = regexp.MustCompile(`!\[.*?\]\((.*?)\)`)
-
-// containsLocalMarkdownResources 检查 Markdown 中是否包含本地文件/图片资源
-func containsLocalMarkdownResources(content string) bool {
-	matches := localResourceRegex.FindAllStringSubmatch(content, -1)
-	for _, m := range matches {
-		if len(m) > 1 {
-			target := strings.TrimSpace(m[1])
-			if target != "" &&
-				!strings.HasPrefix(target, "http://") &&
-				!strings.HasPrefix(target, "https://") &&
-				!strings.HasPrefix(target, "data:") &&
-				!strings.HasPrefix(target, "#") {
-				return true
-			}
-		}
-	}
-	return false
-}
 
 // validateNoColumnWidthDirective 检查列宽自定义诉求；本命令暂不支持，须 fail closed。
 //
@@ -851,17 +830,6 @@ func validateNoColumnWidthDirective(flagChanged bool, flagValue, markdown string
 // colWidthCommentInMarkdownRe 匹配任意行上的 <!-- feishu-colwidth: ... --> 指令
 // （与 internal/converter 的 colWidthCommentRe 同义，此处按多行扫描整篇内容）。
 var colWidthCommentInMarkdownRe = regexp.MustCompile(`(?m)^\s*<!--\s*feishu-colwidth\s*:[^>]*-->\s*$`)
-
-// validateNoLocalResources 检查是否包含本地文件/图片资源；若有则 fail closed 并给出迁移提示
-func validateNoLocalResources(uploadImages bool, markdown string) error {
-	if uploadImages {
-		return clierr.Usagef("doc content-update 现采用官方原子安全更新协议，暂不支持 --upload-images；如需上传本地图片，请改用图床/网络图片 URL，或使用 'feishu-cli doc import' 全量导入")
-	}
-	if containsLocalMarkdownResources(markdown) {
-		return clierr.Usagef("检测到 Markdown 包含本地文件/图片资源；doc content-update 暂不支持本地文件混合上传；请改用网络图片 URL，写入后用 'feishu-cli doc media-insert' 插入本地图片，或使用 'feishu-cli doc import' 导入")
-	}
-	return nil
-}
 
 // ============================================================
 // 执行（对齐官方 PUT /open-apis/docs_ai/v1/documents/{id} 原子更新能力）
