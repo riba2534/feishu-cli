@@ -99,11 +99,14 @@ feishu-cli file version delete doxcnxxx <version_id> --obj-type docx
 ```bash
 feishu-cli media upload image.png --parent-type docx_image --parent-node <document_id>
 feishu-cli media upload report.pdf --parent-type docx_file --parent-node <document_id> -o json
+# 上传到文档块下时携带 --doc-id：写入 extra={"drive_route_token":...}，素材按该文档路由鉴权
+feishu-cli media upload image.png --parent-type docx_image --parent-node <block_id> --doc-id <document_id>
 feishu-cli media download <file_token> --output image.png
 feishu-cli media download <file_token> -o large.bin --timeout 30m      # 默认超时 5m
 ```
 
 - `--parent-type` 必须匹配素材用途：`docx_image`（默认）/ `docx_file` / `doc_image` / `doc_file`；`--parent-node` 必填（文档 ID）。
+- `--doc-id` 可选：裸文档 ID 原样使用，`/docx/` URL 取 token，`/wiki/` URL 以 App 身份解析为底层 docx；不传时不带 extra（旧行为）。
   上传素材只得到 file_token，不会出现在文档里；要把图片/附件插入文档正文用 `feishu-cli-docs` 的 `doc media-insert`。
 - 不要把消息附件的 file_key 当作 Drive file_token（两者不可互换）；消息资源用 `feishu-cli-messaging` 的 `msg resource-download`。
 

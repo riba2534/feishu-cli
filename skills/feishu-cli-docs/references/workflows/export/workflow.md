@@ -11,10 +11,12 @@
 | `/sheets/<token>` 或 spreadsheet_token → Markdown/CSV/XLSX | `feishu-cli sheet export` |
 | 需要 PDF / Word / Excel 文件 | `feishu-cli doc export-file`（仅裸 token）或 `feishu-cli drive export`（支持 URL/wiki、可续跑） |
 | 单个图片、附件或画板缩略图 | `feishu-cli doc media-download` |
+| "看一下 / 预览"某个图片或附件素材，评论里的图片 | `feishu-cli doc media-preview` |
+| 文档封面图 | `feishu-cli doc resource download`（见 `../write/workflow.md` 的「文档封面」） |
 
 ## 身份
 
-- `doc export`、`wiki export`、`doc export-file`、`doc media-download` 属于读类：User 优先、Bot（Tenant）兜底。已 `auth login` 时自动用 User Token；User Token 损坏或刷新失败时会在 stderr 告警后改用 Bot（stdout 不受影响），看到告警说明已不是用户身份。
+- `doc export`、`wiki export`、`doc export-file`、`doc media-download`、`doc media-preview` 属于读类：User 优先、Bot（Tenant）兜底。已 `auth login` 时自动用 User Token；User Token 损坏或刷新失败时会在 stderr 告警后改用 Bot（stdout 不受影响），看到告警说明已不是用户身份。
 - `sheet export` 另有 `--as bot|user|auto`；不传时同上（User 优先、告警后回退 Bot）。
 - `drive export` 用 `--as bot|user|auto`（默认 auto：已配置 User 但解析/刷新失败时直接报错，不静默切 Bot）；cron 场景显式 `--as bot`。
 
@@ -155,6 +157,21 @@ feishu-cli doc media-download <media_token> --doc-token <docx_token> -o ./image.
 - 目标文件已存在且未加 `--overwrite` 时**拒绝覆盖并以退出码 2 报错**；下载先写同目录临时文件，识别类型、检查覆盖后再原子改名，失败不会留下半截文件。
 - `--timeout` 默认 5 分钟总时长，大文件可调到 `30m` / `1h`；单个素材超过 100MB 时报错。
 - HTTP 403 时按提示补 `--doc-token`（文档内嵌素材按文档鉴权），并确认当前身份对文档有下载权限；`--extra` 可直接传原始 extra JSON，优先于 `--doc-token/--doc-type`。
+
+## 素材预览（doc media-preview）
+
+通过预览接口（`preview_download`，`preview_type=16` 源文件）保存素材，适合"看一下这张图 / 这个附件"；
+支持文档素材 token，也支持评论中的图片 token。画板缩略图不走这里，用 `doc media-download --type whiteboard`。
+
+```bash
+# -o 不带扩展名时按内容自动补（如 ./asset.png）；未传 -o 时以 token 为文件名
+feishu-cli doc media-preview <file_token> -o ./asset
+feishu-cli doc media-preview <file_token> -o ./asset.png --overwrite --output-format json
+```
+
+- 覆盖规则与 media-download 相同：目标已存在且未加 `--overwrite` 时以退出码 2 拒绝；先写同目录临时文件再原子改名。
+- `--output-format json` 输出 `saved_path`、`size_bytes`、`content_type`；`--timeout` 设总时长上限（默认只受空闲超时约束）。
+- token 只接受字母、数字、`_`、`-`（否则退出码 2）；403 / 1061004 表示当前身份无权读取素材所属文档。
 
 ## 已知限制
 
