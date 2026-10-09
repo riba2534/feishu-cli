@@ -15,7 +15,9 @@
 - `content` 字段是 **JSON 字符串**，不是 JSON 对象
 - 换行使用 `\n`
 - text 类型的 `@` 语法（`<at user_id="ou_xxx">`）与卡片 Markdown 的 `@` 语法（`<at id=ou_xxx>`）不同
-- **大小限制**：text 类型 150 KB，post/interactive 类型 30 KB
+- **大小限制**：text 类型请求体 150 KB，post/interactive 类型 30 KB（超限返回 230025）
+- 用 CLI 发送时，`--text` / `--markdown` / `--image` / `--file` / `--audio` / `--video` 会替你构造 content；
+  只有需要精确控制结构时才手写本页 JSON 并用 `--content` / `--content-file` 发送
 
 ---
 
@@ -165,28 +167,31 @@ feishu-cli msg send \
 
 ## image（图片消息）
 
-需先通过 `feishu-cli media upload` 上传图片获取 `image_key`。
-
 ```json
 {"image_key": "img_v2_xxx"}
 ```
 
+`image_key` 来自 IM 图片上传，不是 `media upload` 返回的文档素材 token。直接传本地路径，CLI 会先上传再发送。
+
 ### CLI 示例
 
 ```bash
-# 先上传图片
-feishu-cli media upload screenshot.png --parent-type docx_image --parent-node <doc_id>
-# 获取返回的 image_key，然后发送
+# 本地图片：自动上传后发送
 feishu-cli msg send \
   --receive-id-type email --receive-id user@example.com \
-  --msg-type image --content '{"image_key":"img_v2_xxx"}'
+  --image ./screenshot.png
+
+# 已有当前应用可用的 image_key
+feishu-cli msg send \
+  --receive-id-type email --receive-id user@example.com \
+  --image img_v2_xxx
 ```
 
 ---
 
 ## file（文件消息）
 
-需先上传文件获取 `file_key`。
+CLI 用 `--file <本地路径或 file_key>`，本地文件（≤30 MB）自动上传。
 
 ```json
 {"file_key": "file_v2_xxx"}
@@ -196,7 +201,7 @@ feishu-cli msg send \
 
 ## audio（语音消息）
 
-需先上传语音文件获取 `file_key`。仅支持 opus 编码。
+仅支持 Opus 编码。CLI 用 `--audio <.opus/.ogg 路径或 file_key>`，本地文件自动上传并解析时长。
 
 ```json
 {"file_key": "file_v2_xxx"}
@@ -206,7 +211,7 @@ feishu-cli msg send \
 
 ## media（视频消息）
 
-需先上传视频获取 `file_key` 和封面 `image_key`。
+CLI 用 `--video <MP4 路径或 file_key> --video-cover <图片路径或 image_key>`，二者缺一不可，本地文件自动上传。
 
 ```json
 {
@@ -354,23 +359,13 @@ feishu-cli msg send \
 
 ### CLI 示例
 
-> ⚠️ **CLI 当前不直接支持 `--msg-type system`**：`feishu-cli msg send` 的校验白名单仅接受
-> `text/post/image/file/audio/media/sticker/interactive/share_chat/share_user`。如需发送系统消息
-> （如 divider），请直接通过 OpenAPI 或飞书 SDK 调用 `/im/v1/messages` 端点。
+`feishu-cli msg send` 的 `--msg-type` 白名单不含 `system`，用 `feishu-cli api` 透传（content 仍是 JSON 字符串）：
 
 ```bash
-# 协议层示例（需自行通过 OpenAPI 调用）：
-cat > /tmp/system.json << 'EOF'
-{
-  "type": "divider",
-  "params": {
-    "divider_text": {
-      "text": "分割线",
-      "i18n_text": {"zh_CN": "新话题"}
-    }
-  },
-  "options": {"need_rollup": true}
-}
-EOF
-# 用 curl 调 /open-apis/im/v1/messages，msg_type=system，content=$(cat /tmp/system.json)
+feishu-cli api POST /open-apis/im/v1/messages --as bot \
+  --params '{"receive_id_type":"open_id"}' \
+  --data '{"receive_id":"ou_xxx","msg_type":"system","content":"{\"type\":\"divider\",\"params\":{\"divider_text\":{\"text\":\"新会话\"}},\"options\":{\"need_rollup\":true}}"}' \
+  --dry-run
 ```
+
+确认请求体无误后去掉 `--dry-run` 再执行。

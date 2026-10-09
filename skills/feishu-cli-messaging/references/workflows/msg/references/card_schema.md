@@ -514,9 +514,9 @@ feishu-cli msg send \
 
 ## 注意事项
 
-1. **大小限制**：卡片 JSON 最大 30 KB，超出时精简内容或拆分多条消息
-2. **按钮回调**：`url` 属性可直接跳转（无需服务端）；`value` 属性需要应用服务端处理回调事件
-3. **图片引用**：卡片中的 `img_key` 需要通过飞书 API 上传获取，不能直接使用外部 URL
+1. **大小限制**：卡片请求体最大 30 KB（超限返回 230025；template_id 卡片按模板数据计），超出时精简内容或拆分多条消息
+2. **按钮回调**：`url` 属性可直接跳转（无需服务端）；`value` 回调需要应用接收 `card.action.trigger`（可用 `../../event/workflow.md` 的 `event consume card.action.trigger` 消费）
+3. **图片引用**：`img_key` 不能直接写外部 URL；本地图片写路径并在发送时加 `--upload-images`，CLI 会上传后替换为 key
 4. **Markdown 差异（仅 v1）**：v1 卡片 Markdown（lark_md）不支持标题、列表等常见语法，仅支持加粗/斜体/删除线/链接/代码/颜色/@人；schema 2.0 的 `markdown` 组件支持 CommonMark 与 `<font>` 全色，见 `../../card/references/components.md`
 5. **v1 vs v2**：新增卡片优先用 v2；v1 仅用于历史兼容排查
 6. **颜色语义**：header 颜色应与消息语义匹配（绿=成功、红=错误、橙=警告、蓝=通知）
