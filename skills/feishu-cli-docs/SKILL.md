@@ -23,11 +23,13 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 | 把 Markdown 文件导入为飞书 docx（含 Mermaid/PlantUML/SVG 转画板） | `references/workflows/import/workflow.md` |
 | 导出 docx/wiki/sheet 到本地 Markdown/PDF/Word/Excel，下载文档内图片、附件或画板缩略图 | `references/workflows/export/workflow.md` |
 | 上传、下载、覆盖、查找替换或比较云盘原生 `.md` | `references/workflows/markdown/workflow.md` |
+| 读取已有思维笔记的节点，新增子节点或更新节点（`mindnote nodes list/create`） | `references/workflows/mindnote/workflow.md` |
 
 ## 关键边界
 
 - “查看并总结”走 read；明确要求保存到路径才走 export。
 - Markdown 转为可阅读 docx 走 import；把 `.md` 源文件原样存入云盘走 markdown。
+- `mindnote nodes create` 只在已有思维笔记里新增/更新节点，不新建思维笔记；新建思维导图走 `feishu-cli-visual` 的画板。
 - DOCX/XLSX 等二进制文件导入走 `feishu-cli-storage` 的 drive 工作流。
 - `doc htmlbox` 属于 `feishu-cli-visual`；权限和转移所有权属于 `feishu-cli-storage`。
 
