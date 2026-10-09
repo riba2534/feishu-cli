@@ -56,7 +56,8 @@
 
 ## search docs：参数与输出
 
-请求走 `/open-apis/suite/docs-api/search/object`，只返回当前用户有权访问的文档。
+底层与官方 CLI 一致使用 Search v2（`POST /open-apis/search/v2/doc_wiki/search`），只返回当前用户有权访问的文档。
+下表按旧实现整理，切换到 v2 后参数取值与输出字段若与 `search docs --help` 不一致，以 `--help` 为准。
 
 | 参数 | 说明 |
 |------|------|

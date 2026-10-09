@@ -36,6 +36,7 @@
 feishu-cli search docs "关键词" [--docs-types docx,wiki] [--count 20] [--offset 0] [--owner-ids ou_xxx] [--chat-ids oc_xxx] [-o json]
 ```
 
+- 下列取值范围与输出字段按旧实现整理；底层切到 Search v2 后若与 `--help` 不一致，以 `--help` 为准。
 - `--count` 0–50（默认 20），`--offset` 需满足 `offset + count < 200`，最多翻到第 200 条。
 - `--docs-types` 用小写：`doc` `docx` `sheet` `slides` `bitable` `mindnote` `file` `wiki` `shortcut`。
 - 结果的 `URL` 按配置品牌拼成 `https://www.feishu.cn/...`（Lark 为 `https://www.larksuite.com/...`），打开后由服务端重定向到租户域名。
@@ -47,13 +48,12 @@ feishu-cli search docs "技术方案" --docs-types docx,wiki
 feishu-cli search docs "季度报告" --count 20 --offset 20 -o json
 ```
 
-### `search docs`（v1）与 `drive search`（v2）
+### `search docs` 与 `drive search`
 
-`search docs` 走 `/open-apis/suite/docs-api/search/object`，过滤只有所有者、所在群和类型；`drive search` 支持文件夹
-（`--folder-tokens`）、知识库（`--space-ids`）、创建者/分享者、仅标题/仅评论与排序。两者都需要 `search:docs:read`：
-粗筛用 `search docs`，按位置或维度精筛用 `drive search`。
-
-`drive search` 走 `/open-apis/search/v2/doc_wiki/search`（扁平 filter），必须 User Token，没有 `--as`：
+两者底层与官方 CLI 一致，都使用 Search v2（`POST /open-apis/search/v2/doc_wiki/search`），都必须 User Token（没有 `--as`）、
+需要 `search:docs:read`；区别在 CLI 暴露的过滤参数：`search docs` 面向关键词粗筛（类型、所有者、所在群），
+`drive search` 提供文件夹（`--folder-tokens`）、知识空间（`--space-ids`）、创建者/分享者、仅标题/仅评论与排序等扁平 filter，
+按位置或维度精筛时用它。`search docs` 切换到 v2 后参数取值与输出字段以当前二进制 `search docs --help` 为准。
 
 ```bash
 feishu-cli drive search --query "季度报告" --doc-types DOCX,SHEET --sort edit_time
