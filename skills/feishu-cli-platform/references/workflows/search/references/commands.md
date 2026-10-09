@@ -56,16 +56,17 @@
 
 ## search docs：参数与输出
 
-底层与官方 CLI 一致使用 Search v2（`POST /open-apis/search/v2/doc_wiki/search`），只返回当前用户有权访问的文档。
-下表按旧实现整理，切换到 v2 后参数取值与输出字段若与 `search docs --help` 不一致，以 `--help` 为准。
+底层与官方 CLI 一致使用 Search v2（`POST /open-apis/search/v2/doc_wiki/search`，与 `drive search` 同一端点），只返回当前用户
+有权访问的文档，默认同时搜云盘与知识库。
 
 | 参数 | 说明 |
 |------|------|
-| `--count` | 返回数量 0–50，默认 20 |
-| `--offset` | 偏移量，`offset + count < 200` |
-| `--owner-ids` | 文件所有者 open_id（逗号分隔） |
+| `--count` | 每页数量 1–20，默认 20（超过 20 按 20 处理并在 stderr 提示） |
+| `--page-token` | 上一页输出的 `PageToken` |
+| `--offset` | 已废弃：传大于 0 的值报用法错误，改用 `--page-token` |
+| `--owner-ids` | 文件所有者 open_id（逗号分隔，映射 v2 `creator_ids`） |
 | `--chat-ids` | 文件所在群 ID（逗号分隔） |
-| `--docs-types` | 小写类型（逗号分隔）：`doc` 旧版文档、`docx` 新版文档、`sheet`、`slides`、`bitable`、`mindnote`、`file`、`wiki`、`shortcut` |
+| `--docs-types` | 小写类型（逗号分隔）：`doc` 旧版文档、`docx` 新版文档、`sheet`、`slides`、`bitable`、`mindnote`、`file`、`wiki`、`shortcut`、`folder`、`catalog` |
 
 `-o json` 输出：
 
@@ -73,6 +74,7 @@
 {
   "Total": 35,
   "HasMore": true,
+  "PageToken": "<下一页游标>",
   "ResUnits": [
     {
       "DocsToken": "doc_token_xxx",

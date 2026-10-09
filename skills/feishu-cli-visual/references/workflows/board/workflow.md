@@ -285,7 +285,7 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 | `feishu-cli board clone <src> <dst>` | 克隆画板（目标应为空画板；默认 Bot 读源画板） | `--batch-size`（默认 10）`--interval`（默认 1s）`--filter-types` `--dry-run` |
 | `feishu-cli board upload-image <board_id> photo.png` | 图片转 image 节点（支持 jpeg/png/gif/webp/bmp/tiff，只读文件头取尺寸；EXIF Orientation 5-8 旋转的 JPEG——手机竖拍照片最常见——无法自动取尺寸，会报错要求显式 `--width/--height`） | `--x` `--y` `--width` `--height` `--dry-run` |
 | `feishu-cli board lint <board_id>` | 几何质检 | 无 |
-| `feishu-cli board export-code <board_id>` | 反向导出 SVG；`--source` 取回 Mermaid/PlantUML 源码 | `--output-path` `--merge` `--source` `--node-id` |
+| `feishu-cli board export-code <board_id>` | 反向导出 SVG；`--source` 取回 Mermaid/PlantUML 源码 | `--output-path` `--merge` `--source` `--node-id` `--overwrite`（输出文件已存在时默认报错） |
 | `feishu-cli board svg-export <board_id> --output-path board.svg` | 服务端整板渲染 SVG 快照 | `--output-path` `--overwrite`（目标已存在时必须） |
 
 ---

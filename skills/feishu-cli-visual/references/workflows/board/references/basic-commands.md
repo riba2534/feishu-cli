@@ -69,7 +69,7 @@ feishu-cli board import <whiteboard_id> "graph TD; A-->B" \
 ## 取回图表源码
 
 服务端导入的 Mermaid / PlantUML 图表在 section 节点上保留 `syntax.code`，可原样取回再编辑（多个图表时不带
-`--node-id` 会列出候选并以 exit 2 退出；`--output-path` 已存在时直接覆盖）：
+`--node-id` 会列出候选并以 exit 2 退出；`--output-path` 已存在时默认报错、不覆盖，加 `--overwrite` 覆盖）：
 
 ```bash
 feishu-cli board export-code <whiteboard_id> --source                          # 只有一个图表时直接打印

@@ -33,19 +33,23 @@
 ## 搜索云文档
 
 ```bash
-feishu-cli search docs "关键词" [--docs-types docx,wiki] [--count 20] [--offset 0] [--owner-ids ou_xxx] [--chat-ids oc_xxx] [-o json]
+feishu-cli search docs "关键词" [--docs-types docx,wiki] [--count 20] [--page-token <page_token>] [--owner-ids ou_xxx] [--chat-ids oc_xxx] [-o json]
 ```
 
-- 下列取值范围与输出字段按旧实现整理；底层切到 Search v2 后若与 `--help` 不一致，以 `--help` 为准。
-- `--count` 0–50（默认 20），`--offset` 需满足 `offset + count < 200`，最多翻到第 200 条。
-- `--docs-types` 用小写：`doc` `docx` `sheet` `slides` `bitable` `mindnote` `file` `wiki` `shortcut`。
+- 底层是 Search v2，默认同时搜云盘与知识库。`--count` 1–20（默认 20，超过 20 按 20 处理并在 stderr 提示）；
+  翻页用上一页输出的 `--page-token`。`--offset` 已废弃，传大于 0 的值报用法错误（退出码 2）。
+- `--docs-types` 用小写：`doc` `docx` `sheet` `slides` `bitable` `mindnote` `file` `wiki` `shortcut` `folder` `catalog`；
+  `--owner-ids` 映射为 v2 的 `creator_ids` 过滤，`--chat-ids` 映射为 `chat_ids`。
+- JSON 保留 `Total` / `HasMore` / `ResUnits`（`DocsToken`/`DocsType`/`Title`/`OwnerID`/`URL`）并新增 `PageToken`；
+  `DocsType` 为小写类型名，`Title` 已去掉 `<h>` 高亮标记。
 - 结果的 `URL` 按配置品牌拼成 `https://www.feishu.cn/...`（Lark 为 `https://www.larksuite.com/...`），打开后由服务端重定向到租户域名。
 - 后续操作必须看 `DocsType`，不能把所有 `DocsToken` 都交给 `doc` 命令：docx 走 doc，sheet 走 sheet，
   wiki 先按节点类型解析，bitable/file/slides 分别走对应命令。
 
 ```bash
 feishu-cli search docs "技术方案" --docs-types docx,wiki
-feishu-cli search docs "季度报告" --count 20 --offset 20 -o json
+feishu-cli search docs "季度报告" --count 10 -o json
+feishu-cli search docs "季度报告" --count 10 --page-token "<上一页 PageToken>"
 ```
 
 ### `search docs` 与 `drive search`
@@ -53,7 +57,7 @@ feishu-cli search docs "季度报告" --count 20 --offset 20 -o json
 两者底层与官方 CLI 一致，都使用 Search v2（`POST /open-apis/search/v2/doc_wiki/search`），都必须 User Token（没有 `--as`）、
 需要 `search:docs:read`；区别在 CLI 暴露的过滤参数：`search docs` 面向关键词粗筛（类型、所有者、所在群），
 `drive search` 提供文件夹（`--folder-tokens`）、知识空间（`--space-ids`）、创建者/分享者、仅标题/仅评论与排序等扁平 filter，
-按位置或维度精筛时用它。`search docs` 切换到 v2 后参数取值与输出字段以当前二进制 `search docs --help` 为准。
+按位置或维度精筛时用它。
 
 ```bash
 feishu-cli drive search --query "季度报告" --doc-types DOCX,SHEET --sort edit_time
@@ -129,7 +133,7 @@ feishu-cli search apps "关键词" [--page-size 20] [--page-token <token>] [--us
 | 99991679 提到 `search:app` / `search:docs:read`（退出码 3） | 用户未授权该 scope，或应用未开通（服务端对未开通的 user scope 也可能报 99991679） | `auth scopes --scope "<scope>"` 确认应用侧；`app_not_enabled` 先在开放平台开通，`user_not_granted` 执行 `auth login --scope "<scope>"` |
 | 99991672 | 应用未开通 scope | 按 stderr 的开放平台链接开通并发布，重新登录修不好 |
 | 搜索结果为空 | 关键词不匹配、无权限，或 `--as bot` 时应用看不到对应会话 | 换更宽泛的关键词，确认身份与可见范围 |
-| `offset + count` 超过 200 | 接口限制 | 最多翻到第 200 条结果 |
+| `search docs --offset` 报用法错误（退出码 2） | v2 端点只能按游标翻页 | 去掉 `--offset`，用上一页输出的 `--page-token` |
 
 ## 与其他技能的分工
 

@@ -40,7 +40,7 @@
 | calendar create-event/update-event/delete-event/attendee add·remove/event-share/event-transfer、task/tasklist 写命令（含 set-ancestor） | auto | 日程与任务是个人资源；操作应用自己的日历/任务时显式 `--as bot` |
 | calendar agenda、calendar event-search | auto | primary 日历与当前身份对应，不能混用两种身份的日历 ID |
 | msg reaction add/list/remove、msg pin/unpin/pins、chat get/update/delete | auto | reaction remove 只能删除同一身份添加的表情 |
-| msg read-users | 见特别要求 | 接口只返回调用身份自己发出的消息的已读情况：用 `--as` 按消息发送者选身份（Bot 发的用 `--as bot`，本人发的用 `--as user`）。不带 `--as` 的旧版本在已登录时会本地报错，改用 `api GET /open-apis/im/v1/messages/<om_xxx>/read_users --as bot\|user` |
+| msg read-users | auto | 只能查调用身份自己发出的消息：按消息发送者选身份，Bot 发的用 `--as bot`，本人发的用 `--as user`；auto 在已登录时走 User，查 Bot 发的消息必须显式 `--as bot` |
 | chat member list/add/remove、msg history（`--container-id`）、wiki space-list | auto（告警回退） | 已配置 User 但不可用时 stderr 告警后改用 Bot（不 fail-closed）。外部群推荐 `--as bot`（需对外共享能力 App 且 Bot 已入群）。`msg history --user-id/--user-email`（单聊）始终需要 User |
 | wiki delete、wiki delete-space、wiki node-copy | auto | 已配置 User 但不可用时直接失败 |
 | drive update-title/version-history/version-get | auto | — |
