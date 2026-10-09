@@ -20,15 +20,14 @@
 
 ## HTML 组件（html5-block）
 
-官方用 `<html5-block path="@./widget.html"/>` 在建文档时内嵌单文件 HTML。本项目的 `doc create` / `doc content-update`
-**暂不支持**该写法（服务端报 `degrade_code=5002`，`data-ref` 缺 `reference_map` 时报 `2121`，均实测）。改用两步：
+把完整的单文件 HTML 存为本地 `.html` 文件（建议放在草稿工作区），XML 中写 `<html5-block path="@./widget.html"/>`；
+`doc create --doc-format xml` / `doc content-update --doc-format xml` 会读取文件并转为 `reference_map` 写入。
+标签体必须为空，HTML 不能直接写在 `<html5-block>` 与 `</html5-block>` 之间；`data` 属性保留给 CLI 内部使用。
+读取时 `<html5-block data-ref="html5_1"></html5-block>` 只是占位，HTML 内容在响应的 `reference_map` 中。
 
-1. 正文用 `doc create --doc-format xml` 建好，需要组件的位置先留一段占位说明或直接放在文末；
-2. 用 `feishu-cli doc htmlbox create <document_id> --html-file ./<work_dir>/widget.html` 插入妙笔 BOX 组件，
-   制作与调试规范见 `feishu-cli-visual` 的 htmlbox 工作流。
-
-`doc script --command parse` 仍按官方语义预检 `<html5-block path>` 指向的文件是否可读，便于草稿阶段统一检查资源。
-HTML 本身的写法（官方建议，写入 htmlbox 前同样适用）：
+妙笔 BOX（`feishu-cli doc htmlbox create <document_id> --html-file ./widget.html`，规范见 `feishu-cli-visual` 的 htmlbox 工作流）
+是另一种块类型：实测回读为 `<readonly-block type="isv">`，不是 `html5-block`，适合给已有文档单独追加动态组件。
+`html5-block` 的 HTML 文件格式：
 
 ```html
 <!doctype html>
@@ -36,6 +35,7 @@ HTML 本身的写法（官方建议，写入 htmlbox 前同样适用）：
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="use-iframe" content="true">
   <meta name="html-box-height-mode" content="auto">
   <meta name="description" content="内容摘要，帮助理解该组件的用途">
   <title></title>
@@ -46,9 +46,10 @@ HTML 本身的写法（官方建议，写入 htmlbox 前同样适用）：
 </html>
 ```
 
-- 高度模式只用 `auto`（正文在文档中完整展开，普通文档流，根容器不设固定高度或 `overflow: hidden`）或
+- `html-box-height-mode` 必须在 `<head>` 中显式声明（CLI 原样写入、不做校验）。高度模式只用 `auto`（正文在文档中完整展开，普通文档流，根容器不设固定高度或 `overflow: hidden`）或
   `viewport`（`100vh` + 内部滚动 / 切页 / 缩放，适合游戏、幻灯片、Dashboard、canvas）。
 - 文档常见可用宽度约 820 px；根容器用 `width: 100%`、`max-width: 100%`、`box-sizing: border-box`。
+- 页面加载后再追加或展开的内容不会触发高度刷新，不要臆造相关 flag。
 - HTML 总长度控制在 500KB 内；不要内联大图片、Base64、字体、长 JSON/CSV 或大量 mock 数据。
 
 ## OKR 块
