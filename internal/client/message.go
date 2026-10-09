@@ -1795,45 +1795,70 @@ func ExpandThreadReplies(result *ListMessagesResult, userAccessToken string, per
 	}
 }
 
-// GetReadUsers gets the list of users who have read a message
+// GetReadUsers 查询消息已读用户（GET /open-apis/im/v1/messages/{message_id}/read_users）。
+//
+// 接口同时接受 User 与 Tenant 身份：User 可查本人 7 天内发送的消息，Bot 可查 Bot 自己 7 天内
+// 发送的消息（对齐官方 CLI catalog im.messages.read_users）。SDK 的 Im.Message.ReadUsers 把
+// SupportedAccessTokenTypes 写死为 [Tenant]，带 User Token 时在本地报
+// "tenant token type not match user access token"，因此改用按 token 类型显式发起的原始请求 +
+// CheckAPIResponse。userAccessToken 为空时使用 App(Tenant) Token。
 func GetReadUsers(messageID string, userIDType string, pageSize int, pageToken string, userAccessToken string) (*ReadUsersResult, error) {
-	client, err := GetClient()
+	cli, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
 
-	reqBuilder := larkim.NewReadUsersMessageReqBuilder().
-		MessageId(messageID).
-		UserIdType(userIDType)
-
+	query := url.Values{}
+	if userIDType != "" {
+		query.Set("user_id_type", userIDType)
+	}
 	if pageSize > 0 {
-		reqBuilder.PageSize(pageSize)
+		query.Set("page_size", strconv.Itoa(pageSize))
 	}
 	if pageToken != "" {
-		reqBuilder.PageToken(pageToken)
+		query.Set("page_token", pageToken)
+	}
+	apiPath := fmt.Sprintf("/open-apis/im/v1/messages/%s/read_users", url.PathEscape(messageID))
+	if encoded := query.Encode(); encoded != "" {
+		apiPath += "?" + encoded
 	}
 
-	resp, err := client.Im.Message.ReadUsers(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Get(Context(), apiPath, nil, tokenType, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("查询消息已读用户失败: %w", err)
 	}
+	if err := CheckAPIResponse("查询消息已读用户", resp); err != nil {
+		return nil, err
+	}
 
-	if !resp.Success() {
-		return nil, fmt.Errorf("查询消息已读用户失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	var apiResp struct {
+		Data struct {
+			Items []struct {
+				UserIDType string `json:"user_id_type"`
+				UserID     string `json:"user_id"`
+				Timestamp  string `json:"timestamp"`
+				TenantKey  string `json:"tenant_key"`
+			} `json:"items"`
+			HasMore   bool   `json:"has_more"`
+			PageToken string `json:"page_token"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("查询消息已读用户失败: 解析响应失败: %w", err)
 	}
 
 	result := &ReadUsersResult{
-		PageToken: StringVal(resp.Data.PageToken),
-		HasMore:   BoolVal(resp.Data.HasMore),
+		PageToken: apiResp.Data.PageToken,
+		HasMore:   apiResp.Data.HasMore,
 	}
-	for _, item := range resp.Data.Items {
+	for _, item := range apiResp.Data.Items {
 		result.Items = append(result.Items, &ReadUser{
-			UserIDType: StringVal(item.UserIdType),
-			UserID:     StringVal(item.UserId),
-			Timestamp:  StringVal(item.Timestamp),
-			TenantKey:  StringVal(item.TenantKey),
+			UserIDType: item.UserIDType,
+			UserID:     item.UserID,
+			Timestamp:  item.Timestamp,
+			TenantKey:  item.TenantKey,
 		})
 	}
-
 	return result, nil
 }
