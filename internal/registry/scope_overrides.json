@@ -55,6 +55,7 @@
       "okr:okr.progress:writeonly",
       "search:docs:read",
       "search:message",
+      "slides:presentation:screenshot",
       "spark:app:read",
       "spark:app:write"
     ],
