@@ -36,7 +36,7 @@
 
 ## 图片
 
-- 网络图片 `![说明](https://example.com/photo.png)` 由服务端下载（实测），说明文字成为图片标题；对应 XML 为 `<img href="..."/>`。
-- 本地图片 `![说明](@./images/photo.png)`（路径含空格时写 `![说明](<@./images/product shot.png>)`）只在 `content-update` 中自动上传；
-  `doc create --content` 带本地图片会以退出码 2 拒绝，改用 `doc import` 或先建文档再 `content-update`。
+- 网络图片 `![说明](https://example.com/photo.png)` 会被下载并插入（实测），说明文字成为图片标题；对应 XML 为 `<img href="..."/>`。
+- 本地图片写 `![说明](@./images/photo.png)`（路径含空格时写 `![说明](<@./images/product shot.png>)`），由 CLI 上传并绑定，
+  说明文字成为图片标题；附件用 XML 写法 `<source path="@./files/report.pdf"/>`。
 - 不支持 Base64 Data URI 图片，先解码为本地文件再按本地图片写入。

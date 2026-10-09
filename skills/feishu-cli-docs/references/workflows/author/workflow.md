@@ -58,7 +58,7 @@ adapter 只调整与 contract 兼容的平台结构、文风和组件约束。
    | 同组字段的精确比较或映射 | `table` |
    | 流程、依赖、分支、时序、层级、因果、空间或拓扑关系 | `whiteboard` |
    | 对象、场景、界面、外观、氛围、示例或视觉证据 | `img` |
-   | 复杂交互、动态状态、可探索数据或应用式布局 | HTML 组件（建文档后用 `doc htmlbox create` 插入） |
+   | 复杂交互、动态状态、可探索数据或应用式布局 | `html5-block` |
    | 两组简短、等权且适合横向阅读的信息 | `grid` |
    | 单个关键提醒或限制 | `callout` |
    | 简单并列、步骤或连续论述 | 列表或段落 |
@@ -112,12 +112,11 @@ feishu-cli doc script --command init-draft --presentation-decision '<上方完�
 
 1. XML 以唯一的 `<title>` 开头，直接写入 `<cwd>/<draft_path>`。新资源放在 `<cwd>/<work_dir>` 下，已有资源原地复用；
    当前目录内优先用 `@./相对路径`，其他位置用 `@绝对路径`（敏感目录会被拒绝）。
-2. 资源写法（本项目实测边界，详见 `docx-xml.md`）：
-   - 公开网络图片 `<img href="URL"/>`：`doc create` 时由服务端下载；
-   - 本地图片 / 附件 `<img path="@./<work_dir>/a.png"/>`、`<source path="@..."/>`：`doc create` 不支持，
-     建文档后用 `doc content-update --doc-format xml` 写入；
-   - 画板：把 Mermaid / PlantUML / SVG 源码内联在 `<whiteboard type="...">` 标签内（不支持 `path=` 文件写法）；
-   - HTML 组件：草稿里不写 `<html5-block>`，建文档后用 `doc htmlbox create` 插入。
+2. 资源写法（详见 `docx-xml.md`）：公开网络图片用 `<img href="URL"/>`（由服务端下载，须公网可达）；已有本地图片用 `<img path="@./downloads/image.png"/>`，
+   附件用 `<source path="@./<work_dir>/report.pdf"/>`；画板用 `<whiteboard type="svg" path="@./<work_dir>/diagram.svg"/>`
+   （也可把 Mermaid / PlantUML / SVG 源码内联在标签内，复杂画板按 `feishu-cli-visual` 的 board 工作流制作）；
+   HTML 组件用 `<html5-block path="@./<work_dir>/widget.html"/>`，HTML 规范见 `docx-xml-extended-blocks.md`。
+   `doc create` 与 `doc content-update` 的 XML 写入会由 CLI 上传并绑定这些本地文件。
 3. 首次写入后发现 XML 问题只修最小范围，不无故重写正确内容。
 
 ### Step 6：Draft Profile Check
@@ -139,10 +138,9 @@ feishu-cli doc script --command init-draft --presentation-decision '<上方完�
    草稿已含 `<title>`，**不要再传 `--title`**（否则服务端过滤重复标题并返回 warning `degrade_code=1017`）。
    需要放到指定位置时加 `--folder` / `--parent-token`（知识库节点）/ `--parent-position`；身份、授权与 owner 交付见 `../write/workflow.md`。
 2. 返回 `warnings`、局部资源失败或回读发现问题时，**不要再次新建文档**：按 `../write/workflow.md` 用
-   `doc content-update` 对已建文档做最小范围修复（本地图片 / 附件、遗漏章节也用它补写），再用
+   `doc content-update --doc-format xml` 对已建文档做最小范围修复（失败的图片、附件、画板或遗漏章节都用它补写），再用
    `feishu-cli doc read <document_id> --engine docs_ai --with-ids` 回读确认。
-3. 需要 HTML 组件时：`feishu-cli doc htmlbox create <document_id> --html-file "./<work_dir>/widget.html"`（规范见 `feishu-cli-visual` 的 htmlbox 工作流）。
-4. 可用 `feishu-cli doc script --command parse --doc <document_id>` 复核线上文档的画像（`--presentation-decision "@./<work_dir>/.presentation-decision.json"` 复用同一基线）。
+3. 可用 `feishu-cli doc script --command parse --doc <document_id>` 复核线上文档的画像（`--presentation-decision "@./<work_dir>/.presentation-decision.json"` 复用同一基线）。
 
 ### Step 8：交付
 
@@ -151,6 +149,6 @@ feishu-cli doc script --command init-draft --presentation-decision '<上方完�
 ## 相关参考
 
 - [`references/doc-script.md`](references/doc-script.md)：`doc script` 参数、Presentation Decision 字段、诊断码与资源预检。
-- [`references/docx-xml.md`](references/docx-xml.md)：DocxXML 写作规范（标题编号、表格、画板、颜色、转义，含本项目实测边界）。
+- [`references/docx-xml.md`](references/docx-xml.md)：DocxXML 写作规范（资源、标题编号、表格、画板、颜色、转义）。
 - [`references/docx-xml-extended-blocks.md`](references/docx-xml-extended-blocks.md)：书签、按钮、日期提醒、电子表格、任务、HTML 组件、OKR。
 - [`references/docs-ai-markdown.md`](references/docs-ai-markdown.md)：用 Markdown 写入 docs_ai 时的转义与图片规则。

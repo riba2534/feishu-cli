@@ -343,7 +343,7 @@ func runDocScript(cmd *cobra.Command, _ []string) error {
 	}
 
 	content := contentInput.value
-	inputLabel := "--content"
+	inputLabel := " --content "
 	if docRef != nil {
 		content, err = fetchDocScriptContent(cmd, docRef)
 		if err != nil {
@@ -353,10 +353,8 @@ func runDocScript(cmd *cobra.Command, _ []string) error {
 	}
 	profile, err := docxparse.ParseCompatibleXML(content)
 	if err != nil {
-		if docRef != nil {
-			return fmt.Errorf("无法把%s解析为 DocxXML: %w", inputLabel, err)
-		}
-		return clierr.Usagef("无法把 %s 解析为 DocxXML: %v", inputLabel, err)
+		// 与官方一致：本地与在线内容解析失败都归为校验错误（退出码 2）
+		return clierr.Usage(fmt.Errorf("无法把%s解析为 DocxXML: %w", inputLabel, err))
 	}
 	publicProfile := docScriptPublicProfile{
 		WordCount:  profile.WordCount,
@@ -494,8 +492,9 @@ func resolveDocScriptDecision(cmd *cobra.Command, rawDecision, contentPath strin
 	}
 	decision, err := parseDocScriptDecision(stripUTF8BOM(string(raw)))
 	if err != nil {
-		return docScriptDecision{}, false, fmt.Errorf("已保存的 Presentation Decision（%s）无效，请勿手动修改该文件，重新执行 init-draft: %v",
-			savedPath, err)
+		// 与官方一致：已保存的决策损坏归为校验错误（退出码 2），修复方式是重新 init-draft 而不是重试
+		return docScriptDecision{}, false, clierr.Usage(fmt.Errorf("已保存的 Presentation Decision（%s）无效，请勿手动修改该文件，重新执行 init-draft: %w",
+			savedPath, err))
 	}
 	return decision, true, nil
 }

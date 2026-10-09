@@ -21,18 +21,22 @@
 
 ### 图片与附件
 
-| 写法 | 说明 | `doc create` | `content-update` |
-|---|---|---|---|
-| `<img href="https://..." caption="说明" width="600"/>` | 公开 HTTP(S) 网络图片，由服务端下载（实测） | 支持 | 支持 |
-| `<img src="FILE_TOKEN"/>` | 复制已有图片（token 来自 `doc read --engine docs_ai --detail full` 的 `<img src>`，实测） | 支持 | 支持 |
-| `<img path="@./photo.png" width="600"/>` | 本地图片，CLI 先上传再绑定（实测） | **不支持**（服务端 2127 降级丢弃） | 支持 |
-| `<source path="@./report.pdf" name="报告.pdf"/>` | 本地附件（实测） | **不支持** | 支持 |
+`doc create --doc-format xml` 与 `doc content-update --doc-format xml` 都支持以下写法，三种来源任选其一：
 
-- 可选属性：`width`、`height`、`caption`、`name`；`href` / `src` / `path` 三者只能选一个。
-- 内网或需要登录的图片先下载到草稿工作区，再用 `path`；远程图片须为 BMP、GIF、JPEG、PNG、TIFF 或 WebP，单图不超过 20MiB。
-  `doc script --command parse` 在有 Presentation Decision 时会预检这些约束。
-- 带本地图片 / 附件的正文：先用 `doc create` 写入不含本地资源的部分，再用 `doc content-update --mode append`
-  或 `--mode insert_after --block-id <锚点>` 以 `--doc-format xml` 写入含 `<img path>` / `<source path>` 的片段。
+| 写法 | 说明 |
+|---|---|
+| `<img path="@./photo.png" width="600" caption="说明"/>` | 本地图片：CLI 先上传素材再绑定到图片块 |
+| `<img href="https://example.com/photo.png" caption="说明"/>` | 公开 HTTP(S) 网络图片：由飞书服务端下载，URL 须公网可达（实测，回读为 `<img src>`） |
+| `<img src="FILE_TOKEN"/>` | 复制已有图片（token 来自 `doc read --engine docs_ai --detail full` 回读的 `<img src>`，实测） |
+| `<source path="@./report.pdf" name="报告.pdf"/>` | 本地附件；`<source token="FILE_TOKEN"/>` 复制已有附件（实测，复制时 `name` 不生效，沿用原文件名） |
+
+- 可选属性：`width`、`height`、`caption`、`name`；`path` / `href` / `src` 只能选一个，不能混用。
+- `path` / `<source path>` 的本地文件由 CLI 上传并绑定；`href` 不经过 CLI 下载，内网、需要登录或临时签名的图片服务端取不到，
+  先下载到草稿工作区再用 `path`。远程图片建议为 BMP、GIF、JPEG、PNG、TIFF 或 WebP 且不超过 20MiB（parse 预检按此检查）。
+- `<source>` 可独立成块（实测回读为 `<figure view-type="Preview">`）、写成 `<figure view-type="Card|Preview"><source .../></figure>`
+  指定卡片 / 预览视图（实测 `Card`），或放进 `<p>` 作为行内附件——行内附件只能放在段落末尾，其后的文字会被丢弃（实测）。
+- `path` 中 cwd 内的文件用 `@./相对路径`，其他目录用 `@绝对路径`（敏感目录会被拒绝）；相对路径先查 cwd，
+  仅文件不存在时再查源 XML 文件所在目录。`doc script --command parse` 在有 Presentation Decision 时会预检这些约束。
 
 ## 标题与列表编号
 
@@ -58,7 +62,9 @@
 - `<cite type="citation"><a href="URL" url-type="5">标题</a></cite>`：参考文献容器，只含多个 `<a>`（实测）。
   `url-type`：`5`（网页，须在 `<a></a>` 中写标题）、`1`（Docx）、`6`（妙记）、`12`（多维表格）、`13`（电子表格），后四种可留空。
 - `<whiteboard>`：画板，`type` 与 `token` 二选一：
-  - `type="mermaid" | "plantuml" | "svg"` 时在标签内直接写源码，源码中的换行原样保留（三种均实测）；`type="blank"` 新建空白画板（实测）：
+  - `type="mermaid" | "plantuml" | "svg"` 时可用 `path` 从文件导入：`<whiteboard type="svg" path="@./diagram.svg"/>`
+    （扩展名分别为 `.svg`、`.mmd` / `.mermaid`、`.puml` / `.plantuml` / `.pu` / `.uml`）；
+  - 也可在标签内直接写源码，源码中的换行原样保留（三种均实测）；`path` 与标签内源码不能同时出现；`type="blank"` 新建空白画板（实测）：
 
     ```xml
     <whiteboard type="mermaid">flowchart LR
@@ -67,7 +73,6 @@
     ```
 
   - `token="WHITEBOARD_TOKEN"` 复制已有画板（实测；官方写法 `src=` 在本项目所连服务端报 `degrade_code=5004`）。
-  - 官方的 `path="@./diagram.svg"` 文件写法本项目**暂不支持**（服务端报 `degrade_code=5002`），把文件内容内联到标签内。
   - 复杂图表、需要精确布局或后续编辑的画板，按 `feishu-cli-visual` 的 board 工作流制作。
 - `<grid><column width-ratio="0.5"><p>左栏</p></column><column width-ratio="0.5"><p>右栏</p></column></grid>`：各列 `width-ratio` 之和为 1（实测）。
 - `<callout emoji="💡" background-color="light-blue" border-color="blue"><p>高亮块内容</p></callout>`（实测）：
