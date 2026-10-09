@@ -1,3 +1,6 @@
+// 部分实现改编自 larksuite/cli（MIT License, Copyright (c) 2026 Lark Technologies Pte. Ltd.）：
+// 封面 --url 的安全边界、受限网段与文件名推断参考其 shortcuts/doc/doc_resource_cover.go。
+
 package client
 
 import (
