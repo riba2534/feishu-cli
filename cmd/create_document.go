@@ -35,8 +35,6 @@ var createDocumentCmd = &cobra.Command{
     ![说明](@./a.png)、![说明](./a.png)（相对 --content-file 所在目录）、
     <img path="@./a.png" width="600"/>、<source path="@./report.pdf" name="报告.pdf"/>
     <img> 的 width/height 按图片真实像素归一化，给出的显示宽度换算为 scale（对齐官方）。
-    <img href="https://..."/> 远程图片由 CLI 下载后上传（公网 http(s)、≤20MiB、常见图片格式）；
-    Markdown 的 ![](https://...) 仍交给服务端下载。
   本地 HTML / 画板源文件（markdown 与 xml 均可，围栏代码块内不处理）:
     <html5-block path="@./widget.html"/>             读取本地单文件 HTML 写入 HTML 块
     <whiteboard type="mermaid" path="@./flow.mmd"/>  读取本地源文件生成画板（svg|mermaid|plantuml）

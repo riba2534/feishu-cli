@@ -123,9 +123,6 @@ func runDocCreateDocsAI(cmd *cobra.Command, userAccessToken string) error {
 	if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
 		return printDocCreateDryRun(cmd, body, resources, userAccessToken)
 	}
-	if err := validateRemoteDocImages(resources); err != nil {
-		return err
-	}
 
 	data, createErr := client.CreateDocsAIDocument(body, userAccessToken)
 	if data == nil && createErr != nil {

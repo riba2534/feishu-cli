@@ -262,14 +262,6 @@ feishu-cli doc content-update <document_id> --mode append --markdown-file /tmp/w
 | `![说明](@./img.png)`、`![说明](<@./带 空格.png>)` | 官方写法，`@` 路径相对**当前目录** |
 | `<img path="@./img.png" width="600" align="center"/>` | XML 写法（`--doc-format xml` 时只认这种），路径相对当前目录；XML 内容来自文件时当前目录不存在则回退到文件所在目录 |
 | `<source path="@./report.pdf" name="报告.pdf"/>` | 本地附件 |
-| `<img href="https://example.com/a.png" width="600"/>` | 远程图片：文档写入成功后由 CLI 下载再上传绑定（见下） |
-
-远程图片 `<img href>`（XML 与 Markdown 中的该标签都处理）：只接受不带用户名密码的绝对 `http(s)` URL，
-不能与 `src`/`token`/`img_key`/`url` 并用；写入前解析 DNS，指向本机、内网、链路本地等地址或无法解析时以退出码 2 拒绝，
-不写文档。下载走独立的受控客户端（不带任何飞书凭证、最多 5 次重定向、禁止 HTTPS→HTTP 降级、每跳重新校验），
-`Content-Type` 必须是 BMP/GIF/JPEG/PNG/TIFF/WebP 且与内容一致，上限 20MiB，空响应报错；429/5xx/网络抖动最多重试 3 次。
-下载失败按资源失败处理（清理占位块、退出码 1）。输出与 dry-run 中的地址去掉了 query，避免泄露签名参数。
-Markdown 的 `![说明](https://...)` 不受影响，仍原样交给服务端下载。
 
 `<img>` 尺寸按官方归一化：`width/height` 改为图片真实像素，给出的显示尺寸换算为 `scale`
 （优先级 `scale` > `width` > `height`，支持百分比如 `width="50%"`）；都没给且原图宽度 ≥1020px 时缩放到略小于页面宽度。

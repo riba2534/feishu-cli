@@ -6,14 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/pflag"
 )
@@ -24,7 +22,6 @@ type fakeDocWriteServer struct {
 	creates  []map[string]any
 	puts     []map[string]any
 	uploads  []string // parent_node|parent_type
-	names    []string // file_name
 	batches  []map[string]any
 	failFile bool
 	calls    int
@@ -78,7 +75,6 @@ func (f *fakeDocWriteServer) handler(t *testing.T) http.HandlerFunc {
 			_ = r.ParseMultipartForm(1 << 20)
 			parent := r.FormValue("parent_node")
 			f.uploads = append(f.uploads, parent+"|"+r.FormValue("parent_type"))
-			f.names = append(f.names, r.FormValue("file_name"))
 			if f.failFile && r.FormValue("parent_type") == "docx_file" {
 				w.WriteHeader(http.StatusBadRequest)
 				fmt.Fprint(w, `{"code":1061002,"msg":"params error"}`)
@@ -302,8 +298,7 @@ func TestContentUpdateDryRunNoNetwork(t *testing.T) {
 	initDocUpdateTestConfig(t, server.URL)
 
 	stdout, err := runContentUpdateFlags(t, "https://example.feishu.cn/wiki/wikcnXXX", map[string]string{
-		"mode": "insert_after", "selection-by-title": "## 目标", "dry-run": "true",
-		"markdown": "![图](@a.png)\n\n<html5-block path=\"@w.html\"/>\n\n<img href=\"https://img.example.com/r.png?sig=x\"/>",
+		"mode": "insert_after", "selection-by-title": "## 目标", "markdown": "![图](@a.png)\n\n<html5-block path=\"@w.html\"/>", "dry-run": "true",
 	})
 	if err != nil {
 		t.Fatalf("dry-run 失败: %v", err)
@@ -312,97 +307,9 @@ func TestContentUpdateDryRunNoNetwork(t *testing.T) {
 		t.Fatalf("dry-run 不应联网，实际请求 %d 次", f.calls)
 	}
 	for _, want := range []string{`"dry_run": true`, `/open-apis/wiki/v2/spaces/node_by_token`, `"block_id": "<定位到的锚点块>"`,
-		`/blocks/batch_update`, `upload_all`, `"reference_map"`, `"mode": "insert_after"`,
-		`"url": "https://img.example.com/r.png"`, `<remote_image_2_filename>`} {
+		`/blocks/batch_update`, `upload_all`, `"reference_map"`, `"mode": "insert_after"`} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("dry-run 输出缺少 %s:\n%s", want, stdout)
 		}
-	}
-	if strings.Contains(stdout, "sig=x") {
-		t.Fatalf("dry-run 不应输出远程地址的 query:\n%s", stdout)
-	}
-}
-
-// stubRemoteImages 替换远程图片的 DNS 校验与下载（不访问外网）；fail 非空时下载返回该错误。
-func stubRemoteImages(t *testing.T, w, h int, fail error) *[]string {
-	t.Helper()
-	var got []string
-	origCheck, origDownload := checkRemoteImageURL, downloadRemoteImage
-	t.Cleanup(func() { checkRemoteImageURL, downloadRemoteImage = origCheck, origDownload })
-	checkRemoteImageURL = func(raw string) error {
-		if strings.Contains(raw, "127.0.0.1") {
-			return fmt.Errorf("不允许指向本机或内网地址")
-		}
-		return nil
-	}
-	dir := t.TempDir()
-	writeSizedPNG(t, filepath.Join(dir, "remote.png"), w, h)
-	data, _ := os.ReadFile(filepath.Join(dir, "remote.png"))
-	downloadRemoteImage = func(raw string) (*client.RemoteImage, error) {
-		got = append(got, raw)
-		if fail != nil {
-			return nil, fail
-		}
-		return &client.RemoteImage{Content: data, FileName: "image.png", Width: w, Height: h}, nil
-	}
-	return &got
-}
-
-func TestDocCreateRemoteImageHref(t *testing.T) {
-	setupDocWriteFixtures(t)
-	downloads := stubRemoteImages(t, 2040, 600, nil)
-	f := &fakeDocWriteServer{}
-	server := httptest.NewServer(f.handler(t))
-	t.Cleanup(server.Close)
-	initDocUpdateTestConfig(t, server.URL)
-
-	c := newDocCreateTestCmd(t, "--doc-format", "xml", "-o", "json",
-		"--content", `<img href="https://img.example.com/w.png?sig=1" width="50%" alt="远程"/><img path="@a.png"/>`)
-	var runErr error
-	stdout := captureStdout(t, func() { runErr = runDocCreateDocsAI(c, "u-test") })
-	if runErr != nil {
-		t.Fatalf("创建失败: %v\n%s", runErr, stdout)
-	}
-	if len(*downloads) != 1 || (*downloads)[0] != "https://img.example.com/w.png?sig=1" {
-		t.Fatalf("应在文档写入后下载完整 href: %v", *downloads)
-	}
-	content, _ := f.creates[0]["content"].(string)
-	if strings.Contains(content, "href") || strings.Contains(content, "width=\"50%\"") || !strings.Contains(content, `caption="远程"`) {
-		t.Fatalf("远程图片标签应改写为占位且去掉显示参数: %s", content)
-	}
-	if strings.Join(f.names, ",") != "image.png,a.png" {
-		t.Fatalf("上传文件名异常: %v", f.names)
-	}
-	reqs, _ := json.Marshal(f.batches[0]["requests"])
-	if !strings.Contains(string(reqs), `"replace_image":{"height":600,"scale":0.499999,"token":"tok_blk_image_0","width":2040}`) {
-		t.Fatalf("远程图片应按真实像素归一化后绑定: %s", reqs)
-	}
-	if !strings.Contains(stdout, `"url": "https://img.example.com/w.png"`) || strings.Contains(stdout, "sig=1") || strings.Count(stdout, `"status": "bound"`) != 2 {
-		t.Fatalf("输出应包含去掉 query 的 url 且两项 bound:\n%s", stdout)
-	}
-}
-
-func TestDocCreateRemoteImageFailures(t *testing.T) {
-	setupDocWriteFixtures(t)
-	stubRemoteImages(t, 10, 10, &client.RemoteImageError{Msg: "下载远程图片失败: HTTP 404"})
-	f := &fakeDocWriteServer{}
-	server := httptest.NewServer(f.handler(t))
-	t.Cleanup(server.Close)
-	initDocUpdateTestConfig(t, server.URL)
-
-	// 下载失败：清理占位块，退出码非零，失败明细带去掉 query 的地址
-	c := newDocCreateTestCmd(t, "--doc-format", "xml", "--content", `<img href="https://img.example.com/x.png"/>`)
-	var runErr error
-	captureStdout(t, func() { runErr = runDocCreateDocsAI(c, "u-test") })
-	if runErr == nil || len(f.uploads) != 0 || len(f.puts) != 1 || f.puts[0]["command"] != "block_delete" || f.puts[0]["block_id"] != "blk_image_0" {
-		t.Fatalf("下载失败应清理占位块并非零退出: err=%v uploads=%v puts=%v", runErr, f.uploads, f.puts)
-	}
-
-	// 指向本机/内网：写入前以用法错误拒绝，不发任何请求
-	calls := f.calls
-	c = newDocCreateTestCmd(t, "--doc-format", "xml", "--content", `<img href="http://127.0.0.1/x.png"/>`)
-	captureStdout(t, func() { runErr = runDocCreateDocsAI(c, "u-test") })
-	if runErr == nil || !clierr.HasKind(runErr, clierr.KindUsage) || f.calls != calls {
-		t.Fatalf("内网地址应在写入前以用法错误拒绝: %v（请求 %d→%d）", runErr, calls, f.calls)
 	}
 }
