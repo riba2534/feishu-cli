@@ -8,18 +8,18 @@
 feishu-cli chat create \
   --name "项目讨论群" \
   [--description "群描述"] \
-  [--owner-id <user_id>] \
-  [--user-ids id1,id2,id3] \
-  [--chat-type private|public]
+  [--owner-id ou_xxx] \
+  [--user-ids ou_xxx,ou_yyy] \
+  [--bots cli_xxx] \
+  [--chat-type private|public] \
+  [--chat-mode group|topic] \
+  [-o json]
 ```
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--name` | string | 必填 | 群名称 |
-| `--description` | string | — | 群描述 |
-| `--owner-id` | string | — | 群主 ID |
-| `--user-ids` | string | — | 邀请成员 ID（逗号分隔） |
-| `--chat-type` | string | `private` | 群类型：private（私有）/ public（公开） |
+- 只走应用身份（Bot），不能切 User Token；不传 `--owner-id` 时 Bot 为群主。
+- 约束：`--name` ≤60 字（公开群至少 2 字）、`--description` ≤100 字、`--user-ids` 最多 50 个 open_id、
+  `--bots` 最多 5 个 app_id；`--chat-mode topic` 创建话题群。
+- `-o json` 输出 `{chat_id, name, chat_type, chat_mode, owner_id, external, share_link}`；分享链接获取失败不影响建群。
 
 ### 获取群聊信息
 
@@ -35,7 +35,8 @@ feishu-cli chat get <chat_id> [--as bot|user|auto]
 feishu-cli chat update <chat_id> \
   [--name "新群名"] \
   [--description "新描述"] \
-  [--owner-id <new_owner_id>]
+  [--owner-id <new_owner_id>] \
+  [--as bot|user|auto]
 ```
 
 至少需要指定一个参数。
@@ -43,7 +44,7 @@ feishu-cli chat update <chat_id> \
 ### 解散群聊
 
 ```bash
-feishu-cli chat delete <chat_id>
+feishu-cli chat delete <chat_id> [--yes] [--as bot|user|auto]
 ```
 
 操作不可逆，会有确认提示；非交互环境（Agent/脚本）未带 `--yes` 时不执行并以退出码 10 失败，获得用户同意后追加 `--yes` 重试。
@@ -53,6 +54,8 @@ feishu-cli chat delete <chat_id>
 ```bash
 feishu-cli chat link <chat_id> [--validity-period week|year|permanently]
 ```
+
+固定应用身份（Bot 需在群内）。
 
 | validity-period | 说明 |
 |----------------|------|
@@ -72,15 +75,16 @@ feishu-cli chat member list <chat_id> \
   [--page-token <token>] [--page-all] [--as bot|user|auto]
 ```
 
-输出 `users[]`（= 旧字段 `items[]`，仅用户）、`bots[]`（群内机器人，含 `app_id`）、`truncations[]`
-（服务端截断名单时非空）、`user_total` / `bot_total`。
+始终输出 JSON：`users[]`（= 旧字段 `items[]`，仅用户）、`bots[]`（群内机器人，含 `app_id`）、`truncations[]`
+（服务端截断名单时非空）、`user_total` / `bot_total`。不接受 `-o`。
 
 ### 添加群成员
 
 ```bash
 feishu-cli chat member add <chat_id> \
   --id-list id1,id2,id3 \
-  [--member-id-type open_id|user_id|union_id|app_id]
+  [--member-id-type open_id|user_id|union_id|app_id] \
+  [--as bot|user|auto]
 ```
 
 ### 移除群成员
@@ -88,8 +92,11 @@ feishu-cli chat member add <chat_id> \
 ```bash
 feishu-cli chat member remove <chat_id> \
   --id-list id1,id2 \
-  [--member-id-type open_id|user_id|union_id|app_id]
+  [--member-id-type open_id|user_id|union_id|app_id] \
+  [--as bot|user|auto]
 ```
+
+加人、移人没有确认门禁，执行前确认群和名单。
 
 ## 成员 ID 类型
 
@@ -102,11 +109,15 @@ feishu-cli chat member remove <chat_id> \
 
 ## 权限要求
 
-| 权限 | 说明 |
+任一满足即可（以 `feishu-cli schema im.chats.<method>` / `im.chat.members.<method>` 输出为准）：
+
+| 操作 | scope |
 |------|------|
-| `im:chat` | 群聊创建/修改/删除 |
-| `im:chat:read` | 群聊信息读取 |
-| `im:chat:member` | 群成员添加/移除 |
+| 建群 | `im:chat` / `im:chat:create` |
+| 读群信息 | `im:chat` / `im:chat:read` / `im:chat:readonly` |
+| 改群信息 | `im:chat` / `im:chat:update` |
+| 读成员 | `im:chat` / `im:chat:readonly` / `im:chat.members:read` |
+| 加人、移人 | `im:chat` / `im:chat.members:write_only` |
 
 ## 示例场景
 
