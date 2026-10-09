@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // 多维表格附件素材：parent_type 固定 bitable_file，parent_node 为 base_token。
@@ -25,6 +26,10 @@ const (
 //
 // 上传后还需 append_attachments 把 file_token 追加到单元格（由调用方完成）。
 func UploadBitableAttachment(filePath, baseToken, userAccessToken string) (string, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return "", err
+	}
 	stat, err := os.Stat(filePath)
 	if err != nil {
 		return "", fmt.Errorf("读取文件失败: %w", err)

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // WhiteboardCLIBridgeAvailable 检测 whiteboard-cli 是否在 PATH 中可用
@@ -54,6 +56,10 @@ func RenderDiagramToOpenAPINodes(source, syntax string, asFile bool) (string, er
 	var inputPath string
 	switch {
 	case asFile:
+		// 交给外部 whiteboard-cli 读取的本地文件同样拒绝敏感目录
+		if _, err := safefile.StatInputFile(source); err != nil {
+			return "", err
+		}
 		inputPath = source
 	default:
 		ext := ".mmd"

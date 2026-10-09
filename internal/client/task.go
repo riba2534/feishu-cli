@@ -7,6 +7,7 @@ import (
 	"time"
 
 	larktask "github.com/larksuite/oapi-sdk-go/v3/service/task/v2"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // TaskInfo represents simplified task information
@@ -1100,6 +1101,10 @@ const taskAttachmentMaxSize = 50 << 20
 // UploadTaskAttachment 给指定 task_guid（或其他 resource_type）上传一个本地文件作为附件。
 // 走 SDK 原生 Attachment.Upload，避免手写 multipart。
 func UploadTaskAttachment(resourceType, resourceID, filePath, userAccessToken string) (*TaskAttachmentInfo, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return nil, err
+	}
 	if resourceType == "" {
 		resourceType = "task"
 	}

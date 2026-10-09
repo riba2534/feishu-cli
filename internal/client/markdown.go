@@ -15,6 +15,7 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 const MarkdownDiffMaxContentBytes int64 = 10 * 1024 * 1024
@@ -150,12 +151,10 @@ func FetchMarkdownSourceLimited(fileToken, version, userAccessToken string, maxB
 }
 
 func ReadLocalMarkdownLimited(path string, maxBytes int64) ([]byte, error) {
-	info, err := os.Stat(path)
+	// 敏感目录、不存在、是目录、无权限读取均为用法错误（退出码 2）
+	info, err := safefile.StatInputFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("读取本地文件失败: %w", err)
-	}
-	if info.IsDir() {
-		return nil, fmt.Errorf("本地路径必须指向文件，不是目录")
 	}
 	if info.Size() > maxBytes {
 		return nil, fmt.Errorf("local Markdown file exceeds %s markdown +diff content limit", formatSize(int(maxBytes)))
@@ -280,12 +279,10 @@ func UploadMarkdownFile(spec MarkdownUploadSpec, filePath string, userAccessToke
 	if spec.FileName == "" {
 		spec.FileName = filepath.Base(filePath)
 	}
-	info, err := os.Stat(filePath)
+	// 本地文件内容会上传到云盘：拒绝敏感目录，不存在/是目录归为用法错误
+	info, err := safefile.StatInputFile(filePath)
 	if err != nil {
 		return MarkdownUploadResult{}, fmt.Errorf("读取本地文件失败: %w", err)
-	}
-	if info.IsDir() {
-		return MarkdownUploadResult{}, fmt.Errorf("本地路径必须指向文件，不是目录")
 	}
 	if err := validateNonEmptyMarkdownSize(info.Size()); err != nil {
 		return MarkdownUploadResult{}, err

@@ -17,6 +17,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 const (
@@ -522,6 +524,10 @@ func validateSheetImageURL(raw string, allowPrivateNet bool) error {
 }
 
 func validateLocalSheetImage(path string, maxBytes int64) (string, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(path); err != nil {
+		return "", err
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("读取图片文件失败: %w", err)

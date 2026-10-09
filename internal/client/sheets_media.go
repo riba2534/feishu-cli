@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // sheets_media.go —— 电子表格图片素材上传：≤20MB 走 medias/upload_all，>20MB 走
@@ -19,6 +20,10 @@ import (
 // UploadSheetImageMediaAuto 上传本地图片作为电子表格素材并返回 file_token，按文件大小自动选择
 // 单次上传或分片上传；parent_type 按表格 token 自动选择（见 sheetMediaParentType）。
 func UploadSheetImageMediaAuto(filePath, spreadsheetToken, fileName string, userAccessToken ...string) (string, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return "", err
+	}
 	stat, err := os.Stat(filePath)
 	if err != nil {
 		return "", fmt.Errorf("读取图片文件信息失败: %w", err)

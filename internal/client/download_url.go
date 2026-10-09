@@ -47,6 +47,12 @@ func DownloadFromPresignedURL(presignedURL string, defaultFallbackName string, o
 	if err := validateDownloadURL(presignedURL); err != nil {
 		return nil, err
 	}
+	// 输出目录在发起下载前拒绝敏感目录（最终文件另由 safefile.AtomicWriteFrom 兜底校验）
+	if opts.OutputDir != "" {
+		if err := validatePath(opts.OutputDir); err != nil {
+			return nil, err
+		}
+	}
 
 	httpClient := publicDownloadHTTPClient(func(req *http.Request, via []*http.Request) error {
 		if len(via) >= downloadMaxRedirects {
@@ -90,7 +96,7 @@ func DownloadFromPresignedURL(presignedURL string, defaultFallbackName string, o
 	if outputDir == "" {
 		outputDir = "."
 	}
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	if err := safefile.MkdirAll(outputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("创建输出目录失败: %w", err)
 	}
 
