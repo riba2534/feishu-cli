@@ -10,7 +10,7 @@
   - `internal/docxparse/`：DocxXML 解析、画像与字数统计
   - `internal/immarkdown/`：docs_ai Markdown 转 IM Markdown
   - `internal/clipboard/`：剪贴板图片读取
-  - `internal/client/doc_cover_url.go`：封面图片 URL 受控下载
+  - `internal/client/doc_cover_url.go`、`internal/client/restricted_ip.go`：封面图片 URL 受控下载与受限 IP 判定
   - `cmd/doc_script*.go`、`cmd/doc_write_resources.go`、`cmd/doc_content_local_resources.go`、`cmd/doc_write_dryrun.go`
   - `skills/feishu-cli-docs/references/workflows/author/`：写作工作流、DocxXML 写作规范与文体模板
 
