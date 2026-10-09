@@ -58,8 +58,9 @@ var mindnoteNodesListCmd = &cobra.Command{
 默认输出缩进的节点树（文本 + node_id，完成/高亮/备注/图片作为附注）；-o json 输出接口原始 data。
 返回字段：nodes[].node_id、parent_id、texts、notes、images、finish、highlight。
 
-身份：--as auto（默认，User 优先、未配置回退 Bot）| user | bot，与官方 catalog（accessTokens=[user, tenant]）一致。
-User 身份需 auth login 时带 mindnote:node:read；Bot 需应用开通同名应用身份权限（未开通报 99991672）。
+身份：--as auto（默认，User 优先、未配置回退 Bot）| user | bot。官方 catalog 声明 accessTokens=[user, tenant]；
+开放平台公开元数据（schema 命令所见）只列 user，以官方 CLI 为准。User 身份需 auth login 时带 mindnote:node:read；
+Bot 需应用开通同名应用身份权限（未开通报 99991672）。
 
 示例:
   feishu-cli mindnote nodes list bmncnxxx

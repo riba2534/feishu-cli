@@ -28,8 +28,9 @@
 | `mindnote nodes list` | `--as auto`（默认，User 优先、未配置回退 Bot）/ `user` / `bot` | `mindnote:node:read` |
 | `mindnote nodes create` | `--as auto`（默认，User 优先、未配置回退 Bot）/ `user` / `bot` | `mindnote:node:create` |
 
-- 身份与官方 catalog 一致：list、create 的 accessTokens 都是 `[user, tenant]`。auto 在已配置 User Token 但解析/刷新失败时
-  fail-closed，不会静默切 Bot；cron/无人值守显式 `--as bot`。
+- 身份以官方 CLI 为准：官方 catalog 声明 list、create 的 accessTokens 都是 `[user, tenant]`；开放平台公开元数据
+  （`feishu-cli schema mindnotes.nodes.list` 所见）只列 user，两者不一致时以官方 CLI 为准。
+- auto 在已配置 User Token 但解析/刷新失败时 fail-closed，不会静默切 Bot；cron/无人值守显式 `--as bot`。
 - 应用未开通 scope 报 `99991672`（退出码 3，需应用管理员在开放平台开通并发布）；User 未授权报 `99991679`
   （退出码 3，`feishu-cli auth login --scope "mindnote:node:read mindnote:node:create"`）。先 `feishu-cli auth check --scope "mindnote:node:read"` 预检。
 - `--user-id-type open_id|union_id|user_id` 控制 @用户元素中的 ID 类型，不传由服务端按 open_id 处理。
