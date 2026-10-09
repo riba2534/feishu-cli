@@ -16,7 +16,7 @@ var getBlocksCmd = &cobra.Command{
 参数:
   <document_id>              文档 ID 或 URL（必填；/wiki/ URL 自动解析为底层文档）
   --all                      获取所有块（自动处理分页）
-  --raw                      获取原始 JSON 内容
+  --raw                      输出文档纯文本（raw_content，不含块结构）；块的原始 JSON 用 --all -o json
   --page-size                分页大小（默认 500）
   --page-token               分页标记
   --document-revision-id     文档版本 ID，-1 表示最新
@@ -129,7 +129,7 @@ var getBlocksCmd = &cobra.Command{
 
 func init() {
 	docCmd.AddCommand(getBlocksCmd)
-	getBlocksCmd.Flags().Bool("raw", false, "获取原始 JSON 内容")
+	getBlocksCmd.Flags().Bool("raw", false, "输出文档纯文本（raw_content，不含块结构）")
 	getBlocksCmd.Flags().Bool("all", false, "获取所有块（自动处理分页）")
 	getBlocksCmd.Flags().Int("page-size", 500, "分页大小")
 	getBlocksCmd.Flags().String("page-token", "", "分页标记")

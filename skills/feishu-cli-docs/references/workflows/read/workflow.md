@@ -115,13 +115,14 @@ feishu-cli sheet export <spreadsheet_token_or_url> --format markdown --output /t
 # 元信息（document_id、title、revision_id、链接）；document_id 或 URL 均可
 feishu-cli doc get <document_id_or_url> -o json
 
-# 块结构：默认第一页（500 块），--all 自动分页；--raw 输出 API 原始 JSON
-feishu-cli doc blocks <document_id> --all -o json
-feishu-cli doc blocks <document_id> --all --raw > /tmp/blocks_raw.json
+# 块结构：默认第一页（500 块），--all 自动分页；-o json 输出块的原始 JSON 数组
+feishu-cli doc blocks <document_id_or_url> --all -o json > /tmp/blocks.json
+
+# 只要纯文本（raw_content，不含块结构与样式）
+feishu-cli doc blocks <document_id_or_url> --raw
 ```
 
-`doc get` / `doc blocks` 传 URL 会失败：从 `/docx/<id>` 截取 ID；wiki 节点先 `feishu-cli wiki get <url> -o json` 取 `obj_token`，
-或直接用接受 URL 的 `doc read` / `doc export`。
+`doc get` / `doc blocks` 接受文档 ID、`/docx/` 链接和 `/wiki/` 链接（wiki 自动解析为底层文档）。
 
 ## 知识库与电子表格
 

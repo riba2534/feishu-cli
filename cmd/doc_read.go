@@ -246,6 +246,25 @@ func sliceMarkdownSection(markdown, headingSubstr string) (string, []string) {
 }
 
 // grepMarkdownLines 按正则匹配行，返回每个命中点带上下文的片段（相邻/重叠命中合并）。
+// unescapeMarkdownPunct 去掉 Markdown 对 ASCII 标点的反斜杠转义（\_ → _、\\ → \），仅用于关键词匹配。
+func unescapeMarkdownPunct(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	const punct = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) && strings.IndexByte(punct, s[i+1]) >= 0 {
+			b.WriteByte(s[i+1])
+			i++
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
 func grepMarkdownLines(markdown string, re *regexp.Regexp, contextLines int) []string {
 	if contextLines < 0 {
 		contextLines = 0
@@ -253,7 +272,8 @@ func grepMarkdownLines(markdown string, re *regexp.Regexp, contextLines int) []s
 	lines := strings.Split(markdown, "\n")
 	var matched []int
 	for i, line := range lines {
-		if re.MatchString(line) {
+		// 导出时为防误解析会把 _ * # 等转义成 \_，用户按原文搜索（如 ANCHOR_TOKEN）时也要能命中
+		if re.MatchString(line) || re.MatchString(unescapeMarkdownPunct(line)) {
 			matched = append(matched, i)
 		}
 	}
