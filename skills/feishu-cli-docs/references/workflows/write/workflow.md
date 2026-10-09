@@ -64,15 +64,55 @@ feishu-cli doc create --title "文档标题" --output json
 feishu-cli doc create --title "周报" --content-file /tmp/weekly.md -o json
 feishu-cli doc create --content '<title>XML 文档</title><p>正文</p>' --doc-format xml
 # 位置：--folder / --parent-token（文件夹或知识库节点 token）/ --parent-position my_library 三选一
+# 带本地图片、附件、HTML 块与画板源文件建文档：先 --dry-run 看请求与上传计划（不联网），再去掉 --dry-run 执行
+feishu-cli doc create --doc-format xml --content-file /tmp/report.xml --dry-run
+feishu-cli doc create --doc-format xml --content-file /tmp/report.xml -o json
 ```
 
-- 带 `--content/--content-file/--doc-format/--parent-token/--parent-position` 任一项即走 docs_ai 服务端建文档；
+- 带 `--content/--content-file/--doc-format/--parent-token/--parent-position/--reference-map` 任一项即走 docs_ai 服务端建文档；
   不带时是本地空文档创建（`--title` 必填）。`--content` 中的字面 `\n` 会转成换行，`--content-file` 原样读取。
 - 大内容时服务端转为异步任务：CLI 自动轮询（最长约 10 分钟，只重试查询、不重放创建请求）；`expired` /
   `execution_interrupted` 报超时并提示分批。客户端超时或网关错误时文档**可能已在后台建出**，先在云空间确认再决定是否
   重试，避免重复文档。**大文档推荐先建少量内容，再 `content-update --mode append` 分批追加**。
-- Markdown 中 `doc export` 的本地方言按 content-update 同样规则转换；**不支持本地图片/附件**（以退出码 2 拒绝，改用 `doc import`）。
+- Markdown 中 `doc export` 的本地方言按 content-update 同样规则转换。
+- **本地图片/附件**：写法与 content-update 相同（见「Markdown 图片」）。文档建成后以占位块为父节点上传并绑定，
+  JSON 输出 `local_resources` 逐项明细；任一资源失败时清理其占位块、输出 `local_resource_failures` 并以退出码 1 结束
+  （文档已建出，`document_id` 照常输出）。`doc create` 按官方严格校验：`<img>/<source>` 的 `path` 必须以 `@` 开头、
+  不能与 `src/href/token` 并用，图片必须是可识别的 BMP/GIF/JPEG/PNG/TIFF/WebP，`<source name>` 不能含路径分隔符，
+  `<img alt>` 自动改为 `caption`；不满足时在任何网络请求前以退出码 2 报错。
+- **本地 HTML 块、画板源文件、`--reference-map`**：见下方「本地 HTML 块、画板源文件与 reference_map」。
+- `--dry-run` 只打印将发出的请求（建文档请求体、异步轮询、Bot 自动授权、本地资源上传与绑定计划），不联网、不创建文档；
+  不带内容时预览本地空文档创建。
 - Bot 身份创建后同样自动授予当前登录用户 `full_access`（JSON 输出 `permission_grant`）。
+
+### 本地 HTML 块、画板源文件与 reference_map
+
+`doc create`（docs_ai）与 `doc content-update` 共用，Markdown 与 XML 格式都支持（Markdown 围栏代码块内不处理）：
+
+```bash
+# XML：本地单文件 HTML → HTML 块；本地 Mermaid / SVG / PlantUML → 画板
+feishu-cli doc content-update <doc> --mode append --doc-format xml \
+  --content '<html5-block path="@./widget.html"/><whiteboard type="mermaid" path="@./flow.mmd"/>'
+# 回放 doc read --engine docs_ai -o json 拿到的 document.reference_map（JSON / @file / - 读 stdin）
+feishu-cli doc content-update <doc> --mode append --doc-format xml \
+  --content '<html5-block data-ref="html5_1"/>' --reference-map @./reference-map.json
+```
+
+| 写法 | 说明 |
+|---|---|
+| `<html5-block path="@./widget.html"/>` | 读取本地 `.html`（完整单文件 HTML，`<head>` 中声明 `html-box-height-mode` 为 `auto` 或 `viewport`，`<meta name="description">` 会成为块的 `alt`），请求中改写为 `data-ref="html5_N"`，HTML 放进 `reference_map["html5-block"]` |
+| `<html5-block data-ref="r1"/>` + `--reference-map` | `reference_map["html5-block"]["r1"]` 必须存在，条目为 `{"data":"<html>"}` 或 `{"path":"@./x.html"}`（path 读取为 data） |
+| `<whiteboard type="svg\|mermaid\|plantuml" path="@./x"/>` | 读取本地源文件并内联（扩展名：svg→`.svg`；mermaid→`.mmd/.mermaid`；plantuml→`.puml/.plantuml/.pu/.uml`）；也可写成 `<whiteboard type="mermaid">@./flow.mmd</whiteboard>` |
+
+- 路径以 `@` 开头、相对**当前目录**；`--doc-format xml` 且内容来自文件（`--content-file` / `--markdown-file`）时，
+  当前目录下不存在的相对路径回退到该文件所在目录。本地文件经安全校验：敏感目录（`~/.ssh`、`~/.feishu-cli`、`/etc` 等）、
+  不存在、是目录都在任何网络请求前以退出码 2 报错；画板引用的错误一次汇总列出。
+- `<html5-block>` 标签体必须为空、不能手写 `data` 属性、`path` 与 `data-ref` 不能并用。
+- `--reference-map` 是结构化 JSON 对象，必须与写入内容一起使用；非 html5-block 的分组原样随请求发送。
+  `doc create` 下空值 / `null` 视为未提供；`content-update` 要求非空对象，且只能用于写入内容的模式
+  （`delete_range`、`block_move_*`/`block_copy_*` 以退出码 2 拒绝）。
+- HTML 块写入后用 `doc read <doc> --engine docs_ai -o json` 回读：正文是 `<html5-block data-ref="html5_N">` 占位，
+  HTML 在 `document.reference_map["html5-block"]["html5_N"].data`。需要逐块增删改、读回 HTML 的妙笔BOX 组件见 `feishu-cli-visual` 的 htmlbox。
 
 ## 用 Markdown 创建文档
 
@@ -172,6 +212,10 @@ feishu-cli doc content-update <doc> --mode append --doc-format xml --content '<p
   `result=success` 但带 warnings 时在 stderr 打印 warnings 与 log_id。
 - **本地资源**：`content-update` 自动上传内容中的本地图片/附件（见下方「Markdown 图片」），只支持 append / overwrite /
   insert_* / 块级 replace_range；文本级替换（str_replace、纯文本选择器）带本地资源时以退出码 2 拒绝。
+  本地 HTML 块（`<html5-block path>`）、画板源文件（`<whiteboard path>`）与 `--reference-map` 见上方
+  「本地 HTML 块、画板源文件与 reference_map」。
+- **预览**：`--dry-run` 打印将发出的请求（wiki 解析、定位读取、写入请求体、本地资源上传与绑定计划；选择器定位到的块 ID
+  以占位符表示），不联网、不修改文档。
 - 用户说"修改/替换/更新某段"时用 replace_range / replace_all / str_replace，不要 append 导致重复。
 
 `--table-column-width`：**`content-update` 不支持自定义列宽**，传非 `auto` 值或内容中含 `<!-- feishu-colwidth: ... -->` 注释都会以退出码 2 拒绝；需要控制列宽请改用 `feishu-cli doc import`。`doc add` 仍支持该 flag，取值与注释的完整规则以 `../import/references/doc-guide.md` 表格章节为权威。
@@ -203,25 +247,32 @@ feishu-cli doc history revert-status <doc> --task-id <task_id>
 | `doc import` | 默认上传本地/网络图片（相对路径按 Markdown 文件所在目录）；表格单元格图片也走导入管线 |
 | `doc add` | 显式传 `--upload-images` 上传本地/网络图片；表格单元格图片降级为文字占位 |
 | `doc content-update` | 网络图片由服务端下载；本地图片/附件自动上传并绑定（`--upload-images` 可省略，传了只打印提示） |
-| `doc create --content` | 仅网络图片；带本地图片的 Markdown 改用 `doc import` |
+| `doc create --content` | 网络图片由服务端下载；本地图片/附件在建文档后自动上传并绑定（写法同 `content-update`，校验更严格，见「服务端带内容建文档」） |
 
 ```bash
 # 网络图片原样交给服务端；本地图片相对 --markdown-file 所在目录解析
 feishu-cli doc content-update <document_id> --mode append --markdown-file /tmp/with-image.md
 ```
 
-`content-update` 的本地资源写法（围栏代码与行内代码中的内容不处理）：
+`content-update` / `doc create --content` 的本地资源写法（围栏代码、行内代码与 HTML 注释中的内容不处理）：
 
 | 写法 | 说明 |
 |---|---|
-| `![说明](./img.png)`、`![说明](/abs/img.png)` | 相对路径基于 `--markdown-file` 所在目录（内联 `--markdown` 时基于当前目录）；说明成为图片标题 |
+| `![说明](./img.png)`、`![说明](/abs/img.png)` | 相对路径基于内容文件（`--markdown-file` / `--content-file`）所在目录（内联内容时基于当前目录）；说明成为图片标题 |
 | `![说明](@./img.png)`、`![说明](<@./带 空格.png>)` | 官方写法，`@` 路径相对**当前目录** |
-| `<img path="@./img.png" width="600" height="300"/>` | XML 写法（`--doc-format xml` 时只认这种），可指定显示尺寸，路径相对当前目录 |
+| `<img path="@./img.png" width="600" align="center"/>` | XML 写法（`--doc-format xml` 时只认这种），路径相对当前目录；XML 内容来自文件时当前目录不存在则回退到文件所在目录 |
 | `<source path="@./report.pdf" name="报告.pdf"/>` | 本地附件 |
+
+`<img>` 尺寸按官方归一化：`width/height` 改为图片真实像素，给出的显示尺寸换算为 `scale`
+（优先级 `scale` > `width` > `height`，支持百分比如 `width="50%"`）；都没给且原图宽度 ≥1020px 时缩放到略小于页面宽度。
+例：1200×800 的图写 `width="600"` → 以 `scale=0.5` 显示，宽高比不变。
 
 上传流程：本地资源先改写为占位标签 → 服务端在 `document.new_blocks` 回传占位块 → 以占位块为父节点上传素材
 （>20MB 自动分片）→ 绑定。任一资源失败时删除其占位块，命令以退出码 1 结束，
-JSON 输出 `local_resources` 逐项明细（`status`=bound/failed、`block_id`、`file_token`、`error`、`cleanup`）。
+JSON 输出 `local_resources` 逐项明细（`status`=bound/failed、`block_id`、`file_token`、`error`、`cleanup`），
+失败时另有官方形状的 `local_resource_failures`（`occurrence`/`kind`/`status`/`cleanup_status`/`error`）。
+输出中 `document.new_blocks` 的 `block_token` 已换成上传后的素材 token（失败项去掉），`document.revision_id` 为绑定/清理后的最新版本，
+可直接用于下一次 `--revision-id`。
 文件不存在、为空、路径不安全或内容手写了保留占位标记（`@lcli_img_` / `@lcli_file_`）时，在任何网络请求前以退出码 2 报错。
 
 单独插入图片或文件用 `doc media-insert`（插入到文档末尾）：
