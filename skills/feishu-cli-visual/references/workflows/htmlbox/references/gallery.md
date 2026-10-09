@@ -4,7 +4,7 @@
 
 用法：取下面对应的**骨架**，把对应配方的 `OPT`（ECharts 类）粘进骨架的 `OPT` 占位处，或直接用整段 HTML（Canvas/SVG/CSS 类）。落库前务必本地浏览器验证（见 SKILL 工作流第 2 步）。
 
-**配色约定**（色值出处：`feishu-cli-visual` 统一色板，本管线 surface 为深蓝画布 `#0f1729`）：
+**配色约定**（色值出处：dataviz 统一色板 `../dataviz/references/palette.md`，本管线 surface 为深蓝画布 `#0f1729`）：
 
 - **数据系列色**按固定顺序截取，不循环、不自创：
   `#3370ff, #bf8600, #00ad96, #ea6a03, #7f3bf5, #f54a45, #f04aa8, #2ea121`
@@ -13,15 +13,13 @@
 - **有序阶段**（漏斗/等级）不用系列色，用单色蓝 ramp（见漏斗配方）；**连续量级**（热力/日历）
   同理用蓝 ramp 深→浅，不用多色相彩虹。
 - chrome 色（标题 `#cde0ff`、轴 `#9fb6d6`、轴线 `#2b4a7a`、tooltip 底 `rgba(16,26,46,.92)`）是画布身份的一部分，见下方"通用深色样式约定"。
-- **原样使用上述已校验色值时无需重跑校验**；只有改色值/换底色时复验（校验器随 `feishu-cli-visual` 技能分发，先定位再调用，任意 CWD 可用）：
+- **原样使用上述已校验色值时无需重跑校验**；只有改色值/换底色时复验（路径相对 htmlbox 工作流目录解析，见 SKILL.md 的路径约定）：
 
   ```bash
-  VP=~/.claude/skills/feishu-cli-visual/references/workflows/dataviz/scripts/validate_palette.js
-  [ -f "$VP" ] || VP=skills/feishu-cli-visual/references/workflows/dataviz/scripts/validate_palette.js   # 仓库内开发时（CWD=仓库根）
-  node "$VP" "<你的色>" --mode dark --surface "#0f1729"
+  node ../dataviz/scripts/validate_palette.js "<你的色>" --mode dark --surface "#0f1729"
   ```
 
-  形式选择（画柱还是线还是大数字）与反模式清单见 `feishu-cli-visual` 技能。
+  形式选择（画柱还是线还是大数字）与反模式清单见 dataviz 工作流 `../dataviz/workflow.md`。
 
 ## 目录
 

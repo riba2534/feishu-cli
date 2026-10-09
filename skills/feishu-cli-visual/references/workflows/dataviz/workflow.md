@@ -1,4 +1,4 @@
-# feishu-cli-visual - 飞书可视化设计系统
+# dataviz - 飞书可视化设计系统
 
 一张图表是**给人读的，由你来执行的**。本技能把"画得好看"变成一套带检查的流程：
 结果靠构造保证正确，而不是靠品味。核心习惯只有一个：
@@ -40,7 +40,7 @@
 5. **应用标记规格与自检**。细标记（bar ≤ 24px、线 2px）、相邻填充留 2px 底色间隔、
    网格用发丝线实线、文字永远穿文字色（系列身份由旁边的色块承载，不给文字上系列色）。
    完成后对照 `references/anti-patterns.md` 逐条检查，命中即错；最后渲染出来亲眼看一遍
-   （htmlbox 用 `../htmlbox/scripts/verify.sh` 截图、board 用 svg-export、card 用离线校验或已授权的测试会话预览）。
+   （htmlbox 用 `../htmlbox/scripts/verify.sh` 截图、board 用 `board image` 下载缩略图、card 用离线校验或已授权的测试会话预览）。
 
 ## 管线路由
 

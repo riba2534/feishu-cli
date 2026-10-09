@@ -32,9 +32,8 @@ yellow / green / purple / red / carmine / orange）在 OKLCH 空间派生，并�
   配可见数值标签或表格视图，这是义务不是建议。
 - dark 模式 8 色对 `#1f1f1f` 全部 ≥ 3:1。
 
-一键复验（`scripts/` 相对本技能根目录；在其他位置调用时先定位：
-`VP=~/.claude/skills/feishu-cli-visual/references/workflows/dataviz/scripts/validate_palette.js`，仓库内开发则为
-`skills/feishu-cli-visual/references/workflows/dataviz/scripts/validate_palette.js`）：
+一键复验（`scripts/` 相对 dataviz 工作流目录解析，见 SKILL.md 的路径约定；从 board / htmlbox 工作流调用时为
+`../dataviz/scripts/validate_palette.js`）：
 
 ```bash
 node scripts/validate_palette.js
@@ -159,7 +158,7 @@ Mermaid classDef、board 分组背景、流程图节点等"浅色底 + 深色边
 ### htmlbox（妙笔BOX，深蓝画布）
 
 **该管线的权威约定在
-`skills/feishu-cli-visual/references/workflows/htmlbox/references/gallery.md` 开头**：画布固定
+`../htmlbox/references/gallery.md` 开头**：画布固定
 深蓝 `#0f1729`（管线视觉身份，不随系统明暗切换），系列色取 **dark 列**按序截取，
 单系列主色用 `#00ad96`（画布与 slot 1 蓝同色相，蓝让位）。dark 列已在 `#0f1729`
 上单独校验通过（最差相邻 ΔE 52.9，对比度全 ≥ 3:1）。本文件不另立 htmlbox 默认，
@@ -167,7 +166,7 @@ Mermaid classDef、board 分组背景、流程图节点等"浅色底 + 深色边
 
 ### 独立 HTML 页面 / apps 部署（明暗自适应）
 
-不在妙笔BOX 里、需要跟随系统明暗的独立页面（如 `feishu-cli-visual` 部署的站点），
+不在妙笔BOX 里、需要跟随系统明暗的独立页面（如 apps 工作流发布的妙搭 HTML 应用），
 用 CSS custom properties 一处切换：
 
 ```html
@@ -197,7 +196,7 @@ ECharts `color` 数组按所处模式取对应列、按序截取。如需在测�
 
 - 图表 spec 注入 `"color": ["#3370ff","#d99904",...]`（light 列）。多系列永远按
   固定顺序；单系列可取 header 同家族色做强调（规则见
-  `skills/feishu-cli-messaging/references/workflows/card/references/design.md` §1.1.1）。
+  `feishu-cli-messaging/references/workflows/card/references/design.md` §1.1.1）。
 - 卡片 UI 部分（header/tag/font）不认 hex，用飞书命名色枚举 —— slot 家族与
   枚举名一一对应：blue→`blue`、yellow→`yellow`、turquoise→`turquoise`、
   orange→`orange`、purple→`purple`、red→`red`、carmine→`carmine`、green→`green`。
@@ -205,7 +204,7 @@ ECharts `color` 数组按所处模式取对应列、按序截取。如需在测�
 ### import（Mermaid classDef）
 
 flowchart 的 classDef 直接使用"浅底/深边派生对"，见
-`skills/feishu-cli-docs/references/workflows/import/references/mermaid-spec.md` §4
+`feishu-cli-docs/references/workflows/import/references/mermaid-spec.md` §4
 （已从本色板派生）。
 
 ### board（SVG 自由作图 / 手写 JSON）
@@ -213,5 +212,5 @@ flowchart 的 classDef 直接使用"浅底/深边派生对"，见
 - 数据系列上色：light 列按序取用（原样取用无需校验；改色/散点 all-pairs 场景才跑）。
 - 分组背景/节点填充：用"浅底/深边派生对"；连线/辅助元素用主题连线灰
   （默认 `#bbbfc4`，科技暗色主题 `#4a4a4a`）。
-- 主题变体见 `skills/feishu-cli-visual/references/workflows/board/references/style.md`
+- 主题变体见 `../board/references/style.md`
   （同一 8 色相体系上的排列组合）。

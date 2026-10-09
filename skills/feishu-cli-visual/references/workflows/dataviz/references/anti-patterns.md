@@ -65,7 +65,7 @@
 - ❌ **该动的图落了静态管线**（要 tooltip/动画却走 board SVG —— 上传即栅格化）。
   ✅ 交互动图一律 htmlbox。
 - ❌ **Mermaid 语法带飞书不支持的特性**（花括号标签、`par...and...end` 等）。
-  ✅ 生成前查 `skills/feishu-cli-docs/references/workflows/import/references/mermaid-spec.md`。
+  ✅ 生成前查 `feishu-cli-docs/references/workflows/import/references/mermaid-spec.md`。
 - ❌ **卡片 UI 色写 hex**。卡片 v2 的 header/tag/font 只认命名枚举；
   hex 只出现在 VChart spec 的 `color` 数组里。
 - ❌ **明暗两套色自己拍脑袋**。dark 列在 `palette.md` 里，是对暗底重新定步并
