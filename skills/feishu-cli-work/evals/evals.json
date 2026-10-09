@@ -62,11 +62,11 @@
         "okr"
       ],
       "prompt": "给 KR 7123456789012345678 上报 80% 的正常进展“完成 8/10 任务”，并关联周报 https://www.feishu.cn/docx/doxcnxxx。说明身份要求和 progress-status 的约束。",
-      "expected_output": "使用 Tenant Token 创建 KR 进展，percent 与 status 配套，并显式提供 source URL。",
+      "expected_output": "默认 --as bot（Tenant Token，无需 auth login）创建 KR 进展，percent 与 status 配套，并显式提供 source URL；可先 --dry-run 预览。",
       "expectations": [
         "命令使用 okr progress create --key-result-id 7123456789012345678",
         "命令包含 --content、--progress-percent 80、--progress-status normal 和 --source-url",
-        "明确 OKR 使用 Tenant Token 且不需要 auth login",
+        "明确 OKR 命令组默认 --as bot（Tenant Token），不需要 auth login",
         "明确 --progress-status 必须与 --progress-percent 一起使用"
       ],
       "files": []
