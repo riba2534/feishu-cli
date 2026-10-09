@@ -104,6 +104,22 @@
       "expected_output": "按 author 工作流选会议纪要体裁，先用 doc script init-draft 提交 Presentation Decision，把 DocxXML 写到返回的 draft_path，parse 通过后再 doc create --doc-format xml。",
       "expectations": ["读取 route-workplace 与 meeting-minutes 体裁文件后再写草稿", "Presentation Decision 含 word_count（max 约 800）与 table 的最低数量约束", "先执行 feishu-cli doc script --command init-draft，并把草稿写到返回的 draft_path", "创建前执行 doc script --command parse，以 assessment.status=passed 为准", "用 doc create --doc-format xml --content-file 创建，且不额外传 --title"],
       "files": []
+    },
+    {
+      "id": 14,
+      "workflows": ["mindnote"],
+      "prompt": "这个知识库链接 https://xxx.feishu.cn/wiki/wikcnxxx 里是一张思维笔记，帮我在「风险」节点下加一个子节点「接口超时」，标黄；脚本可能会重试，别加重了。",
+      "expected_output": "走 mindnote 工作流：mindnote nodes list <wiki URL> -o json（CLI 解包 wiki 并校验底层是 mindnote）找到「风险」节点的 node_id；mindnote nodes create 带自己生成并在重试中复用的 --client-token，--data 中 nodes[].parent_id 为该 node_id、highlight=yellow，先 --dry-run 预览。",
+      "expectations": ["传完整 /wiki/ URL 或先 drive inspect 解包，不把 wiki node_token 当思维笔记 token", "先 mindnote nodes list 取 parent_id，再用 mindnote nodes create 的 nodes[].parent_id 新增子节点", "显式传 --client-token 并在重试时复用，说明 CLI 不会自动生成", "不把 mindnote nodes create 当成新建思维笔记；新建思维导图改走画板"],
+      "files": []
+    },
+    {
+      "id": 15,
+      "workflows": ["read"],
+      "prompt": "把文档 https://xxx.feishu.cn/docx/doxcnxxx 里「部署」相关的内容取出来，我要直接贴进飞书群消息，文中 @ 到的人名用英文显示。先说明命令，暂不执行。",
+      "expected_output": "doc read <URL> --doc-format im-markdown --lang en-US --scope keyword --keyword \"部署\"（自动走 docs_ai 引擎）；im-markdown 不能与 --with-ids / --detail with-ids|full 组合，显式 --engine local 时以退出码 2 报错。",
+      "expectations": ["使用 doc read --doc-format im-markdown 取可直接发 IM 的 Markdown，而不是 doc export", "用 --lang en-US 控制引用用户的显示语言", "按关键词局部读取（--scope keyword --keyword 或 --keyword），不整篇读取", "不与 --with-ids 组合（IM Markdown 无法携带 block id）"],
+      "files": []
     }
   ]
 }
