@@ -3,7 +3,7 @@ package client
 import (
 	"fmt"
 
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
 // ResolvePageSize 把 CLI 的 page-size 归一到 API 合法范围。

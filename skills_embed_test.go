@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/skillbundle"
+	"github.com/riba2534/feishu-cli/internal/skillbundle"
 )
 
 // TestEmbeddedSkillsMatchRepository 保证 go:embed 白名单没有漏掉任何可分发文件：

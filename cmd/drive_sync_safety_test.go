@@ -14,8 +14,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/config"
-	"github.com/riba2534/feishu-cli/v2/internal/profile"
+	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/profile"
 )
 
 // patternStreamReader 用于在测试中生成大流，内存开销为 O(1)

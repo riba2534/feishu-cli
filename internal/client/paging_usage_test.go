@@ -3,7 +3,7 @@ package client
 import (
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
 // TestResolvePageLimitOutOfRangeIsUsageError --page-limit 越界是用法错误（退出码 2），不是一般错误。

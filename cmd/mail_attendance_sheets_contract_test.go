@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/config"
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // setupMailAttendanceCmdTestConfig 初始化 Mail/Attendance/Sheets 契约测试配置，将 base_url 指向 mock 服务器。

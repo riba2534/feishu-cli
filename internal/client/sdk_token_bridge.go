@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/auth"
-	"github.com/riba2534/feishu-cli/v2/internal/config"
+	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 const (

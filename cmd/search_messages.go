@@ -5,9 +5,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/client"
-	"github.com/riba2534/feishu-cli/v2/internal/config"
-	"github.com/riba2534/feishu-cli/v2/internal/output"
+	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 

@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/config"
-	"github.com/riba2534/feishu-cli/v2/internal/safefile"
+	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // DriveDownload 是一次已建立的云盘文件下载（首个响应已校验，业务错误已在打开时返回）。

@@ -10,9 +10,9 @@ import (
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
-	"github.com/riba2534/feishu-cli/v2/internal/client"
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
-	"github.com/riba2534/feishu-cli/v2/internal/config"
+	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 

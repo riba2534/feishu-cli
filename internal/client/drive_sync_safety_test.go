@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/config"
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // patternStreamReader 生成指定大小的流，内存开销为 O(1)

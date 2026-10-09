@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/safefile"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // MailInlineImageRef 描述 body 中一个本地图片引用的扫描结果

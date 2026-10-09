@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
-	"github.com/riba2534/feishu-cli/v2/internal/client"
+	"github.com/riba2534/feishu-cli/internal/client"
 )
 
 // ===== 缺陷 5：导出资源路径相对 Markdown 文件 =====

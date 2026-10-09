@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
 // mailStub 假邮箱服务：记录业务请求（不含 tenant token 换取），按路径返回最小成功响应。

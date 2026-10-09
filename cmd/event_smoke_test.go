@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/config"
-	"github.com/riba2534/feishu-cli/v2/internal/event"
+	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/event"
 )
 
 // TestSmokeEventConsume 是一个本地手动测试。

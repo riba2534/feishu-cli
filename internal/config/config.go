@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
-	"github.com/riba2534/feishu-cli/v2/internal/profile"
+	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/spf13/viper"
 )
 

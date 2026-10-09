@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/client"
+	"github.com/riba2534/feishu-cli/internal/client"
 )
 
 // TestOKRProgressCreateCmdRegistered 验证 okr progress create 子命令注册

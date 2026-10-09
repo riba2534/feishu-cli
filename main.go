@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/riba2534/feishu-cli/v2/cmd"
+	"github.com/riba2534/feishu-cli/cmd"
 )
 
 // Version information, set by ldflags during build

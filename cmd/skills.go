@@ -8,9 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/riba2534/feishu-cli/v2/internal/safefile"
-	"github.com/riba2534/feishu-cli/v2/internal/skillbundle"
-	"github.com/riba2534/feishu-cli/v2/internal/skillinstall"
+	"github.com/riba2534/feishu-cli/internal/safefile"
+	"github.com/riba2534/feishu-cli/internal/skillbundle"
+	"github.com/riba2534/feishu-cli/internal/skillinstall"
 	"github.com/spf13/cobra"
 )
 

@@ -15,13 +15,13 @@ import (
 
 	"github.com/itchyny/gojq"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
-	"github.com/riba2534/feishu-cli/v2/internal/auth"
-	"github.com/riba2534/feishu-cli/v2/internal/client"
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
-	"github.com/riba2534/feishu-cli/v2/internal/config"
-	"github.com/riba2534/feishu-cli/v2/internal/output"
-	"github.com/riba2534/feishu-cli/v2/internal/runctx"
-	"github.com/riba2534/feishu-cli/v2/internal/safefile"
+	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/output"
+	"github.com/riba2534/feishu-cli/internal/runctx"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 

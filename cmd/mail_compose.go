@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/client"
+	"github.com/riba2534/feishu-cli/internal/client"
 )
 
 // reply / reply-all / forward 共用的"原邮件"读取与引用块构造。

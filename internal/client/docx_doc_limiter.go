@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/runctx"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 // 飞书 docx 写类 API（CreateBlock/UpdateBlock/BatchUpdate/InsertTableRow/DeleteBlocks 等）

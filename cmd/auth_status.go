@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/auth"
-	"github.com/riba2534/feishu-cli/v2/internal/client"
-	"github.com/riba2534/feishu-cli/v2/internal/config"
-	"github.com/riba2534/feishu-cli/v2/internal/registry"
+	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/registry"
 	"github.com/spf13/cobra"
 )
 

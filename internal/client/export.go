@@ -9,7 +9,7 @@ import (
 	"time"
 
 	larkdrive "github.com/larksuite/oapi-sdk-go/v3/service/drive/v1"
-	"github.com/riba2534/feishu-cli/v2/internal/runctx"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 // CreateExportTask 创建导出任务，返回任务 ticket

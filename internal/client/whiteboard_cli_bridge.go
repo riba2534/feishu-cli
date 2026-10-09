@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/safefile"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // WhiteboardCLIBridgeAvailable 检测 whiteboard-cli 是否在 PATH 中可用

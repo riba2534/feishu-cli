@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/config"
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // stubFeishuServer 起一个本地 httptest server 替代真实飞书 OAPI；

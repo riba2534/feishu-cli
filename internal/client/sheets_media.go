@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
-	"github.com/riba2534/feishu-cli/v2/internal/safefile"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // sheets_media.go —— 电子表格图片素材上传：≤20MB 走 medias/upload_all，>20MB 走

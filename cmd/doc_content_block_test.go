@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
-	"github.com/riba2534/feishu-cli/v2/internal/client"
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
 // TestFindByStartEndUsesNearestEndAnchor 结束锚点取起点之后最近的一次出现（此前取最后一次，可删到文末）。

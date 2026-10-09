@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/config"
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // 资源类型取值与 Drive metas / permission / export 等接口的 type 参数一致。

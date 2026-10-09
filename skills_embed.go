@@ -6,7 +6,7 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/riba2534/feishu-cli/v2/cmd"
+	"github.com/riba2534/feishu-cli/cmd"
 )
 
 // embeddedSkills 把领域技能随二进制一起分发，保证技能内容与 CLI 版本严格配套。

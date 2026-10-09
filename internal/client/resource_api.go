@@ -3,7 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/riba2534/feishu-cli/v2/internal/textutil"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"strings"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"

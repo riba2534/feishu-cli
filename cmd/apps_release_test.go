@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
 // setupAppsPublishMock 模拟 html-publish 三段协议 + release get；releaseResponses 依次作为每次 release get 的响应。

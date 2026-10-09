@@ -1,4 +1,4 @@
-module github.com/riba2534/feishu-cli/v2
+module github.com/riba2534/feishu-cli
 
 go 1.21
 

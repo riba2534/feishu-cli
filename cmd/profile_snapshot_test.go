@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/profile"
+	"github.com/riba2534/feishu-cli/internal/profile"
 )
 
 // snapshotFromDir 承接了原 profile.Describe 的职责（active 标记 + 文件存在性），

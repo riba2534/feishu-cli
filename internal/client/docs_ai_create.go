@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
-	"github.com/riba2534/feishu-cli/v2/internal/runctx"
+	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 // docs_ai 服务端建文档（POST /open-apis/docs_ai/v1/documents，对齐官方 docs +create 的异步协议）：

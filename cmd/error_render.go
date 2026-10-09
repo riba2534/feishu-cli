@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/apidiag"
-	"github.com/riba2534/feishu-cli/v2/internal/client"
+	"github.com/riba2534/feishu-cli/internal/apidiag"
+	"github.com/riba2534/feishu-cli/internal/client"
 )
 
 // errorHinter 由命令返回的错误实现，提供领域专属的修复建议；

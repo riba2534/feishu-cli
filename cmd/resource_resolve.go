@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/client"
+	"github.com/riba2534/feishu-cli/internal/client"
 )
 
 // resourceArgOptions 控制 resolveResourceArg / parseResourceArg 的解析行为。

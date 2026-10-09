@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/mailmime"
+	"github.com/riba2534/feishu-cli/internal/mailmime"
 )
 
 func b64Lines(s string) string {

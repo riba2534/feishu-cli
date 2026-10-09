@@ -14,7 +14,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	"github.com/riba2534/feishu-cli/v2/internal/textutil"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"io"
 	"mime"
 	"mime/quotedprintable"

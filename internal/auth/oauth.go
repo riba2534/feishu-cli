@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/riba2534/feishu-cli/v2/internal/textutil"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"io"
 	"net/http"
 	"net/http/httptrace"
@@ -14,9 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
-	"github.com/riba2534/feishu-cli/v2/internal/config"
-	"github.com/riba2534/feishu-cli/v2/internal/runctx"
+	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 const maxAuthResponseBytes = 1 << 20

@@ -15,9 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/apidiag"
-	"github.com/riba2534/feishu-cli/v2/internal/runctx"
-	"github.com/riba2534/feishu-cli/v2/internal/safefile"
+	"github.com/riba2534/feishu-cli/internal/apidiag"
+	"github.com/riba2534/feishu-cli/internal/runctx"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // 下载传输参数（对齐官方 extension/download：8MiB 分片、每片有界重试、空闲超时而非总时长）。

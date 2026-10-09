@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/safefile"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 const (

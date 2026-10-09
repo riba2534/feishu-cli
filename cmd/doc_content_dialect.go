@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
 // 本文件把本项目 `doc export`（本地 Block→Markdown 转换器）产出的"本地方言"

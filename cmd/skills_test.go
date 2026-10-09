@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/skillinstall"
+	"github.com/riba2534/feishu-cli/internal/skillinstall"
 	"github.com/spf13/cobra"
 )
 

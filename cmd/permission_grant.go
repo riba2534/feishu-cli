@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/auth"
-	"github.com/riba2534/feishu-cli/v2/internal/client"
-	"github.com/riba2534/feishu-cli/v2/internal/config"
+	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // permissionGrantStderr 是自动授权告警的输出位置（测试可替换）。

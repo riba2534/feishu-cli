@@ -17,7 +17,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
 // systemDenyRoots 系统敏感目录（Windows 上不适用）。

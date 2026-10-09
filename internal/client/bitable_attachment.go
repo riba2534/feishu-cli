@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
-	"github.com/riba2534/feishu-cli/v2/internal/safefile"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // 多维表格附件素材：parent_type 固定 bitable_file，parent_node 为 base_token。

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/skillbundle"
+	"github.com/riba2534/feishu-cli/internal/skillbundle"
 )
 
 // CheckStatus 与 doctor 的状态值保持一致。

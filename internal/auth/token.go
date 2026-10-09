@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/riba2534/feishu-cli/v2/internal/profile"
+	"github.com/riba2534/feishu-cli/internal/profile"
 )
 
 // TokenStore 存储 OAuth token 信息。AppID 绑定签发该 token 的应用，防止多 Bot 主体混用。

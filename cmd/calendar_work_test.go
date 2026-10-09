@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/v2/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
 // TestFreebusyDefaultsToCurrentUser 不传 --user-id 时默认查当前登录用户（回归：此前必报 190002）

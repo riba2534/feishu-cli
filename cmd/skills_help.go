@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/v2/internal/skillbundle"
+	"github.com/riba2534/feishu-cli/internal/skillbundle"
 	"github.com/spf13/cobra"
 )
 
