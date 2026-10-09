@@ -214,7 +214,8 @@ type VCBotEventsReq struct {
 // API: GET /open-apis/vc/v1/bots/events
 // 权限:
 //   - User：vc:meeting.meetingevent:read
-//   - Bot：vc:meeting.bot.join:write（机器人须在会中）
+//   - Bot：vc:meeting.meetingevent:read 与 vc:meeting.bot.join:write 任一（实测 99991672 原文
+//     "One of the following scopes is required"；机器人须在会中）
 //
 // 身份由 CLI --as bot|user|auto 显式选择，禁止静默回落。
 //
@@ -256,7 +257,8 @@ func GetMeetingNote(noteID string, userAccessToken string) (json.RawMessage, err
 
 // ListActiveMeetings 查询当前身份（或 Bot 身份下指定用户）正在参加的会议
 // API: GET /open-apis/vc/v1/bots/user_active_meeting
-// 权限：User 需 vc:meeting.meetingevent:read；Bot 需 vc:meeting.bot.join:write，且必须传 user_id（open_id）。
+// 权限：User 需 vc:meeting.meetingevent:read；Bot 需 vc:meeting.meetingevent:read 与 vc:meeting.bot.join:write
+// 任一（实测 99991672 原文 "One of the following scopes is required"），且必须传 user_id（open_id）。
 // 返回 data 原始 JSON（含 meetings[].meeting_id / meeting_no / meeting_title）。
 func ListActiveMeetings(userID, userAccessToken string) (json.RawMessage, error) {
 	apiPath := fmt.Sprintf("%s/bots/user_active_meeting", vcBase)

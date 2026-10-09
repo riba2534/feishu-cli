@@ -127,6 +127,18 @@ func TestVCBotHelpDocumentsTenantDefault(t *testing.T) {
 	if !strings.Contains(vcBotCmd.Long, "vc:meeting.bot.join:write") || strings.Contains(vcBotCmd.Long, "vc:meeting.bot.leave:write") {
 		t.Errorf("bot Long 的 leave scope 应与 join 相同，实际:\n%s", vcBotCmd.Long)
 	}
+	// Bot 身份读会中事件 / 进行中会议：服务端 99991672 原文为
+	// "One of the following scopes is required: [vc:meeting.meetingevent:read, vc:meeting.bot.join:write]"
+	const botAnyOf = "vc:meeting.meetingevent:read 与 vc:meeting.bot.join:write 任一"
+	for name, long := range map[string]string{
+		"vc bot":                 vcBotCmd.Long,
+		"vc bot meeting-events":  vcBotEventsCmd.Long,
+		"vc meeting list-active": vcMeetingListActiveCmd.Long,
+	} {
+		if !strings.Contains(long, botAnyOf) {
+			t.Errorf("%s Long 应写明 Bot 身份 scope 为 %q，实际:\n%s", name, botAnyOf, long)
+		}
+	}
 }
 
 // testVCMeetingID 测试用长数字 meeting_id（meeting-events 会校验正整数且拒绝 9 位会议号）
@@ -299,6 +311,8 @@ func TestVCBotEventsAsUserFailClosed(t *testing.T) {
 	mustSetFlag(t, cmd, "dry-run", "true")
 	if err := vcBotEventsCmd.RunE(cmd, nil); err == nil || !strings.Contains(err.Error(), "--as user") {
 		t.Fatalf("dry-run 也应 fail-closed，实际: %v", err)
+	} else if code := exitCodeFor(err); code != 3 {
+		t.Fatalf("dry-run 缺 User Token 应与实调一致为鉴权类 exit 3，实际 exit %d", code)
 	}
 }
 
@@ -310,6 +324,13 @@ func TestVCBotEventsInvalidAsFailClosed(t *testing.T) {
 	mustSetFlag(t, cmd, "dry-run", "true")
 	if err := vcBotEventsCmd.RunE(cmd, nil); err == nil || !strings.Contains(err.Error(), "bot|user|auto") {
 		t.Fatalf("非法 --as 在 dry-run 也应失败，实际: %v", err)
+	} else if code := exitCodeFor(err); code != 2 {
+		t.Fatalf("非法 --as 应为用法错误 exit 2，实际 exit %d", code)
+	}
+	// 实调路径同样是用法错误
+	mustSetFlag(t, cmd, "dry-run", "false")
+	if _, _, err := resolveVCBotEventsIdentity(cmd); err == nil || exitCodeFor(err) != 2 {
+		t.Fatalf("实调非法 --as 应为用法错误 exit 2，实际: %v", err)
 	}
 }
 

@@ -42,7 +42,7 @@ var vcMeetingListActiveCmd = &cobra.Command{
 
 权限:
   - User 身份: vc:meeting.meetingevent:read
-  - Bot 身份:  vc:meeting.bot.join:write
+  - Bot 身份:  vc:meeting.meetingevent:read 与 vc:meeting.bot.join:write 任一（应用身份权限，开通其一即可）
 
 示例:
   feishu-cli vc meeting list-active
