@@ -569,7 +569,8 @@ func resolveAPITokenDryRun(cmd *cobra.Command, as string) ([]larkcore.AccessToke
 
 	case "user":
 		if !hasUserToken {
-			return nil, false, fmt.Errorf("--as user 需要 User Access Token（请先 `feishu-cli auth login`）")
+			// 与真实调用（resolveRequiredUserToken 失败）同属鉴权类错误，退出码 3
+			return nil, false, clierr.Auth(fmt.Errorf("--as user 需要 User Access Token（请先 `feishu-cli auth login`）: %w", auth.ErrNoUserTokenConfigured))
 		}
 		return []larkcore.AccessTokenType{larkcore.AccessTokenTypeUser}, true, nil
 
