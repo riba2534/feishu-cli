@@ -24,10 +24,12 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 
 | 意图 | 读取文件 |
 |---|---|
-| 阅读、分析、获取块结构，不主动落盘 | `references/workflows/read/workflow.md` |
-| 创建、追加、覆盖、替换或编辑 docx（含按 block id 精确改写、插入本地图片、历史版本回滚） | `references/workflows/write/workflow.md` |
-| 把 Markdown 导入为飞书 docx | `references/workflows/import/workflow.md` |
-| 导出 docx/wiki/sheet 到本地文件 | `references/workflows/export/workflow.md` |
+| 阅读、总结、分析 docx/wiki/sheet，大文档按大纲/章节/关键词局部读取，获取块结构，不主动落盘 | `references/workflows/read/workflow.md` |
+| 带 block id 读取（`doc read --with-ids` / `--engine docs_ai`），为精确修改做准备 | `references/workflows/read/workflow.md` |
+| 创建 docx（含 `doc create --content` 带内容建文档）、追加、覆盖、替换、删除或移动内容，按 block id 精确改写，插入本地图片/附件 | `references/workflows/write/workflow.md` |
+| 查看历史版本、回滚文档（`doc history list/revert/revert-status`） | `references/workflows/write/workflow.md` |
+| 把 Markdown 文件导入为飞书 docx（含 Mermaid/PlantUML/SVG 转画板） | `references/workflows/import/workflow.md` |
+| 导出 docx/wiki/sheet 到本地 Markdown/PDF/Word/Excel，下载文档内图片、附件或画板缩略图 | `references/workflows/export/workflow.md` |
 | 上传、下载、覆盖、查找替换或比较云盘原生 `.md` | `references/workflows/markdown/workflow.md` |
 
 ## 关键边界
@@ -40,8 +42,15 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 ## 执行规则
 
 1. 解析 URL 后区分普通文档 token 与 wiki node token。
-2. 写入前确认目标、更新模式和影响范围；优先 dry-run 或测试文档。
-3. 导入前读取 `references/workflows/import/references/doc-guide.md`。
-4. 用户明确指定接收人时按其要求授权；其余按 write 工作流读取生效的 `owner_email` / `transfer_ownership`，仅在已配置 owner 时处理。未要求通知时在当前会话返回文档链接。
+2. 修改已有文档一律用 `doc content-update`，不要用 `doc import --document-id`（只会追加到文末）；改几个字用文本级替换，
+   改章节或块先 `doc read --with-ids` 拿 block id。写入前确认目标、更新模式和影响范围；`content-update` 没有 dry-run，
+   不确定时先在测试文档上验证。
+3. 写命令默认 Bot 身份：Bot 新建的文档会自动给当前登录用户授予 `full_access`（输出 `permission_grant`）；编辑用户自己的
+   文档而 Bot 无权限时，显式 `--user-access-token "$(feishu-cli auth token --as user)"`。读命令 User 优先、Bot 兜底。
+4. 按退出码处理结果：2 = 参数或定位有歧义（选择器多处命中、方言占位无法写回、本地文件不存在），修正参数后重试；
+   1 且有失败明细（`doc import` 的 `failures`、`content-update` 的 `partial_success`、本地资源 `failed`）时按明细补齐，
+   不要整篇重导；10 = 危险操作缺 `--yes`（`doc delete`、`doc history revert`）。
+5. 导入前读取 `references/workflows/import/references/doc-guide.md`。
+6. 用户明确指定接收人时按其要求授权；其余按 write 工作流读取生效的 `owner_email` / `transfer_ownership`，仅在已配置 owner 时处理。未要求通知时在当前会话返回文档链接。
 
 遇到 Token、身份或 scope 报错（如 99991663/99991668/99991672/99991679）时，读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md` 确认应使用的身份与预检方式，排错表见 `../feishu-cli-platform/references/workflows/auth/workflow.md`。

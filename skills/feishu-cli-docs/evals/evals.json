@@ -85,8 +85,8 @@
       "id": 11,
       "workflows": ["markdown"],
       "prompt": "markdown overwrite 未传 --name，读到的远端标题为空。CLI 会用 file_token.md 接着上传吗？同一个 token 的 25MB Markdown 想更新，能否用 drive upload --file-token？",
-      "expected_output": "空远端名拒绝上传；markdown overwrite 支持大于20MB分片，而 drive upload 覆盖限制20MB。",
-      "expectations": ["说明读取不到现有文件名时非零退出且不会自动重命名上传", "指向确认原名后显式 --name 或修复元数据读取", "25MB 覆盖应使用 markdown overwrite，不推荐超过上限的 drive upload --file-token"],
+      "expected_output": "空远端名拒绝上传；两者都能保留 token 并对大于20MB的文件分片覆盖，但 .md 仍应使用 markdown overwrite：drive upload 未传 --name 会把远端改名为本地文件名，且默认要求 User Token。",
+      "expectations": ["说明读取不到现有文件名时非零退出且不会自动重命名上传", "指向确认原名后显式 --name 或修复元数据读取", "25MB 的 .md 覆盖推荐 markdown overwrite（>20MB 自动分片且保留远端原名）；如提到 drive upload --file-token，说明它同样支持分片，但未传 --name 会改用本地文件名并默认需要 User Token"],
       "files": []
     }
   ]
