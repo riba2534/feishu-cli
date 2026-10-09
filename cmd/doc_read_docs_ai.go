@@ -8,6 +8,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/riba2534/feishu-cli/internal/immarkdown"
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +16,7 @@ import (
 //
 // 默认的本地引擎（块树 → 本地 Markdown）行为不变；以下任一新 flag 触发 docs_ai 引擎：
 // --engine docs_ai、--with-ids、--scope、--detail、--doc-format、--start-block-id、--end-block-id、
-// --context-before、--context-after、--max-depth、--revision-id。
+// --context-before、--context-after、--max-depth、--revision-id、--lang。
 // docs_ai 输出的 block id 可直接用于 `doc content-update --block-id / --start-block-id`。
 
 // docsFetchExtraParam 与官方一致：@人引用表、评论旁路数据、HTML5 块数据。
@@ -24,11 +25,15 @@ const docsFetchExtraParam = `{"enable_user_cite_reference_map":true,"include_com
 // docsAIReadFlags 是只属于 docs_ai 引擎的 flag。
 var docsAIReadFlags = []string{
 	"with-ids", "scope", "detail", "doc-format", "start-block-id", "end-block-id",
-	"context-before", "context-after", "max-depth", "revision-id", "output",
+	"context-before", "context-after", "max-depth", "revision-id", "output", "lang",
 }
 
+// docFormatIMMarkdown 对齐官方 docs +fetch --doc-format im-markdown：向服务端请求 markdown，
+// 再把残留的 DocxXML 片段降级为可直接发 IM 的 Markdown（internal/immarkdown）。
+const docFormatIMMarkdown = "im-markdown"
+
 type docsAIReadOptions struct {
-	format        string
+	format        string // 用户请求的输出格式：xml / markdown / im-markdown
 	detail        string
 	scope         string
 	startBlockID  string
@@ -39,6 +44,8 @@ type docsAIReadOptions struct {
 	maxDepth      int
 	revisionID    int
 	output        string
+	lang          string // 引用用户的显示语言（en-US / zh-CN / ja-JP 等），空表示不传
+	docInput      string // 原始文档参数：im-markdown 从 URL 取租户域名生成链接
 }
 
 // wantsDocsAIRead 判断是否走 docs_ai 引擎。
@@ -62,6 +69,9 @@ func wantsDocsAIRead(cmd *cobra.Command) (bool, error) {
 		return false, nil
 	}
 	if cmd.Flags().Changed("engine") { // 显式 --engine local 却用了 docs_ai 专属 flag
+		if format, _ := cmd.Flags().GetString("doc-format"); strings.EqualFold(strings.TrimSpace(format), docFormatIMMarkdown) {
+			return false, clierr.Usagef("--doc-format im-markdown 只支持 docs_ai 引擎，本地引擎不支持；去掉 --engine local 或改用 --engine docs_ai")
+		}
 		return false, clierr.Usagef("%s 只用于 --engine docs_ai", strings.Join(used, ", "))
 	}
 	return true, nil
@@ -82,6 +92,8 @@ func buildDocsAIReadOptions(cmd *cobra.Command) (*docsAIReadOptions, error) {
 	o.maxDepth, _ = f.GetInt("max-depth")
 	o.revisionID, _ = f.GetInt("revision-id")
 	o.output, _ = f.GetString("output")
+	o.lang, _ = f.GetString("lang")
+	o.lang = strings.TrimSpace(o.lang)
 	o.format = strings.ToLower(strings.TrimSpace(o.format))
 	o.detail = strings.ToLower(strings.TrimSpace(o.detail))
 	o.scope = strings.ToLower(strings.TrimSpace(o.scope))
@@ -116,11 +128,11 @@ func buildDocsAIReadOptions(cmd *cobra.Command) (*docsAIReadOptions, error) {
 			o.format = "markdown"
 		}
 	}
-	if o.format != "xml" && o.format != "markdown" {
-		return nil, clierr.Usagef("不支持的 --doc-format %q，可选 xml / markdown", o.format)
+	if o.format != "xml" && o.format != "markdown" && o.format != docFormatIMMarkdown {
+		return nil, clierr.Usagef("不支持的 --doc-format %q，可选 xml / markdown / im-markdown", o.format)
 	}
-	if o.format == "markdown" && o.detail != "simple" {
-		return nil, clierr.Usagef("--detail %s（含 --with-ids）只支持 --doc-format xml；Markdown 无法携带 block id", o.detail)
+	if o.format != "xml" && o.detail != "simple" {
+		return nil, clierr.Usagef("--detail %s（含 --with-ids）只支持 --doc-format xml；%s 无法携带 block id", o.detail, docFormatLabel(o.format))
 	}
 
 	// 本地引擎的 --outline / --heading / --keyword 映射到 docs_ai 的 scope
@@ -191,14 +203,32 @@ func buildDocsAIReadOptions(cmd *cobra.Command) (*docsAIReadOptions, error) {
 	return o, nil
 }
 
+func docFormatLabel(format string) string {
+	if format == docFormatIMMarkdown {
+		return "IM Markdown"
+	}
+	return "Markdown"
+}
+
+// requestFormat 是发给服务端的 format：im-markdown 在本地转换，服务端按 markdown 返回。
+func (o *docsAIReadOptions) requestFormat() string {
+	if o.format == docFormatIMMarkdown {
+		return "markdown"
+	}
+	return o.format
+}
+
 // buildDocsAIFetchBody 组装 docs_ai fetch 请求体（对齐官方 buildFetchBody）。
 func buildDocsAIFetchBody(o *docsAIReadOptions) map[string]any {
 	body := map[string]any{
-		"format":      o.format,
+		"format":      o.requestFormat(),
 		"extra_param": docsFetchExtraParam,
 	}
 	if o.revisionID > 0 {
 		body["revision_id"] = o.revisionID
+	}
+	if o.lang != "" {
+		body["lang"] = o.lang
 	}
 	switch o.detail {
 	case "with-ids":
@@ -250,6 +280,10 @@ func runDocReadDocsAI(cmd *cobra.Command, documentID, userAccessToken string, o 
 	data, err := client.FetchDocsAI(documentID, buildDocsAIFetchBody(o), userAccessToken)
 	if err != nil {
 		return err
+	}
+	if o.format == docFormatIMMarkdown {
+		// 链接优先用输入 URL 的租户域名；token 输入回退到品牌标准域名
+		immarkdown.ApplyToFetchData(data, immarkdown.ResolveBaseURL(o.docInput, client.ResourceURLBase()))
 	}
 	if o.output == "json" {
 		return printJSONTo(cmd.OutOrStdout(), data)

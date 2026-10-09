@@ -1,8 +1,8 @@
 ---
 name: feishu-cli-docs
 description: >-
-  飞书云文档正文：读取与总结 docx/wiki/sheet，创建与编辑 docx（带内容新建、追加、覆盖、按章节或 block 精确替换/删除/移动、插入本地图片、历史版本查看与回滚），Markdown 导入（Mermaid/PlantUML/SVG 转画板），导出 Markdown/PDF/Word/Excel 与下载文档素材，以及云盘原生 .md 文件的上传、diff 与覆盖。用户要阅读、总结、写入或改写飞书文档，把 Markdown 导入飞书，把文档导出到本地，或把误改的文档回滚时使用。不用于：评论（即使请求提到文档）、协作者与权限、DOCX/XLSX 等二进制导入、上传文件的版本和云盘目录，使用 feishu-cli-storage；按单元格读写表格使用 feishu-cli-data；文档内 HTMLBox/ECharts 动态组件使用 feishu-cli-visual；会议纪要与妙记使用 feishu-cli-meetings。
-compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
+  飞书云文档正文：读取与总结 docx/wiki/sheet（含转成可直接发 IM 的 Markdown），从零创作文档（PRD、方案、报告、纪要等体裁模板，DocxXML 草稿与 doc script 预检），创建与编辑 docx（带内容新建并上传本地图片/附件/HTML 块/画板源文件、追加、覆盖、按章节或 block 精确替换/删除/移动、插入本地或剪贴板图片、设置文档封面、历史版本查看与回滚），Markdown 导入（Mermaid/PlantUML/SVG 转画板），导出 Markdown/PDF/Word/Excel 与下载或预览文档素材，云盘原生 .md 文件的上传、diff 与覆盖，以及读取和编辑已有思维笔记的节点。用户要阅读、总结、撰写、写入或改写飞书文档，把 Markdown 导入飞书，把文档导出到本地，设置文档封面，操作思维笔记节点，或把误改的文档回滚时使用。不用于：评论（即使请求提到文档）、协作者与权限、DOCX/XLSX 等二进制导入、上传文件的版本和云盘目录，使用 feishu-cli-storage；按单元格读写表格使用 feishu-cli-data；文档内 HTMLBox/ECharts 动态组件使用 feishu-cli-visual；获取会议的纪要、妙记与逐字稿使用 feishu-cli-meetings（撰写纪要类文档仍用本 Skill）。
+compatibility: Requires feishu-cli v1.43.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Bash(python3:*) Bash(sleep:*) Read Write
 ---
 
@@ -17,17 +17,23 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 | 意图 | 读取文件 |
 |---|---|
 | 阅读、总结、分析 docx/wiki/sheet，大文档按大纲/章节/关键词局部读取，获取块结构，不主动落盘 | `references/workflows/read/workflow.md` |
+| 取文档内容转成可直接发 IM 的 Markdown（`doc read --doc-format im-markdown`，`--lang` 控制 @人显示语言） | `references/workflows/read/workflow.md` |
 | 带 block id 读取（`doc read --with-ids` / `--engine docs_ai`），为精确修改做准备 | `references/workflows/read/workflow.md` |
-| 创建 docx（含 `doc create --content` 带内容建文档）、追加、覆盖、替换、删除或移动内容，按 block id 精确改写，插入本地图片/附件 | `references/workflows/write/workflow.md` |
+| 从零创作文档（写 / 起草方案、PRD、周报、纪要、报告、教程等），选体裁、写 DocxXML 草稿并用 `doc script` 初始化与预检 | `references/workflows/author/workflow.md` |
+| 创建 docx（含 `doc create --content` 带本地图片/附件、HTML 块、画板源文件建文档）、追加、覆盖、替换、删除或移动内容，按 block id 精确改写，插入本地或剪贴板图片/附件（`--from-clipboard`） | `references/workflows/write/workflow.md` |
+| 设置、下载或删除文档封面（`doc resource update/download/delete --type cover`） | `references/workflows/write/workflow.md` |
 | 查看历史版本、回滚文档（`doc history list/revert/revert-status`） | `references/workflows/write/workflow.md` |
 | 把 Markdown 文件导入为飞书 docx（含 Mermaid/PlantUML/SVG 转画板） | `references/workflows/import/workflow.md` |
-| 导出 docx/wiki/sheet 到本地 Markdown/PDF/Word/Excel，下载文档内图片、附件或画板缩略图 | `references/workflows/export/workflow.md` |
+| 导出 docx/wiki/sheet 到本地 Markdown/PDF/Word/Excel，下载或预览文档内图片、附件、评论图片或画板缩略图（`doc media-download` / `doc media-preview`） | `references/workflows/export/workflow.md` |
 | 上传、下载、覆盖、查找替换或比较云盘原生 `.md` | `references/workflows/markdown/workflow.md` |
+| 读取已有思维笔记的节点，新增子节点或更新节点（`mindnote nodes list/create`） | `references/workflows/mindnote/workflow.md` |
 
 ## 关键边界
 
 - “查看并总结”走 read；明确要求保存到路径才走 export。
+- 从零写一篇文档走 author；只建空文档、原样写入用户给定的完整内容或改已有文档走 write。
 - Markdown 转为可阅读 docx 走 import；把 `.md` 源文件原样存入云盘走 markdown。
+- `mindnote nodes create` 只在已有思维笔记里新增/更新节点，不新建思维笔记；新建思维导图走 `feishu-cli-visual` 的画板。
 - DOCX/XLSX 等二进制文件导入走 `feishu-cli-storage` 的 drive 工作流。
 - `doc htmlbox` 属于 `feishu-cli-visual`；权限和转移所有权属于 `feishu-cli-storage`。
 

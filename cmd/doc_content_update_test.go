@@ -389,28 +389,6 @@ func TestReplaceAllAtomicProtocolWithPartialFailure(t *testing.T) {
 	}
 }
 
-// TestFailClosedOnLocalResources 验证本地资源检测（--upload-images 或相对路径图片）时 fail closed 并给出迁移提示
-func TestFailClosedOnLocalResources(t *testing.T) {
-	// 1. --upload-images fail closed
-	err1 := validateNoLocalResources(true, "普通内容")
-	if err1 == nil || !strings.Contains(err1.Error(), "feishu-cli doc import") {
-		t.Fatalf("upload-images=true 应 fail closed 并给出迁移提示，得到: %v", err1)
-	}
-
-	// 2. 本地图片语法 fail closed
-	localMD := "一段文字\n![本地图](./assets/pic.png)\n结尾"
-	err2 := validateNoLocalResources(false, localMD)
-	if err2 == nil || !strings.Contains(err2.Error(), "feishu-cli doc import") {
-		t.Fatalf("含本地图片应 fail closed 并给出迁移提示，得到: %v", err2)
-	}
-
-	// 3. 网络图片允许通行
-	remoteMD := "一段文字\n![网络图](https://example.com/pic.png)\n结尾"
-	if err := validateNoLocalResources(false, remoteMD); err != nil {
-		t.Fatalf("网络图片应允许通行，但报错: %v", err)
-	}
-}
-
 // TestAppendWireBodyUsesBlockInsertAfterSentinel 验证 append 模式在 wire 上正确转换为 block_insert_after + block_id="-1"
 func TestAppendWireBodyUsesBlockInsertAfterSentinel(t *testing.T) {
 	var gotBody map[string]any

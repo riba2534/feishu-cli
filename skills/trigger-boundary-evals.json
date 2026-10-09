@@ -210,5 +210,26 @@
       "feishu-cli-platform"
     ],
     "reason": "技能与CLI版本漂移"
+  },
+  {
+    "query": "给飞书文档 doxcnxxx 设置一张封面图，用本地的 cover.png，位置稍微往上调一点。",
+    "expected_skills": [
+      "feishu-cli-docs"
+    ],
+    "reason": "文档封面属于文档写入"
+  },
+  {
+    "query": "根据我贴的讨论记录，在飞书里新建一份上周发布评审会的会议纪要文档，带行动项表格。",
+    "expected_skills": [
+      "feishu-cli-docs"
+    ],
+    "reason": "撰写纪要文档走docs而非会议产物"
+  },
+  {
+    "query": "把上周发布评审会的智能纪要和 AI 待办拉下来给我看，不要新建文档。",
+    "expected_skills": [
+      "feishu-cli-meetings"
+    ],
+    "reason": "获取会议纪要产物走meetings"
   }
 ]

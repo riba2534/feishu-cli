@@ -58,7 +58,7 @@ func TestSkillsListAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"内嵌 9 个领域技能", "feishu-cli-platform", "feishu-cli-docs", "export, import, markdown, read, write"} {
+	for _, want := range []string{"内嵌 9 个领域技能", "feishu-cli-platform", "feishu-cli-docs", "author, export, import, markdown, mindnote, read, write"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("skills list 缺少 %q:\n%s", want, out)
 		}

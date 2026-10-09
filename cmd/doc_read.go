@@ -39,7 +39,10 @@ var docReadCmd = &cobra.Command{
 
 docs_ai 引擎（服务端读取，可输出 block id，对齐官方 docs +fetch）：
   --with-ids           输出带 block id 的 XML（可直接用于 doc content-update --block-id）
-  --engine docs_ai     显式切换引擎；--doc-format xml|markdown、--detail simple|with-ids|full
+  --engine docs_ai     显式切换引擎；--doc-format xml|markdown|im-markdown、--detail simple|with-ids|full
+                       im-markdown: 服务端 Markdown 再降级残留的 XML 片段（表格/callout/@人/文档引用等），
+                       可直接作为 IM 消息正文；链接用输入 URL 的租户域名（token 输入用品牌标准域名）
+  --lang <语言>        引用用户（@人）的显示语言，如 en-US / zh-CN / ja-JP；不传由服务端决定
   --scope full|outline|range|keyword|section
                        range: --start-block-id / --end-block-id（-1 表示到文末）
                        section: --start-block-id 标题块 ID，或 --heading 文本自动换成标题块 ID
@@ -51,6 +54,7 @@ docs_ai 引擎（服务端读取，可输出 block id，对齐官方 docs +fetch
   feishu-cli doc read ABC123 --with-ids --heading "性能优化"
   feishu-cli doc read ABC123 --with-ids --scope keyword --keyword "QPS|限流" --context-after 1
   feishu-cli doc read ABC123 --engine docs_ai --doc-format markdown   # 服务端 Markdown 全文
+  feishu-cli doc read https://xxx.feishu.cn/docx/ABC123 --doc-format im-markdown --lang en-US   # 发 IM 前取正文
 
 提示:
   - --heading 按子串匹配标题文本，命中多个时取第一个并提示其余候选
@@ -74,6 +78,7 @@ docs_ai 引擎（服务端读取，可输出 block id，对齐官方 docs +fetch
 			if err != nil {
 				return err
 			}
+			opts.docInput = args[0]
 			userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 			documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 			if err != nil {
@@ -348,7 +353,7 @@ func init() {
 	docReadCmd.Flags().String("user-access-token", "", "User Access Token")
 	docReadCmd.Flags().String("engine", "local", "读取引擎: local（本地块树转换，默认）| docs_ai（服务端读取，支持 block id）")
 	docReadCmd.Flags().Bool("with-ids", false, "docs_ai: 输出带 block id 的 XML（等价 --engine docs_ai --detail with-ids）")
-	docReadCmd.Flags().String("doc-format", "", "docs_ai: 输出格式 xml | markdown（--with-ids 时默认 xml，否则 markdown）")
+	docReadCmd.Flags().String("doc-format", "", "docs_ai: 输出格式 xml | markdown | im-markdown（--with-ids 时默认 xml，否则 markdown；im-markdown 可直接发 IM）")
 	docReadCmd.Flags().String("detail", "", "docs_ai: 详细程度 simple | with-ids | full（full 含样式与编辑元数据）")
 	docReadCmd.Flags().String("scope", "", "docs_ai: 读取范围 full | outline | range | keyword | section")
 	docReadCmd.Flags().String("start-block-id", "", "docs_ai: range/section 的起点块 ID")
@@ -358,4 +363,5 @@ func init() {
 	docReadCmd.Flags().Int("max-depth", -1, "docs_ai: outline 标题层级上限；其余范围子树深度（-1 不限）")
 	docReadCmd.Flags().Int("revision-id", -1, "docs_ai: 读取指定版本（-1 最新）")
 	docReadCmd.Flags().StringP("output", "o", "", "docs_ai: 输出格式（json 输出完整响应，含 block id、评论与引用表）")
+	docReadCmd.Flags().String("lang", "", "docs_ai: 引用用户的显示语言，如 en-US / zh-CN / ja-JP（不传由服务端决定）")
 }

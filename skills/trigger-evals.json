@@ -250,14 +250,14 @@
     "expected_workflow": "write"
   },
   {
-    "query": "创建一份飞书文档，把本地 Markdown 追加到末尾并保留嵌套列表。",
+    "query": "从零帮我写一份新功能的 PRD 放到飞书文档里，要有背景、目标、范围和里程碑表格，先按体裁规划再写草稿并预检。",
     "expected_skill": "feishu-cli-docs",
-    "expected_workflow": "write"
+    "expected_workflow": "author"
   },
   {
-    "query": "比较本地 README.md 和飞书云盘原生 Markdown 文件的差异，但先不要覆盖。",
+    "query": "这个知识库链接里挂的是一张思维笔记，帮我在「风险」节点下面加一个子节点「接口超时」。",
     "expected_skill": "feishu-cli-docs",
-    "expected_workflow": "markdown"
+    "expected_workflow": "mindnote"
   },
   {
     "query": "解析这个 /wiki/ 链接底层的文件类型和 token，并把该上传文件改名。",

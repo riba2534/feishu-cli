@@ -4,6 +4,47 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [v1.43.0] - 2026-10-10
+
+对照官方 CLI（larksuite/cli）补齐云文档能力。本版本只做新增：已有命令不带新参数时的默认值、身份、输出结构与退出码均保持不变。
+
+### 新增
+
+**写入**
+- `doc create --content/--content-file` 支持本地图片与附件（Markdown `![](@./a.png)`、XML `<img path>`、`<source path>`），建文档后自动上传绑定；单项失败时 exit 1 并输出 `local_resource_failures`，`document_id` 照常返回。
+- `doc create` 与 `doc content-update` 的 XML 支持 `<html5-block path="@./x.html"/>`（本地单文件 HTML，写入 HTML 组件块）、`<whiteboard type="svg|mermaid|plantuml" path="@./x"/>`（本地画板源文件），以及 `--reference-map`（内联 JSON / `@file` / `-`）。
+- `doc create`、`doc content-update` 新增 `--dry-run`：打印将发出的请求与本地资源上传计划，不联网、不解析身份。
+- XML 内容来自文件时，`@` 相对路径在当前目录找不到会回退到该文件所在目录。
+- `<img href="https://...">` 与 Markdown 网络图片仍由服务端下载，行为与之前一致；`doc create` 中 href 不能与 path/src/token 混用（exit 2）。
+
+**读取**
+- `doc read --doc-format im-markdown`：取 docs_ai Markdown 并降级残留 DocxXML 片段，可直接作为 IM 消息正文；链接使用输入 URL 的租户域名。
+- `doc read --lang <en-US|zh-CN|ja-JP...>`：设置文档中人员引用的显示语言。
+
+**封面与素材**
+- `doc resource download|update|delete <doc> --type cover`：下载、设置（`--file` 本地文件，>20MB 自动分片 / `--url` HTTPS 图片 / `--from-clipboard`，可选 `--offset-ratio-x/-y`）、删除文档封面；写命令支持 `--dry-run`，删除空封面幂等。`--url` 只允许 HTTPS，拒绝内网与保留地址（请求前、每次跳转与建连时校验），最多 3 次跳转，只接受图片且不超过 20MiB。
+- `doc media-preview <token>`：通过预览接口保存文档素材或评论图片，自动补扩展名。
+- `doc media-insert --file-view card|preview`（附件的展示方式；`inline` 按官方映射下发，服务端目前不支持时给出提示）、`--from-clipboard`（从剪贴板插入图片）。
+- `media upload --doc-id`：带上 `drive_route_token`，接受文档 ID 或 /docx/、/wiki/ 链接。
+- 剪贴板图片读取：macOS / Windows 使用系统自带方式，Linux 依次尝试 xclip、wl-paste、xsel，缺工具时给出安装建议。
+
+**写作工作流**
+- `doc script --command init-draft|parse`：初始化写作草稿工作区（含 Presentation Decision 校验），解析本地或在线 DocxXML 文档，输出画像、字数统计、块分布，并预检本地资源与远程图片可达性（拒绝内网地址）。
+- `feishu-cli-docs` 新增 `author` 写作工作流：创作步骤、DocxXML 写作规范与扩展块、docs_ai Markdown 写法、28 个文体模板（PRD、数据报告、会议纪要等）。
+
+**思维笔记**
+- `mindnote nodes list|create <mindnote_token|url>`：读取已有思维笔记的节点、新增子节点或按 node_id 更新；支持 /mindnotes/ 与 /wiki/ 链接（wiki 自动解包并校验类型），`--client-token` 幂等、`--dry-run`、`--user-id-type`、`--as`（默认 auto，与官方一致）。需要应用开通 `mindnote:node:read` / `mindnote:node:create`。
+
+### 修复
+- `doc content-update` 中只给宽度的 `<img width>` 会把图片拉伸：现在按原图像素换算为 scale（同官方）。
+- `doc content-update` 的 JSON 输出中 `new_blocks` 残留本地资源占位标记，`document.revision_id` 不是绑定后的版本：现在回填真实素材 token 和绑定后的版本号。
+- HTML 注释与 CDATA 中的本地图片路径会被误上传。
+
+### 其他
+- `doc media-insert` 未提供图片来源时的报错改为中文提示"必须指定 --file 或 --from-clipboard 之一"（退出码仍为 2）。
+- 远程图片探测与封面 `--url` 下载共用同一套受限 IP 判定（回环、私网、链路本地、CGNAT 等），在请求前、每跳重定向与拨号时校验。
+- 新增 `THIRD_PARTY_NOTICES.md`：上述部分实现与技能文档改编自 larksuite/cli（MIT License），保留其版权与许可声明。
+
 ## [v1.42.0] - 2026-10-09
 
 对照飞书官方 CLI（larksuite/cli）逐领域审查后的全面对齐：修复一批"代码自洽但与服务端契约不符"的缺陷，
