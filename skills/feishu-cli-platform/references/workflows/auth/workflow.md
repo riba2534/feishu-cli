@@ -2,7 +2,8 @@
 
 本工作流覆盖 `auth`（登录、Token、scope 诊断）、`config`、`profile`、`doctor`、`skills` 与 `update`。
 命令该用哪种身份（读类 User 优先、写类默认 Bot、必须 User、`--as` 显式切换）见
-[身份选择](references/identity.md)；本文件不重复维护命令身份表。
+[身份选择](references/identity.md)；本文件不重复维护命令身份表。退出码、确认门禁（退出码 10）、stdout/stderr 约定、
+Bot 创建资源后的自动授权与目标实体解析见 [Agent 调用契约](references/agent-contract.md)。
 
 ## 目录
 
@@ -256,7 +257,7 @@ feishu-cli auth login --recommend                                # 全部域（�
 | `invalid_client`（`20002` secret 错误 / `20048` 应用不存在） | App 凭证错误（退出码 3）：检查 `--bot-app-*`、`FEISHU_APP_*` 或 config.yaml |
 | 资源级无权限（如文档 1063002/1063004） | 退出码 1，不是 scope 问题：需资源 owner 授权，或换成有权限的身份（Bot 需被加为协作者） |
 | `解析 token 文件失败 ... 可能已损坏` | `auth login` 重新登录覆盖，或 `auth logout` 清理后再登录 |
-| 退出码 `10` | 危险操作需确认：向用户说明将执行的操作，获得同意后追加全局 `--yes` 重跑 |
+| 退出码 `10` | 危险操作需确认、未执行：向用户说明目标与影响，获得同意后追加全局 `--yes` 重跑，不要自行添加（见 [Agent 调用契约](references/agent-contract.md)） |
 | `token.json 未绑定 app_id` | 执行 `auth token --bind-legacy-app --as user` 或重新 `auth login`，不要手改 token 文件把别的 App 填进去 |
 | `token.json 绑定的 app_id 与当前应用不一致` | 切回匹配的 `--profile` / `--bot-app-id`，或对该应用重新登录 |
 | `拒绝自定义远端 host` / `拒绝非 loopback 的 HTTP` | 默认只允许官方 HTTPS。确认不是配错 `base_url` 之后，才设 `FEISHU_ALLOW_CUSTOM_BASE_URL=1`（远端 HTTP 另需 `FEISHU_ALLOW_INSECURE_HTTP=1`） |
