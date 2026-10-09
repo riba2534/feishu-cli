@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -121,5 +122,45 @@ func TestDeleteTaskFailedErrorHintsUseRealFlags(t *testing.T) {
 	perm, _, err := rootCmd.Find([]string{"perm", "list"})
 	if err != nil || perm.Flags().Lookup("doc-type") == nil || perm.InheritedFlags().Lookup("as") == nil {
 		t.Fatalf("perm list --doc-type/--as 不存在: %v", err)
+	}
+}
+
+// TestPasswordCreate1063002HintsPublicLink 分享密码遇 1063002 时提示先把链接设为互联网公开，
+// 而不是"改用 --as user"；提示中的命令与参数必须真实存在，原错误码保留。
+func TestPasswordCreate1063002HintsPublicLink(t *testing.T) {
+	_, reqs := newCommentPermTestServer(t, func(w http.ResponseWriter, r *http.Request, _ []byte) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprint(w, `{"code":1063002,"msg":"Permission denied"}`)
+	})
+	for _, c := range []*cobra.Command{passwordCreateCmd, passwordUpdateCmd} {
+		t.Run(c.Name(), func(t *testing.T) {
+			_, _, err := runCmdWithFlags(t, c, []string{"doxcnFakePwd"}, "--doc-type", "sheet")
+			if err == nil {
+				t.Fatal("1063002 应返回错误")
+			}
+			msg := err.Error()
+			if !strings.Contains(msg, "互联网公开") ||
+				!strings.Contains(msg, "feishu-cli perm public-update doxcnFakePwd --doc-type sheet --external-access=true --link-share-entity anyone_readable") {
+				t.Fatalf("提示应指向把链接设为互联网公开: %s", msg)
+			}
+			if strings.Contains(msg, "--as user") {
+				t.Fatalf("分享密码 1063002 不应再提示改用 --as user: %s", msg)
+			}
+			if !client.HasAPICode(err, 1063002) {
+				t.Fatalf("应保留原错误码: %v", err)
+			}
+		})
+	}
+	if got := reqs(); len(got) != 2 || got[0].Path != "/open-apis/drive/v1/permissions/doxcnFakePwd/public/password" || got[0].Query != "type=sheet" {
+		t.Fatalf("请求不对: %+v", got)
+	}
+	pu, _, err := rootCmd.Find([]string{"perm", "public-update"})
+	if err != nil || pu.Flags().Lookup("external-access") == nil || pu.Flags().Lookup("link-share-entity") == nil || pu.Flags().Lookup("doc-type") == nil {
+		t.Fatalf("perm public-update 参数不存在: %v", err)
+	}
+	// 其他错误码仍走通用权限提示
+	other := fmt.Errorf("x: code=1063004, msg=no share permission")
+	if err := wrapPasswordError(other, "", "doxcn", "docx"); !strings.Contains(err.Error(), "--as user") {
+		t.Fatalf("1063004 应沿用通用提示: %v", err)
 	}
 }
