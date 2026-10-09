@@ -52,7 +52,7 @@
 
 自定义主题里使用 `collapsible_panel` 时，折叠容器本身的上 padding 必须清空，例如 `padding: "0px 12px 12px 12px"`；`header.padding` 的左右边距要和内容区对齐，例如 `"8px 12px 8px 12px"`。需要内容区额外间距时放到内容元素的 `margin`，不要让折叠 header 被外层 padding 顶开或左右贴边。
 
-标题右侧 `text_tag` 的颜色也要随主题选择，不要固定 `indigo`；例如 forest/court 用 `green`，mono 用 `grey`，macchiato 用 `orange`，neo-grid 用 `yellow`，soft editorial 用 `purple`。
+标题右侧 `text_tag` 的颜色也要随主题选择，不要固定 `indigo`；例如 forest/court 用 `green`，mono 用 `neutral`（标签枚举没有 `grey`），macchiato 用 `orange`，neo-grid 用 `yellow`，soft editorial 用 `purple`。
 
 主题生成流程：
 
