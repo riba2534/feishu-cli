@@ -8,12 +8,11 @@
 |------|------|------|
 | 创建节点 | POST `/open-apis/board/v1/whiteboards/{id}/nodes` | 批量创建，上限 3000 |
 | 获取节点 | GET `/open-apis/board/v1/whiteboards/{id}/nodes` | 获取全部节点 |
-| 删除节点 | DELETE `/open-apis/board/v1/whiteboards/{id}/nodes/{node_id}` | 单个删除 |
-| 批量删除 | DELETE `/open-apis/board/v1/whiteboards/{id}/nodes/batch_delete` | 批量删除 |
+| 删除节点 | DELETE `/open-apis/board/v1/whiteboards/{id}/nodes/batch_delete` | 没有单节点删除端点；删一个节点也走 batch_delete，请求体 `{"ids": [...]}` |
 | 修改节点 | -- | **无 PATCH**；用 create+delete，或 `board update --overwrite`（服务端 `overwrite: true` 原子覆盖） |
 
 - 频率限制：50 req/s
-- 请求体格式：`{"nodes": [...]}`
+- 请求体格式：创建为 `{"nodes": [...]}`，批量删除为 `{"ids": [...]}`
 
 ## CLI 命令
 

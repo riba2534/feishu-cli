@@ -48,6 +48,8 @@ feishu-cli board import <whiteboard_id> "graph TD; A-->B" \
 | `--overwrite` | 先清空**整张画板**（含其他图表）再写入 | 关 |
 | `--client-token` | 幂等键（≥10 字符），仅 `--engine local` 生效；服务端引擎传了报用法错误（exit 2） | 空 |
 | `--source-type` | `file` 或 `content` | `file` |
+| `--parse-mode` | 服务端解析模式，原样下发为 `parse_mode`（≤0 时按 1 处理） | `1` |
+| `--dry-run` | 只打印将下发的参数（engine、syntax/syntax_type、parse_mode、overwrite 等），不调用 API | 关 |
 | `<source>` | source-type=content 时直接传图表源码；source-type=file 时传文件路径 | 必填 |
 
 ### diagram-type 映射

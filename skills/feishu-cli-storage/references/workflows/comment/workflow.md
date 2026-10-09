@@ -101,8 +101,8 @@ feishu-cli drive add-comment --doc boxcnxxx --type file --content '[{"type":"tex
 
 ## 身份
 
-- `list/get/batch-get/add/resolve/unresolve/reply list`：默认优先 `auth login` 的 User Token，不可用时 stderr 告警后回退 App Token
-  （以代码行为为准：`comment add --help` 里"默认以 App Token 创建"的说法已过时，实测默认以登录用户身份创建）。
+- `list/get/batch-get/add/resolve/unresolve/reply list`：默认 User 优先（`auth login` 的 User Token），未登录时回退 App Token；
+  已配置 User Token 但不可用时 stderr 告警后回退 App。`comment add` 因此默认以登录用户身份创建评论。
 - `reply add/update/react/delete`：默认 App/Bot 身份，仅显式 `--user-access-token`（或 `FEISHU_USER_ACCESS_TOKEN`）时以用户身份调用。
   **回复只能由作者身份修改/删除**（否则 1069303）：Bot 创建的回复用同一 App，用户创建的回复传该用户的 User Token。
 - 个人文档（App 不是协作者）用 App 身份会得到 `1069303 forbidden`，此时登录后使用 User Token。

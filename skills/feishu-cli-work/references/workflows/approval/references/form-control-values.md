@@ -22,8 +22,8 @@
 | 多行文本 | `textarea` | `string` |
 | 日期 | `date` | RFC3339 `string`（如 `2019-10-01T08:12:01+08:00`） |
 | 日期区间 | `dateInterval` | `{start, end, interval}`（均 RFC3339） |
-| 单选 | `radio` / `radioV2` | `[option_value]`（string 数组） |
-| 多选 | `checkbox` / `checkboxV2` | `[option_value, ...]` |
+| 单选 | `radio` / `radioV2` | `option_value`（string，如 `"option_1"`，不是数组） |
+| 多选 | `checkbox` / `checkboxV2` | `[option_value, ...]`（string 数组） |
 | 数字 | `number` | `float`（如 `1234.5678`） |
 | 金额 | `amount` | `float` + 同级 `currency`（如 `"USD"`） |
 | 联系人 | `contact` | `open_ids=[open_id]`（官方推荐只传 open_ids；也可同时传 `value=[user_id]`） |
@@ -52,7 +52,7 @@
 ### 单选 / 多选（option value 从审批定义 form 拿）
 
 ```json
-[{"id":"widget1","type":"radioV2","value":["option_1"]},
+[{"id":"widget1","type":"radioV2","value":"option_1"},
  {"id":"widget2","type":"checkboxV2","value":["option_1","option_2"]}]
 ```
 
