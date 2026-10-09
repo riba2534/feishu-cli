@@ -51,7 +51,7 @@ feishu-cli doc export <document_id> \
 
 | 参数 | 说明 |
 |---|---|
-| `--download-images` | 下载图片与画板到 `--assets-dir`（默认 `./assets`）并改写引用；画板导出为图片（实测为 JPEG，如 `board_N.jpg`） |
+| `--download-images` | 下载图片与画板到 `--assets-dir`（默认 `./assets`）并改写引用；画板导出为图片（实测为 JPEG，如 `board_N.jpg`）。引用路径原样使用 `--assets-dir` 的值（相对当前目录），之后要 `doc import` 回飞书时用绝对路径 |
 | `--front-matter` | 顶部加 YAML front matter（title、document_id） |
 | `--highlight` | 文字颜色/背景色输出为 `<span style>` |
 | `--expand-mentions` | 默认 true；把 @用户 展开为名字（需 `contact:user.base:readonly`），`=false` 保留可回导的 `<mention-user/>` 标签 |

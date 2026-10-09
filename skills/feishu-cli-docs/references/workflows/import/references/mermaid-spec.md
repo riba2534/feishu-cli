@@ -1,6 +1,8 @@
 # Mermaid 飞书画板语法规范
 
-本文档是飞书画板 Mermaid 渲染的完整规范，包含 8 种图表类型的正确模板、飞书特有限制、常见错误修复方法和复杂度安全阈值。
+本文档给出飞书画板 Mermaid 渲染的常用模板、实测渲染能力、可读性建议与 flowchart 视觉样式规范。
+标注"实测"的结论来自 2026-10 用 feishu-cli v1.42.0 `doc import` 在测试文档上的回归；服务端能力可能继续变化，
+以导入输出的 `diagram_fallback` / `failures` 为准。
 
 ---
 
@@ -14,21 +16,29 @@
 
 ## 1. 通用规则
 
-### 强制性约束
+### 支持的图表类型（实测）
 
-| 规则 | 说明 | 违反后果 |
-|------|------|---------|
-| 普通标签禁止字面花括号 `{}` | `A{判断}` / `A{{判断}}` 是合法条件形状；但 `A["{name: value}"]` 这类普通标签容易解析失败。erDiagram/classDiagram 的结构语法不受此限制 | Parse error 时降级为代码块 |
-| 禁止 `par...and...end` | 飞书画板不支持并行语法 | 错误码 2891001 |
-| 方括号冒号加引号 | `[text:xxx]` 中冒号导致解析歧义 | 可能 Parse error |
-| Note 跨度 ≤ 2 | `Note over` 最多跨 2 个相邻 participant | 渲染错误 |
-| 避免过深嵌套 | 多层 subgraph/alt 嵌套增加失败率 | 服务端超时或错误 |
+服务端当前可渲染：flowchart / graph、sequenceDiagram、classDiagram、stateDiagram / stateDiagram-v2、erDiagram、gantt、pie、
+mindmap、timeline、quadrantChart、xychart-beta。`journey`、`gitGraph` 等其他类型会被服务端拒绝（`code=2890002 ... not supported`），
+与语法错误一样**不重试、直接降级为代码块**。
 
-### 画板 API 映射
+### 已放宽的历史限制（实测可正常渲染）
 
-- API 端点：`/open-apis/board/v1/whiteboards/{id}/nodes/plantuml`
-- `syntax_type = 2`（Mermaid）
-- `diagram_type`：根据图表类型自动映射（`0` auto 适用于大多数场景）
+| 旧规则 | 当前实测 |
+|------|------|
+| 普通标签禁止字面花括号 | `A["{name: value}"]` 正常显示花括号文本；`A{判断}` / `A{{判断}}` 仍是条件 / 六边形形状 |
+| 方括号内冒号必须加引号 | `A[类型:string]` 正常渲染；加双引号 `A["类型: string"]` 仍是更稳妥的写法 |
+| 禁止 `par...and...end` | 渲染为组合片段（combined fragment），`critical` / `break` / `rect` 同样可用 |
+| `Note over` 最多跨 2 个参与者 | 跨 3 个参与者正常渲染 |
+| 10+ participant + 2 层 alt + 30+ 长标签必定失败 | 10 participant + 2 层嵌套 alt + 32 条长消息正常渲染 |
+
+这些写法不再是导入失败的原因；但图越复杂越难阅读，仍建议按 [3.1](#31-大型图表拆分策略) 拆分。
+
+### 图表类型参数
+
+`doc import` 对所有 Mermaid 代码块使用 `diagram_type=auto`，下文各类型标注的 `--diagram-type` 只在用 feishu-cli-visual 的
+`board import <whiteboard_id> <file> --syntax mermaid --diagram-type <type>` 单独导入时使用（可选值
+`auto/mindmap/sequence/activity/class/er/flowchart/state/component`）。
 
 ---
 
@@ -36,7 +46,7 @@
 
 ### 2.1 flowchart（流程图）
 
-**diagram_type**: 6 (flowchart)
+`--diagram-type flowchart`
 
 #### 正确模板
 
@@ -84,44 +94,21 @@ flowchart LR
 | `A[(文本)]` | 数据库 |
 | `A((文本))` | 圆形 |
 | `A>文本]` | 旗帜形 |
-| `A{文本}` | 菱形 ⚠️ 仅用于条件判断节点，不要在普通标签中使用 |
-| `A{{文本}}` | 六边形 ⚠️ 同上 |
+| `A{文本}` | 菱形（条件判断节点） |
+| `A{{文本}}` | 六边形 |
 
-#### 飞书特有限制
+#### 编写建议
 
-- subgraph 嵌套不宜超过 2 层
-- 节点标签中 **不要出现花括号**（除非是菱形条件节点）
-- 标签含冒号时用双引号包裹：`A["类型: string"]`
-
-#### 常见错误与修复
-
-```mermaid
-<!-- ❌ 错误：标签中有花括号 -->
-flowchart TD
-    A["{name: value}"] --> B[处理]
-
-<!-- ✅ 修复：移除花括号 -->
-flowchart TD
-    A["name = value"] --> B[处理]
-```
-
-```mermaid
-<!-- ❌ 错误：方括号中有冒号 -->
-flowchart TD
-    A[类型:string] --> B[处理]
-
-<!-- ✅ 修复：加双引号 -->
-flowchart TD
-    A["类型: string"] --> B[处理]
-```
+- subgraph 嵌套 3 层实测可渲染，但层级越深越难阅读，建议 ≤ 2 层
+- 标签含冒号、括号等特殊字符时用双引号包裹：`A["类型: string"]`（不加引号实测也能渲染，加引号更稳妥）
 
 ---
 
 ### 2.2 sequenceDiagram（时序图）
 
-**diagram_type**: 2 (sequence)
+`--diagram-type sequence`
 
-> ⚠️ 复杂度限制最严格的图表类型，必须严格控制规模。
+> 时序图最容易因规模过大而难以阅读；渲染本身实测可承受 10 participant + 2 层 alt + 30 余条长消息。
 
 #### 正确模板（简单）
 
@@ -173,77 +160,15 @@ sequenceDiagram
 | 条件 | `alt...else...end` | ✅ 限 1 层 |
 | 可选 | `opt...end` | ✅ |
 | 循环 | `loop...end` | ✅ |
-| 并行 | `par...and...end` | ❌ **完全不支持** |
-| 临界区 | `critical...end` | ⚠️ 可能不支持 |
+| 并行 | `par...and...end` | ✅ 实测渲染为组合片段 |
+| 临界区 / 中断 | `critical...option...end`、`break...end` | ✅ 实测 |
+| 背景高亮 | `rect rgb(...)...end` | ✅ 实测 |
 
-#### 复杂度安全阈值（实测数据）
+#### 可读性建议
 
-通过二分法实测确定的飞书画板渲染限制：
-
-| 维度 | 安全值 | 警告值 | 必定失败 |
-|------|--------|--------|---------|
-| participant 数量 | ≤ 6 | 7-9 | ≥ 10（与其他因素叠加） |
-| alt 嵌套层数 | 0-1 | — | ≥ 2（与其他因素叠加） |
-| 消息标签长度 | ≤ 20 字符 | 21-30 字符 | ≥ 30（与其他因素叠加） |
-| 总消息数 | ≤ 20 | 21-30 | ≥ 30（与其他因素叠加） |
-
-**关键发现**：单一维度超限不一定失败，**多维度同时超限** 时必定失败。
-
-| 组合 | 结果 |
-|------|------|
-| 6 participant + 0 alt + 短标签 | ✅ 安全 |
-| 8 participant + 1 alt + 短标签 | ✅ 通常安全 |
-| 10 participant + 0 alt + 短标签 | ⚠️ 可能失败 |
-| 10 participant + 2 alt + 长标签 | ❌ 必定失败 |
-| 6 participant + 2 alt + 30+ 长标签 | ⚠️ 可能失败 |
-
-#### 飞书特有限制
-
-1. **禁止 `par` 语法**：改用 `Note over A,B: 并行处理` 标注
-2. **Note 跨度**：`Note over X,Y` 中 X 和 Y 必须相邻，最多跨 2 个
-3. **activate/deactivate**：支持，但大量激活可能增加复杂度
-4. **participant 别名**：推荐使用（`participant A as 短名`）减少标签宽度
-
-#### 常见错误与修复
-
-```mermaid
-<!-- ❌ 错误：使用 par 语法 -->
-sequenceDiagram
-    par 并行处理
-        A->>B: 请求1
-    and
-        A->>C: 请求2
-    end
-
-<!-- ✅ 修复：改用 Note -->
-sequenceDiagram
-    Note over A,C: 并行处理
-    A->>B: 请求1
-    A->>C: 请求2
-```
-
-```mermaid
-<!-- ❌ 错误：太多参与者 + 多层 alt -->
-sequenceDiagram
-    participant A
-    participant B
-    participant C
-    participant D
-    participant E
-    participant F
-    participant G
-    participant H
-    participant I
-    participant J
-    A->>B: 这是一条很长很长的消息标签文字
-    alt 条件1
-        alt 条件2
-            B->>C: 嵌套条件
-        end
-    end
-
-<!-- ✅ 修复：拆分为两个图 -->
-```
+- participant 建议 ≤ 8，`alt` 嵌套 ≤ 1 层，消息标签简短——超出时渲染实测仍成功，但画板会很难阅读
+- `activate/deactivate`、`Note over A,C` 跨多个参与者均可使用
+- 用 participant 别名（`participant A as 短名`）减少标签宽度
 
 #### 拆分建议
 
@@ -256,7 +181,7 @@ sequenceDiagram
 
 ### 2.3 classDiagram（类图）
 
-**diagram_type**: 4 (class)
+`--diagram-type class`
 
 #### 正确模板
 
@@ -291,7 +216,7 @@ classDiagram
 | `..\|>` | 实现 |
 | `..>` | 虚线依赖 |
 
-#### 飞书特有限制
+#### 编写建议
 
 - 类数量建议 ≤ 15，超过考虑拆分
 - 方法和属性总数不宜过多
@@ -301,9 +226,9 @@ classDiagram
 
 ### 2.4 stateDiagram-v2（状态图）
 
-**导入策略**：`doc import` 默认 auto；直接 `board import` 时可显式传 `--diagram-type state`。
+`--diagram-type state`
 
-> 必须使用 `stateDiagram-v2`，不要使用旧版 `stateDiagram`。
+> 推荐 `stateDiagram-v2`；旧版 `stateDiagram` 实测也能渲染。
 
 #### 正确模板
 
@@ -332,7 +257,7 @@ stateDiagram-v2
     Inactive --> [*]
 ```
 
-#### 飞书特有限制
+#### 编写建议
 
 - 嵌套状态不宜超过 2 层
 - 中文状态名支持良好
@@ -342,7 +267,7 @@ stateDiagram-v2
 
 ### 2.5 erDiagram（ER 图）
 
-**diagram_type**: 5 (er)
+`--diagram-type er`
 
 #### 正确模板
 
@@ -384,7 +309,7 @@ erDiagram
 | `}o--o{` | 多对多 |
 | `\|\|--\|{` | 一对多（至少一个） |
 
-#### 飞书特有限制
+#### 编写建议
 
 - 实体数量建议 ≤ 12
 - 属性列表不宜过长（每实体 ≤ 10 个属性）
@@ -394,7 +319,7 @@ erDiagram
 
 ### 2.6 gantt（甘特图）
 
-**diagram_type**: 0 (auto)
+`--diagram-type auto`
 
 #### 正确模板
 
@@ -413,7 +338,7 @@ gantt
         上线部署     :c2, after c1, 3d
 ```
 
-#### 飞书特有限制
+#### 编写建议
 
 - 任务数量建议 ≤ 20
 - `dateFormat` 推荐使用 `YYYY-MM-DD`
@@ -424,7 +349,7 @@ gantt
 
 ### 2.7 pie（饼图）
 
-**diagram_type**: 0 (auto)
+`--diagram-type auto`
 
 #### 正确模板
 
@@ -436,7 +361,7 @@ pie title 技术栈分布
     "其他" : 10
 ```
 
-#### 飞书特有限制
+#### 编写建议
 
 - 分片数量建议 ≤ 8
 - 标签用双引号包裹
@@ -447,7 +372,7 @@ pie title 技术栈分布
 
 ### 2.8 mindmap（思维导图）
 
-**diagram_type**: 1 (mindmap)
+`--diagram-type mindmap`
 
 #### 正确模板
 
@@ -468,7 +393,7 @@ mindmap
             CI/CD
 ```
 
-#### 飞书特有限制
+#### 编写建议
 
 - 根节点使用 `root((文字))` 或直接 `root(文字)`
 - 缩进表示层级关系（使用空格）
@@ -511,11 +436,11 @@ sequenceDiagram
 
 ### 3.3 失败降级预期
 
-即使严格遵守规范，仍有约 **7% 的失败率**（基于 88 个图表的实测数据）。失败时 feishu-cli 会：
+图表导入失败时 feishu-cli 会：
 
-1. 自动重试（最多 10 次，每次间隔 1 秒）
-2. 重试无效时降级为代码块（保留原始 Mermaid 代码）
-3. 在导入报告中标注失败图表
+1. 服务端错误（5xx）与限流按指数退避自动重试（`--diagram-retries`，默认 10 次）；语法错误、不支持的图类型等 4xx 错误不重试
+2. 删除空画板并在原位置降级为代码块（保留原始 Mermaid 代码），stderr 打印 `✗` 明细，统计计入 `diagram_fallback`
+3. 降级成功不算失败，命令退出码仍为 0；降级也失败时才计入 `failures` 并以退出码 1 结束
 
 **降级对文档影响**：代码块中的 Mermaid 代码仍然可读，用户可在飞书中手动处理。
 
@@ -582,13 +507,14 @@ RPC=蓝色矩形 | FaaS=青色矩形 | 配置=黄色矩形
 
 ```
 需要流程/步骤？     → flowchart
-需要交互/调用链？   → sequenceDiagram（≤6 participant）
+需要交互/调用链？   → sequenceDiagram（建议 ≤ 8 participant）
 需要类/结构关系？   → classDiagram
 需要状态转换？      → stateDiagram-v2
 需要数据库表关系？  → erDiagram
 需要项目排期？      → gantt
 需要占比分布？      → pie（≤8 片；相近占比用表格/条形更诚实）
 需要层级梳理？      → mindmap
+需要时间线/里程碑？ → timeline
 ```
 
 **数据图表（占比/趋势/对比）先按数据任务选形式**，不按用户口头图表名 —— 判断
@@ -598,11 +524,9 @@ RPC=蓝色矩形 | FaaS=青色矩形 | 配置=黄色矩形
 ### 安全检查速记
 
 ```
-✅ 8 种图表类型
-❌ 花括号 {} 在标签中
-❌ par...and...end
-❌ Note over 跨 3+ participant
-❌ sequenceDiagram: 10+ participant + 2+ alt
-⚠️ 方括号冒号 → 加双引号
-⚠️ 复杂嵌套 → 考虑拆分
+✅ 11 种类型：flowchart/graph、sequence、class、state、er、gantt、pie、mindmap、timeline、quadrantChart、xychart-beta
+❌ journey、gitGraph 等其他类型 → 降级为代码块
+✅ 花括号标签、par/critical/break、Note 跨多参与者（实测可渲染）
+⚠️ 标签含冒号等特殊字符 → 加双引号更稳妥
+⚠️ 复杂嵌套、超多参与者 → 为可读性拆分
 ```
