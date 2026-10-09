@@ -33,6 +33,8 @@ var slidesCreateCmd = &cobra.Command{
   错误信息会说明进度。超过 10 页时先创建，再用 slides add-slide 逐页追加。
   XML 中 <img src="@./pic.png"> 占位符在创建后、加页前自动上传（≤20 MB/张）并替换为 file_token；
   路径相对当前工作目录解析。
+  slides_added 以服务端返回的不同 slide_id 计数：两页 XML 完全相同时服务端可能只新增一页，
+  此时 stderr 告警，JSON 另给出 pages_requested 与 duplicate_slides。
 
 权限: slides:presentation:create 或 slides:presentation:write_only（含图片时另需 docs:document.media:upload）
 
@@ -237,6 +239,8 @@ func addSlidesCreatePages(cmd *cobra.Command, presentationID, url string, pages,
 		out["images_uploaded"] = uploaded
 	}
 	slideIDs := []string{}
+	seenSlide := map[string]int{} // slide_id → 首次出现的页序号（1 起）
+	var duplicates []map[string]any
 	var slideIssues []map[string]any
 	for i, page := range pages {
 		body := withSlidesLint(cmd, map[string]any{"slide": map[string]any{"content": page}})
@@ -247,7 +251,13 @@ func addSlidesCreatePages(cmd *cobra.Command, presentationID, url string, pages,
 		}
 		sid := slidesString(data, "slide_id")
 		if sid != "" {
-			slideIDs = append(slideIDs, sid)
+			// 以服务端返回为准：同一 slide_id 再次出现说明服务端没有新增页面（如两页 XML 完全相同）
+			if first, dup := seenSlide[sid]; dup {
+				duplicates = append(duplicates, map[string]any{"slide_index": i + 1, "slide_id": sid, "same_as_index": first})
+			} else {
+				seenSlide[sid] = i + 1
+				slideIDs = append(slideIDs, sid)
+			}
 		}
 		if issues, ok := data["issues"]; ok {
 			slideIssues = append(slideIssues, map[string]any{"slide_index": i + 1, "slide_id": sid, "issues": issues})
@@ -256,6 +266,15 @@ func addSlidesCreatePages(cmd *cobra.Command, presentationID, url string, pages,
 	}
 	out["slide_ids"] = slideIDs
 	out["slides_added"] = len(slideIDs)
+	if len(duplicates) > 0 {
+		out["pages_requested"] = len(pages)
+		out["duplicate_slides"] = duplicates
+		for _, d := range duplicates {
+			fmt.Fprintf(os.Stderr, "⚠ 第 %d 页返回的 slide_id %s 与第 %d 页相同，服务端没有新增页面（常见原因：两页 XML 完全相同）\n",
+				d["slide_index"], d["slide_id"], d["same_as_index"])
+		}
+		fmt.Fprintf(os.Stderr, "⚠ 请求 %d 页，实际新增 %d 页；需要多页时请让每页内容有所区别，或用 slides add-slide 补页\n", len(pages), len(slideIDs))
+	}
 	if len(slideIssues) > 0 {
 		out["slide_issues"] = slideIssues
 	}

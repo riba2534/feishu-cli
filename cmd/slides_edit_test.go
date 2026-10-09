@@ -630,3 +630,75 @@ func TestSlidesMediaUpload_AcceptsSlidesURL(t *testing.T) {
 		t.Fatalf("docx URL 应用法错误: %v", err)
 	}
 }
+
+// TestSlidesCreate_DuplicateSlideIDCountsActualPages 两个相同 XML 的 --slide：服务端两次返回同一 slide_id、
+// 实际只建一页。slides_added 以去重后的实际页数为准，并在 stderr 告警，JSON 带 duplicate_slides。
+func TestSlidesCreate_DuplicateSlideIDCountsActualPages(t *testing.T) {
+	m, srv := newSlidesMockServer(t)
+	t.Cleanup(setupCmdTestConfig(t, srv.URL))
+	t.Setenv("FEISHU_USER_ACCESS_TOKEN", "u-test") // User 身份创建，不触发 Bot 自动授权
+	m.on("POST", "/slides_ai/v1/xml_presentations", func(*http.Request, map[string]any) (int, string) {
+		return 200, `{"code":0,"data":{"xml_presentation_id":"pres_dup","revision_id":1}}`
+	})
+	m.on("POST", "/xml_presentations/pres_dup/slide", func(*http.Request, map[string]any) (int, string) {
+		return 200, `{"code":0,"data":{"slide_id":"s_same","revision_id":2}}`
+	})
+
+	var stderr string
+	out, err := captureAppsStdout(t, func() error {
+		var runErr error
+		stderr = captureStderr(t, func() {
+			resetSlidesCmdFlags(slidesCreateCmd)
+			t.Cleanup(func() { resetSlidesCmdFlags(slidesCreateCmd) })
+			for _, kv := range [][2]string{{"title", "t"}, {"slide", testSlideXML}, {"slide", testSlideXML}, {"output", "json"}} {
+				if err := slidesCreateCmd.Flags().Set(kv[0], kv[1]); err != nil {
+					t.Fatalf("set --%s: %v", kv[0], err)
+				}
+			}
+			runErr = slidesCreateCmd.RunE(slidesCreateCmd, nil)
+		})
+		return runErr
+	})
+	if err != nil {
+		t.Fatalf("slides create 失败: %v", err)
+	}
+	if n := len(m.find("POST", "/xml_presentations/pres_dup/slide")); n != 2 {
+		t.Fatalf("应逐页提交 2 次，实际 %d 次", n)
+	}
+	var got struct {
+		SlidesAdded     int              `json:"slides_added"`
+		SlideIDs        []string         `json:"slide_ids"`
+		PagesRequested  int              `json:"pages_requested"`
+		DuplicateSlides []map[string]any `json:"duplicate_slides"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("输出不是 JSON: %v\n%s", err, out)
+	}
+	if got.SlidesAdded != 1 || len(got.SlideIDs) != 1 || got.PagesRequested != 2 || len(got.DuplicateSlides) != 1 {
+		t.Fatalf("slides_added 应按去重后的实际页数计: %+v", got)
+	}
+	if !strings.Contains(stderr, "s_same") || !strings.Contains(stderr, "实际新增 1 页") {
+		t.Fatalf("stderr 应告警重复 slide_id: %q", stderr)
+	}
+}
+
+// captureStderr 捕获 fn 执行期间写到 os.Stderr 的内容（并发读取，避免管道写满阻塞）。
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	done := make(chan string)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- string(b)
+	}()
+	defer func() { os.Stderr = old }()
+	fn()
+	_ = w.Close()
+	os.Stderr = old
+	return <-done
+}
