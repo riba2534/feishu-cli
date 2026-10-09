@@ -4,7 +4,7 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
-## [Unreleased]
+## [v1.43.0] - 2026-10-10
 
 对照官方 CLI（larksuite/cli）补齐云文档能力。本版本只做新增：已有命令不带新参数时的默认值、身份、输出结构与退出码均保持不变。
 
