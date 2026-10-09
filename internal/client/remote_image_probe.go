@@ -84,7 +84,7 @@ func ValidateRemoteImageSource(ctx context.Context, rawURL string) error {
 		return &RemoteImageProbeError{Kind: RemoteImageSourceDisallowed, Reason: "不允许访问本地/内网地址"}
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		if isRestrictedRemoteImageIP(ip) {
+		if isRestrictedRemoteIP(ip) {
 			return &RemoteImageProbeError{Kind: RemoteImageSourceDisallowed, Reason: "不允许访问本地/内网地址"}
 		}
 		return nil
@@ -94,7 +94,7 @@ func ValidateRemoteImageSource(ctx context.Context, rawURL string) error {
 		return &RemoteImageProbeError{Kind: RemoteImageSourceDisallowed, Reason: "无法解析图片 URL 的主机名", Err: err}
 	}
 	for _, ip := range ips {
-		if isRestrictedRemoteImageIP(ip) {
+		if isRestrictedRemoteIP(ip) {
 			return &RemoteImageProbeError{Kind: RemoteImageSourceDisallowed, Reason: "不允许访问本地/内网地址"}
 		}
 	}
@@ -162,7 +162,7 @@ func newRemoteImageProbeClient(ctx context.Context) (*http.Client, func()) {
 				if err != nil {
 					return err
 				}
-				if ip := net.ParseIP(host); ip != nil && isRestrictedRemoteImageIP(ip) {
+				if ip := net.ParseIP(host); ip != nil && isRestrictedRemoteIP(ip) {
 					return &RemoteImageProbeError{Kind: RemoteImageSourceDisallowed, Reason: "不允许访问本地/内网地址"}
 				}
 				return nil
@@ -192,29 +192,4 @@ func remoteImageProxyConfigured() bool {
 		}
 	}
 	return false
-}
-
-// isRestrictedRemoteImageIP 判断 IP 是否属于本地、内网、链路本地、CGNAT、基准测试或保留地址段。
-func isRestrictedRemoteImageIP(ip net.IP) bool {
-	if ip == nil {
-		return true
-	}
-	if isBlockedIP(ip) || ip.IsInterfaceLocalMulticast() {
-		return true
-	}
-	if v4 := ip.To4(); v4 != nil {
-		switch {
-		case v4[0] == 0: // RFC 1122 "this network"
-			return true
-		case v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127: // RFC 6598 CGNAT
-			return true
-		case v4[0] == 198 && (v4[1] == 18 || v4[1] == 19): // RFC 2544 基准测试
-			return true
-		case v4[0] >= 240: // 保留与广播
-			return true
-		}
-		return false
-	}
-	// IPv6 唯一本地地址 fc00::/7 已由 IsPrivate 覆盖；额外拦截 IPv4 映射之外的文档前缀 2001:db8::/32
-	return len(ip) == net.IPv6len && ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8
 }

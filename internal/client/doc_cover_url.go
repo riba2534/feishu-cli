@@ -124,27 +124,10 @@ func validateCoverURLHost(ctx context.Context, host string) error {
 	return nil
 }
 
-// isUnsafeCoverIP 判断 IP 是否属于回环、未指定、组播、链路本地、私有、CGNAT、基准测试或保留网段。
+// isUnsafeCoverIP 判断 IP 是否属于回环、未指定、组播、链路本地、私有、CGNAT、基准测试或保留网段
+// （与 doc script 远程图片探测共用 isRestrictedRemoteIP）。
 func isUnsafeCoverIP(ip net.IP) bool {
-	if ip == nil {
-		return true
-	}
-	if ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsPrivate() {
-		return true
-	}
-	if v4 := ip.To4(); v4 != nil {
-		switch {
-		case v4[0] == 0: // 0.0.0.0/8
-			return true
-		case v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127: // 100.64.0.0/10 CGNAT
-			return true
-		case v4[0] == 198 && (v4[1] == 18 || v4[1] == 19): // 198.18.0.0/15 基准测试
-			return true
-		case v4[0] >= 240: // 240.0.0.0/4 保留与广播
-			return true
-		}
-	}
-	return false
+	return isRestrictedRemoteIP(ip)
 }
 
 // FetchCoverImageURL 下载 HTTPS 图片到内存（用于设置文档封面），返回内容、建议文件名与 Content-Type。
