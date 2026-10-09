@@ -112,11 +112,11 @@ feishu-cli doc script --command init-draft --presentation-decision '<上方完�
 
 1. XML 以唯一的 `<title>` 开头，直接写入 `<cwd>/<draft_path>`。新资源放在 `<cwd>/<work_dir>` 下，已有资源原地复用；
    当前目录内优先用 `@./相对路径`，其他位置用 `@绝对路径`（敏感目录会被拒绝）。
-2. 资源写法（详见 `docx-xml.md`）：公开网络图片用 `<img href="URL"/>`；已有本地图片用 `<img path="@./downloads/image.png"/>`，
+2. 资源写法（详见 `docx-xml.md`）：公开网络图片用 `<img href="URL"/>`（由服务端下载，须公网可达）；已有本地图片用 `<img path="@./downloads/image.png"/>`，
    附件用 `<source path="@./<work_dir>/report.pdf"/>`；画板用 `<whiteboard type="svg" path="@./<work_dir>/diagram.svg"/>`
    （也可把 Mermaid / PlantUML / SVG 源码内联在标签内，复杂画板按 `feishu-cli-visual` 的 board 工作流制作）；
    HTML 组件用 `<html5-block path="@./<work_dir>/widget.html"/>`，HTML 规范见 `docx-xml-extended-blocks.md`。
-   `doc create` 与 `doc content-update` 的 XML 写入都会处理这些资源。
+   `doc create` 与 `doc content-update` 的 XML 写入会由 CLI 上传并绑定这些本地文件。
 3. 首次写入后发现 XML 问题只修最小范围，不无故重写正确内容。
 
 ### Step 6：Draft Profile Check

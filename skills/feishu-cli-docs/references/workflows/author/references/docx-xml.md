@@ -26,12 +26,13 @@
 | 写法 | 说明 |
 |---|---|
 | `<img path="@./photo.png" width="600" caption="说明"/>` | 本地图片：CLI 先上传素材再绑定到图片块 |
-| `<img href="https://example.com/photo.png" caption="说明"/>` | 公开 HTTP(S) 网络图片：CLI 下载后按本地图片上传 |
+| `<img href="https://example.com/photo.png" caption="说明"/>` | 公开 HTTP(S) 网络图片：由飞书服务端下载，URL 须公网可达（实测，回读为 `<img src>`） |
 | `<img src="FILE_TOKEN"/>` | 复制已有图片（token 来自 `doc read --engine docs_ai --detail full` 回读的 `<img src>`，实测） |
 | `<source path="@./report.pdf" name="报告.pdf"/>` | 本地附件；`<source token="FILE_TOKEN"/>` 复制已有附件（实测，复制时 `name` 不生效，沿用原文件名） |
 
 - 可选属性：`width`、`height`、`caption`、`name`；`path` / `href` / `src` 只能选一个，不能混用。
-- 远程图片须为 BMP、GIF、JPEG、PNG、TIFF 或 WebP，单图不超过 20MiB；内网或需要登录的图片先下载到草稿工作区，再用 `path`。
+- `path` / `<source path>` 的本地文件由 CLI 上传并绑定；`href` 不经过 CLI 下载，内网、需要登录或临时签名的图片服务端取不到，
+  先下载到草稿工作区再用 `path`。远程图片建议为 BMP、GIF、JPEG、PNG、TIFF 或 WebP 且不超过 20MiB（parse 预检按此检查）。
 - `<source>` 可独立成块（实测回读为 `<figure view-type="Preview">`）、写成 `<figure view-type="Card|Preview"><source .../></figure>`
   指定卡片 / 预览视图（实测 `Card`），或放进 `<p>` 作为行内附件——行内附件只能放在段落末尾，其后的文字会被丢弃（实测）。
 - `path` 中 cwd 内的文件用 `@./相对路径`，其他目录用 `@绝对路径`（敏感目录会被拒绝）；相对路径先查 cwd，

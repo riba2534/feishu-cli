@@ -85,5 +85,5 @@ feishu-cli doc script --command parse --content "@./doc.xml" --presentation-deci
 - `<whiteboard type="svg|mermaid|plantuml" path="@...">`、`<html5-block path="@x.html">`：扩展名匹配且文件可读
   （写法见 [`docx-xml.md`](docx-xml.md) 与 [`docx-xml-extended-blocks.md`](docx-xml-extended-blocks.md)）。
 - 相对路径先查当前目录，仅文件不存在且 `--content` 来自 `@文件` 时，再查该 XML 文件所在目录；内联内容和 stdin 不回退。
-- `<img href>`：先校验是不带用户名密码的绝对 HTTP(S) URL，再发一次 `Range: bytes=0-0` 的 GET 探测（会联网，不缓存图片），
-  拒绝 localhost、内网与保留地址，并逐跳校验重定向。
+- `<img href>`：写入时由飞书服务端下载，预检只检查本机能否访问：先校验是不带用户名密码的绝对 HTTP(S) URL，
+  再发一次 `Range: bytes=0-0` 的 GET 探测（会联网，不缓存图片），拒绝 localhost、内网与保留地址，并逐跳校验重定向。
