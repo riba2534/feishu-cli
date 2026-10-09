@@ -21,7 +21,7 @@ if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+
     die "版本号格式不对: '$VERSION'（期望 vX.Y.Z 或 vX.Y.Z-rc1）"
 fi
 case "$VERSION" in
-    *dirty*|*-[0-9]*-g[0-9a-f]*) die "版本号 '$VERSION' 像 git describe 的开发版本；发版请显式传 tag，如 VERSION=v2.0.0" ;;
+    *dirty*|*-[0-9]*-g[0-9a-f]*) die "版本号 '$VERSION' 像 git describe 的开发版本；发版请显式传 tag，如 VERSION=v1.42.0" ;;
 esac
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

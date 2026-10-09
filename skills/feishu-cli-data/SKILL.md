@@ -2,7 +2,7 @@
 name: feishu-cli-data
 description: >-
   飞书电子表格 Sheet 与多维表格 Bitable/Base：按范围读写单元格、类型保真整表读写、样式/合并/冻结/行列增删移动与隐藏、筛选与筛选视图、下拉框、原生单元格图片与浮动图片、Markdown 互转与 XLSX/CSV 导出；Bitable 表、字段、记录（结构化筛选、upsert、批量）、视图、链接解析、角色与成员、仪表盘、表单与分享、工作流和数据聚合，支持 --as bot 的 cron 无人值守。用户给出 /sheets/、/base/ 链接或要处理表格数据时使用。不用于：只需通读或总结整张表（feishu-cli-docs）、把本地 XLSX/CSV 文件导入成飞书表格和文档协作者权限（feishu-cli-storage）、图表可视化展示（feishu-cli-visual）、未封装 OpenAPI 透传（feishu-cli-platform）。
-compatibility: Requires feishu-cli v2.0.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Read Write
 ---
 

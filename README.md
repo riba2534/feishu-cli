@@ -205,9 +205,6 @@ sudo mv feishu-cli_*/feishu-cli /usr/local/bin/
 go install github.com/riba2534/feishu-cli@latest
 ```
 
-> 模块路径没有 `/v2` 后缀，按 Go 的版本规则，`go install` 无法安装 v2.0.0 及以后的 tag（`@latest` 只能拿到 v1.x，
-> 指定 `@v2.x.x` 会报 invalid version）。安装 v2 请用上面的一键安装脚本、Release 包，或下方的从源码编译。
-
 **从源码编译**
 
 ```bash
@@ -1100,7 +1097,7 @@ feishu-cli auth token --as user                                              # �
 | `feishu-cli-meetings` | 视频会议、妙记、录制、逐字稿和会议机器人 | "下载会议纪要" |
 
 Skill 入口使用 Agent Skills 标准 frontmatter；按需加载的工作流和脚本随目录一起分发。
-本版本技能与 `feishu-cli v2.0.0+` 配套使用；聊天导出脚本需要 Python 3.10+，
+本版本技能与 `feishu-cli v1.42.0+` 配套使用；聊天导出脚本需要 Python 3.10+，
 可视化工作流按需使用 Node.js、whiteboard-cli 或 agent-browser，具体依赖见对应入口的 `compatibility`。
 各宿主对工具授权字段的解释可能不同，不能把 `allowed-tools` 当作跨宿主的执行保证。
 

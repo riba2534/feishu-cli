@@ -116,7 +116,7 @@ export FEISHU_APP_SECRET=xxx
 - **读类 · User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`）：`msg list/get/mget/thread-messages/resource-download`、`chat list`、`doc read`、`doc history list/revert-status`、`task get/list/subtask list/comment list/tasklist get/list/tasks`、`calendar get/list/primary/freebusy/suggestion/room-find/event get/list/attendee list`、`file meta/stats/list/version list/get/download`、`board image/nodes/export-code/lint`、`wiki get/nodes/spaces/export/member list`、`drive pull/push/status`、**sheet 全家桶**（所有 sheet 子命令含写）等。优先级链：`--user-access-token` → `FEISHU_USER_ACCESS_TOKEN` → `~/.feishu-cli/token.json`（过期自动刷新）→ `config.yaml` 的 `user_access_token` → App Token 兜底。**注意**：此 helper 在 token 损坏/刷新失败时会**在 stderr 告警后**切 Bot（不再静默；stdout 不受影响，`-o json` 管道安全），仍不适合身份敏感的 Markdown/Drive import-export-move。sheet、`drive pull/push/status/download/upload`、`file list` 另有 `--as`：不传保持上述默认，`--as bot` 强制 App Token（例如访问应用自己的表格），`--as user` 强制 User。
   **破坏性操作例外**：`drive pull --delete-local` / `drive push --delete-remote` 走 `resolveOptionalUserTokenForDestructive`——已配置 User Token 但不可用时 **fail-closed 报错、拒绝降级 Bot**（Bot 视角远端条目更少、差集更大，会误删本地文件）。未配置 User Token 的纯 Bot 场景仍正常放行。
 - **写类 · 默认 Bot 身份**（`resolveOptionalUserToken`）：`doc create/import/add/add-callout/add-board/content-update/media-insert`、`doc history revert`、`msg send/reply/forward/delete`（Bot 自撤回）、`comment reply`、`file version revert`、`wiki move-to-drive`、`slides` 写命令等。**不会自动加载 token.json**，仅当显式传 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到 User Token。`msg merge-forward` 接口只接受 Tenant，固定 Bot。`vc bot meeting-join/leave` **仅 Bot**：传 `--user-access-token` 直接报用法错误（exit 2）。
-  **例外（v2.0+ 改为 `--as` 默认 auto）**：日历写命令（`calendar create-event/update-event/delete-event/attendee add|remove/event-transfer`）与任务/清单写命令——日程和任务是个人资源，用户从 `agenda`/`task my` 拿到的 ID 用 Bot 改删大概率无权限。
+  **例外（v1.42+ 改为 `--as` 默认 auto）**：日历写命令（`calendar create-event/update-event/delete-event/attendee add|remove/event-transfer`）与任务/清单写命令——日程和任务是个人资源，用户从 `agenda`/`task my` 拿到的 ID 用 Bot 改删大概率无权限。
 - **必须 User Token**（`resolveRequiredUserToken` / `requireUserToken`）：`search docs/apps`、`approval` 全部（含 `task rollback/add-sign/remind`）、`task my/search/related`、`vc note transcript`、`mail` 写类与管理命令（`send/reply/forward/draft-*/message-modify/message-trash/rule-*/thread-*/template *`）、`drive secure-label/add-comment/search/apply-permission`、`wiki space-create`、`msg flag`、`user search --query`、`user search-bot`、`calendar rsvp/event-reply`、`okr comment create`、`file quota`、`apps` 全部等。失败直接报错（exit 3）。`drive upload/download` 默认同样要求 User，可用 `--as bot` 显式改用应用身份。
 - **身份可选 · `--as` 显式切换**（`resolveIdentityToken` / `resolveVCBotEventsIdentity`）：`--as bot|user|auto`，`auto` 为 User 优先、未配置回退 Bot，**已配置 User 但解析/刷新失败 fail-closed**（禁止静默切 Bot）；`--as bot` 强制 App Token（cron/无人值守）；`--as user` 强制 User Token（缺失报错）。身份在 `--dry-run` 之后才 resolve。按默认值分组：
   - 默认 **auto**：`bitable` 全家桶、native Markdown 全家桶（`markdown create/fetch/overwrite/patch/diff`）、Drive `import/export/export-download/move/task-result/update-title/version-history/version-get`、`search messages`/`msg search-chats`、`calendar agenda/event-search` 与上述日历/任务写命令、`msg reaction/pin`、`msg read-users`（只能查调用身份自己发出的消息，查 Bot 发的须显式 `--as bot`）、`chat get/update/delete`、`wiki delete/delete-space/node-copy`、`attendance user-task`、`mail triage/message/messages/thread`（Bot 身份不支持 `mailbox="me"`，需显式指定邮箱）、`vc bot meeting-events`（dry-run 用 `HasUserTokenConfigured` 静态探测，不联网不写 token）。
@@ -182,11 +182,11 @@ export FEISHU_APP_SECRET=xxx
 - JSON 输出顶层新增 `thread_replies` / `thread_has_more` / `thread_replies_card_texts`
 - **发送者名字解析（v1.36+）**：所有读消息请求带 `with_sender_name=true`，服务端直接回填显示名（含 **Bot** 与**外部租户用户**，无需通讯录权限，实测内部群解析率 ~100%）；mentions 与 contact basic_batch 仍作兜底（`internal/client/sender_names.go` 进程级注册表 + `ResolveSenderNames` 三步解析）
 - 关闭：`--expand-threads=false`；调规模：`--threads-per-page` / `--threads-total-limit`
-- **只取根消息（v2.0+）**：群消息列表请求带 `only_thread_root_messages=true`（对齐官方），回复只出现在 `thread_replies`，
+- **只取根消息（v1.42+）**：群消息列表请求带 `only_thread_root_messages=true`（对齐官方），回复只出现在 `thread_replies`，
   不再与 `items` 重复、也不再占用翻页额度；普通群不受影响
 - 成员名单只在 JSON 输出需要时才拉取；User 身份 list 失败降级到搜索时，stderr 会说明时间范围/排序在搜索模式不生效
 
-### 事件订阅单连接（v2.0+）
+### 事件订阅单连接（v1.42+）
 
 服务端会把同一 App 的事件随机分发给该 App 的所有长连接。`event consume` 在同一进程内只建一条连接、注册全部
 所需事件类型并在本地过滤；同一 App 在本机加单实例锁（第二个进程报错退出，`--force` 跳过但会拆分事件），
@@ -499,7 +499,7 @@ FEISHU_APP_ID=cli_对外共享App FEISHU_APP_SECRET=xxx feishu-cli <命令> --as
 
 | 问题 | 说明 | 状态 |
 |------|------|------|
-| 表格导出 | 历史报告单元格内容丢失（块类型 32）；v2.0 往返实测（公式、行内样式、单元格图片、>9 行/列）未复现 | 观察中 |
+| 表格导出 | 历史报告单元格内容丢失（块类型 32）；v1.42 往返实测（公式、行内样式、单元格图片、>9 行/列）未复现 | 观察中 |
 
 ## 技能使用规范（Skills）
 

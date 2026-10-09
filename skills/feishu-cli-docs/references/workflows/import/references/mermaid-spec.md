@@ -1,7 +1,7 @@
 # Mermaid 飞书画板语法规范
 
 本文档给出飞书画板 Mermaid 渲染的常用模板、实测渲染能力、可读性建议与 flowchart 视觉样式规范。
-标注"实测"的结论来自 2026-10 用 feishu-cli v2.0.0 `doc import` 在测试文档上的回归；服务端能力可能继续变化，
+标注"实测"的结论来自 2026-10 用 feishu-cli v1.42.0 `doc import` 在测试文档上的回归；服务端能力可能继续变化，
 以导入输出的 `diagram_fallback` / `failures` 为准。
 
 ---
