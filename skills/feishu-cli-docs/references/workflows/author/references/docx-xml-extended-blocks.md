@@ -12,7 +12,8 @@
 - `<time expire-time="1775916000000" notify-time="1775912400000" should-notify="false">提醒</time>`：日期提醒，使用毫秒时间戳（实测；
   标签内的文字回读时作为普通文本跟在提醒之后，提醒本身显示日期）。
 - `<sheet type="blank"/>`：在文档中新建空白电子表格（实测）；`<sheet sheet-id="SHEET_ID" token="SPREADSHEET_TOKEN"/>` 复制已有表格（未实测）。
-  需要写入单元格时按 `feishu-cli-data` 的 sheet 工作流操作。
+  需要写入单元格时按 `feishu-cli-data` 的 sheet 工作流操作。实测 `type="blank"` 会生成一个独立的电子表格（回读 `<sheet token>`），
+  删除文档后它仍然存在，清理测试文档时需另行 `feishu-cli file delete <token> --type sheet`。
 - `<task task-id="TASK_GUID"/>`：挂载任务，`task-id` 为任务 GUID（未实测）。
 - `<chat_card chat-id="CHAT_ID"/>`：挂载群聊卡片（未实测）。
 - `<sub-page-list/>`：子页面列表块，仅知识库文档可插入（未实测）。
