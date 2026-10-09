@@ -107,6 +107,9 @@ type SyncBlockProvider func(sourceDocumentID, sourceBlockID, userAccessToken str
 type ConvertOptions struct {
 	DownloadImages bool
 	AssetsDir      string
+	// AssetsLinkBase 非空时，导出 Markdown 中下载资源（图片/视频/画板）的引用路径改写为相对该目录
+	// （doc export -o 时为输出文件所在目录），保证导出后原地 doc import 能按 Markdown 目录找到资源。
+	AssetsLinkBase string
 	UploadImages   bool
 	// EmbedTableImages 为 true 时，Markdown 表格单元格内的图片在转换期被收集到 TableData.CellImages，
 	// 由导入层在表格填充后真正嵌入为单元格内的 Image 子块（issue #164）。为 false 时（如 doc content-update），

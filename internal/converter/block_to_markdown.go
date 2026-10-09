@@ -1031,7 +1031,7 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 		tmpURL, urlErr := c.services.getMediaTempURL(token, dlOpts)
 		if urlErr == nil {
 			if dlErr := c.services.downloadFromURL(tmpURL, localPath); dlErr == nil {
-				return fmt.Sprintf("![%s](%s)\n", alt, localPath), nil
+				return fmt.Sprintf("![%s](%s)\n", alt, c.assetLink(localPath)), nil
 			} else if c.options.Debug {
 				fmt.Fprintf(os.Stderr, "[Debug] 图片下载失败 (URL方式): %v\n", dlErr)
 			}
@@ -1041,7 +1041,7 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 
 		// 方式二：SDK 直接下载
 		if sdkErr := c.services.downloadMedia(token, localPath, dlOpts); sdkErr == nil {
-			return fmt.Sprintf("![%s](%s)\n", alt, localPath), nil
+			return fmt.Sprintf("![%s](%s)\n", alt, c.assetLink(localPath)), nil
 		} else if c.options.Debug {
 			fmt.Fprintf(os.Stderr, "[Debug] 图片SDK下载失败: %v\n", sdkErr)
 		}
@@ -1052,6 +1052,34 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 
 	// 不下载时输出 <image> 标签，包含完整属性（可 roundtrip）
 	return c.formatImageTag(block.Image), nil
+}
+
+// assetPath 返回写入 Markdown 的本地资源路径。
+// AssetsLinkBase 非空（doc export -o 写文件）时改写为相对 Markdown 文件所在目录的路径，
+// 使「导出 → 原地 doc import」按 Markdown 目录解析相对路径时能找到资源；为空时保持原路径（相对当前工作目录）。
+func (c *BlockToMarkdown) assetPath(localPath string) string {
+	p := localPath
+	if base := c.options.AssetsLinkBase; base != "" {
+		absBase, errBase := filepath.Abs(base)
+		absPath, errPath := filepath.Abs(localPath)
+		if errBase == nil && errPath == nil {
+			if rel, err := filepath.Rel(absBase, absPath); err == nil {
+				p = rel
+			} else {
+				p = absPath
+			}
+		}
+	}
+	return filepath.ToSlash(p)
+}
+
+// assetLink 返回用于 Markdown 链接目标（![](...)）的资源路径：含空白或括号时用 <...> 包裹，保证仍是合法的 CommonMark 链接目标。
+func (c *BlockToMarkdown) assetLink(localPath string) string {
+	link := c.assetPath(localPath)
+	if strings.ContainsAny(link, " \t()<>") {
+		link = "<" + link + ">"
+	}
+	return link
 }
 
 // formatImageTag 将 Image 块格式化为 <image .../> HTML 标签
@@ -1295,7 +1323,7 @@ func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (s
 		dlOpts := client.DownloadMediaOptions{UserAccessToken: c.options.UserAccessToken, DocToken: c.options.DocumentID}
 		if tmpURL, err := c.services.getMediaTempURL(token, dlOpts); err == nil {
 			if dlErr := c.services.downloadFromURL(tmpURL, localPath); dlErr == nil {
-				attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", localPath)), name, viewType)
+				attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", c.assetPath(localPath))), name, viewType)
 				return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
 			} else if c.options.Debug {
 				fmt.Fprintf(os.Stderr, "[Debug] 视频下载失败 (URL方式): %v\n", dlErr)
@@ -1304,7 +1332,7 @@ func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (s
 			fmt.Fprintf(os.Stderr, "[Debug] 获取视频临时URL失败: %v\n", err)
 		}
 		if err := c.services.downloadMedia(token, localPath, dlOpts); err == nil {
-			attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", localPath)), name, viewType)
+			attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", c.assetPath(localPath))), name, viewType)
 			return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
 		} else if c.options.Debug {
 			fmt.Fprintf(os.Stderr, "[Debug] 视频SDK下载失败: %v\n", err)
@@ -1534,7 +1562,7 @@ func (c *BlockToMarkdown) convertBoard(block *larkdocx.Block) (string, error) {
 		localPath := filepath.Join(c.options.AssetsDir, filename)
 
 		if savedPath, err := c.services.getBoardImage(token, localPath, c.options.UserAccessToken); err == nil {
-			return fmt.Sprintf("![画板](%s)\n", savedPath), nil
+			return fmt.Sprintf("![画板](%s)\n", c.assetLink(savedPath)), nil
 		} else if c.options.Debug {
 			fmt.Fprintf(os.Stderr, "[Debug] 画板下载失败: %v\n", err)
 		}
