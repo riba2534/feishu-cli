@@ -1,11 +1,12 @@
 # 飞书全局搜索
 
-搜索飞书云文档、消息和应用（`search docs` / `search messages` / `search apps`）。业务域内的查询（审批、会议、
-邮箱、任务等）不走这里；按文件夹/知识库精筛文档用 `feishu-cli-storage` 的 `drive search`。
+搜索飞书云文档、消息和应用（`search docs` / `drive search` / `search messages` / `search apps`）。业务域内的查询
+（审批、会议、邮箱、任务等）不走这里；按文件夹/知识库/创建者精筛文档用本文的 `drive search`。
 
 | 命令 | 身份 | scope |
 |---|---|---|
 | `search docs` | 必须 User | `search:docs:read` |
+| `drive search` | 必须 User | `search:docs:read` |
 | `search apps` | 必须 User | `search:app`（不在 `--recommend` 推荐集内，需 `--scope "search:app"` 显式申请） |
 | `search messages` | `--as bot\|user\|auto`，默认 auto | `search:message` |
 
@@ -13,7 +14,7 @@
 
 ## 执行流程
 
-1. **选身份**：`search docs/apps` 必须 User；`search messages --as bot` 不依赖个人登录，确认应用已开通
+1. **选身份**：`search docs/apps` 与 `drive search` 必须 User；`search messages --as bot` 不依赖个人登录，确认应用已开通
    `search:message`（`auth scopes --scope "search:message" -o json` 的 `tenant_enabled`）后直接搜索；
    auto 在已配置 User 但刷新失败时直接报错，不会静默切 Bot。
 2. **预检本地 User Token**（仅 User 路径）：
@@ -46,10 +47,30 @@ feishu-cli search docs "技术方案" --docs-types docx,wiki
 feishu-cli search docs "季度报告" --count 20 --offset 20 -o json
 ```
 
-**`search docs` 与 `drive search`**：`search docs` 走 `/open-apis/suite/docs-api/search/object`，过滤只有
-所有者、所在群和类型；`drive search`（`feishu-cli-storage` 的 drive 工作流第 9 节）走 `/open-apis/search/v2/doc_wiki/search`，
-支持文件夹（`--folder-tokens`）、知识库（`--space-ids`）、创建者/分享者、仅标题/仅评论与排序。两者都需要
-`search:docs:read`：粗筛用 `search docs`，按位置或维度精筛用 `drive search`。
+### `search docs`（v1）与 `drive search`（v2）
+
+`search docs` 走 `/open-apis/suite/docs-api/search/object`，过滤只有所有者、所在群和类型；`drive search` 支持文件夹
+（`--folder-tokens`）、知识库（`--space-ids`）、创建者/分享者、仅标题/仅评论与排序。两者都需要 `search:docs:read`：
+粗筛用 `search docs`，按位置或维度精筛用 `drive search`。
+
+`drive search` 走 `/open-apis/search/v2/doc_wiki/search`（扁平 filter），必须 User Token，没有 `--as`：
+
+```bash
+feishu-cli drive search --query "季度报告" --doc-types DOCX,SHEET --sort edit_time
+feishu-cli drive search --query "API 设计" --folder-tokens fldxxx,fldyyy     # 限定云盘文件夹
+feishu-cli drive search --query "RFC" --space-ids 7012345678901234567       # 限定知识空间
+feishu-cli drive search --query "项目周会" --only-title
+feishu-cli drive search --query "复盘" --creator-ids ou_xxx,ou_yyy
+feishu-cli drive search --query "决策" --chat-ids oc_xxx --sharer-ids ou_xxx
+feishu-cli drive search --query "阻塞" --only-comment
+feishu-cli drive search --query "项目" --page-size 20 -o json
+feishu-cli drive search --query "项目" --page-token "<上一页 page_token>"
+```
+
+- `--doc-types` 取值大写：`DOC` / `DOCX` / `SHEET` / `BITABLE` / `MINDNOTE` / `FILE` / `WIKI` / `FOLDER` / `CATALOG` / `SLIDES` / `SHORTCUT`。
+- `--folder-tokens` 与 `--space-ids` 互斥；`--sort`：default / edit_time / edit_time_asc / open_time / create_time；
+  `--page-size` 1-20（默认 15）；`--query` 可空（纯按 filter 浏览）。
+- 标题里的 `<h>...</h>` 高亮标记 CLI 自动剥离；JSON 顶层带 `total`、`has_more`、`page_token`、`items`。
 
 ## 搜索消息
 
@@ -114,8 +135,8 @@ feishu-cli search apps "关键词" [--page-size 20] [--page-token <token>] [--us
 
 | 场景 | 使用技能 |
 |------|---------|
-| 按关键词搜索文档/应用/消息（含高级过滤） | **feishu-cli-platform**（本工作流） |
-| 按文件夹、知识库精筛云文档（`drive search`） | feishu-cli-storage |
+| 按关键词搜索文档/应用/消息（含高级过滤），按文件夹、知识库精筛云文档（`drive search`） | **feishu-cli-platform**（本工作流） |
+| 云盘文件上传下载、目录浏览（`file list`） | feishu-cli-storage |
 | 浏览群聊历史消息、搜索群聊列表（`msg search-chats`） | feishu-cli-messaging |
 | Reaction/Pin/删除/获取消息详情、群成员管理 | feishu-cli-messaging |
 

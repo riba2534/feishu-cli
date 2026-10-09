@@ -1,7 +1,7 @@
 # 飞书权限管理
 
-飞书云文档权限管理：添加/更新/删除/查看协作者、公开权限、分享密码、批量添加、权限检查、转移所有权，以及 Bot 创建资源后
-自动给当前用户授权（`permission_grant`）。向所有者**申请**权限用 `../drive/workflow.md` 的 `drive apply-permission`；
+飞书云文档权限管理：添加/更新/删除/查看协作者、公开权限、分享密码、批量添加、权限检查、转移所有权、Bot 创建资源后
+自动给当前用户授权（`permission_grant`），以及向所有者申请权限（`drive apply-permission`）和密级标签（`drive secure-label`）。
 知识空间成员（不是文档协作者）用 `../wiki/workflow.md` 的 `wiki member`。
 
 ## 目录
@@ -12,13 +12,16 @@
 - [转移所有权](#转移所有权)
 - [权限检查](#权限检查)
 - [公开权限与分享密码](#公开权限与分享密码)
+- [申请权限（drive apply-permission）](#申请权限drive-apply-permission)
+- [密级标签（drive secure-label）](#密级标签drive-secure-label)
 - [参数取值](#参数取值)
 - [创建文档后标准授权流程](#创建文档后标准授权流程)
 - [错误排障](#错误排障)
 
 ## 身份与 scope
 
-权限 API 同时支持 **App（Bot）身份**与 **User 身份**，perm 全部子命令（含 `password`）共用：
+权限 API 同时支持 **App（Bot）身份**与 **User 身份**，perm 全部子命令（含 `password`）共用以下规则；
+`drive apply-permission`、`drive secure-label` 例外，必须 User Token（见对应小节）：
 
 - 不传 `--as`：默认 **Bot 身份**（App ID / App Secret）；显式 `--user-access-token u-xxx` 时以该用户身份调用。
   **不读** `FEISHU_USER_ACCESS_TOKEN` 环境变量，避免环境变量静默切换身份。
@@ -37,6 +40,8 @@
 | `docs:permission.member:auth` | 检查权限 |
 | `docs:permission.setting:read` / `docs:permission.setting:readonly` | 读取公开权限设置 |
 | `docs:permission.setting:write_only` | 更新公开权限、密码管理 |
+| `docs:permission.member:apply` | 申请权限（`drive apply-permission`） |
+| `docs:secure_label:readonly` / `docs:secure_label:write_only` | 查看 / 设置密级标签（`drive secure-label list` / `set`） |
 
 ## Bot 创建资源后自动授权当前用户
 
@@ -153,6 +158,41 @@ feishu-cli perm password delete <TOKEN> --doc-type docx
 - 分享密码只对**互联网公开链接**生效：先 `public-update --external-access --link-share-entity anyone_readable`，
   再 `password create`；链接仅组织内可见（如 tenant_readable）时 Bot 与 `--as user` 都返回 `1063002 Permission denied`（实测，
   此时不是身份问题）。`password create` 在 stdout 打印生成的密码；`password update` 刷新为新密码；`password delete` 删除密码。
+
+## 申请权限（drive apply-permission）
+
+向文档所有者**申请**查看/编辑权限（所有者收到审批卡片）。**必须 User Token**（Bot 身份会被拒绝；无 `--as`），需要
+`docs:permission.member:apply`（或任一大权限：`drive:drive` / `docs:doc` / `docx:document` 等）。
+
+```bash
+feishu-cli drive apply-permission --token "https://xxx.feishu.cn/docx/doxcnxxx" --perm view --remark "申请理由"
+feishu-cli drive apply-permission --token doxcnxxx --type docx --perm edit --remark "需要协作编辑"
+feishu-cli drive apply-permission --token "https://xxx.feishu.cn/docx/doxcnxxx" --perm view --dry-run
+```
+
+- `--perm` 只有 `view` / `edit`（默认 view）；该端点未收录在飞书文档站，但服务端实测可用
+  （调研方法见 [`embedded-api-discovery.md`](../../../../feishu-cli-platform/references/workflows/api/references/embedded-api-discovery.md)）。
+  业务错误一律非零退出：`1063006` = 同一用户对同一文档每天最多申请 5 次；`1063007` = 该文档不接受权限申请。
+- 碰到「没有权限查看此文档」时，先 `drive inspect --url <url>` 确认类型与 token（可选），再
+  `drive apply-permission --token <url> --perm view --remark "<理由>"`；先 `--dry-run` 预览。理由会显示在所有者收到的审批卡片上。
+
+## 密级标签（drive secure-label）
+
+查看/设置云文档密级标签，**必须 User Token**，需要 `docs:secure_label:readonly` / `docs:secure_label:write_only`。
+
+```bash
+# 先查当前用户可用的标签 id（不要用显示名）
+feishu-cli drive secure-label list --page-size 10 --lang zh
+feishu-cli drive secure-label list --output json
+
+# 把文档设置为指定密级（--label-id 用 list 返回的数字 id）
+feishu-cli drive secure-label set doxcnxxx --type docx --label-id 7217780879644737539
+```
+
+- `list`：`--page-size` 1-10，`--lang` 支持 zh/en/ja，有更多时用 `--page-token` 续翻。
+- `set`：`--type` 默认 docx，可选 doc/docx/sheet/file/bitable/mindnote/slides；`--label-id` 必须是数字 id（如 list 返回的
+  id），不要传 `内部(D)` 这类显示名。
+- **密级降级需审批**：命中 `1063013` 时需到文档界面完成降级审批，重试 API 不会绕过审批。
 
 ## 参数取值
 
