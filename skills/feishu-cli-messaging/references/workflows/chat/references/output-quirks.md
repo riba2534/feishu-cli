@@ -192,4 +192,4 @@ feishu-cli auth login --domain chat --recommend
 | 99992354 `not a valid open_message_id` | `msg get/mget` 等用了不存在或不属于本租户的 message_id | 检查 message_id 来源 |
 | 231007 `no permission to delete this reaction` | `msg reaction remove` 用了与添加时不同的身份 | 换回添加表情时的身份（`--as`） |
 | 230026 / 230009 | `msg delete`：Bot 只能撤回自己的消息 / 超过企业设置的撤回时限 | 换有权限的身份，或放弃撤回 |
-| `tenant token type not match user access token` | 已登录时执行 `msg read-users` | 接口只收 Bot：用 `feishu-cli api GET /open-apis/im/v1/messages/<om_xxx>/read_users --as bot` |
+| `tenant token type not match user access token` | 已登录时执行 `msg read-users`（底层 SDK 只接受应用身份，本地报错） | 用 `feishu-cli api GET /open-apis/im/v1/messages/<om_xxx>/read_users --as bot`（本人发的消息用 `--as user`） |

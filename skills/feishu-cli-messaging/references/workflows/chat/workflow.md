@@ -42,7 +42,7 @@
 | `msg history --user-id/--user-email`（私聊入口） | 必须 User Token |
 | `msg reaction/pin/unpin/pins`、`chat get/update/delete`、`msg search-chats` | `--as bot\|user\|auto`，默认 auto：已登录用 User，未配置回退 Bot；**已配置但解析/刷新失败直接报错**，不静默切 Bot |
 | `chat create`、`chat link` | 固定 Bot（应用身份），不能切 User Token |
-| `msg read-users` | 接口只接受 Bot；当前 CLI 已登录时会误用 User Token 而失败，见[已读用户](#已读用户msg-read-users) |
+| `msg read-users` | 接口支持 User 与 Bot，但当前 CLI 已登录时会本地报错，见[已读用户](#已读用户msg-read-users) |
 | `msg delete` | 默认 Bot；仅显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时以本人身份撤回 |
 
 - `--as bot` 时 Bot 必须在目标群内；`msg reaction remove` 只能删除同一身份添加的表情（实测跨身份删除返回 231007）。
@@ -147,14 +147,15 @@ feishu-cli msg thread-messages omt_xxx --start-time 1704067200 --end-time 170415
 
 ### 已读用户（msg read-users）
 
-飞书接口只接受 Bot 身份，且只能查**本 Bot 自己发送、7 天内**的消息，Bot 需在该会话中；只返回已读用户，
-不返回未读用户；外部群不支持。
+只能查**调用身份自己发出、7 天内**的消息：Bot 身份查 Bot 发的消息，User 身份查本人发的消息；调用者需在该会话中。
+只返回已读用户，不返回未读用户；外部群不支持。
 
 ```bash
-# 未登录 User 时可直接用（-o json 输出 {items, has_more, page_token}；--page-size 1–100，默认 20）
+# 未登录 User 时直接用（以 Bot 身份；-o json 输出 {items, has_more, page_token}；--page-size 1–100，默认 20）
 feishu-cli msg read-users om_xxx --user-id-type open_id -o json
 
-# 已登录时当前版本会误用 User Token，报 "tenant token type not match user access token"；改用透传固定 Bot：
+# 已登录时当前版本底层 SDK 只接受应用身份，会在本地报 "tenant token type not match user access token"（实测）；
+# 改用透传并按消息发送者选身份：Bot 发的用 --as bot，本人发的用 --as user
 feishu-cli api GET /open-apis/im/v1/messages/om_xxx/read_users --params '{"user_id_type":"open_id"}' --as bot
 ```
 
