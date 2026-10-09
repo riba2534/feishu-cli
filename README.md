@@ -1097,7 +1097,7 @@ feishu-cli auth token --as user                                              # �
 | `feishu-cli-meetings` | 视频会议、妙记、录制、逐字稿和会议机器人 | "下载会议纪要" |
 
 Skill 入口使用 Agent Skills 标准 frontmatter；按需加载的工作流和脚本随目录一起分发。
-本版本技能与 `feishu-cli v1.42.0+` 配套使用；聊天导出脚本需要 Python 3.10+，
+本版本技能与 `feishu-cli v1.43.0+` 配套使用；聊天导出脚本需要 Python 3.10+，
 可视化工作流按需使用 Node.js、whiteboard-cli 或 agent-browser，具体依赖见对应入口的 `compatibility`。
 各宿主对工具授权字段的解释可能不同，不能把 `allowed-tools` 当作跨宿主的执行保证。
 

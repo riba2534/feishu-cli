@@ -2,7 +2,7 @@
 name: feishu-cli-platform
 description: >-
   飞书 CLI 平台基础能力，不是飞书请求的通用兜底：配置与多 Profile、Device Flow 登录、Token 与 scope 预检、应用侧 scope 开通诊断、doctor、技能安装与 CLI 升级、OpenAPI schema 查询与 api 透传、全局搜索（文档含文件夹/知识库/创建者筛选、消息、应用），按邮箱或手机号查用户、部门与机器人。用户提到登录飞书、Token 过期、99991672/99991679、切换 profile、技能与 CLI 版本漂移、调用未封装接口、跨飞书搜文档或消息、查 open_id 时使用；查 schema 或发 raw API 时即使端点属于审批或会议也用本 Skill。不用于文档、云盘与权限、消息、表格、可视化、日历/任务/审批/OKR、邮件和会议等业务操作，分别使用 feishu-cli-docs/storage/messaging/data/visual/work/mail/meetings。
-compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.43.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Read Write
 ---
 

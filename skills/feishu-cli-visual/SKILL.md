@@ -2,7 +2,7 @@
 name: feishu-cli-visual
 description: >-
   飞书可视化载体：画板（架构图、流程图、SVG/Mermaid/PlantUML 转可编辑节点、取回 Mermaid 源码、克隆、质检与导出）、飞书 Slides 演示文稿（从 XML 创建、按页增删改、截图）、文档内妙笔 HTMLBox 动态组件（ECharts、地图、3D、动画、交互大屏）、妙搭 HTML 应用发布与访问范围，以及数据图表形式与配色规范。用户要在飞书里画图、做幻灯片/PPT、嵌入会动或可交互的图表、发布 HTML 应用时使用。不用于：只产出本地 SVG/PPTX/HTML 文件；消息卡片（feishu-cli-messaging）；HTML 邮件（feishu-cli-mail）；随 Markdown 导入的图表（feishu-cli-docs）；多维表格仪表盘（feishu-cli-data）。
-compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls. SVG conversion needs whiteboard-cli; local checks need Python 3.10+, Node.js and agent-browser.
+compatibility: Requires feishu-cli v1.43.0+ and network access for Feishu API calls. SVG conversion needs whiteboard-cli; local checks need Python 3.10+, Node.js and agent-browser.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(python3:*) Bash(node:*) Bash(jq:*) Bash(sleep:*) Bash(whiteboard-cli:*) Read Write
 ---
 
