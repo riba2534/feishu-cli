@@ -2,8 +2,6 @@
 
 通过 `feishu-cli slides` 创建演示文稿、读取全文或单页 XML、逐页增删改、截图预览，以及上传图片。
 
-> **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
-
 **写任何 slide XML 之前先读** [`references/xml-schema-quick-ref.md`](references/xml-schema-quick-ref.md)：
 `<slide>` 下只有 `<style>`/`<data>`/`<note>`，文字必须包在 `<content><p>…</p></content>` 里，
 图片是 `<img>` 不是 `<image>`，坐标用 `topLeftX/topLeftY`，页面 960×540。
@@ -22,11 +20,13 @@
 
 ## 身份与权限
 
-- **身份**：写命令（create / add-slide / delete-slide / replace-slide / update-slide / media-upload）默认 **App Token（Bot）**，
+- **身份**：写命令（create / add-slide / delete-slide / replace-slide / update-slide / media-upload）默认 **Bot**，
   显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 切到用户身份；读命令（get / screenshot）优先 User Token、未配置回落 Bot。
   演示文稿通常属于用户本人：编辑用户已有的 PPT 时用 User 身份，Bot 没有该文件权限会直接报错。
+  已登录时先取 User Token 再传入：`UAT=$(feishu-cli auth token --as user) && feishu-cli slides create ... --user-access-token "$UAT"`。
+  不要把 `$(...)` 直接内联进参数：取 Token 失败时会传入空值，命令静默回落 Bot。
 - **Bot 创建**：`slides create` 以 Bot 身份创建后自动给当前 CLI 登录用户授予 `full_access`，JSON 输出 `url` 与 `permission_grant`。
-  应用未开通 tenant 的 `slides:presentation:create` 时会报 99991672，改用 User 身份。
+  应用未开通 tenant 的 `slides:presentation:create` 时报 99991672（exit 3，重新登录无效），改用 User 身份。
 - **scope**：
 
 | 命令 | 所需 scope |
@@ -44,6 +44,8 @@
 所有接收演示文稿的命令都接受 `xml_presentation_id`、`/slides/` URL 或 `/wiki/` URL（wiki 自动解析，底层不是 slides 时报错）。
 XML / JSON 参数（`--slide`、`--slides`、`--content`、`--parts`）都支持 `@file` 读文件、`-` 读 stdin，用来绕开 shell 转义——
 多层转义是 3350001 的头号来源。写页面的命令都有 `--dry-run`。
+只有 `create` / `get` / `media-upload` 有 `-o json`；`add-slide` / `delete-slide` / `replace-slide` / `update-slide` / `screenshot`
+固定输出 JSON，没有 `-o`（传了会报 unknown flag，exit 2）。
 
 | 场景 | 命令 |
 |------|------|
@@ -77,7 +79,10 @@ feishu-cli slides create --title "Q2 OKR" --slide @cover.xml --dry-run
 - 页面在创建前就做结构校验（必须是单个完整 `<slide>` 根、不能带 `<?xml?>` 声明）、占位图片在创建前检查存在与 ≤20 MB，
   坏输入不会留下半成品演示文稿
 - `--slide` 与 `--slides` 互斥；`--slides null` / 空值视为错误（防止命令替换失败时把空白 deck 报成成功）；超过 10 页先建再 add-slide
-- JSON 输出：`xml_presentation_id`、`url`、`slide_ids`、`slides_added`、`images_uploaded`、`slide_issues`（服务端对已写入页面的 schema 告警）
+- JSON 输出：`xml_presentation_id`、`url`、`revision_id`、`slide_ids`、`slides_added`、`images_uploaded`；
+  服务端对已写入页面有 schema 告警时另有 `slide_issues`
+- **页面 XML 完全相同会被服务端去重**（实测）：重复的页不会新建，响应返回已有页的 `slide_id`。`create` 传两个相同的
+  `--slide` 时 `slides_added=2` 但 `slide_ids` 重复、实际只有 1 页；需要相同版式的多页时让每页内容有差异
 - `--width/--height` 只影响空白模板尺寸，默认 960×540
 
 ## 2. 读取 `slides get`（别名 `xml-get`）
@@ -87,7 +92,7 @@ feishu-cli slides get <id>                                # 全文 XML 打到 st
 feishu-cli slides get <id> -o json                        # {xml_presentation_id, scope, revision_id, content}
 feishu-cli slides get <id> --slide-number 2 -o json       # 单页（也可 --slide-id）
 feishu-cli slides get <id> --slide-id <sid> --output-file page.xml   # 写文件，stdout 只给元信息
-feishu-cli slides get <id> --remove-attr-id               # 去掉 id 属性，只读浏览用（不能再按 id 编辑）
+feishu-cli slides get <id> --remove-attr-id               # 去掉 id 属性，只读浏览用（仅全文读取；不能再按 id 编辑）
 ```
 
 - 编辑前先读单页 XML，拿到页面 `slide_id` 和元素 `id`（`replace-slide` 的 `block_id`）
@@ -105,10 +110,13 @@ feishu-cli slides delete-slide <id> --slide-id <sid> --dry-run
 feishu-cli slides delete-slide <id> --slide-id <sid> --yes
 ```
 
-- add-slide 一次一页；JSON 输出 `slide_id`、`revision_id`、`images_uploaded`、`issues`
+- add-slide 一次一页；JSON 输出 `slide_id`、`revision_id`，有图片占位时 `images_uploaded`，有告警时 `issues`
+- 与已有页 XML 完全相同的 add-slide 不会新建页（服务端去重，返回原 `slide_id` 和当时的 `revision_id`，
+  `--before-slide-id` 也不生效）；返回的 `revision_id` 没有增长时回读确认
 - delete-slide 是危险操作：交互终端会二次确认；非交互环境（Agent / 管道）必须显式 `--yes`，否则退出码 10 且不执行。
   删前先 `slides get --slide-id` 确认是哪一页；删除无法原地撤销，误删在飞书客户端版本记录中恢复
-- `--revision-id` 传具体版本号可做乐观锁（版本已变化时服务端拒绝）
+- add-slide / delete-slide / replace-slide 的 `--revision-id` 传具体版本号可做乐观锁（版本已变化时服务端拒绝）；
+  update-slide 传旧版本号的语义不同：以该快照重建本页并丢弃之后的改动，通常保持默认 `-1`
 
 ## 4. 编辑已有页面
 
@@ -174,8 +182,10 @@ feishu-cli slides screenshot <id> --slide-id <sid>                           # �
 feishu-cli slides screenshot --content @page.xml --output preview            # 不写入演示文稿，直接渲染 XML
 ```
 
-- stdout 只输出文件元信息（`screenshots[].path/format/size/slide_id/slide_number`），不打印 Base64
-- 文件名 `<presentation>_p<页码>_<slide_id>.<ext>`，同名自动加 `_2` 序号不覆盖；`--output` 扩展名与实际格式不符时按实际格式改名
+- stdout 只输出文件元信息（`screenshots[].path/format/size/slide_id/slide_number`），不打印 Base64；已有页面实测返回 JPEG，
+  `--content` 模式返回 PNG
+- 文件名 `<presentation>_p<三位页码>_<slide_id>.<ext>`（如 `_p001_`），同名自动加 `_2` 序号不覆盖；`--output` 只能对应一页，
+  扩展名与实际格式不符时按实际格式改名
 - `--content` 模式适合写回前预览效果；后续读取文件时以输出里的 `path` 为准
 
 ## 6. 图片
@@ -194,15 +204,15 @@ feishu-cli slides screenshot --content @page.xml --output preview            # �
 |------|------|------|
 | `--revision-id 取值 0 无效` | 0 会被服务端拒绝 | 用 `-1`（最新） |
 | `3350001 invalid param` | block_id/slide_id 不在当前页；XML 结构或元素非法；坐标越界 | 先 `slides get --slide-id` 回读最新 XML；对照 XML 速查修正 |
+| `3350002 not found` | `--slide-id` / `--slide-number` 指向不存在的页 | 读全文确认当前页列表与页数 |
 | `4000153` | 服务端 lint 拒绝 | 按报告修 error 级问题；确认误判再加 `--no-lint` |
 | `4001000 ... block is not NoteBlock` | 整页 XML 带了过期 note id | 用 `update-slide`（CLI 自动剥除），或删掉 `<note>` 的 id |
 | `99991672` | 应用缺 tenant scope（Bot 身份） | 用 User 身份，或让管理员为应用开通 |
 | `99991679` | 用户未授权该 scope | `feishu-cli auth login --scope "<scope>"` 增量补授 |
-| 退出码 10 | delete-slide 需要确认 | 确认后加 `--yes` |
+| 退出码 10 | delete-slide 在非交互环境等待确认 | 向用户确认要删的页后再加 `--yes`，不要自行补 |
 | `<presentation> 的资源类型是 "docx"` | 传了文档 URL | 换成 `/slides/` 或指向 slides 的 `/wiki/` 链接 |
 | 图片不显示 | 写了外链或别的演示文稿的 token | 用 `@` 占位符或 media-upload 到当前演示文稿 |
 
 ## 参考
 
 - XML 速查：[`references/xml-schema-quick-ref.md`](references/xml-schema-quick-ref.md)
-- 代码：`cmd/slides_*.go`、`internal/client/slides.go`
