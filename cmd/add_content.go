@@ -174,6 +174,8 @@ func deleteContainerAutoEmptyBlock(documentID, parentID string, blockType int, u
 		blockTypeName = "QuoteContainer"
 	case int(converter.BlockTypeCallout):
 		blockTypeName = "Callout"
+	case int(converter.BlockTypeGridColumn):
+		blockTypeName = "GridColumn"
 	default:
 		return
 	}
@@ -231,28 +233,18 @@ func addContentMarkdownWithOptions(documentID, blockID, contentData, basePath st
 		return fmt.Errorf("没有内容可添加")
 	}
 
-	// 提取顶层块，记录带有嵌套子块的节点
-	var topLevelBlocks []*larkdocx.Block
-	nodeChildrenMap := map[int][]*converter.BlockNode{} // 顶层索引 -> 嵌套子节点
-
-	for i, node := range result.BlockNodes {
-		topLevelBlocks = append(topLevelBlocks, node.Block)
-		if len(node.Children) > 0 {
-			nodeChildrenMap[i] = node.Children
-		}
+	for _, d := range result.Degradations {
+		fmt.Fprintf(os.Stderr, "[Warning] %s %s: %s\n", d.Kind, d.Source, d.Reason)
 	}
 
-	// 记录表格块的索引
-	var tableIndices []int
-	for i, block := range topLevelBlocks {
-		if block.BlockType != nil && *block.BlockType == int(converter.BlockTypeTable) {
-			tableIndices = append(tableIndices, i)
-		}
+	topLevelBlocks := make([]*larkdocx.Block, len(result.BlockNodes))
+	for i, node := range result.BlockNodes {
+		topLevelBlocks[i] = node.Block
 	}
 
 	// 批量添加顶层块（飞书 API 限制每次最多 50 个块）
 	const batchSize = 50
-	var createdBlockIDs []string
+	var createdTop []*larkdocx.Block
 	totalCreated := 0
 	currentIndex := index
 
@@ -270,76 +262,79 @@ func addContentMarkdownWithOptions(documentID, blockID, contentData, basePath st
 		if currentIndex >= 0 {
 			currentIndex += len(createdBlocks)
 		}
-
-		for _, block := range createdBlocks {
-			if block.BlockId != nil {
-				createdBlockIDs = append(createdBlockIDs, *block.BlockId)
-			}
-		}
+		createdTop = append(createdTop, createdBlocks...)
 	}
 
-	// 递归创建嵌套子块（如嵌套列表）
-	nestedCreatedByTop := map[int][]createdBlockNode{}
-	for idx, children := range nodeChildrenMap {
-		if idx < len(createdBlockIDs) {
-			parentID := createdBlockIDs[idx]
-			nestedCount, nestedCreated, nestedErr := createNestedChildren(documentID, parentID, children, userAccessToken)
-			nestedCreatedByTop[idx] = nestedCreated
-			if nestedErr != nil {
-				fmt.Fprintf(os.Stderr, "[Warning] 嵌套子块创建失败: %v\n", nestedErr)
-			}
-			totalCreated += nestedCount
+	// 递归创建嵌套子块（如嵌套列表、分栏列内容），按树序收集已创建节点
+	var createdAll []createdBlockNode
+	for i, node := range result.BlockNodes {
+		if i >= len(createdTop) || createdTop[i] == nil || createdTop[i].BlockId == nil {
+			continue
 		}
+		top := createdBlockNode{node: node, blockID: *createdTop[i].BlockId, parentID: blockID, created: createdTop[i]}
+		createdAll = append(createdAll, top)
+		nestedCount, nestedCreated, nestedErr := createChildrenOf(documentID, top, userAccessToken)
+		if nestedErr != nil {
+			fmt.Fprintf(os.Stderr, "[Warning] 嵌套子块创建失败: %v\n", nestedErr)
+		}
+		totalCreated += nestedCount
+		createdAll = append(createdAll, nestedCreated...)
 	}
 
 	// QuoteContainer / Callout：遍历所有顶层节点清理飞书 API 异步生成的空子块。
-	// 必须在所有 createNestedChildren 完成后执行，确保 API 已稳定。
-	// 覆盖有子块和无子块（不在 nodeChildrenMap 中）的容器节点。
+	// 必须在所有嵌套子块创建完成后执行，确保 API 已稳定。
 	for i, node := range result.BlockNodes {
-		if i >= len(createdBlockIDs) {
-			break
+		if i >= len(createdTop) || createdTop[i] == nil || createdTop[i].BlockId == nil {
+			continue
 		}
 		if node.Block.BlockType != nil {
-			deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], *node.Block.BlockType, userAccessToken)
+			deleteContainerAutoEmptyBlock(documentID, *createdTop[i].BlockId, *node.Block.BlockType, userAccessToken)
 		}
 	}
 
-	// 填充表格内容（带 429 重试）
+	// 填充表格内容（带 429 重试）：按块指针取填充数据，覆盖分栏等容器内的表格
 	tableSuccess := 0
 	tableFailed := 0
-	if len(tableIndices) > 0 && len(result.TableDatas) > 0 {
-		tableDataIdx := 0
-		for _, tableIdx := range tableIndices {
-			if tableIdx >= len(createdBlockIDs) || tableDataIdx >= len(result.TableDatas) {
-				break
-			}
-			tableBlockID := createdBlockIDs[tableIdx]
-			if tableBlockID == "" {
-				tableDataIdx++
-				tableFailed++
-				continue
-			}
-			td := result.TableDatas[tableDataIdx]
-			tableDataIdx++
-
-			if fillTableWithRetry(documentID, tableBlockID, td, userAccessToken) {
-				tableSuccess++
-			} else {
-				tableFailed++
-			}
+	for _, cn := range createdAll {
+		td := result.TableDataByBlock[cn.node.Block]
+		if td == nil {
+			continue
+		}
+		if fillTableWithRetry(documentID, cn.blockID, td, userAccessToken) {
+			tableSuccess++
+		} else {
+			tableFailed++
 		}
 	}
 
-	// 上传并替换 Markdown 图片。Convert 阶段先创建 Image Block，占位块 ID 需要在创建后回填 token。
-	imageTasks := appendImageTasks(nil, result.BlockNodes, createdBlockIDs, nestedCreatedByTop, result.ImageSources, basePath)
+	// 补齐资源：图片（本地/网络/素材 token 复用）、附件与视频、带 token 的画板复制。
+	// 转换阶段只创建了空块，块 ID 在创建后才能回填素材 token。
+	var media mediaTaskSet
+	collectMediaTasks(&media, result.MediaRefs, createdAll, basePath)
 	imageSuccess := 0
 	imageFailed := 0
-	for _, task := range imageTasks {
+	for _, task := range media.images {
 		res := processImageTask(documentID, task, false, userAccessToken)
 		if res.success {
 			imageSuccess++
 		} else {
 			imageFailed++
+		}
+	}
+	fileSuccess := 0
+	fileFailed := 0
+	for _, task := range media.files {
+		if res := processVideoTask(documentID, task, false, userAccessToken); res.success {
+			fileSuccess++
+		} else {
+			fileFailed++
+		}
+	}
+	for _, task := range media.boards {
+		if _, err := processBoardCopyTask(documentID, task, false, userAccessToken); err == nil {
+			fileSuccess++
+		} else {
+			fileFailed++
 		}
 	}
 
@@ -354,6 +349,9 @@ func addContentMarkdownWithOptions(documentID, blockID, contentData, basePath st
 			"image_total":   imageSuccess + imageFailed,
 			"image_success": imageSuccess,
 			"image_failed":  imageFailed,
+			"media_total":   fileSuccess + fileFailed,
+			"media_success": fileSuccess,
+			"media_failed":  fileFailed,
 		})
 	}
 
@@ -365,6 +363,9 @@ func addContentMarkdownWithOptions(documentID, blockID, contentData, basePath st
 	imageTotal := imageSuccess + imageFailed
 	if imageTotal > 0 {
 		fmt.Printf("  图片: %d/%d 成功\n", imageSuccess, imageTotal)
+	}
+	if mediaTotal := fileSuccess + fileFailed; mediaTotal > 0 {
+		fmt.Printf("  附件/视频/画板: %d/%d 成功\n", fileSuccess, mediaTotal)
 	}
 	return nil
 }
