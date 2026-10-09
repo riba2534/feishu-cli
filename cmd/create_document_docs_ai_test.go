@@ -24,7 +24,7 @@ func newDocCreateTestCmd(t *testing.T, args ...string) *cobra.Command {
 
 func TestBuildDocsAICreateBody(t *testing.T) {
 	c := newDocCreateTestCmd(t, "--title", "周报 <A&B>", "--content", "> [!NOTE]\\n> 提示", "--folder", "fldcnX")
-	body, err := buildDocsAICreateBody(c)
+	body, _, err := buildDocsAICreateBody(c)
 	if err != nil {
 		t.Fatalf("构造请求体失败: %v", err)
 	}
@@ -47,12 +47,12 @@ func TestBuildDocsAICreateBody(t *testing.T) {
 		{[]string{"--content", "x", "--folder", "a", "--parent-token", "b"}, "只能使用其中一个"},
 		{[]string{"--content", "x", "--parent-token", "a", "--parent-position", "my_library"}, "互斥"},
 		{[]string{"--content", "x", "--doc-format", "html"}, "不支持的 --doc-format"},
-		{[]string{"--content", "![本地](./a.png)"}, "本地图片"},
+		{[]string{"--content", "![本地](./missing.png)"}, "本地图片不存在"},
 		{[]string{"--content", "<whiteboard token=\"w\" type=\"blank\"/>"}, "画板占位"},
 	}
 	for _, tc := range bad {
 		c := newDocCreateTestCmd(t, tc.args...)
-		if _, err := buildDocsAICreateBody(c); err == nil || !strings.Contains(err.Error(), tc.want) {
+		if _, _, err := buildDocsAICreateBody(c); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v 期望错误含 %q，得到 %v", tc.args, tc.want, err)
 		}
 	}
