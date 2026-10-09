@@ -21,6 +21,7 @@ import (
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // ConsumeOptions 控制 consume 行为。
@@ -207,7 +208,7 @@ func (r *Runtime) Run(ctx context.Context) (reason string, err error) {
 
 	// 准备输出目录
 	if r.opts.OutputDir != "" {
-		if err := os.MkdirAll(r.opts.OutputDir, 0700); err != nil {
+		if err := safefile.MkdirAll(r.opts.OutputDir, 0700); err != nil {
 			return "error", fmt.Errorf("创建输出目录失败: %w", err)
 		}
 	}
@@ -733,7 +734,8 @@ func ValidateOutputDir(dir string) error {
 			return fmt.Errorf("--output-dir 不能包含 .. 路径段")
 		}
 	}
-	return nil
+	// 相对路径仍可能落进敏感目录（如 cwd 为家目录时的 .ssh），按 safefile 拒绝名单再校验
+	return safefile.ValidateOutputPath(dir)
 }
 
 // applyDotPath 实现极简 jq：仅支持 `.a.b.c` 形式（不支持过滤器/管道/数组下标）。
