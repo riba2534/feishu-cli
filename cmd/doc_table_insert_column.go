@@ -9,12 +9,12 @@ import (
 )
 
 var docTableInsertColumnCmd = &cobra.Command{
-	Use:   "insert-column <document_id> <table_block_id>",
+	Use:   "insert-column <document_id|url> <table_block_id>",
 	Short: "在表格中插入列",
 	Long: `在指定位置插入一列，使用 -1 表示插入到表格末尾。
 
 参数:
-  document_id     文档 ID
+  document_id     文档 ID 或 URL（/wiki/ URL 自动解析为底层文档）
   table_block_id  表格块 ID（Block 类型 31）
   --index         插入位置索引（0 表示第一列，-1 表示末尾）
 
@@ -40,18 +40,22 @@ func runDocTableInsertColumn(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	documentID := args[0]
 	tableBlockID := args[1]
 	index, _ := cmd.Flags().GetInt("index")
 	output, _ := cmd.Flags().GetString("output")
 	userAccessToken := resolveOptionalUserToken(cmd)
+	// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+	if err != nil {
+		return err
+	}
 
 	// 飞书 API 仅接受 index == -1（末尾）或 index >= 0
 	if index < -1 {
 		return fmt.Errorf("索引必须 >= 0 或 -1（表示末尾）")
 	}
 
-	err := client.InsertTableColumn(documentID, tableBlockID, index, userAccessToken)
+	err = client.InsertTableColumn(documentID, tableBlockID, index, userAccessToken)
 	if err != nil {
 		return fmt.Errorf("插入列失败: %w", err)
 	}

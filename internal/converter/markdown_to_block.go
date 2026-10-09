@@ -322,6 +322,13 @@ type MarkdownToBlock struct {
 	cellImageSink *[]string
 	videoStats    VideoStats
 	videoSources  []string // 记录每个视频 File Block 对应的视频来源路径
+	fileStats     VideoStats
+	// mediaRefs 记录建块后才能补齐内容的块（图片/附件/视频/带 token 画板），见 MediaRef。
+	mediaRefs map[*larkdocx.Block]*MediaRef
+	// degradations 记录转换期已降级为占位文本的内容（见 Degradation）。
+	degradations []Degradation
+	// tableDataByBlock 记录每个表格块（含分栏列等嵌套位置）的填充数据。
+	tableDataByBlock map[*larkdocx.Block]*TableData
 
 	// pendingColWidth 暂存最近一条 <!-- feishu-colwidth: ... --> 注释解析出的宽度数组，
 	// 由紧邻其下的 ast.Table 消费一次后清空。0 表示该列走 auto。
@@ -673,10 +680,87 @@ func rewriteBlockEquationsToHTML(source []byte) ([]byte, bool) {
 	return []byte(strings.Join(out, "\n")), true
 }
 
+// gridOpenRe 匹配独占一行（缩进 ≤3）的 <grid ...> 开标签（非自闭合）。
+var gridOpenRe = regexp.MustCompile(`(?i)^ {0,3}<grid(\s[^>]*)?>\s*$`)
+
+// gridCloseRe 匹配独占一行的 </grid>。
+var gridCloseRe = regexp.MustCompile(`(?i)^\s*</grid\s*>\s*$`)
+
+// rewriteMultilineGridBlocks 把跨多行（列内含空行、多个块）的 <grid>...</grid> 折叠成单行
+// <grid ... data-base64="..."/>。
+//
+// CommonMark 的自定义 HTML 块（type 7）遇到空行即结束：doc export 输出的分栏（列内多段落/列表、
+// 空列的 <column>\n\n</column>）会被切断，列内容泄漏到分栏之外。折叠后由 handleHTMLGridBlock 解码原始内容。
+// 代码围栏内的 <grid> 不处理。
+func rewriteMultilineGridBlocks(source []byte) []byte {
+	if !bytes.Contains(bytes.ToLower(source), []byte("<grid")) {
+		return source
+	}
+	lines := strings.Split(string(source), "\n")
+	out := make([]string, 0, len(lines))
+	inFence := false
+	var fenceMarker byte
+	fenceLen := 0
+	changed := false
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if inFence {
+			out = append(out, line)
+			if marker, count, rest := parseFenceMarker(line); marker == fenceMarker && count >= fenceLen && strings.TrimSpace(rest) == "" {
+				inFence = false
+			}
+			continue
+		}
+		if marker, count, _ := parseFenceMarker(line); count >= 3 {
+			inFence, fenceMarker, fenceLen = true, marker, count
+			out = append(out, line)
+			continue
+		}
+		if !gridOpenRe.MatchString(line) {
+			out = append(out, line)
+			continue
+		}
+		// 查找配对的 </grid>（允许嵌套计数；找不到则原样保留，交给常规解析）
+		depth, end := 1, -1
+		for j := i + 1; j < len(lines); j++ {
+			if gridOpenRe.MatchString(lines[j]) {
+				depth++
+			} else if gridCloseRe.MatchString(lines[j]) {
+				depth--
+				if depth == 0 {
+					end = j
+					break
+				}
+			}
+		}
+		if end < 0 {
+			out = append(out, line)
+			continue
+		}
+		inner := strings.Join(lines[i+1:end], "\n")
+		indent := line[:len(line)-len(strings.TrimLeft(line, " "))] // 保留缩进，列表项内的分栏不跳出列表
+		openTag := strings.TrimSuffix(strings.TrimSpace(line), ">")
+		folded := fmt.Sprintf("%s%s data-base64=\"%s\"/>", indent, openTag, base64.StdEncoding.EncodeToString([]byte(inner)))
+		if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+			out = append(out, "")
+		}
+		out = append(out, folded, "")
+		i = end
+		changed = true
+	}
+	if !changed {
+		return source
+	}
+	return []byte(strings.Join(out, "\n"))
+}
+
 // ConvertWithTableData converts Markdown to Feishu blocks and returns table data for content filling
 func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 	// 预处理：确保引用块后有空行分隔，避免 goldmark 的 lazy continuation
 	c.source = normalizeBlockquoteEnding(c.source)
+
+	// 预处理：跨多行（含空行）的 <grid> 折叠为单行，避免 HTML 块在空行处被截断
+	c.source = rewriteMultilineGridBlocks(c.source)
 
 	c.source, _ = rewriteBlockEquationsToHTML(c.source)
 
@@ -759,6 +843,7 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 				if tableResult != nil {
 					result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: tableResult.Block})
 					result.TableDatas = append(result.TableDatas, tableResult.TableData)
+					c.addTableData(tableResult.Block, tableResult.TableData)
 				}
 			}
 			return ast.WalkSkipChildren, nil
@@ -798,7 +883,44 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 	result.ImageSources = c.imageSources
 	result.VideoStats = c.videoStats
 	result.VideoSources = c.videoSources
+	result.FileStats = c.fileStats
+	result.MediaRefs = c.mediaRefs
+	result.Degradations = c.degradations
+	result.TableDataByBlock = c.tableDataByBlock
 	return result, nil
+}
+
+// addTableData 登记表格块的填充数据。
+func (c *MarkdownToBlock) addTableData(block *larkdocx.Block, td *TableData) {
+	if block == nil || td == nil {
+		return
+	}
+	if c.tableDataByBlock == nil {
+		c.tableDataByBlock = make(map[*larkdocx.Block]*TableData)
+	}
+	c.tableDataByBlock[block] = td
+}
+
+// addMediaRef 登记一个建块后需补齐内容的块。
+func (c *MarkdownToBlock) addMediaRef(block *larkdocx.Block, ref *MediaRef) {
+	if block == nil || ref == nil {
+		return
+	}
+	if c.mediaRefs == nil {
+		c.mediaRefs = make(map[*larkdocx.Block]*MediaRef)
+	}
+	c.mediaRefs[block] = ref
+}
+
+// addDegradation 登记一项转换期降级（导入层计入 failures）。
+func (c *MarkdownToBlock) addDegradation(kind, source, reason string) {
+	c.degradations = append(c.degradations, Degradation{Kind: kind, Source: source, Reason: reason})
+}
+
+// newTextBlock 构造只含给定元素的 Text 块。
+func newTextBlock(elements ...*larkdocx.TextElement) *larkdocx.Block {
+	bt := int(BlockTypeText)
+	return &larkdocx.Block{BlockType: &bt, Text: &larkdocx.Text{Elements: elements}}
 }
 
 // Convert converts Markdown to Feishu blocks (flat list, nesting info is lost).
@@ -948,78 +1070,50 @@ func (c *MarkdownToBlock) convertList(node *ast.List) ([]*BlockNode, error) {
 }
 
 func (c *MarkdownToBlock) convertListItem(node *ast.ListItem, isOrdered bool) (*BlockNode, error) {
-	// Check for GFM task list checkbox
-	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-		// Check if this is a paragraph or text block containing a TaskCheckBox
-		if para, ok := child.(*ast.Paragraph); ok {
-			if para.ChildCount() > 0 {
-				if cb, ok := para.FirstChild().(*east.TaskCheckBox); ok {
-					block, err := c.convertGFMTaskListItem(node, cb.IsChecked)
-					if err != nil {
-						return nil, err
-					}
-					children, err := c.collectNestedChildren(node)
-					if err != nil {
-						return nil, err
-					}
-					return &BlockNode{Block: block, Children: children}, nil
-				}
+	// 列表项正文只取首个段落（Paragraph / 紧凑列表的 TextBlock）；其后的段落、代码块、引用、嵌套列表等
+	// 按原顺序转换为该列表项的子块，不再把第二段起的文字并进首段（此前多段落会被无分隔地拼接）。
+	lead := listItemLeadNode(node)
+
+	if lead != nil && lead.ChildCount() > 0 {
+		// GFM 任务列表：复选框位于首段第一个子节点
+		if cb, ok := lead.FirstChild().(*east.TaskCheckBox); ok {
+			block, err := c.convertGFMTaskListItem(lead, cb.IsChecked)
+			if err != nil {
+				return nil, err
 			}
+			children, err := c.convertListItemChildren(node, lead)
+			if err != nil {
+				return nil, err
+			}
+			return &BlockNode{Block: block, Children: children}, nil
 		}
-		if tb, ok := child.(*ast.TextBlock); ok {
-			if tb.ChildCount() > 0 {
-				if cb, ok := tb.FirstChild().(*east.TaskCheckBox); ok {
-					block, err := c.convertGFMTaskListItem(node, cb.IsChecked)
+		// 兼容未被 GFM 识别的 "[ ] " / "[x] " 纯文本前缀
+		if tb, ok := lead.(*ast.TextBlock); ok {
+			if txt, ok := tb.FirstChild().(*ast.Text); ok {
+				text := unescapeMarkdownText(string(txt.Segment.Value(c.source)))
+				if strings.HasPrefix(text, "[ ] ") || strings.HasPrefix(text, "[x] ") || strings.HasPrefix(text, "[X] ") {
+					block, err := c.convertTaskListItem(node, text)
 					if err != nil {
 						return nil, err
 					}
-					children, err := c.collectNestedChildren(node)
+					children, err := c.convertListItemChildren(node, lead)
 					if err != nil {
 						return nil, err
 					}
 					return &BlockNode{Block: block, Children: children}, nil
-				}
-				// Also check for raw text pattern
-				if txt, ok := tb.FirstChild().(*ast.Text); ok {
-					text := unescapeMarkdownText(string(txt.Segment.Value(c.source)))
-					if strings.HasPrefix(text, "[ ] ") || strings.HasPrefix(text, "[x] ") || strings.HasPrefix(text, "[X] ") {
-						block, err := c.convertTaskListItem(node, text)
-						if err != nil {
-							return nil, err
-						}
-						// 收集嵌套子列表
-						children, err := c.collectNestedChildren(node)
-						if err != nil {
-							return nil, err
-						}
-						return &BlockNode{Block: block, Children: children}, nil
-					}
 				}
 			}
 		}
 	}
 
-	// 只提取直接子节点的文本（跳过嵌套的 ast.List）
-	elements := c.extractListItemDirectElements(node)
+	var elements []*larkdocx.TextElement
+	if lead != nil {
+		elements = c.extractTextElements(lead)
+	}
 
-	// 收集嵌套子列表和代码块
-	var children []*BlockNode
-	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-		if nestedList, ok := child.(*ast.List); ok {
-			childNodes, err := c.convertList(nestedList)
-			if err != nil {
-				return nil, err
-			}
-			children = append(children, childNodes...)
-		} else if codeBlock, ok := child.(*ast.FencedCodeBlock); ok {
-			block, err := c.convertCodeBlock(codeBlock)
-			if err != nil {
-				return nil, err
-			}
-			if block != nil {
-				children = append(children, &BlockNode{Block: block})
-			}
-		}
+	children, err := c.convertListItemChildren(node, lead)
+	if err != nil {
+		return nil, err
 	}
 
 	// 过滤空列表项（飞书 API 不接受空内容的列表块）
@@ -1027,7 +1121,7 @@ func (c *MarkdownToBlock) convertListItem(node *ast.ListItem, isOrdered bool) (*
 		return nil, nil
 	}
 
-	// 如果没有直接文本但有子列表，创建空文本的父块
+	// 如果没有直接文本但有子块，创建空文本的父块
 	if len(elements) == 0 || !hasNonEmptyContent(elements) {
 		empty := ""
 		elements = []*larkdocx.TextElement{{TextRun: &larkdocx.TextRun{Content: &empty}}}
@@ -1051,37 +1145,81 @@ func (c *MarkdownToBlock) convertListItem(node *ast.ListItem, isOrdered bool) (*
 	return &BlockNode{Block: block, Children: children}, nil
 }
 
-// collectNestedChildren 收集 ListItem 下嵌套的子列表，返回 BlockNode 切片
-func (c *MarkdownToBlock) collectNestedChildren(node *ast.ListItem) ([]*BlockNode, error) {
+// listItemLeadNode 返回列表项的正文节点：首个子节点为 Paragraph（松散列表）或 TextBlock（紧凑列表）时返回它，
+// 否则（列表项以代码块、引用、嵌套列表等开头）返回 nil。
+func listItemLeadNode(node *ast.ListItem) ast.Node {
+	first := node.FirstChild()
+	switch first.(type) {
+	case *ast.Paragraph, *ast.TextBlock:
+		return first
+	}
+	return nil
+}
+
+// convertListItemChildren 把列表项中正文（lead）之外的块级子节点按原顺序转换为子块。
+// 飞书列表块（Bullet/Ordered/Todo）可挂文本、代码、引用、标题、分割线、图片等子块（2026-10 实测）。
+// 无法结构化表达的节点（如列表项内的表格）降级为独立文本子块，不并入正文。
+func (c *MarkdownToBlock) convertListItemChildren(node *ast.ListItem, lead ast.Node) ([]*BlockNode, error) {
 	var children []*BlockNode
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-		if nestedList, ok := child.(*ast.List); ok {
-			childNodes, err := c.convertList(nestedList)
+		if child == lead {
+			continue
+		}
+		switch n := child.(type) {
+		case *ast.List:
+			childNodes, err := c.convertList(n)
 			if err != nil {
 				return nil, err
 			}
 			children = append(children, childNodes...)
+		case *ast.FencedCodeBlock:
+			block, err := c.convertCodeBlock(n)
+			if err != nil {
+				return nil, err
+			}
+			if block != nil {
+				children = append(children, &BlockNode{Block: block})
+			}
+		case *ast.Paragraph:
+			nodes, err := c.convertParagraph(n)
+			if err != nil {
+				return nil, err
+			}
+			children = append(children, nodes...)
+		case *ast.TextBlock:
+			for _, line := range c.extractParagraphLines(n) {
+				if len(line) > 0 {
+					children = append(children, &BlockNode{Block: newTextBlock(line...)})
+				}
+			}
+		case *ast.Blockquote:
+			quoteNodes, err := c.convertBlockquote(n)
+			if err != nil {
+				return nil, err
+			}
+			children = append(children, quoteNodes...)
+		case *ast.Heading:
+			block, err := c.convertHeading(n)
+			if err != nil {
+				return nil, err
+			}
+			if block != nil {
+				children = append(children, &BlockNode{Block: block})
+			}
+		case *ast.ThematicBreak:
+			children = append(children, &BlockNode{Block: c.createDividerBlock()})
+		case *ast.HTMLBlock:
+			if tag := ParseHTMLTag(c.getHTMLBlockText(n)); tag != nil {
+				children = append(children, c.handleBlockHTMLTag(tag)...)
+			}
+		default:
+			elements := c.extractTextElements(child)
+			if len(elements) > 0 && hasNonEmptyContent(elements) {
+				children = append(children, &BlockNode{Block: newTextBlock(elements...)})
+			}
 		}
 	}
 	return children, nil
-}
-
-// extractListItemDirectElements 提取 ListItem 直接子节点的文本元素，
-// 跳过嵌套的 ast.List 和 ast.FencedCodeBlock（它们作为 Children 单独处理）
-func (c *MarkdownToBlock) extractListItemDirectElements(node *ast.ListItem) []*larkdocx.TextElement {
-	var elements []*larkdocx.TextElement
-	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-		// 跳过嵌套列表和代码块——它们会成为 BlockNode.Children
-		if _, ok := child.(*ast.List); ok {
-			continue
-		}
-		if _, ok := child.(*ast.FencedCodeBlock); ok {
-			continue
-		}
-		childElements := c.extractTextElements(child)
-		elements = append(elements, childElements...)
-	}
-	return elements
 }
 
 func (c *MarkdownToBlock) convertTaskListItem(node *ast.ListItem, text string) (*larkdocx.Block, error) {
@@ -1110,7 +1248,8 @@ func (c *MarkdownToBlock) convertTaskListItem(node *ast.ListItem, text string) (
 	}, nil
 }
 
-func (c *MarkdownToBlock) convertGFMTaskListItem(node *ast.ListItem, isChecked bool) (*larkdocx.Block, error) {
+// convertGFMTaskListItem 以列表项正文节点（含 TaskCheckBox 的首段）构造 Todo 块。
+func (c *MarkdownToBlock) convertGFMTaskListItem(node ast.Node, isChecked bool) (*larkdocx.Block, error) {
 	// Extract text elements, skipping the TaskCheckBox node
 	elements := c.extractTextElementsSkipCheckbox(node)
 
@@ -1309,10 +1448,12 @@ func (c *MarkdownToBlock) convertBlockquote(node *ast.Blockquote) ([]*BlockNode,
 				children = append(children, &BlockNode{Block: block})
 			}
 		case *ast.Blockquote:
-			// 嵌套引用
+			// 嵌套引用 `> >`：飞书不允许 QuoteContainer/Callout 作为 QuoteContainer 的子块
+			// （1770030 invalid parent children relation，整批子块连同外层内容一起失败）。
+			// 扁平化：把内层引用/Callout 的子块直接并入外层引用，保证内容不丢。
 			nestedNodes, err := c.convertBlockquote(n)
 			if err == nil {
-				children = append(children, nestedNodes...)
+				children = append(children, flattenQuoteChildren(nestedNodes)...)
 			}
 		default:
 			// 其他节点，提取文本
@@ -1346,6 +1487,24 @@ func (c *MarkdownToBlock) convertBlockquote(node *ast.Blockquote) ([]*BlockNode,
 	}
 
 	return []*BlockNode{{Block: containerBlock, Children: children}}, nil
+}
+
+// flattenQuoteChildren 把不能直接作为 QuoteContainer 子块的容器（QuoteContainer / Callout）
+// 递归展开为其子块，其余节点原样保留。用于嵌套引用扁平化。
+func flattenQuoteChildren(nodes []*BlockNode) []*BlockNode {
+	var out []*BlockNode
+	for _, n := range nodes {
+		if n == nil || n.Block == nil || n.Block.BlockType == nil {
+			continue
+		}
+		switch BlockType(*n.Block.BlockType) {
+		case BlockTypeQuoteContainer, BlockTypeCallout:
+			out = append(out, flattenQuoteChildren(n.Children)...)
+		default:
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // extractQuoteLines 从 AST 节点提取文本元素，按 SoftLineBreak 拆分为多行
@@ -1777,11 +1936,10 @@ func (c *MarkdownToBlock) extractCalloutParaElements(para *ast.Paragraph, callou
 func (c *MarkdownToBlock) convertImage(node *ast.Image) (*larkdocx.Block, error) {
 	dest := string(node.Destination)
 
-	// feishu://media/ 是飞书内部媒体引用，token 绑定源文档不可跨文档复用。
-	// 导出时应使用 --download-images 下载实际文件，导入时自动上传。
-	if strings.HasPrefix(dest, "feishu://media/") {
-		c.imageStats.Skipped++
-		return c.createImagePlaceholder(dest), nil
+	// feishu://media/<token> 是飞书素材引用：token 绑定源文档，不能直接挂到新块上（1770013），
+	// 开启上传时由导入层下载该素材再重新上传到新建的空 Image 块（素材复用）。
+	if token, ok := strings.CutPrefix(dest, FeishuMediaScheme); ok {
+		return c.newTokenImageBlock(token, 0, 0, 0), nil
 	}
 
 	if !c.options.UploadImages {
@@ -1796,11 +1954,32 @@ func (c *MarkdownToBlock) convertImage(node *ast.Image) (*larkdocx.Block, error)
 	// 此处仅创建空 Image Block，记录图片来源路径，实际上传在 cmd 层完成。
 	c.imageStats.Total++
 	c.imageSources = append(c.imageSources, dest)
+	block := newEmptyImageBlock()
+	c.addMediaRef(block, &MediaRef{Kind: MediaKindImage, Source: dest})
+	return block, nil
+}
+
+func newEmptyImageBlock() *larkdocx.Block {
 	blockType := int(BlockTypeImage)
 	return &larkdocx.Block{
 		BlockType: &blockType,
 		Image:     &larkdocx.Image{},
-	}, nil
+	}
+}
+
+// newTokenImageBlock 处理引用已有素材 token 的图片（<image token> / feishu://media/）。
+// 建块接口不接受带 token 的 Image（1770001），开启上传时建空 Image 块并登记 MediaRef，
+// 由导入层下载原素材后重新上传绑定；关闭上传时降级为占位文本（计入 Skipped）。
+func (c *MarkdownToBlock) newTokenImageBlock(token string, width, height, align int) *larkdocx.Block {
+	ref := FeishuMediaScheme + token
+	if token == "" || !c.options.UploadImages {
+		c.imageStats.Skipped++
+		return c.createImagePlaceholder(ref)
+	}
+	c.imageStats.Total++
+	block := newEmptyImageBlock()
+	c.addMediaRef(block, &MediaRef{Kind: MediaKindImage, Token: token, Width: width, Height: height, Align: align})
+	return block
 }
 
 func (c *MarkdownToBlock) createImagePlaceholder(url string) *larkdocx.Block {
@@ -2510,7 +2689,24 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 			default:
 				// 尝试解析自定义 HTML 标签（如 <mention-user/>, <mention-doc>...</mention-doc>）
 				tag := ParseHTMLTag(rawOriginal)
-				if tag != nil {
+				if tag != nil && tag.Name == "image" {
+					// 行内 <image token=.../>（doc export 在表格单元格内输出的图片）：单元格嵌入场景收集为
+					// feishu://media/<token> 交给导入层复用素材；其它场景降级为占位文本，不再静默丢弃。
+					src := ""
+					if token := strings.TrimSpace(tag.Attrs["token"]); token != "" {
+						src = FeishuMediaScheme + token
+					} else {
+						src = strings.TrimSpace(tag.Attrs["url"]) // 本地路径 / http(s) / feishu://media/
+					}
+					if isEmbeddableImageDest(src) {
+						if c.cellImageSink != nil && c.options.UploadImages {
+							*c.cellImageSink = append(*c.cellImageSink, src)
+						} else {
+							placeholder := fmt.Sprintf("[图片: %s]", src)
+							elements = append(elements, &larkdocx.TextElement{TextRun: &larkdocx.TextRun{Content: &placeholder}})
+						}
+					}
+				} else if tag != nil {
 					if elems := c.handleInlineHTMLTag(tag, &inUnderline); len(elems) > 0 {
 						elements = append(elements, elems...)
 					}
@@ -2561,8 +2757,9 @@ func isEmbeddableImageDest(dest string) bool {
 	if dest == "" {
 		return false
 	}
-	if strings.HasPrefix(dest, "feishu://media/") {
-		return false
+	if token, ok := strings.CutPrefix(dest, FeishuMediaScheme); ok {
+		// feishu://media/<token>：导入层下载原素材后重新上传（素材复用），token 为空则不可嵌入
+		return token != ""
 	}
 	return true
 }
@@ -2572,14 +2769,40 @@ func isEmbeddableImageDest(dest string) bool {
 // 会跳过这些图片的占位文本），返回 (元素, 图片源列表)；关闭时退化为普通 extractChildElements（图片走占位降级）。
 func (c *MarkdownToBlock) extractCellElementsCollectingImages(node ast.Node) ([]*larkdocx.TextElement, []string) {
 	if !c.options.EmbedTableImages {
-		return c.extractChildElements(node), nil
+		return splitCellInlineMath(c.extractChildElements(node)), nil
 	}
 	var sink []string
 	prev := c.cellImageSink
 	c.cellImageSink = &sink
 	elems := c.extractChildElements(node)
 	c.cellImageSink = prev
-	return elems, sink
+	return splitCellInlineMath(elems), sink
+}
+
+// splitCellInlineMath 对表格单元格元素做与正文一致的行内公式（$...$）转换。
+// 单元格内 <br> 产生的独立 "\n" 元素是填充层拆分多段的分隔符，不能被 splitInlineMath 的相邻纯文本合并吞掉，
+// 因此按 "\n" 分段分别转换后再用原分隔符拼回。
+func splitCellInlineMath(elements []*larkdocx.TextElement) []*larkdocx.TextElement {
+	isBreak := func(e *larkdocx.TextElement) bool {
+		return e != nil && e.TextRun != nil && e.TextRun.Content != nil && *e.TextRun.Content == "\n"
+	}
+	var out, seg []*larkdocx.TextElement
+	flush := func() {
+		if len(seg) > 0 {
+			out = append(out, splitInlineMath(seg)...)
+			seg = nil
+		}
+	}
+	for _, e := range elements {
+		if isBreak(e) {
+			flush()
+			out = append(out, e)
+			continue
+		}
+		seg = append(seg, e)
+	}
+	flush()
+	return out
 }
 
 // cellFallbackContent 返回单元格的纯文本，用于列宽计算 + 富文本为空时的兜底填充。
@@ -2809,33 +3032,20 @@ func (c *MarkdownToBlock) handleBlockHTMLTag(tag *HTMLTag) []*BlockNode {
 func (c *MarkdownToBlock) handleHTMLImageBlock(tag *HTMLTag) []*BlockNode {
 	token := tag.Attrs["token"]
 	imgURL := tag.Attrs["url"]
+	width := parseHTMLIntAttr(tag.Attrs["width"])
+	height := parseHTMLIntAttr(tag.Attrs["height"])
+	align := parseHTMLAlignAttr(tag.Attrs["align"])
 
-	// 有 token 时直接创建 Image Block 引用（适用于 roundtrip）
+	// 有 token 时（doc export 的 roundtrip 输出）：建块接口拒绝带 token 的 Image（1770001），
+	// 改为建空块 + 素材复用（下载原素材 → 上传到新块 → replace_image，保留原显示宽高/对齐）。
 	if token != "" {
-		blockType := int(BlockTypeImage)
-		image := &larkdocx.Image{
-			Token: &token,
-		}
-		if w := parseHTMLIntAttr(tag.Attrs["width"]); w > 0 {
-			image.Width = &w
-		}
-		if h := parseHTMLIntAttr(tag.Attrs["height"]); h > 0 {
-			image.Height = &h
-		}
-		if a := parseHTMLAlignAttr(tag.Attrs["align"]); a > 0 {
-			image.Align = &a
-		}
-		return []*BlockNode{{Block: &larkdocx.Block{
-			BlockType: &blockType,
-			Image:     image,
-		}}}
+		return []*BlockNode{{Block: c.newTokenImageBlock(token, width, height, align)}}
 	}
 
 	// 有 url 时按照图片上传流程处理
 	if imgURL != "" {
-		if strings.HasPrefix(imgURL, "feishu://media/") {
-			c.imageStats.Skipped++
-			return []*BlockNode{{Block: c.createImagePlaceholder(imgURL)}}
+		if mediaToken, ok := strings.CutPrefix(imgURL, FeishuMediaScheme); ok {
+			return []*BlockNode{{Block: c.newTokenImageBlock(mediaToken, width, height, align)}}
 		}
 		if !c.options.UploadImages {
 			c.imageStats.Skipped++
@@ -2843,11 +3053,9 @@ func (c *MarkdownToBlock) handleHTMLImageBlock(tag *HTMLTag) []*BlockNode {
 		}
 		c.imageStats.Total++
 		c.imageSources = append(c.imageSources, imgURL)
-		blockType := int(BlockTypeImage)
-		return []*BlockNode{{Block: &larkdocx.Block{
-			BlockType: &blockType,
-			Image:     &larkdocx.Image{},
-		}}}
+		block := newEmptyImageBlock()
+		c.addMediaRef(block, &MediaRef{Kind: MediaKindImage, Source: imgURL, Width: width, Height: height, Align: align})
+		return []*BlockNode{{Block: block}}
 	}
 
 	return nil
@@ -2892,32 +3100,56 @@ func (c *MarkdownToBlock) handleHTMLCalloutBlock(tag *HTMLTag) []*BlockNode {
 	return []*BlockNode{{Block: calloutBlock, Children: children}}
 }
 
+// 分栏列数的服务端取值范围（grid.column_size，实测 min 2 / max 5）。
+const (
+	gridMinColumns = 2
+	gridMaxColumns = 5
+)
+
 // handleHTMLGridBlock 处理块级 <grid cols="2"><column>左栏</column><column>右栏</column></grid>
 // 创建 Grid Block (type=24) + GridColumn 子块 (type=25)，每个 column 内容递归转换为 BlockNode
 func (c *MarkdownToBlock) handleHTMLGridBlock(tag *HTMLTag) []*BlockNode {
-	cols := parseHTMLIntAttrDefault(tag.Attrs["cols"], 2)
-	if cols < 1 {
-		cols = 2
-	}
-	if cols > 5 {
-		cols = 5 // 飞书最多 5 列
+	// 跨多行的 <grid> 已被预处理折叠为 data-base64（见 rewriteMultilineGridBlocks）
+	content := tag.Content
+	if encoded := tag.Attrs["data-base64"]; encoded != "" {
+		if decoded, err := base64.StdEncoding.DecodeString(encoded); err == nil {
+			content = string(decoded)
+		}
 	}
 
-	// 创建 Grid Block
+	// 解析 <column>...</column> 内容
+	columnContents := ParseGridColumns(content)
+
+	// 如果没有 <column> 标签但有内容，将全部内容作为单列
+	if len(columnContents) == 0 && strings.TrimSpace(content) != "" {
+		columnContents = []string{strings.TrimSpace(content)}
+	}
+
+	// 列数：服务端 column_size 只接受 2-5（实测 1 / 6 均报 99992402）。
+	// <column> 多于 cols 属性时按实际列数建（不再丢弃多出的列内容）；超过 5 列时多出的列内容并入最后一列。
+	cols := parseHTMLIntAttrDefault(tag.Attrs["cols"], 2)
+	if len(columnContents) > cols {
+		cols = len(columnContents)
+	}
+	if cols < gridMinColumns {
+		cols = gridMinColumns
+	}
+	if cols > gridMaxColumns {
+		cols = gridMaxColumns
+	}
+	if len(columnContents) > cols {
+		merged := strings.Join(columnContents[cols-1:], "\n\n")
+		columnContents = append(columnContents[:cols-1:cols-1], merged)
+	}
+
+	// 创建 Grid Block。注意：GridColumn 子块由服务端按 column_size 自动生成（显式创建 grid_column
+	// 子块会被拒绝：1770028 block not support create children），导入层把下面每列的子块写入对应的服务端列。
 	gridBlockType := int(BlockTypeGrid)
 	gridBlock := &larkdocx.Block{
 		BlockType: &gridBlockType,
 		Grid: &larkdocx.Grid{
 			ColumnSize: &cols,
 		},
-	}
-
-	// 解析 <column>...</column> 内容
-	columnContents := ParseGridColumns(tag.Content)
-
-	// 如果没有 <column> 标签但有内容，将全部内容作为单列
-	if len(columnContents) == 0 && strings.TrimSpace(tag.Content) != "" {
-		columnContents = []string{strings.TrimSpace(tag.Content)}
 	}
 
 	// 创建 GridColumn 子块
@@ -2974,23 +3206,33 @@ func (c *MarkdownToBlock) convertInnerMarkdown(markdown string) []*BlockNode {
 	c.videoStats.Total += inner.videoStats.Total
 	c.videoStats.Skipped += inner.videoStats.Skipped
 	c.videoSources = append(c.videoSources, inner.videoSources...)
+	c.fileStats.Total += inner.fileStats.Total
+	c.fileStats.Skipped += inner.fileStats.Skipped
+	for block, ref := range inner.mediaRefs {
+		c.addMediaRef(block, ref)
+	}
+	c.degradations = append(c.degradations, inner.degradations...)
+	for block, td := range inner.tableDataByBlock {
+		c.addTableData(block, td)
+	}
 	return result.BlockNodes
 }
 
 // handleHTMLWhiteboardBlock 处理 <whiteboard type="blank"/> → Board Block (type=43)
 func (c *MarkdownToBlock) handleHTMLWhiteboardBlock(tag *HTMLTag) []*BlockNode {
 	blockType := int(BlockTypeBoard)
-	board := &larkdocx.Board{}
-
-	// 若有 token 属性，设置（用于 roundtrip）
-	if token := tag.Attrs["token"]; token != "" {
-		board.Token = &token
+	block := &larkdocx.Block{
+		BlockType: &blockType,
+		Board:     &larkdocx.Board{},
 	}
 
-	return []*BlockNode{{Block: &larkdocx.Block{
-		BlockType: &blockType,
-		Board:     board,
-	}}}
+	// 带 token（doc export 的 roundtrip 输出）：建块接口拒绝带 token 的 Board（1770001），
+	// 画板 token 由服务端生成。这里只建空画板，登记源画板 token，由导入层复制源画板节点。
+	if token := strings.TrimSpace(tag.Attrs["token"]); token != "" {
+		c.addMediaRef(block, &MediaRef{Kind: MediaKindWhiteboard, Token: token})
+	}
+
+	return []*BlockNode{{Block: block}}
 }
 
 // handleHTMLSheetBlock 处理 <sheet rows="5" cols="5"/> → Sheet Block (type=30)
@@ -2998,20 +3240,23 @@ func (c *MarkdownToBlock) handleHTMLSheetBlock(tag *HTMLTag) []*BlockNode {
 	rows := parseHTMLIntAttrDefault(tag.Attrs["rows"], 3)
 	cols := parseHTMLIntAttrDefault(tag.Attrs["cols"], 3)
 
+	// 带 token（引用已有电子表格）：建块接口拒绝带 token 的 Sheet（1770001），也无法把已有表格挂到新文档。
+	// 降级为指向原表格的链接文本并登记 Degradation（导入层计入 failures），不让整篇导入失败。
+	if token := strings.TrimSpace(tag.Attrs["token"]); token != "" {
+		sheetURL := client.BuildResourceURL(client.ResourceTypeSheet, token)
+		ref := token
+		if id := strings.TrimSpace(tag.Attrs["id"]); id != "" {
+			sheetURL += "?sheet=" + url.QueryEscape(id)
+			ref = token + "_" + id
+		}
+		c.addDegradation("sheet", ref, "建块接口不支持引用已有电子表格（1770001），已降级为原表格链接；需要内嵌数据请用 doc export 默认的 --expand-sheets 导出为 Markdown 表格")
+		return []*BlockNode{{Block: newTextBlock(createLinkElement("[电子表格: "+ref+"]", sheetURL))}}
+	}
+
 	blockType := int(BlockTypeSheet)
 	sheet := &larkdocx.Sheet{
 		RowSize:    &rows,
 		ColumnSize: &cols,
-	}
-
-	// 若有 token/id 属性，设置（用于 roundtrip）
-	if token := tag.Attrs["token"]; token != "" {
-		if id := tag.Attrs["id"]; id != "" {
-			combined := token + "_" + id
-			sheet.Token = &combined
-		} else {
-			sheet.Token = &token
-		}
 	}
 
 	return []*BlockNode{{Block: &larkdocx.Block{
@@ -3036,14 +3281,21 @@ func (c *MarkdownToBlock) handleHTMLBitableBlock(tag *HTMLTag) []*BlockNode {
 		viewType = 6
 	}
 
+	// 带 token（引用已有多维表格）：建块接口拒绝带 token 的 Bitable（1770001）。
+	// 降级为指向原多维表格的链接文本并登记 Degradation，不让整篇导入失败。
+	if token := strings.TrimSpace(tag.Attrs["token"]); token != "" {
+		appToken, tableID, _ := strings.Cut(token, "_")
+		baseURL := client.BuildResourceURL(client.ResourceTypeBitable, appToken)
+		if tableID != "" {
+			baseURL += "?table=" + url.QueryEscape(tableID)
+		}
+		c.addDegradation("bitable", token, "建块接口不支持引用已有多维表格（1770001），已降级为原多维表格链接")
+		return []*BlockNode{{Block: newTextBlock(createLinkElement("[多维表格: "+token+"]", baseURL))}}
+	}
+
 	blockType := int(BlockTypeBitable)
 	bitable := &larkdocx.Bitable{
 		ViewType: &viewType,
-	}
-
-	// 若有 token 属性，设置（用于 roundtrip）
-	if token := tag.Attrs["token"]; token != "" {
-		bitable.Token = &token
 	}
 
 	return []*BlockNode{{Block: &larkdocx.Block{
@@ -3054,28 +3306,45 @@ func (c *MarkdownToBlock) handleHTMLBitableBlock(tag *HTMLTag) []*BlockNode {
 
 // handleHTMLFileBlock 处理 <file token="..." name="..." view-type="1"/> → File Block (type=23)
 func (c *MarkdownToBlock) handleHTMLFileBlock(tag *HTMLTag) []*BlockNode {
-	token := tag.Attrs["token"]
-	name := tag.Attrs["name"]
+	token := strings.TrimSpace(tag.Attrs["token"])
+	name := strings.TrimSpace(tag.Attrs["name"])
 	if token == "" && name == "" {
 		return nil
 	}
+	label := name
+	if label == "" {
+		label = FeishuMediaScheme + token
+	}
 
+	// 只有文件名、没有素材 token：没有可上传/复用的内容，降级为占位文本并登记。
+	if token == "" {
+		c.fileStats.Skipped++
+		c.addDegradation("file", name, "<file> 标签缺少 token，无可导入的附件内容，已降级为占位文本")
+		return []*BlockNode{{Block: c.createMediaPlaceholder("File", label)}}
+	}
+	if !c.options.UploadImages {
+		c.fileStats.Skipped++
+		return []*BlockNode{{Block: c.createMediaPlaceholder("File", label)}}
+	}
+
+	// 建块接口只接受 {"token":""} 的空 File 块（带 token 或 name 均 1770001），
+	// 由导入层下载原素材后上传到新 File 块并 replace_file（附件复用）。
+	c.fileStats.Total++
+	block := newEmptyFileBlock(parseHTMLIntAttr(tag.Attrs["view-type"]))
+	c.addMediaRef(block, &MediaRef{Kind: MediaKindFile, Token: token, Name: name, Video: IsVideoFilename(name)})
+	return []*BlockNode{{Block: block}}
+}
+
+// newEmptyFileBlock 构造可被建块接口接受的空 File 块（token 必须为空字符串，不能带 name）。
+// 服务端返回的是外层 View 块（block_type=33），其 children[0] 才是 File 块；viewType>0 时写入 View 的展示方式。
+func newEmptyFileBlock(viewType int) *larkdocx.Block {
 	blockType := int(BlockTypeFile)
-	file := &larkdocx.File{}
-	if token != "" {
-		file.Token = &token
+	empty := ""
+	file := &larkdocx.File{Token: &empty}
+	if viewType > 0 {
+		file.ViewType = &viewType
 	}
-	if name != "" {
-		file.Name = &name
-	}
-	if vt := parseHTMLIntAttr(tag.Attrs["view-type"]); vt > 0 {
-		file.ViewType = &vt
-	}
-
-	return []*BlockNode{{Block: &larkdocx.Block{
-		BlockType: &blockType,
-		File:      file,
-	}}}
+	return &larkdocx.Block{BlockType: &blockType, File: file}
 }
 
 // handleHTMLVideoBlock 处理 <video src="./demo.mp4" controls></video> → File Block (type=23)
@@ -3097,23 +3366,19 @@ func (c *MarkdownToBlock) handleHTMLVideoBlock(tag *HTMLTag) []*BlockNode {
 		viewType = 2
 	}
 
-	if strings.HasPrefix(src, "feishu://media/") {
-		token := strings.TrimPrefix(src, "feishu://media/")
+	if token, ok := strings.CutPrefix(src, FeishuMediaScheme); ok {
 		if token == "" {
 			return nil
 		}
-		blockType := int(BlockTypeFile)
-		file := &larkdocx.File{
-			Token:    &token,
-			ViewType: &viewType,
+		if !c.options.UploadImages {
+			c.videoStats.Skipped++
+			return []*BlockNode{{Block: c.createMediaPlaceholder("Video", src)}}
 		}
-		if name != "" {
-			file.Name = &name
-		}
-		return []*BlockNode{{Block: &larkdocx.Block{
-			BlockType: &blockType,
-			File:      file,
-		}}}
+		// 视频素材 token：同附件一样建空 File 块，由导入层下载原素材后重新上传（建块不能带 token/name，1770001）。
+		c.videoStats.Total++
+		block := newEmptyFileBlock(viewType)
+		c.addMediaRef(block, &MediaRef{Kind: MediaKindFile, Token: token, Name: name, Video: true})
+		return []*BlockNode{{Block: block}}
 	}
 
 	if !c.options.UploadImages {
@@ -3130,14 +3395,9 @@ func (c *MarkdownToBlock) handleHTMLVideoBlock(tag *HTMLTag) []*BlockNode {
 
 	c.videoStats.Total++
 	c.videoSources = append(c.videoSources, src)
-	blockType := int(BlockTypeFile)
-	return []*BlockNode{{Block: &larkdocx.Block{
-		BlockType: &blockType,
-		File: &larkdocx.File{
-			Name:     &name,
-			ViewType: &viewType,
-		},
-	}}}
+	block := newEmptyFileBlock(viewType)
+	c.addMediaRef(block, &MediaRef{Kind: MediaKindFile, Source: src, Name: name, Video: true})
+	return []*BlockNode{{Block: block}}
 }
 
 // parseHTMLIntAttrDefault 解析 HTML 属性中的整数值，失败返回 defaultVal

@@ -9,12 +9,12 @@ import (
 )
 
 var docTableUnmergeCellsCmd = &cobra.Command{
-	Use:   "unmerge-cells <document_id> <table_block_id>",
+	Use:   "unmerge-cells <document_id|url> <table_block_id>",
 	Short: "取消合并单元格",
 	Long: `取消指定单元格的合并状态。
 
 参数:
-  document_id     文档 ID
+  document_id     文档 ID 或 URL（/wiki/ URL 自动解析为底层文档）
   table_block_id  表格块 ID（Block 类型 31）
   --row           单元格所在行索引
   --col           单元格所在列索引
@@ -40,18 +40,22 @@ func runDocTableUnmergeCells(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	documentID := args[0]
 	tableBlockID := args[1]
 	row, _ := cmd.Flags().GetInt("row")
 	col, _ := cmd.Flags().GetInt("col")
 	output, _ := cmd.Flags().GetString("output")
 	userAccessToken := resolveOptionalUserToken(cmd)
+	// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+	if err != nil {
+		return err
+	}
 
 	if row < 0 || col < 0 {
 		return fmt.Errorf("行列索引不能为负数")
 	}
 
-	err := client.UnmergeTableCells(documentID, tableBlockID, row, col, userAccessToken)
+	err = client.UnmergeTableCells(documentID, tableBlockID, row, col, userAccessToken)
 	if err != nil {
 		return fmt.Errorf("取消合并失败: %w", err)
 	}

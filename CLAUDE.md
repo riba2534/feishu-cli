@@ -142,7 +142,9 @@ export FEISHU_APP_SECRET=xxx
 **导入**：`feishu-cli doc import doc.md --title "文档" --verbose`
 **导出**：`feishu-cli doc export <doc_id> -o output.md`
 
-支持的语法：标题、段落、列表（无限深度嵌套）、任务列表、代码块、引用（QuoteContainer）、Callout（6 种类型）、同步块（含跨文档引用；不可读时输出 WARNING 占位与诊断）、表格、分割线、图片（默认 `--upload-images` 上传）、链接、公式、粗体/斜体/删除线/下划线/行内代码/高亮
+支持的语法：标题、段落、列表（无限深度嵌套；列表项第二段起保留为子块）、任务列表、代码块、引用（QuoteContainer；嵌套引用扁平化，飞书不支持引用嵌套）、Callout（6 种类型）、分栏 `<grid>`（列由服务端生成，内容写入各列）、同步块（含跨文档引用；不可读时输出 WARNING 占位与诊断）、表格（单元格 `$...$` 转公式）、分割线、图片（默认 `--upload-images` 上传）、链接、公式、粗体/斜体/删除线/下划线/行内代码/高亮
+
+往返：`doc export` 输出的 `<image/file token>`、`<video src="feishu://media/…">` 导入时复用原素材（下载后重新上传），`<whiteboard token>` 按节点内图表源码重建或逐节点复制；`--download-images -o` 写文件时资源路径相对输出文件。建块被拒的单个块隔离跳过并计入 `failures`，阶段一失败也输出 JSON（退出码 1）
 
 ### Mermaid / PlantUML 图表转画板
 

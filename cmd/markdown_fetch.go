@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -54,7 +55,7 @@ var markdownFetchCmd = &cobra.Command{
 		outputPath = strings.TrimSpace(outputPath)
 		version = strings.TrimSpace(version)
 		if fileToken == "" {
-			return fmt.Errorf("--file-token 必填")
+			return clierr.Usagef("--file-token 必填")
 		}
 		if err := validateMarkdownDiffVersionValue(version, "--version"); err != nil {
 			return err
@@ -104,7 +105,7 @@ var markdownFetchCmd = &cobra.Command{
 			finalPath = filepath.Join(finalPath, fileName)
 		}
 		if _, err := os.Stat(finalPath); err == nil && !overwrite {
-			return fmt.Errorf("本地文件已存在: %s（使用 --overwrite 覆盖）", finalPath)
+			return clierr.Usagef("本地文件已存在: %s（使用 --overwrite 覆盖）", finalPath)
 		}
 		if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
 			return fmt.Errorf("创建输出目录失败: %w", err)

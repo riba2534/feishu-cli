@@ -9,7 +9,7 @@ import (
 )
 
 var getDocumentCmd = &cobra.Command{
-	Use:   "get <document_id>",
+	Use:   "get <document_id|url>",
 	Short: "获取文档信息",
 	Long: `获取飞书文档的基本信息，包括文档ID、标题、版本号等。
 
@@ -18,6 +18,8 @@ var getDocumentCmd = &cobra.Command{
 
 示例:
   feishu-cli doc get ABC123def456
+  feishu-cli doc get https://xxx.feishu.cn/docx/ABC123def456
+  feishu-cli doc get https://xxx.feishu.cn/wiki/wikcnXXXXXX   # wiki 自动解析为底层文档
   feishu-cli doc get ABC123def456 -o json
   feishu-cli doc get ABC123def456 --user-access-token u-xxxx`,
 	Args: cobra.ExactArgs(1),
@@ -26,8 +28,12 @@ var getDocumentCmd = &cobra.Command{
 			return err
 		}
 
-		docID := args[0]
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+		docID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
+		}
 		doc, err := client.GetDocumentWithToken(docID, userAccessToken)
 		if err != nil {
 			return err

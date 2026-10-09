@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -24,7 +25,10 @@ var exportMarkdownCmd = &cobra.Command{
   feishu-cli doc export https://xxx.feishu.cn/wiki/wikcnXXXXXX
 
 使用 --download-images 可同时下载文档中的图片和画板（画板自动导出为 PNG），
-通过 --assets-dir 指定资源保存目录（默认 ./assets）。
+通过 --assets-dir 指定资源保存目录（默认 ./assets，相对当前工作目录）。用 -o 写文件时，
+Markdown 中的资源引用路径相对输出文件所在目录，导出后可直接对该文件 doc import。
+不带 --download-images 时图片/附件/画板输出为 <image token>/<file token>/<whiteboard token> 标签，
+doc import 会复用素材（下载原素材后重新上传）、复制源画板节点；当前身份无源文档权限时降级为占位文本并计入 failures。
 内嵌飞书电子表格默认会自动展开为 Markdown 表格，可用 --expand-sheets=false 保留为 <sheet/> 引用。
 跨文档引用同步块会自动读取源文档并展开；权限或 API 异常时输出带源标识的 WARNING 占位和 stderr 诊断，不会静默丢失内容。
 
@@ -97,9 +101,16 @@ docs_ai 引擎（--engine docs_ai，服务端导出，与 doc content-update / d
 
 		// Convert to Markdown
 		cfg := config.Get()
+		// 写文件时，下载资源的引用路径改写为相对输出 Markdown 所在目录，保证「导出 → 原地 doc import」可用
+		// （导入按 Markdown 文件所在目录解析相对路径）；输出到 stdout 时保持相对当前工作目录。
+		assetsLinkBase := ""
+		if output != "" {
+			assetsLinkBase = filepath.Dir(output)
+		}
 		options := converter.ConvertOptions{
 			DownloadImages:  downloadImages,
 			AssetsDir:       assetsDir,
+			AssetsLinkBase:  assetsLinkBase,
 			DocumentID:      documentID,
 			UserAccessToken: userAccessToken,
 			Debug:           cfg.Debug,
