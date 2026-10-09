@@ -113,6 +113,7 @@
 - IM：话题群 `msg history` 线程回复重复输出、翻页被回复占用；`--markdown/--content` 的 @ 标签未规范化导致 @ 失效；`chat member list` 拿不到群内机器人；事件订阅按事件类型各开一条连接、与同应用其他连接争抢事件；设了 `--timeout/--max-events` 时 stdin EOF 仍提前退出；`msg history` 文本模式也全量拉取群成员；User 身份降级到搜索时提示语与身份不符且静默丢弃时间参数；`--user-email` 模糊匹配可能定位到错误的人；`search messages/chats` 丢弃服务端 notice；资源下载默认文件名改为服务端文件名。
 - 集成阶段：SDK token 缓存改为随 client 实例重建而丢弃（同一 app_id 切换 base_url 或轮换 secret 后不再复用旧 token）；异步删除任务失败时按身份提示原因；`table-put` 数值列写入前重置残留的文本格式。
 - 文档导入往返：`doc export` 输出的 `<image/file token>`、`feishu://media/` 视频导入时下载原素材重新上传，`<whiteboard token>` 按源码重建或复制节点（不再整篇报 1770001 失败），带 token 的 `<sheet>`/`<bitable>` 降级为链接并计入 `failures`；嵌套引用扁平化（原 1770030）；分栏内容写入服务端生成的列（原 1770028），列内空行不再截断；列表项的后续段落保留为子块；表格单元格里的 `$..$` 转为公式；被服务端拒绝的单个块隔离跳过，建块阶段失败也输出 JSON（退出码 1）；`doc export --download-images -o` 的资源路径相对输出文件，可原地再导入；`markdown patch` 读不到远端文件名时拒绝写回（新增 `--name`），参数错误退出码 2。
+- 建块按「每批 ≤50 块且 ≤5 个画板块」切分：实测单次请求第 6 个画板即报 1770035，此前含较多 `<whiteboard token>` 的导出 Markdown 重新导入会在第二批中止，`doc add` 直接失败；`doc read --keyword` 能命中导出时被转义的词（如 `ANCHOR_TOKEN`）；`doc blocks --raw` 帮助改为如实说明输出纯文本。
 - 技能 review 阶段：`msg read-users` 已登录时必然失败（接口只收 Tenant）改用原始请求并新增 `--as`；`file version create/get/list` 兼容数字 status，避免创建成功后误报失败而重复建版本；妙记命令接受妙记链接，`vc notes` 在会议号/日历路径下也补拉纪要产物，产物部分失败时非零退出，`minutes download` 同批同名文件自动改名；邮件内联图片在 home 为软链接时不再被误拒；`--domain mail --recommend` 补收信规则 scope、slides 授权域补齐子命令 scope；`slides create` 按服务端返回统计页数；`calendar attendee remove` 的 dry-run 与真实请求一致；`okr comment create --select-all` 配 `--content-json` 时选区不再为空；`perm password` 遇 1063002 提示先开放链接；多处 help 与错误提示修正。
 
 ### 技能与验证
