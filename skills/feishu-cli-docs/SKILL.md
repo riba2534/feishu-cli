@@ -17,6 +17,7 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 | 意图 | 读取文件 |
 |---|---|
 | 阅读、总结、分析 docx/wiki/sheet，大文档按大纲/章节/关键词局部读取，获取块结构，不主动落盘 | `references/workflows/read/workflow.md` |
+| 取文档内容转成可直接发 IM 的 Markdown（`doc read --doc-format im-markdown`，`--lang` 控制 @人显示语言） | `references/workflows/read/workflow.md` |
 | 带 block id 读取（`doc read --with-ids` / `--engine docs_ai`），为精确修改做准备 | `references/workflows/read/workflow.md` |
 | 创建 docx（含 `doc create --content` 带内容建文档）、追加、覆盖、替换、删除或移动内容，按 block id 精确改写，插入本地图片/附件 | `references/workflows/write/workflow.md` |
 | 查看历史版本、回滚文档（`doc history list/revert/revert-status`） | `references/workflows/write/workflow.md` |

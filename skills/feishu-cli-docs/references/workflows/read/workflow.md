@@ -8,6 +8,7 @@
 - [选择读取方式](#选择读取方式)
 - [大文档选择性读取（doc read）](#大文档选择性读取doc-read)
 - [docs_ai 引擎：带 block id 读取](#docs_ai-引擎带-block-id-读取)
+- [转成 IM Markdown（发群消息前）](#转成-im-markdown发群消息前)
 - [整篇读取与图片](#整篇读取与图片)
 - [文档元信息与块结构](#文档元信息与块结构)
 - [知识库与电子表格](#知识库与电子表格)
@@ -30,6 +31,7 @@
 | 普通大小的 docx，读完总结 | `doc export <doc> -o /tmp/x.md`，再用 Read 读取 |
 | 大文档（几百块以上）或只关心某一节 | 先 `doc read <doc> --outline`，再 `--heading` / `--keyword` 取局部 |
 | 要拿 block id 以便后续精确修改 | `doc read <doc> --with-ids [--heading "章节"]` |
+| 取正文后直接作为飞书 IM 消息发送 | `doc read <doc_url> --doc-format im-markdown [--scope ...]` |
 | 知识库节点 | 底层是 docx：`doc read` / `doc export` 直接传 wiki URL；底层是 sheet 或需整节点导出：`wiki export` |
 | 普通电子表格 | `sheet export <token_or_url> --format markdown -o /tmp/x.md` |
 | 分析块类型、查原始 API 结构 | `doc blocks <document_id> --all` |
@@ -60,7 +62,7 @@ feishu-cli doc read <document_id_or_url> --keyword "QPS|限流" --context 5
 ## docs_ai 引擎：带 block id 读取
 
 使用 `--with-ids`、`--scope`、`--detail`、`--doc-format`、`--start-block-id`、`--end-block-id`、`--context-before/after`、
-`--max-depth`、`--revision-id`、`-o json` 任一项（或显式 `--engine docs_ai`）时改走服务端 docs_ai 读取；显式 `--engine local`
+`--max-depth`、`--revision-id`、`--lang`、`-o json` 任一项（或显式 `--engine docs_ai`）时改走服务端 docs_ai 读取；显式 `--engine local`
 再用这些 flag 会以退出码 2 报错。docs_ai 引擎不传范围时读取全文。
 
 ```bash
@@ -83,9 +85,36 @@ feishu-cli doc read <doc> --with-ids -o json
   Markdown 无法携带 block id；`--detail full` 额外带样式属性与引用元数据。
 - `--scope full|outline|range|keyword|section` 也可由 `--outline` / `--heading` / `--keyword` / `--start-block-id` 推断，显式值与推断冲突时报错。
 - 文本级替换匹配不到时，用 `--engine docs_ai --doc-format xml`（或 markdown）查看服务端序列化原文。
+- `--lang en-US|zh-CN|ja-JP` 设置正文中引用用户（@人）的显示语言，原样透传给服务端；不传由服务端决定。
 
 典型闭环：`doc read --with-ids --heading "章节"` 拿到 block id → `doc content-update --mode replace_range --block-id <id>`
 精确改写 → 再次 `doc read --with-ids` 验证（写操作后被改写的块会换新 ID，必须重新读取）。
+
+## 转成 IM Markdown（发群消息前）
+
+`--doc-format im-markdown` 向服务端请求 Markdown，再把残留的 DocxXML 片段降级为飞书 IM 能渲染的写法，
+结果可直接作为 `msg send` 的 Markdown/post 正文（发送属于 `feishu-cli-messaging`）：
+
+```bash
+feishu-cli doc read "https://xxx.feishu.cn/docx/<document_id>" --doc-format im-markdown
+feishu-cli doc read "https://xxx.feishu.cn/wiki/<node_token>" --doc-format im-markdown --scope keyword --keyword "部署|上线" --lang en-US
+feishu-cli doc read <document_id> --doc-format im-markdown -o json   # document.content 已转换，评论/引用表等旁路数据保留
+```
+
+| 原始片段 | IM Markdown |
+|---|---|
+| `<title>`、`<h1>`…`<h9>` | `#` 标题（h7–h9 降为 `######`） |
+| `<callout emoji="💡">…</callout>` | 上下 `---` 包裹，emoji 置于正文前 |
+| `<table>` | Markdown 表格（单元格内 `\|` 转义、换行转 `<br>`） |
+| `<cite type="doc">` / `<sheet token>` | 文档/表格链接，域名取输入 URL 的租户域名；token 输入用品牌标准域名 |
+| `<cite type="user">` | `<at user_id="…">姓名</at>` |
+| `<whiteboard>`、`<bitable>`、`<task>` 等无法在 IM 展示的资源 | 行内代码占位或标签（如 `` `Base` ``） |
+| 投票、目录、同步块等 | 丢弃 |
+
+- 未登记的标签原样保留（局部读取的 `<fragment>` / `<excerpt>` 外壳也保留），普通 Markdown 文本不再二次解析。
+- 想让链接指向正确租户，传完整文档 URL 而不是裸 token。
+- IM Markdown 与 Markdown 一样无法携带 block id：与 `--with-ids`、`--detail with-ids|full` 组合时以退出码 2 报错；
+  本地引擎不支持（显式 `--engine local` 时退出码 2，提示改用 docs_ai）。
 
 ## 整篇读取与图片
 
