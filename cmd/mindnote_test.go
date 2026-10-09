@@ -116,13 +116,13 @@ func TestMindnoteNodesListWikiUnwrapTreeAndJSON(t *testing.T) {
 		t.Fatalf("节点树输出异常:\n got %q\nwant %q", out.String(), want)
 	}
 
-	c, out, _ = newMindnoteTestCmd(t, mindnoteNodesListCmd, "--mindnote-id", "MnBare", "--as", "bot", "-o", "json")
+	c, out, _ = newMindnoteTestCmd(t, mindnoteNodesListCmd, "--mindnote-id", "MnBare", "--as", "auto", "--user-access-token", "u-auto", "-o", "json")
 	if err := c.RunE(c, nil); err != nil {
 		t.Fatalf("nodes list -o json 失败: %v", err)
 	}
 	last := reqs()[len(reqs())-1]
-	if last.path != "/open-apis/mindnote/v1/mindnotes/MnBare/nodes" || last.query != "" || last.auth != "Bearer t-test" {
-		t.Fatalf("--as bot 应使用 App Token 且不带 user_id_type: %+v", last)
+	if last.path != "/open-apis/mindnote/v1/mindnotes/MnBare/nodes" || last.query != "" || last.auth != "Bearer u-auto" {
+		t.Fatalf("--as auto 应等同 user 且不带 user_id_type: %+v", last)
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
@@ -318,9 +318,50 @@ func TestMindnoteNotFoundHint(t *testing.T) {
 	})
 	initWikiNodeDeleteTestConfig(t, server.URL)
 
-	c, _, _ := newMindnoteTestCmd(t, mindnoteNodesListCmd, "--as", "bot")
+	c, _, _ := newMindnoteTestCmd(t, mindnoteNodesListCmd, "--user-access-token", "u-test")
 	err := c.RunE(c, []string{"WikTokAsBare"})
 	if err == nil || !client.HasAPICode(err, 3410003) || !strings.Contains(err.Error(), "drive inspect") {
 		t.Fatalf("3410003 应保留业务码并附带解包提示，得到 %v", err)
+	}
+}
+
+// TestMindnoteNodesListUserOnly list 仅支持 User 身份（开放平台元数据 accessTokens=[user]）：
+// --as bot 本地拒绝（exit 2）；auto 等同 user，未配置 User Token 时报鉴权错误（exit 3），不回退 Bot。
+func TestMindnoteNodesListUserOnly(t *testing.T) {
+	server, reqs := newMindnoteTestServer(t, "mindnote", "MnObjTok", func(w http.ResponseWriter, r *http.Request, _ map[string]any) {
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"success","data":{"nodes":[]}}`)
+	})
+	initWikiNodeDeleteTestConfig(t, server.URL)
+
+	for _, as := range []string{"bot", "tenant", "BOT"} {
+		c, _, _ := newMindnoteTestCmd(t, mindnoteNodesListCmd, "--as", as, "--user-access-token", "u-test")
+		err := c.RunE(c, []string{"MnTok"})
+		if err == nil || !clierr.HasKind(err, clierr.KindUsage) || !strings.Contains(err.Error(), "仅支持 User 身份") ||
+			!strings.Contains(err.Error(), `auth login --scope "mindnote:node:read"`) {
+			t.Fatalf("--as %s 应返回带补授权提示的用法错误，得到 %v", as, err)
+		}
+	}
+	for _, as := range []string{"", "auto"} {
+		args := []string{}
+		if as != "" {
+			args = append(args, "--as", as)
+		}
+		c, _, _ := newMindnoteTestCmd(t, mindnoteNodesListCmd, args...)
+		err := c.RunE(c, []string{"MnTok"})
+		if err == nil || !clierr.HasKind(err, clierr.KindAuth) || !strings.Contains(err.Error(), "mindnote:node:read") {
+			t.Fatalf("--as %q 未配置 User Token 时应返回鉴权错误（不回退 Bot），得到 %v", as, err)
+		}
+	}
+	if got := reqs(); len(got) != 0 {
+		t.Fatalf("身份不满足时不应发请求: %+v", got)
+	}
+
+	// create 元数据 accessTokens=[user, tenant]：--as bot 仍可用
+	c, _, _ := newMindnoteTestCmd(t, mindnoteNodesCreateCmd, "--as", "bot", "--data", `{"nodes":[{"node_id":"n1"}]}`)
+	if err := c.RunE(c, []string{"MnTok"}); err != nil {
+		t.Fatalf("create --as bot 应可用: %v", err)
+	}
+	if got := reqs(); len(got) != 1 || got[0].auth != "Bearer t-test" {
+		t.Fatalf("create --as bot 应使用 App Token: %+v", got)
 	}
 }

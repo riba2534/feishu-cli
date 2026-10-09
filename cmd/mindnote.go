@@ -46,8 +46,8 @@ var mindnoteNodesCmd = &cobra.Command{
 	Long: `思维笔记节点读取与写入。
 
 子命令:
-  list     获取节点列表（默认 User 身份）
-  create   新增或更新节点（默认 auto 身份，支持 --dry-run）`,
+  list     获取节点列表（仅 User 身份）
+  create   新增或更新节点（User / Bot，默认 auto，支持 --dry-run）`,
 }
 
 var mindnoteNodesListCmd = &cobra.Command{
@@ -58,8 +58,9 @@ var mindnoteNodesListCmd = &cobra.Command{
 默认输出缩进的节点树（文本 + node_id，完成/高亮/备注/图片作为附注）；-o json 输出接口原始 data。
 返回字段：nodes[].node_id、parent_id、texts、notes、images、finish、highlight。
 
-身份：--as user（默认，与官方元数据 accessTokens=[user] 一致）| auto | bot。User 身份需 auth login 时带
-mindnote:node:read；--as bot 时网关按应用身份 scope mindnote:node:read 校验（应用未开通报 99991672）。
+身份：仅 User（开放平台元数据该接口 accessTokens=[user]）。--as 默认 user，auto 等同 user（不回退 Bot），
+--as bot 直接以退出码 2 拒绝。需 auth login 时带 mindnote:node:read：
+  feishu-cli auth login --scope "mindnote:node:read"
 
 示例:
   feishu-cli mindnote nodes list bmncnxxx
@@ -84,7 +85,7 @@ var mindnoteNodesCreateCmd = &cobra.Command{
 两处都给且不一致时报用法错误；都没给时在 stderr 提示。
 
 写入前先 nodes list 确认 parent_id / node_id。--dry-run 只打印将发出的请求（不联网、不解析身份）。
-身份：--as auto（默认，User 优先、未配置回退 Bot）| user | bot；需要 mindnote:node:create。
+身份：--as auto（默认，User 优先、未配置回退 Bot）| user | bot（元数据 accessTokens=[user, tenant]）；需要 mindnote:node:create。
 
 示例:
   feishu-cli mindnote nodes create bmncnxxx --client-token 9f1c2d3e-0000-4000-8000-000000000001 \
@@ -106,7 +107,7 @@ func init() {
 		c.Flags().StringP("output", "o", "", "输出格式（json 输出接口原始 data）")
 		c.Flags().String("user-access-token", "", "User Access Token（--as user/auto 时优先使用）")
 	}
-	mindnoteNodesListCmd.Flags().String("as", "user", "身份: user(User Token，默认) | bot(App Token) | auto(User 优先；未配置回退 Bot；已配置但解析/刷新失败 fail-closed)")
+	mindnoteNodesListCmd.Flags().String("as", "user", "身份: user（默认）| auto（等同 user）；该接口仅支持 User 身份，--as bot 报用法错误")
 
 	addAsFlag(mindnoteNodesCreateCmd)
 	mindnoteNodesCreateCmd.Flags().String("data", "", "JSON 请求体：内联 JSON、@文件路径 或 -（stdin）（必填）")
@@ -198,6 +199,21 @@ func decorateMindnoteError(err error) error {
 	return err
 }
 
+// validateMindnoteListAs 校验 list 的 --as：开放平台元数据声明该接口 accessTokens=[user]，
+// 与官方生成命令一致只接受 User 身份；auto 等同 user，不回退 Bot。
+func validateMindnoteListAs(cmd *cobra.Command) error {
+	as := strings.ToLower(strings.TrimSpace(flagString(cmd, "as")))
+	switch as {
+	case "", "user", "auto":
+		return nil
+	case "bot", "tenant", "app":
+		return clierr.Usagef("mindnote nodes list 接口仅支持 User 身份（开放平台元数据 accessTokens=[user]），不支持 --as %s；"+
+			"请先 `feishu-cli auth login --scope \"mindnote:node:read\"`，再以 --as user 调用", as)
+	default:
+		return clierr.Usagef("--as 仅支持 user|auto（mindnote nodes list 只支持 User 身份），得到 %q", as)
+	}
+}
+
 func runMindnoteNodesList(cmd *cobra.Command, args []string) error {
 	raw, err := mindnoteInput(cmd, args)
 	if err != nil {
@@ -207,7 +223,7 @@ func runMindnoteNodesList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := validateIdentityAs(cmd); err != nil {
+	if err := validateMindnoteListAs(cmd); err != nil {
 		return err
 	}
 	if _, _, err := parseMindnoteArgOffline(raw); err != nil {
@@ -216,9 +232,9 @@ func runMindnoteNodesList(cmd *cobra.Command, args []string) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	userAccessToken, err := resolveIdentityToken(cmd)
+	userAccessToken, err := resolveRequiredUserToken(cmd)
 	if err != nil {
-		return err
+		return fmt.Errorf("mindnote nodes list 仅支持 User 身份，需要 User Access Token（请先 `feishu-cli auth login --scope \"mindnote:node:read\"`）: %w", err)
 	}
 	mindnoteID, err := resolveMindnoteArg(raw, userAccessToken)
 	if err != nil {
