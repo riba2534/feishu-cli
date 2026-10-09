@@ -1038,10 +1038,19 @@ func AttendeeRefsToEventAttendees(refs []*AttendeeRef) []*EventAttendee {
 	return out
 }
 
-// RemoveEventAttendees 移除日程参与人
-// （POST /calendars/{calendar_id}/events/{event_id}/attendees/batch_delete）。
-// 前缀可识别的 ID 走 delete_ids，其余视为 attendee_id 走 attendee_ids。
-func RemoveEventAttendees(calendarID, eventID string, refs []*AttendeeRef, needNotification bool, userAccessToken string) error {
+// RemoveEventAttendeesPath 返回移除日程参与人接口路径（不含 query）。
+func RemoveEventAttendeesPath(calendarID, eventID string) string {
+	return calendarEventPath(calendarID, eventID) + "/attendees/batch_delete"
+}
+
+// RemoveEventAttendeesParams 是移除日程参与人请求固定携带的 query 参数。
+func RemoveEventAttendeesParams() map[string]any {
+	return map[string]any{"user_id_type": "open_id"}
+}
+
+// BuildRemoveEventAttendeesBody 构造 batch_delete 请求体（dry-run 预览与真实请求共用）：
+// 前缀可识别的 ID 走 delete_ids，其余视为 attendee list 返回的 attendee_id 走 attendee_ids。
+func BuildRemoveEventAttendeesBody(refs []*AttendeeRef, needNotification bool) (map[string]any, error) {
 	var deleteIDs []map[string]string
 	var attendeeIDs []string
 	for _, r := range refs {
@@ -1064,7 +1073,7 @@ func RemoveEventAttendees(calendarID, eventID string, refs []*AttendeeRef, needN
 		}
 	}
 	if len(deleteIDs) == 0 && len(attendeeIDs) == 0 {
-		return fmt.Errorf("移除日程参与人失败: 没有可移除的参与人")
+		return nil, fmt.Errorf("移除日程参与人失败: 没有可移除的参与人")
 	}
 	body := map[string]any{"need_notification": needNotification}
 	if len(deleteIDs) > 0 {
@@ -1073,12 +1082,22 @@ func RemoveEventAttendees(calendarID, eventID string, refs []*AttendeeRef, needN
 	if len(attendeeIDs) > 0 {
 		body["attendee_ids"] = attendeeIDs
 	}
+	return body, nil
+}
+
+// RemoveEventAttendees 移除日程参与人
+// （POST /calendars/{calendar_id}/events/{event_id}/attendees/batch_delete），请求体见 BuildRemoveEventAttendeesBody。
+func RemoveEventAttendees(calendarID, eventID string, refs []*AttendeeRef, needNotification bool, userAccessToken string) error {
+	body, err := BuildRemoveEventAttendeesBody(refs, needNotification)
+	if err != nil {
+		return err
+	}
 	cli, err := GetClient()
 	if err != nil {
 		return err
 	}
 	tokenType, opts := resolveTokenOpts(userAccessToken)
-	resp, err := cli.Post(Context(), calendarEventPath(calendarID, eventID)+"/attendees/batch_delete?user_id_type=open_id", body, tokenType, opts...)
+	resp, err := cli.Post(Context(), RemoveEventAttendeesPath(calendarID, eventID)+"?user_id_type=open_id", body, tokenType, opts...)
 	if err != nil {
 		return fmt.Errorf("移除日程参与人失败: %w", err)
 	}

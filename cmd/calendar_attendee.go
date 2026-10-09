@@ -122,11 +122,17 @@ var calendarAttendeeRemoveCmd = &cobra.Command{
 		}
 		notify, _ := cmd.Flags().GetBool("notify")
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			// 与真实请求共用同一构造函数，预览即实际请求体
+			body, err := client.BuildRemoveEventAttendeesBody(refs, notify)
+			if err != nil {
+				return clierr.Usage(err)
+			}
 			return printDryRunPlan(cmd, "attendee remove 预览（未执行）", nil, []dryRunStep{{
 				Method: "POST",
-				URL:    "/open-apis/calendar/v4/calendars/" + args[0] + "/events/" + args[1] + "/attendees/batch_delete",
-				Params: map[string]any{"user_id_type": "open_id"},
-				Body:   map[string]any{"attendees": refs, "need_notification": notify},
+				URL:    client.RemoveEventAttendeesPath(args[0], args[1]),
+				Desc:   attendeeIDFallbackNote(refs),
+				Params: client.RemoveEventAttendeesParams(),
+				Body:   body,
 			}})
 		}
 		if err := config.Validate(); err != nil {
@@ -142,6 +148,20 @@ var calendarAttendeeRemoveCmd = &cobra.Command{
 		fmt.Printf("成功移除 %d 个参与人\n", len(refs))
 		return nil
 	},
+}
+
+// attendeeIDFallbackNote 说明哪些 ID 未匹配 ou_/oc_/omm_/邮箱前缀、将按 attendee_id 处理（dry-run 提示用）。
+func attendeeIDFallbackNote(refs []*client.AttendeeRef) string {
+	var ids []string
+	for _, r := range refs {
+		if r != nil && r.Type == "" && r.AttendeeID != "" {
+			ids = append(ids, r.AttendeeID)
+		}
+	}
+	if len(ids) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("以下 ID 未匹配 ou_/oc_/omm_/邮箱前缀，按 attendee_id（calendar attendee list 返回）放入 attendee_ids: %s", strings.Join(ids, ", "))
 }
 
 var calendarAttendeeListCmd = &cobra.Command{
