@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
+	larkdrive "github.com/larksuite/oapi-sdk-go/v3/service/drive/v1"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
@@ -37,11 +38,7 @@ func UploadDocMedia(filePath, parentType, parentNode, fileName, docID, userAcces
 	if fileName == "" {
 		fileName = filepath.Base(filePath)
 	}
-	extra := ""
-	if docID != "" {
-		b, _ := json.Marshal(map[string]string{"drive_route_token": docID})
-		extra = string(b)
-	}
+	extra := docMediaRouteExtra(docID)
 	if !DriveNeedsMultipart(stat.Size()) {
 		token, _, err := UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra, userAccessToken)
 		return token, err
@@ -49,9 +46,76 @@ func UploadDocMedia(filePath, parentType, parentNode, fileName, docID, userAcces
 	return uploadDocMediaMultipart(filePath, parentType, parentNode, fileName, extra, stat.Size(), userAccessToken)
 }
 
-// uploadDocMediaMultipart 分片上传文档素材。分片按服务端 upload_prepare 返回的计划切分，
-// 单个分片遇到限流/5xx 时重试（同一 upload_id + seq 重传是幂等的）。
+// docMediaRouteExtra 构造素材上传 extra：携带 drive_route_token 时素材按文档路由鉴权。
+func docMediaRouteExtra(docID string) string {
+	if docID == "" {
+		return ""
+	}
+	b, _ := json.Marshal(map[string]string{"drive_route_token": docID})
+	return string(b)
+}
+
+// UploadDocMediaBytes 上传内存中的文档素材（剪贴板图片、URL 下载的封面等），语义同 UploadDocMedia：
+// ≤20MB 走 medias/upload_all，>20MB 走分片上传；docID 非空时 extra 携带 drive_route_token。
+func UploadDocMediaBytes(data []byte, parentType, parentNode, fileName, docID, userAccessToken string) (string, error) {
+	if len(data) == 0 {
+		return "", fmt.Errorf("素材内容为空: %s", fileName)
+	}
+	if fileName == "" {
+		return "", fmt.Errorf("素材文件名不能为空")
+	}
+	extra := docMediaRouteExtra(docID)
+	if !DriveNeedsMultipart(int64(len(data))) {
+		return uploadMediaAllFrom(bytes.NewReader(data), len(data), parentType, parentNode, fileName, extra, userAccessToken)
+	}
+	return uploadDocMediaMultipartFrom(bytes.NewReader(data), parentType, parentNode, fileName, extra, int64(len(data)), userAccessToken)
+}
+
+// uploadMediaAllFrom 以 medias/upload_all 单次上传 reader 中的 size 字节。
+func uploadMediaAllFrom(r io.Reader, size int, parentType, parentNode, fileName, extra, userAccessToken string) (string, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+	bodyBuilder := larkdrive.NewUploadAllMediaReqBodyBuilder().
+		FileName(fileName).
+		ParentType(parentType).
+		ParentNode(parentNode).
+		Size(size).
+		File(r)
+	if extra != "" {
+		bodyBuilder = bodyBuilder.Extra(extra)
+	}
+	req := larkdrive.NewUploadAllMediaReqBuilder().Body(bodyBuilder.Build()).Build()
+	resp, err := cli.Drive.Media.UploadAll(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return "", fmt.Errorf("上传素材失败: %w", err)
+	}
+	if !resp.Success() {
+		if apiErr := CheckAPIResponse("上传素材", resp.ApiResp); apiErr != nil {
+			return "", apiErr
+		}
+		return "", fmt.Errorf("上传素材失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+	if resp.Data == nil || resp.Data.FileToken == nil || *resp.Data.FileToken == "" {
+		return "", fmt.Errorf("上传素材成功但未返回文件 Token")
+	}
+	return *resp.Data.FileToken, nil
+}
+
+// uploadDocMediaMultipart 分片上传本地文件。
 func uploadDocMediaMultipart(filePath, parentType, parentNode, fileName, extra string, fileSize int64, userAccessToken string) (string, error) {
+	src, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("打开文件失败: %w", err)
+	}
+	defer src.Close()
+	return uploadDocMediaMultipartFrom(src, parentType, parentNode, fileName, extra, fileSize, userAccessToken)
+}
+
+// uploadDocMediaMultipartFrom 分片上传文档素材。分片按服务端 upload_prepare 返回的计划切分，
+// 单个分片遇到限流/5xx 时重试（同一 upload_id + seq 重传是幂等的）。
+func uploadDocMediaMultipartFrom(src io.Reader, parentType, parentNode, fileName, extra string, fileSize int64, userAccessToken string) (string, error) {
 	cli, err := GetClient()
 	if err != nil {
 		return "", err
@@ -79,12 +143,6 @@ func uploadDocMediaMultipart(filePath, parentType, parentNode, fileName, extra s
 		return "", fmt.Errorf("初始化素材分片上传失败: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "素材分片上传: %s，%d 片 × %s\n", fileName, session.BlockNum, formatSize(int(session.BlockSize)))
-
-	src, err := os.Open(filePath)
-	if err != nil {
-		return "", fmt.Errorf("打开文件失败: %w", err)
-	}
-	defer src.Close()
 
 	buffer := make([]byte, int(session.BlockSize))
 	remaining := fileSize

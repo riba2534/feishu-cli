@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
@@ -19,6 +22,8 @@ var uploadMediaCmd = &cobra.Command{
   --parent-type   父节点类型（默认: docx_image）
   --parent-node   父节点 token，即文档 ID（必填）
   --name          文件名（默认使用原文件名）
+  --doc-id        素材所属文档 ID 或 URL（可选；写入 extra 的 drive_route_token，素材按该文档路由鉴权，
+                  上传到文档块下的图片/附件建议携带；/wiki/ URL 以 App 身份解析为底层 docx）
   --output, -o    输出格式（json）
 
 父节点类型:
@@ -35,7 +40,10 @@ var uploadMediaCmd = &cobra.Command{
   feishu-cli media upload document.pdf --parent-type docx_file --parent-node DOC_ID
 
   # 指定文件名
-  feishu-cli media upload photo.jpg --parent-node DOC_ID --name "封面图.jpg"`,
+  feishu-cli media upload photo.jpg --parent-node DOC_ID --name "封面图.jpg"
+
+  # 上传到文档图片块下，并按文档路由鉴权
+  feishu-cli media upload image.png --parent-type docx_image --parent-node BLOCK_ID --doc-id DOC_ID`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -46,6 +54,7 @@ var uploadMediaCmd = &cobra.Command{
 		parentType, _ := cmd.Flags().GetString("parent-type")
 		parentNode, _ := cmd.Flags().GetString("parent-node")
 		fileName, _ := cmd.Flags().GetString("name")
+		docID, _ := cmd.Flags().GetString("doc-id")
 
 		if parentType == "" {
 			parentType = "docx_image"
@@ -63,7 +72,23 @@ var uploadMediaCmd = &cobra.Command{
 			return err
 		}
 
-		token, _, err := client.UploadMedia(filePath, parentType, parentNode, fileName)
+		extra := ""
+		if cmd.Flags().Changed("doc-id") {
+			routeToken, err := resolveMediaRouteDocID(docID)
+			if err != nil {
+				return err
+			}
+			b, _ := json.Marshal(map[string]string{"drive_route_token": routeToken})
+			extra = string(b)
+		}
+
+		var token string
+		var err error
+		if extra == "" {
+			token, _, err = client.UploadMedia(filePath, parentType, parentNode, fileName)
+		} else {
+			token, _, err = client.UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra)
+		}
 		if err != nil {
 			return err
 		}
@@ -84,11 +109,36 @@ var uploadMediaCmd = &cobra.Command{
 	},
 }
 
+// resolveMediaRouteDocID 解析 --doc-id：裸 token 原样使用（与官方一致，不限文档类型）；
+// URL 按 docx 解析（/wiki/ URL 以 App 身份换出底层 docx，与本命令的上传身份一致）。
+func resolveMediaRouteDocID(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", clierr.Usagef("--doc-id 不能为空")
+	}
+	if !client.LooksLikeURL(raw) {
+		if !client.IsSafeResourceToken(raw) {
+			return "", clierr.Usagef("--doc-id 不是有效的文档 ID（只允许字母、数字、_ 和 -，长度 1-128）: %q", raw)
+		}
+		return raw, nil
+	}
+	if _, err := parseResourceArg(raw, resourceArgOptions{
+		ArgName:     "--doc-id",
+		DefaultType: client.ResourceTypeDocx,
+		Allowed:     []string{client.ResourceTypeDocx},
+		ResolveWiki: true,
+	}); err != nil {
+		return "", clierr.Usage(err)
+	}
+	return resolveDocxArg(raw, "--doc-id", "")
+}
+
 func init() {
 	mediaCmd.AddCommand(uploadMediaCmd)
 	uploadMediaCmd.Flags().String("parent-type", "docx_image", "父节点类型（docx_image/docx_file/doc_image/doc_file）")
 	uploadMediaCmd.Flags().String("parent-node", "", "父节点 token（文档ID）")
 	uploadMediaCmd.Flags().String("name", "", "文件名（默认使用原文件名）")
+	uploadMediaCmd.Flags().String("doc-id", "", "素材所属文档 ID 或 URL（写入 extra.drive_route_token）")
 	uploadMediaCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mustMarkFlagRequired(uploadMediaCmd, "parent-node")
 }

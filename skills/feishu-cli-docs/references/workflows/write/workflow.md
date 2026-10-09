@@ -12,6 +12,7 @@
 - [编辑已有文档](#编辑已有文档)（content-update 文本级 / 块级 / 方言转换 / 结果判定）
 - [历史版本与回滚](#历史版本与回滚doc-history)
 - [Markdown 图片](#markdown-图片)
+- [文档封面](#文档封面doc-resource)
 - [低层块操作](#低层块操作)
 - [表格](#表格)
 - [扩展语法](#扩展语法)
@@ -230,11 +231,56 @@ feishu-cli doc media-insert <document_id> --file /path/to/image.png --type image
 # 指定显示宽度（只给一边时按原图比例计算另一边；两边都给则按给定值）
 feishu-cli doc media-insert <document_id> --file /path/to/chart.png --width 600
 feishu-cli doc media-insert <document_id> --file /path/to/report.pdf --type file
+# 附件展示方式：card 卡片 / preview 预览（音视频渲染为内嵌播放器）
+feishu-cli doc media-insert <document_id> --file /path/to/demo.mp4 --type file --file-view preview
+# 用户说"把这张截图 / 刚复制的图插进去"：直接从剪贴板插入，不要先存成本地文件
+feishu-cli doc media-insert <document_id> --from-clipboard --caption "架构图"
 ```
 
 - `--type` 只接受 `image` / `file`（其他值以退出码 2 拒绝）；视频等其他文件用 `--type file` 作为附件插入。
 - `--width/--height` 只用于 `--type image`，取值 1-10000 像素。
+- `--file-view card|preview|inline` 只用于 `--type file`（与 `--type image` 同用或取值非法时退出码 2）；只能在创建块时设置，
+  不传时不下发 `view_type`，由服务端按默认卡片展示（回读为 view 块 `view_type=1`）。服务端当前只接受 card / preview：
+  实测 `inline` 返回 99992402（退出码 1，未创建任何块），需要时改用 card 或 preview。
+- `--file` 与 `--from-clipboard` 二选一。`--from-clipboard` 全程内存直传、文件名为 `clipboard.png`；macOS / Windows 内置，
+  Linux 依次尝试 `xclip` / `wl-paste` / `xsel`。剪贴板没有图片、缺工具或没有图形会话（无 DISPLAY）时在联网前以退出码 2 结束：
+  告诉用户剪贴板里没有可识别的图片，请用户重新复制或给出本地路径，再用 `--file` 重试同一条命令（其他参数不变），
+  不要自行猜测本地文件。
 - 超过 20MB 的文件自动走分片上传（stderr 打印分片进度，实测 21MB 附件分 6 片）。
+
+## 文档封面（doc resource）
+
+文档封面图不是正文图片块：下载、设置、删除封面用 `doc resource ... --type cover`（`--type` 默认即 cover），
+不要用 `media-insert` 或 `media-download <cover.token>` 拼步骤。
+
+```bash
+# 下载封面（-o 必填；不带扩展名时按内容自动补，规则同 media-download；已存在时需 --overwrite）
+feishu-cli doc resource download <doc> -o ./cover --output-format json
+
+# 设置 / 替换封面：--file、--url、--from-clipboard 三选一
+feishu-cli doc resource update <doc> --file ./cover.png
+feishu-cli doc resource update <doc> --url "https://example.com/cover.png"
+feishu-cli doc resource update <doc> --from-clipboard
+# 可选裁切偏移：相对原图中心的偏移 / 原图边长；0 居中，x 正数向右，y 正数向上
+feishu-cli doc resource update <doc> --file ./cover.png --offset-ratio-x 0.2 --offset-ratio-y -0.1
+
+# 删除封面；文档本来没有封面时也成功（deleted=false、already_empty=true）
+feishu-cli doc resource delete <doc> -o json
+
+# 写操作预览（不联网、不读剪贴板、不解析身份）
+feishu-cli doc resource update <doc> --file ./cover.png --dry-run
+```
+
+- 文档参数接受 docx token、`/docx/` URL 与底层为 docx 的 `/wiki/` URL；其他类型以退出码 2 拒绝。
+- 身份：`download` 属于读类（User 优先、Bot 兜底）；`update` / `delete` 属于写类（默认 Bot，需要本人身份时传
+  `--user-access-token` 或设置 `FEISHU_USER_ACCESS_TOKEN`）。`delete` 与官方一致，不需要 `--yes`。
+- `--file` 超过 20MB 自动分片上传。`--url` 只下载公开 HTTPS 图片：拒绝 HTTP、userinfo 与解析到内网/回环/链路本地的主机，
+  最多 3 次跳转（逐跳重新校验），只接受 png/jpeg/gif/webp/bmp/tiff，最大 20MiB；违反时以退出码 2 拒绝，源站 5xx 为退出码 4。
+- 文档没有封面时 `download` 以退出码 2 报"没有封面"，不创建输出文件。
+- `update` 上传成功但设置封面失败时，错误信息给出已上传的 `file_token` 和复用它的 `feishu-cli api PATCH` 命令，
+  不要盲目重跑整条命令重复上传。
+- JSON 输出：`download` 含 `document_id`、`type`、`saved_path`、`size_bytes`、`content_type`、`cover`；`update` 含
+  `file_token`、`source`（file/url/clipboard）、`cover`；`delete` 含 `deleted`、`already_empty`、`previous_cover`。
 
 ## 低层块操作
 
