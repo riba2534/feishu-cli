@@ -153,7 +153,7 @@ feishu-cli sheet read <spreadsheet_token_or_url> "A1:B20" --sheet-name Sheet1 --
 | 电子表格块 (Sheet) | 默认展开为 Markdown 表格；`--expand-sheets=false` 时为 `<sheet .../>` |
 | 小组件 (AddOns) | 文本绘图组件输出 ```` ```mermaid ```` / ```` ```plantuml ```` 源码；其余为 `[小组件 ...]` 占位 |
 | ISV 文本绘图 / 时间线 | 带注释的 ```` ```mermaid ```` 占位（Open API 不暴露源码） |
-| QuoteContainer | `>` 引用语法（支持嵌套） |
+| QuoteContainer | `>` 引用语法 |
 | 同步块 | 展开子块内容（跨文档引用读取源文档，失败时输出 `WARNING` 占位） |
 | Iframe | `<iframe>` HTML 标签 |
 | 无法表达的块 | `<!-- 不支持的块类型: 名称 (type=N) -->` 注释 |

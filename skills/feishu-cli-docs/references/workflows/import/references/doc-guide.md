@@ -15,6 +15,7 @@
 | 图片 | `doc import` 默认上传（相对路径按 Markdown 文件所在目录）；`doc add` 需 `--upload-images`；`content-update` 自动上传本地图片/附件 |
 | 公式 | 行内 `$...$`；块级 `$$...$$` 导入为只含公式的文本块（飞书无独立块级公式块） |
 | Callout | 仅 NOTE/WARNING/TIP/CAUTION/IMPORTANT/SUCCESS（另接受 INFO，按 NOTE 处理） |
+| 引用 | 不要嵌套引用（`> >` 导入失败、外层内容丢失）；单层引用内可放段落和列表 |
 | HTML 扩展标签 | 块级标签开标签独占一行；`<grid>`、`<video>`、带 token 的 `<image>/<file>/<whiteboard>` 在 `doc import` 中不可用（见下文） |
 
 ## Mermaid
