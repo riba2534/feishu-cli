@@ -23,6 +23,10 @@ func localResourcesDryRunSteps(docKey string, resources []*localDocResource) []d
 	enc := dryRunPathSegment(docKey)
 	var steps []dryRunStep
 	for _, r := range resources {
+		if r.RemoteURL != "" {
+			steps = append(steps, dryRunStep{Method: "GET", URL: r.URL,
+				Desc: fmt.Sprintf("下载远程图片 #%d（文档写入成功后；受控客户端，≤20MiB，最多 5 次重定向；已隐去 query）", r.Occurrence)})
+		}
 		parentType := "docx_image"
 		if r.Kind == "file" {
 			parentType = "docx_file"
@@ -35,6 +39,10 @@ func localResourcesDryRunSteps(docKey string, resources []*localDocResource) []d
 			"extra":       extra,
 		}
 		label := fmt.Sprintf("上传本地%s #%d（%s）", resourceKindLabel(r.Kind), r.Occurrence, r.Path)
+		if r.RemoteURL != "" {
+			body["file_name"], body["size"] = fmt.Sprintf("<remote_image_%d_filename>", r.Occurrence), "<downloaded_size>"
+			label = fmt.Sprintf("上传远程图片 #%d", r.Occurrence)
+		}
 		if client.DriveNeedsMultipart(r.Size) {
 			steps = append(steps,
 				dryRunStep{Method: "POST", URL: "/open-apis/drive/v1/medias/upload_prepare", Desc: label + "：初始化分片上传", Body: body},
@@ -100,6 +108,12 @@ func localResourcesDryRunSummary(resources []*localDocResource) []map[string]any
 	var out []map[string]any
 	for _, r := range resources {
 		item := map[string]any{"occurrence": r.Occurrence, "kind": r.Kind, "path": r.Path, "file_name": r.FileName, "size": r.Size}
+		if r.RemoteURL != "" {
+			item = map[string]any{"occurrence": r.Occurrence, "kind": r.Kind, "url": r.URL, "source": "remote"}
+			for _, a := range r.requested {
+				item["requested_"+a.Name] = a.Value
+			}
+		}
 		if r.Width > 0 {
 			item["width"] = r.Width
 		}

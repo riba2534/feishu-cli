@@ -11,11 +11,13 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
@@ -35,6 +37,8 @@ import (
 //  5. 输出前把 new_blocks 中的占位标记换成上传后的素材 token（失败项去掉），document.revision_id 更新为绑定/清理后的版本。
 //
 // 支持的写法（围栏代码、行内代码与 HTML 注释中的内容不处理）：
+//   - <img href="https://..."/>：远程图片，文档写入成功后由 CLI 下载（受控客户端，见 client.DownloadRemoteImage）再上传绑定；
+//     Markdown 的 ![](https://...) 仍原样交给服务端下载，行为不变；
 //   - ![说明](@./img.png)、![说明](<@./带 空格.png>)：官方写法，路径相对当前目录；
 //   - ![说明](./img.png)、![说明](/abs/img.png)：本地导入写法，相对内容文件所在目录（内联内容相对当前目录）；
 //   - <img path="@./img.png" width="600"/>、<source path="@./report.pdf" name="报告.pdf"/>：XML 写法。
@@ -63,22 +67,26 @@ var localResourceModes = map[string]bool{
 var localDocImageAlign = map[string]int{"left": 1, "center": 2, "right": 3}
 
 type localDocResource struct {
-	Kind       string  `json:"kind"` // image | file
-	Path       string  `json:"path"`
-	Marker     string  `json:"-"`
-	Occurrence int     `json:"-"`
-	FileName   string  `json:"file_name"`
-	Width      int     `json:"-"`
-	Height     int     `json:"-"`
-	Align      string  `json:"-"`
-	Scale      float64 `json:"-"`
-	HasScale   bool    `json:"-"`
-	Size       int64   `json:"-"`
-	BlockID    string  `json:"block_id,omitempty"`
-	FileToken  string  `json:"file_token,omitempty"`
-	Status     string  `json:"status"` // bound / failed
-	Cleanup    string  `json:"cleanup,omitempty"`
-	Error      string  `json:"error,omitempty"`
+	Kind       string    `json:"kind"` // image | file
+	Path       string    `json:"path"`
+	RemoteURL  string    `json:"-"`             // <img href> 的远程地址（完整，含 query）
+	URL        string    `json:"url,omitempty"` // 输出用：去掉 userinfo / query / fragment 的远程地址
+	Marker     string    `json:"-"`
+	Occurrence int       `json:"-"`
+	FileName   string    `json:"file_name"`
+	Width      int       `json:"-"`
+	Height     int       `json:"-"`
+	Align      string    `json:"-"`
+	Scale      float64   `json:"-"`
+	HasScale   bool      `json:"-"`
+	Size       int64     `json:"-"`
+	uploadPath string    // 实际上传的文件（远程图片为下载后的临时文件）
+	requested  []tagAttr // 远程图片在标签上给出的 width / height / align / scale，下载后按真实像素归一化
+	BlockID    string    `json:"block_id,omitempty"`
+	FileToken  string    `json:"file_token,omitempty"`
+	Status     string    `json:"status"` // bound / failed
+	Cleanup    string    `json:"cleanup,omitempty"`
+	Error      string    `json:"error,omitempty"`
 }
 
 var (
@@ -264,6 +272,9 @@ func rewriteLocalResourceTag(raw, name string, opts docsAIWriteOptions, occurren
 	tag := parseStartTag(raw)
 	pathValue, hasPath := tag.get("path")
 	if !hasPath {
+		if href, ok := tag.get("href"); ok && name == "img" {
+			return rewriteRemoteImageTag(tag, href, occurrence)
+		}
 		return raw, nil, nil
 	}
 	pathValue = strings.TrimSpace(pathValue)
@@ -308,6 +319,55 @@ func rewriteLocalResourceTag(raw, name string, opts docsAIWriteOptions, occurren
 	return tag.render(tag.SelfClosing), res, nil
 }
 
+// rewriteRemoteImageTag 处理 <img href="https://..."/>：改写为占位标签，显示参数留到下载后按真实像素归一化。
+func rewriteRemoteImageTag(tag startTag, href string, occurrence int) (string, *localDocResource, error) {
+	for _, conflict := range []string{"src", "token", "img_key", "img-key", "url"} {
+		if tag.has(conflict) {
+			return "", nil, clierr.Usagef("远程图片 #%d: <img> 的 href 不能与 %s 同时使用", occurrence, conflict)
+		}
+	}
+	u, err := client.ParseRemoteImageURL(href)
+	if err != nil {
+		return "", nil, clierr.Usagef("远程图片 #%d: %v，当前 %q", occurrence, err, href)
+	}
+	marker, err := newLocalResourceMarker("image")
+	if err != nil {
+		return "", nil, err
+	}
+	res := &localDocResource{Kind: "image", Marker: marker, Occurrence: occurrence, RemoteURL: u, URL: redactRemoteURL(u)}
+	tag.rename("href", "path")
+	tag.set("path", marker)
+	tag.rename("alt", "caption")
+	for _, n := range []string{"width", "height", "align", "scale"} {
+		if v, ok := tag.get(n); ok {
+			res.requested = append(res.requested, tagAttr{Name: n, Value: v})
+		}
+	}
+	tag.remove("width", "height", "align", "scale")
+	return tag.render(tag.SelfClosing), res, nil
+}
+
+// redactRemoteURL 去掉 userinfo / query / fragment，用于输出与 dry-run（避免泄露签名参数）。
+func redactRemoteURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<invalid-url>"
+	}
+	u.User, u.RawQuery, u.ForceQuery, u.Fragment = nil, "", false, ""
+	return u.String()
+}
+
+func newLocalResourceMarker(kind string) (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("生成占位标记失败: %w", err)
+	}
+	if kind == "file" {
+		return "@lcli_file_" + hex.EncodeToString(raw), nil
+	}
+	return "@lcli_img_" + hex.EncodeToString(raw), nil
+}
+
 // newLocalDocResource 校验本地文件并生成占位标记。dir 非空时相对路径基于 dir 解析；
 // 否则相对当前目录，不存在时回退到 fallbackDir（可为空）。strict 时图片必须可识别。
 func newLocalDocResource(kind, pathValue, dir, fallbackDir string, strict bool, occurrence int) (*localDocResource, error) {
@@ -336,15 +396,11 @@ func newLocalDocResource(kind, pathValue, dir, fallbackDir string, strict bool, 
 	if !st.Mode().IsRegular() || st.Size() == 0 {
 		return nil, clierr.Usagef("本地%s不是非空的普通文件: %s", label, pathValue)
 	}
-	raw := make([]byte, 16)
-	if _, err := rand.Read(raw); err != nil {
-		return nil, fmt.Errorf("生成占位标记失败: %w", err)
+	marker, err := newLocalResourceMarker(kind)
+	if err != nil {
+		return nil, err
 	}
-	prefix := "@lcli_img_"
-	if kind == "file" {
-		prefix = "@lcli_file_"
-	}
-	res := &localDocResource{Kind: kind, Path: p, Marker: prefix + hex.EncodeToString(raw), Occurrence: occurrence,
+	res := &localDocResource{Kind: kind, Path: p, Marker: marker, Occurrence: occurrence,
 		FileName: filepath.Base(p), Size: st.Size()}
 	if kind == "image" {
 		w, h, decodable := probeLocalImageSize(p)
@@ -505,6 +561,17 @@ func finalizeLocalDocResources(p *contentUpdateParams, data map[string]any, reso
 
 	var ready []*localDocResource
 	blockOf := map[*localDocResource]map[string]any{}
+	matched := map[*localDocResource]bool{}
+	for _, r := range resources {
+		if ms := byMarker[r.Marker]; len(ms) == 1 {
+			bt, _ := ms[0]["block_type"].(string)
+			id, _ := ms[0]["block_id"].(string)
+			matched[r] = id != "" && bt == r.Kind
+		}
+	}
+	// 远程图片：占位块建出后再下载（并发、有界重试），落到临时文件后与本地资源走同一上传流程
+	defer cleanupRemoteImageTemps(resources)
+	downloadRemoteImages(resources, matched)
 	uploads := 0
 	for _, r := range resources {
 		matches := byMarker[r.Marker]
@@ -524,6 +591,9 @@ func finalizeLocalDocResources(p *contentUpdateParams, data map[string]any, reso
 			r.Status, r.Error = "failed", fmt.Sprintf("占位块类型异常（block_type=%s）", bt)
 			continue
 		}
+		if r.Status == "failed" { // 远程图片下载失败
+			continue
+		}
 		// 上传：限流/5xx 重试；串行上传之间留间隔，避免触发素材上传限流
 		if uploads > 0 && waitBetweenLocalUploads > 0 {
 			time.Sleep(waitBetweenLocalUploads)
@@ -534,7 +604,7 @@ func finalizeLocalDocResources(p *contentUpdateParams, data map[string]any, reso
 			parentType = "docx_file"
 		}
 		res := client.DoWithRetry(func() (string, http.Header, error) {
-			tok, err := client.UploadDocMedia(r.Path, parentType, r.BlockID, r.FileName, p.documentID, p.userToken)
+			tok, err := client.UploadDocMedia(r.localUploadPath(), parentType, r.BlockID, r.FileName, p.documentID, p.userToken)
 			return tok, nil, err
 		}, client.RetryConfig{MaxRetries: localResourceUploadTries - 1, MaxTotalAttempts: localResourceUploadTries + 2, RetryOnRateLimit: true})
 		if res.Err != nil {
@@ -640,6 +710,110 @@ func finalizeLocalDocResources(p *contentUpdateParams, data map[string]any, reso
 	return ok
 }
 
+func (r *localDocResource) localUploadPath() string {
+	if r.uploadPath != "" {
+		return r.uploadPath
+	}
+	return r.Path
+}
+
+const (
+	remoteImageDownloadWorkers  = 10
+	remoteImageDownloadAttempts = 3
+	remoteImageDownloadTimeout  = 2 * time.Minute
+)
+
+// downloadRemoteImage 下载远程图片，测试中可替换。
+var downloadRemoteImage = func(rawURL string) (*client.RemoteImage, error) {
+	return client.DownloadRemoteImage(client.ContextWithTimeout(remoteImageDownloadTimeout), rawURL)
+}
+
+// downloadRemoteImages 并发下载已关联到占位块的远程图片，成功的写入临时文件并按真实像素归一化显示参数。
+func downloadRemoteImages(resources []*localDocResource, matched map[*localDocResource]bool) {
+	var jobs []*localDocResource
+	for _, r := range resources {
+		if r.RemoteURL != "" && matched[r] {
+			jobs = append(jobs, r)
+		}
+	}
+	if len(jobs) == 0 {
+		return
+	}
+	sem := make(chan struct{}, remoteImageDownloadWorkers)
+	var wg sync.WaitGroup
+	for _, r := range jobs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(r *localDocResource) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := fetchRemoteImage(r); err != nil {
+				r.Status, r.Error = "failed", "下载失败: "+err.Error()
+			}
+		}(r)
+	}
+	wg.Wait()
+}
+
+func fetchRemoteImage(r *localDocResource) error {
+	var img *client.RemoteImage
+	var err error
+	for attempt := 0; attempt < remoteImageDownloadAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(waitBetweenLocalUploads * time.Duration(1<<attempt))
+		}
+		if img, err = downloadRemoteImage(r.RemoteURL); err == nil || !client.IsRetryableRemoteImageError(err) {
+			break
+		}
+	}
+	if err != nil {
+		return err
+	}
+	f, err := os.CreateTemp("", "feishu-cli-remote-image-*"+filepath.Ext(img.FileName))
+	if err != nil {
+		return fmt.Errorf("创建临时文件失败: %w", err)
+	}
+	r.uploadPath = f.Name()
+	_, werr := f.Write(img.Content)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return fmt.Errorf("写入临时文件失败: %w", werr)
+	}
+	r.FileName, r.Size = img.FileName, int64(len(img.Content))
+	tag := startTag{Name: "img", Attrs: append([]tagAttr(nil), r.requested...)}
+	normalizeDocImagePresentation(&tag, img.Width, img.Height)
+	r.captureImagePresentation(tag)
+	return nil
+}
+
+func cleanupRemoteImageTemps(resources []*localDocResource) {
+	for _, r := range resources {
+		if r.RemoteURL != "" && r.uploadPath != "" {
+			_ = os.Remove(r.uploadPath)
+		}
+	}
+}
+
+// checkRemoteImageURL 解析并校验远程图片地址（DNS），测试中可替换。
+var checkRemoteImageURL = func(rawURL string) error {
+	return client.ValidateRemoteImageURL(client.Context(), rawURL)
+}
+
+// validateRemoteDocImages 在写入文档前解析远程图片地址（DNS），指向本机/内网或无法解析时以用法错误拒绝。
+func validateRemoteDocImages(resources []*localDocResource) error {
+	for _, r := range resources {
+		if r.RemoteURL == "" {
+			continue
+		}
+		if err := checkRemoteImageURL(r.RemoteURL); err != nil {
+			return clierr.Usagef("远程图片 #%d 地址不允许（%s）: %v；请使用公网 http(s) 图片地址，或保存到本地后用 <img path=\"@./a.png\"/> 引用", r.Occurrence, r.URL, err)
+		}
+	}
+	return nil
+}
+
 // scrubLocalResourceMarkers 去掉 new_blocks 中残留的占位标记（服务端回传了未能关联的占位块时）。
 func scrubLocalResourceMarkers(doc map[string]any) {
 	blocks, _ := doc["new_blocks"].([]any)
@@ -693,11 +867,14 @@ func (p *contentUpdateParams) printLocalResourceLines() {
 			bound++
 			continue
 		}
-		label := "图片"
+		label, where := "本地图片", r.Path
 		if r.Kind == "file" {
-			label = "附件"
+			label = "本地附件"
 		}
-		fmt.Fprintf(p.errOut(), "✗ 本地%s %s: %s（占位块清理: %s）\n", label, r.Path, r.Error, r.Cleanup)
+		if r.RemoteURL != "" {
+			label, where = "远程图片", r.URL
+		}
+		fmt.Fprintf(p.errOut(), "✗ %s %s: %s（占位块清理: %s）\n", label, where, r.Error, r.Cleanup)
 	}
 	fmt.Fprintf(p.out(), "本地资源: %d/%d 上传并绑定成功\n", bound, len(p.resources))
 }

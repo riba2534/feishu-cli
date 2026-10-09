@@ -313,3 +313,40 @@ func TestLocalResourceStrictVsLenient(t *testing.T) {
 		t.Fatalf("注释应原样保留: %v %q", err, in.Content)
 	}
 }
+
+// TestPrepareRemoteImageHref <img href="https://..."/> 改写为占位标签，显示参数留到下载后归一化；
+// Markdown 的 ![](https://...) 仍交给服务端，不产生资源。
+func TestPrepareRemoteImageHref(t *testing.T) {
+	for _, strict := range []bool{true, false} {
+		opts := docsAIWriteOptions{Format: "xml", Strict: strict}
+		in, err := prepareDocsAIWriteInput(`<img href="https://img.example.com/a.png?sig=secret#f" alt="远程" width="600" align="center"/>`, nil, opts)
+		if err != nil {
+			t.Fatalf("strict=%v href 改写失败: %v", strict, err)
+		}
+		if !regexp.MustCompile(`^<img path="@lcli_img_[0-9a-f]{32}" caption="远程"/>$`).MatchString(in.Content) {
+			t.Fatalf("strict=%v 改写结果异常: %s", strict, in.Content)
+		}
+		r := in.Resources[0]
+		if r.RemoteURL != "https://img.example.com/a.png?sig=secret#f" || r.URL != "https://img.example.com/a.png" || r.Path != "" ||
+			len(r.requested) != 2 || r.requested[0] != (tagAttr{Name: "width", Value: "600"}) {
+			t.Fatalf("strict=%v 资源异常: %+v", strict, r)
+		}
+	}
+	md := "![网络图](https://img.example.com/a.png)"
+	if in, err := prepareDocsAIWriteInput(md, nil, docsAIWriteOptions{Format: "markdown", Strict: true}); err != nil || in.Content != md || len(in.Resources) != 0 {
+		t.Fatalf("Markdown 网络图片应原样交给服务端: %v %q", err, in.Content)
+	}
+	bad := map[string]string{
+		`<img href="https://a.example.com/x.png" src="tok"/>`:   "不能与 src",
+		`<img href="https://a.example.com/x.png" token="t"/>`:   "不能与 token",
+		`<img href="ftp://a.example.com/x.png"/>`:               "绝对 http(s) URL",
+		`<img href="https://u:p@a.example.com/x.png"/>`:         "不带用户名密码",
+		`<img href="./x.png"/>`:                                 "绝对 http(s) URL",
+		`<img href="https://a.example.com/x.png" img_key="k"/>`: "不能与 img_key",
+	}
+	for c, want := range bad {
+		if _, err := prepareDocsAIWriteInput(c, nil, docsAIWriteOptions{Format: "xml"}); err == nil || !strings.Contains(err.Error(), want) || !clierr.HasKind(err, clierr.KindUsage) {
+			t.Errorf("%s 期望用法错误含 %q，得到 %v", c, want, err)
+		}
+	}
+}

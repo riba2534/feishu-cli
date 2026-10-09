@@ -57,6 +57,9 @@ Markdown 中由 'doc export' 产生的本地方言（> [!NOTE] 高亮块、<imag
 <img path="@./a.png"/>、<source path="@./r.pdf" name="r.pdf"/> 会自动上传并绑定（占位标记协议，
 >20MB 自动分片），仅支持 append/overwrite/insert_*/块级 replace_range；失败项清理占位块并非零退出。
 <img> 的 width/height 按图片真实像素归一化，给出的显示宽度换算为 scale（对齐官方）。
+远程图片 <img href="https://..."/> 在写入成功后由 CLI 下载再上传（只收公网 http(s)、≤20MiB、
+BMP/GIF/JPEG/PNG/TIFF/WebP，最多 5 次重定向；指向本机/内网的地址写入前即以退出码 2 拒绝）；
+Markdown 的 ![](https://...) 仍由服务端下载，行为不变。
 
 本地 HTML / 画板源文件（markdown 与 xml 均可，围栏代码块内不处理）:
   <html5-block path="@./widget.html"/>   读取本地单文件 HTML 写入 HTML 块（docs_ai html5-block），
@@ -332,6 +335,9 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 
 	if dryRun, _ := flags.GetBool("dry-run"); dryRun {
 		return printContentUpdateDryRun(cmd, p, args[0])
+	}
+	if err := validateRemoteDocImages(p.resources); err != nil {
+		return err
 	}
 
 	// 参数校验通过后再解析文档（wiki URL 需要一次 node_by_token 请求）
