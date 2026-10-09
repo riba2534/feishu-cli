@@ -1,6 +1,8 @@
 # 飞书文档写入
 
 本工作流负责创建和编辑飞书 docx。Markdown 文件导入建新文档见 `../import/workflow.md`；只读/导出走 `../read/workflow.md` / `../export/workflow.md`。
+从零创作一篇文档（选体裁、写 DocxXML 草稿、`doc script` 初始化与预检）先走 `../author/workflow.md`，DocxXML 写法见
+`../author/references/docx-xml.md`。
 
 ## 目录
 
