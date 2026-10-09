@@ -32,6 +32,22 @@
       "expected_output": "继续使用本 Skill 的基础 Sheet 工作流，分别生成范围读取和写入命令。",
       "expectations": ["使用 sheet read shtcnxxx 0b1212!A1:C10", "写入使用 sheet write shtcnxxx 0b1212!B2 --data '[[42]]' 或等效 JSON", "不因是基础命令而拒绝当前 Skill 或改用 Bitable"],
       "files": []
+    },
+    {
+      "id": 5,
+      "workflows": ["sheet"],
+      "prompt": "用 table-put 把订单表写进 Sheet shtcnxxx 的 0b1212：订单号是 19 位数字、金额是小数、下单时间带时分秒。之后每天再往表尾追加新订单，表头不要重复。给出 JSON 和命令。",
+      "expected_output": "订单号按文本保真，金额用合法数字 dtype，时间用 datetime dtype；追加使用 --mode append。",
+      "expectations": ["订单号列声明为 string/object dtype 或以 JSON 字符串写入，不以 JSON 数字写入", "金额列 dtype 使用 float64/int64 等合法数字 dtype，不使用 \"number\"", "下单时间列 dtype 为 datetime64[ns]，值带时分秒", "每日追加使用 table-put --mode append，不重复写表头"],
+      "files": []
+    },
+    {
+      "id": 6,
+      "workflows": ["bitable"],
+      "prompt": "Bitable bascnxxx 的 tblxxx 表里表单 vewxxx：打开分享但只允许组织内的人填写；再把这个多维表格的高级权限关掉。给出命令。",
+      "expected_output": "分享开启与范围限制分两次 share update（或用 form patch 的 shared 字段），关闭高级权限使用 --is-advanced=false 或 advperm disable。",
+      "expectations": ["表单分享用 form share update 分别执行 --enabled 与 --access-scope tenant（每次一个字段），或用 form patch --shared --shared-limit tenant_editable", "开启后用 form share get 读回确认 access_scope", "关闭高级权限使用 bitable advperm disable 或 bitable update --is-advanced=false，不写成 --is-advanced false", "命令使用 --base-token，不使用 --app-token"],
+      "files": []
     }
   ]
 }
