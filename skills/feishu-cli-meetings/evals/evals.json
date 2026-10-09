@@ -37,8 +37,8 @@
       "id": 5,
       "workflows": ["vc"],
       "prompt": "会议号 123456789 正在开，帮我看看会上的事件，顺便用 vc notes --meeting-ids 拿一下 AI 摘要。",
-      "expected_output": "9 位会议号不能直接传给 meeting-events，先 vc meeting list-active 取 meeting_id 再用同一身份查事件；vc notes 的 --with-artifacts 对 --meeting-ids 无效，需要拿到 minute_token 后用 minutes get --summary。",
-      "expectations": ["不把 9 位会议号当作 meeting_id 传给 meeting-events", "指出 AI 摘要需按 minute_token 获取"],
+      "expected_output": "9 位会议号不能直接传给 meeting-events，先 vc meeting list-active 取 meeting_id 再用同一身份查事件；会议进行中通常还没有录制和妙记，vc notes --meeting-ids --with-artifacts 会在 hint 说明未获取；会后拿到 minute_token 再用 minutes get --summary 只取摘要。",
+      "expectations": ["不把 9 位会议号当作 meeting_id 传给 meeting-events", "指出 AI 摘要要在会后按 minute_token 获取（minutes get --summary）"],
       "files": []
     },
     {

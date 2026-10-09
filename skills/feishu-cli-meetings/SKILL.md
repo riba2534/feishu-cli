@@ -33,9 +33,11 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
    `meeting-events` / `meeting-leave` 要长数字 `meeting_id`。
 3. 读逐字稿先看纪要类型：`normal` 用 `doc export <verbatim_doc>`，`unified` 用 `vc note transcript <note_id>`，
    只有妙记时用 `minutes get <minute_token> --transcript`（写文件）。
-4. `vc notes --with-artifacts/--download-transcript` 只对 `--minute-tokens` 生效，`--meeting-ids` 会静默忽略；
+4. `vc notes --with-artifacts/--download-transcript` 三条路径都生效：`--meeting-ids` / `--calendar-event-ids` 先经录制解析
+   `minute_token`，会议没有录制时写入 `hint` 并在 stderr 说明；
    只要摘要、待办等时用 `minutes get --summary --todo ...`，不要拉整份产物。
-5. 批量命令部分失败时退出码仍为 0，逐项检查 `ok`、`error`、`hint`、`transcript_path` 与 `artifacts_error`。
+5. `vc notes` 任一条目失败（含已请求的产物或逐字稿）以退出码 1 结束、已取数据照常输出；`minutes get` 产物失败时输出
+   `artifacts_error` 并非零退出；`vc recording`、`minutes download` 部分失败仍为 0、全部失败才非 0——都要逐项检查 `ok` / `error`。
 6. `minutes apply-permission` 会通知妙记所有者，机器人入会/离会对参会人可见：执行前征得用户同意，验证参数用 `--dry-run`。
 7. 会议结束后不要再用 `meeting-events`，改读 `vc detail` / `vc notes` 的会后产物；会中事件先 `vc meeting list-active` 拿 `meeting_id`。
 
