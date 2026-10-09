@@ -313,4 +313,5 @@
 | 画密集数据 | 周期表 |
 | 画机械结构 | 机芯 |
 
-所有 14 张都用同一条路径：**Python/AI 生成 SVG → `scripts/svg_to_board.py`**。
+这 14 张当时都走同一条路径：**Python/AI 生成 SVG → `scripts/svg_to_board.py`**。现在默认先用
+`board import --syntax svg`（服务端解析，节点结构相同），需要裁剪画布外元素时再用本地管道，见 `svg-workflow.md` 第 0 节。
