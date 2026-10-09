@@ -1,14 +1,7 @@
 ---
 name: feishu-cli-data
 description: >-
-  仅用于普通电子表格 Sheet 与多维表格 Bitable/Base，不是所有数据或 JSON 请求的通用入口。
-  用户要求读写单元格、
-  导入导出表格、设置样式/筛选视图/条件/下拉框/原生单元格图片/浮动图片，或操作多维表格的表、字段、记录、
-  视图、角色、协作者、仪表盘、表单、工作流和数据聚合时使用；也覆盖 --as bot 的 cron/无人值守
-  Bitable 场景时必须使用本 Skill。明确禁止用于文档权限/协作者、消息/事件订阅和未封装
-  OpenAPI 通用透传；它们分别使用 feishu-cli-storage、feishu-cli-messaging 和
-  feishu-cli-platform。文档内 Markdown 表格使用 feishu-cli-docs；数据图表展示使用
-  feishu-cli-visual。
+  飞书电子表格 Sheet 与多维表格 Bitable/Base：按范围读写单元格、类型保真整表读写、样式/合并/冻结/行列增删移动与隐藏、筛选与筛选视图、下拉框、原生单元格图片与浮动图片、Markdown 互转与 XLSX/CSV 导出；Bitable 表、字段、记录（结构化筛选、upsert、批量）、视图、链接解析、角色与成员、仪表盘、表单与分享、工作流和数据聚合，支持 --as bot 的 cron 无人值守。用户给出 /sheets/、/base/ 链接或要处理表格数据时使用。不用于：只需通读或总结整张表（feishu-cli-docs）、把本地 XLSX/CSV 文件导入成飞书表格和文档协作者权限（feishu-cli-storage）、图表可视化展示（feishu-cli-visual）、未封装 OpenAPI 透传（feishu-cli-platform）。
 compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Read Write
 ---

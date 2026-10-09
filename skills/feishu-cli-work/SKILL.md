@@ -1,13 +1,7 @@
 ---
 name: feishu-cli-work
 description: >-
-  仅用于日历、任务、审批、考勤和 OKR，不是所有飞书办公请求的通用入口。用户要求 freebusy、
-  找共同空闲时间、预订会议室、接受/拒绝邀请、创建或回复日程，管理任务/清单，发起、撤回、
-  通过、拒绝、转交或抄送审批，查询打卡/迟到/请假统计，查询 OKR 周期或更新进展时必须使用本 Skill。
-  明确禁止用于用户/部门通讯录、邮箱、历史会议检索、会议录制或妙记；它们分别使用
-  feishu-cli-platform、feishu-cli-mail 和 feishu-cli-meetings。会议通知消息使用
-  feishu-cli-messaging。
-  明确查询 schema 或调用未封装 raw OpenAPI 使用 feishu-cli-platform。
+  飞书日历、任务、审批、考勤与 OKR：查忙闲与共同空闲、预订会议室、创建/修改/删除/回复日程（含重复日程范围、分享与转让组织者），管理任务、子任务、分组与清单，发起、撤回、通过、拒绝、转交、回退、加签、催办或抄送审批，查询打卡与考勤统计，查询 OKR 周期、创建或更新目标与关键结果、上报进展和评论。用户提到日程、会议室、待办任务、审批、打卡请假、OKR 时使用。不用于：通讯录查人和未封装接口的 schema/raw API（feishu-cli-platform）、邮件（feishu-cli-mail）、历史会议/录制/妙记（feishu-cli-meetings）、发送通知或监听审批实时事件（feishu-cli-messaging）。
 compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Bash(sleep:*) Read Write
 ---

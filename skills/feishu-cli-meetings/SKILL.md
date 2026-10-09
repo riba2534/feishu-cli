@@ -1,7 +1,7 @@
 ---
 name: feishu-cli-meetings
 description: >-
-  查询飞书历史视频会议、纪要、AI 摘要、逐字稿和录制，按 minute token 读取或下载妙记，操作会议机器人入会/离会及查询会议事件。创建日程、找共同空闲时间和预订会议室使用 feishu-cli-work。
+  飞书视频会议与妙记：按时间、参会人或关键词检索历史会议，查询进行中的会议，获取会议纪要、智能纪要、AI 摘要/待办/章节与逐字稿，查询录制并下载妙记音视频和逐字稿，搜索妙记与申请妙记权限，操作会议机器人入会/离会并查询会议事件。用户提到会议纪要、妙记、minute token、逐字稿、录制、会议机器人或 meeting_id 时使用。不用于：创建日程、找共同空闲时间和预订会议室（feishu-cli-work）；未封装接口的 schema/raw API（feishu-cli-platform）。
 compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Read Write
 ---

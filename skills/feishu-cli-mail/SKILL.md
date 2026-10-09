@@ -1,11 +1,7 @@
 ---
 name: feishu-cli-mail
 description: >-
-  飞书邮箱专用入口，覆盖收件箱分诊、邮件和线程读取、发送、回复、转发、草稿、查询签名、
-  CID 内联图片和模板。用户提到飞书邮件、邮箱、收件箱、未读邮件、草稿、邮箱签名、
-  邮件模板、回复、转发、发送预览/确认或发送 HTML/CID 邮件时必须使用本 Skill。
-  仅要求预览或等待发送确认也属于本 Skill 的草稿/发送工作流，必须先加载本 Skill 准备预览。
-  只读命令可用 User/Bot；写入、签名和模板需要 User。聊天消息使用 feishu-cli-messaging。
+  飞书邮箱：收件箱分诊与未读筛选，读取邮件和线程（含附件元数据），写信、回复/回复全部、转发，草稿创建与编辑，普通附件、CID 内联图片与 HTML 邮件，邮件和线程的标记已读、移动归档与删除到废纸篓（垃圾箱），收信规则（过滤器）、签名与邮件模板。用户提到飞书邮件、邮箱、收件箱、草稿、邮件附件、发送前预览或确认、收信规则、邮件模板或签名时使用；只要求预览、存草稿或等待确认也属于本 Skill。不用于：聊天消息（feishu-cli-messaging）；按邮箱地址查用户（feishu-cli-platform）。
 compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Read Write
 ---
