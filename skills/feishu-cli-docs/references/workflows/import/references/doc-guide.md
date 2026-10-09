@@ -1,42 +1,53 @@
 # 飞书 Markdown 兼容指南
 
 生成将导入飞书的 Markdown 前，按本指南检查。执行导入见 `../workflow.md`，编辑已有文档见 `../../write/workflow.md`。
+标注"实测"的结论来自 2026-10 用 feishu-cli v1.42.0 在测试文档上的 `doc import` 回归；服务端渲染能力可能继续变化，
+导入后以命令输出的 `diagram_fallback` / `failures` 为准。
 
 ## 快速检查
 
 | 内容 | 必检项 |
 |---|---|
-| Mermaid | 禁花括号标签、禁 `par...and...end`、sequenceDiagram participant 安全 ≤ 6（阈值详见 `mermaid-spec.md`） |
-| PlantUML | 无行首缩进、无 `skinparam`/`!define`、类图不写 `+ - # ~` 可见性 |
+| Mermaid | 用受支持的图类型（见下表）；`journey`、`gitGraph` 不支持；超大图拆分 |
+| PlantUML | 必须有 `@startuml` / `@enduml` |
+| SVG | 恰好三个反引号的 `svg` fence；整段作为一个 svg 节点写入画板 |
 | 表格 | 行 > 9 可导入同一 block；列 > 9 会拆列组；超大表建议 Sheet |
-| 图片 | `doc import` 默认上传；`doc add` 需 `--upload-images`；`content-update` 自动上传本地图片/附件（无需该 flag） |
-| 公式 | 行内 `$...$`；块级 `$$...$$` 会降级为 Text+Equation 行内元素（飞书无独立块级公式块） |
-| Callout | 仅 NOTE/WARNING/TIP/CAUTION/IMPORTANT/SUCCESS |
+| 图片 | `doc import` 默认上传（相对路径按 Markdown 文件所在目录）；`doc add` 需 `--upload-images`；`content-update` 自动上传本地图片/附件 |
+| 公式 | 行内 `$...$`；块级 `$$...$$` 导入为只含公式的文本块（飞书无独立块级公式块） |
+| Callout | 仅 NOTE/WARNING/TIP/CAUTION/IMPORTANT/SUCCESS（另接受 INFO，按 NOTE 处理） |
+| 引用 | 不要嵌套引用（`> >` 导入失败、外层内容丢失）；单层引用内可放段落和列表 |
+| HTML 扩展标签 | 块级标签开标签独占一行；`<grid>`、`<video>`、带 token 的 `<image>/<file>/<whiteboard>` 在 `doc import` 中不可用（见下文） |
 
 ## Mermaid
 
-推荐 Mermaid；飞书服务端支持 8 类常见图。
+`doc import` 对所有 Mermaid 代码块使用自动识别（`diagram_type=auto`）。服务端当前可渲染的类型（实测，与服务端报错信息
+列出的支持集合一致）：
 
-| 类型 | 声明 | 导入策略 |
-|---|---|---|
-| 流程图 | `flowchart TD` / `flowchart LR` | `doc import` 自动；`board import --diagram-type flowchart` |
-| 时序图 | `sequenceDiagram` | `doc import` 自动；复杂图建议拆分 |
-| 类图 | `classDiagram` | `board import --diagram-type class` |
-| 状态图 | `stateDiagram-v2` | `doc import` auto；`board import --diagram-type state` |
-| ER 图 | `erDiagram` | `board import --diagram-type er` |
-| 甘特图 | `gantt` | auto |
-| 饼图 | `pie` | auto |
-| 思维导图 | `mindmap` | `board import --diagram-type mindmap` |
+| 类型 | 声明 |
+|---|---|
+| 流程图 | `flowchart TD` / `flowchart LR` / `graph TD` |
+| 时序图 | `sequenceDiagram` |
+| 类图 | `classDiagram` |
+| 状态图 | `stateDiagram-v2`（旧版 `stateDiagram` 也可） |
+| ER 图 | `erDiagram` |
+| 甘特图 | `gantt` |
+| 饼图 | `pie` |
+| 思维导图 | `mindmap` |
+| 时间线 | `timeline` |
+| 象限图 | `quadrantChart`（轴标签用英文：`x-axis 低 --> 高` 这类中文轴标签实测词法报错） |
+| XY 图 | `xychart-beta` |
 
-强制规则：
+不支持的类型（如 `journey`、`gitGraph`）和语法错误都会直接降级为代码块（不重试，命令退出码仍为 0，`diagram_fallback` 计数）。
 
-1. Flowchart 标签不要写 `{}`。`A{判断}` 可以表达菱形，但标签文本里不要包含花括号。
-2. sequenceDiagram 不用 `par...and...end`，改成 `Note over A,B: 并行执行`。
-3. sequenceDiagram 参与者安全 ≤ 6（7-9 为警告区，阈值以 `mermaid-spec.md` 为准），`alt/opt/loop` 不要嵌套太深。
-4. 长标签换短句，避免 30+ 长消息叠加复杂结构。
-5. 状态图必须用 `stateDiagram-v2`。
+编写建议：
 
-更多细节见 `mermaid-spec.md`。
+1. 以前文档里的硬性禁令已不再成立（实测均能正常渲染）：普通标签含花括号 `A["{name: value}"]`、方括号内冒号 `A[类型:string]`、
+   `par...and...end`、`Note over` 跨 3 个参与者、10 participant + 2 层 alt + 30 余条长消息的时序图。仍建议
+   条件节点用 `A{判断}`、复杂图按阶段拆分——这是为了可读性，不是渲染限制。
+2. 需要指定图类型（如强制 `class` / `state` 布局）时不走 `doc import`，用 feishu-cli-visual 的
+   `board import <whiteboard_id> <file> --syntax mermaid --diagram-type <type>`。
+
+更多模板与样式规范见 `mermaid-spec.md`。
 
 ## PlantUML
 
@@ -49,22 +60,20 @@ Bob --> Alice: Hi
 @enduml
 ```
 
-规则：
-
-- 必须有 `@startuml` / `@enduml`。
-- 不要使用行首缩进。
-- 避免 `skinparam`、宏、颜色、字体、方向控制。
-- 类图成员写 `field : type`、`method()`，不要写 `+field`、`-method()`。
+- 必须有 `@startuml` / `@enduml`；缺失时服务端报语法错误并降级为代码块（实测）。
+- 行首缩进、`skinparam`、类图成员可见性标记（`+name` / `-login()`）实测均可渲染，不必刻意去掉；图过于复杂时同样建议拆分。
 
 ## 表格
 
 普通 Markdown 表格可以导入 docx：
 
 - 行数 > 9：CLI 用 `insert_table_row` 追加到同一个 table block。
-- 列数 > 9：按列组拆分，保留首列用于识别行。
-- **单元格内可放图片**（`| ![图](./a.png) |`）：`doc import` 会在表格填充后真正嵌入为单元格内图片（#164），不丢失也不退化为文字；纯图片单元格不会多出 alt 说明文字。`doc add` 的单元格图片降级为 `[图片: 说明]` 文本占位。`content-update` 不走本地导入管线，由服务端解析表格，单元格内的本地图片同样经占位协议自动上传（实测可嵌入单元格）。
+- 列数 > 9：按列组拆分（每组 ≤ 9 列），保留首列用于识别行。
+- **单元格内可放图片**（`| ![图](./a.png) |`）：`doc import` 会在表格填充后真正嵌入为单元格内图片，不丢失也不退化为文字；
+  纯图片单元格不会多出 alt 说明文字。`doc add` 的单元格图片降级为 `[图片: 说明]` 文本占位。`content-update` 由服务端解析表格，
+  单元格内的本地图片同样经占位协议自动上传。
 - 数据表、长表和需要排序筛选的内容优先生成 Sheet：`feishu-cli sheet import-md`。
-- **自定义列宽**（v1.29+）：默认按内容启发式（中文 14px / 英文 8px / 最小 80 / 最大 400）。需要精控时两种方式可覆盖：
+- **自定义列宽**：默认按内容启发式（中文 14px / 英文 8px / 最小 80 / 最大 400）。需要精控时两种方式可覆盖：
   - 紧邻表格上方注释（**注释必须独占一行**，中间夹任何 heading/段落/列表/代码块/link-ref-def 都会丢弃注释）：
     ```markdown
     <!-- feishu-colwidth: 80,200,*,30% -->
@@ -75,7 +84,7 @@ Bob --> Alice: Hi
   - CLI flag 全局覆盖：`feishu-cli doc import doc.md --table-column-width=80,200,*,120`
   - 优先级：注释 > flag explicit > flag fixed > auto；最终都过 `[80, 400]` 像素 clamp
   - 列宽数量与表实际列数不一致时 stderr 打印警告（多写截断、少写补 auto）
-  - **适用范围**：`doc import` 与 `doc add`。`doc content-update` 走官方原子更新协议、不支持自定义列宽，传非 `auto` 的 flag 或内容中含该注释都会 fail-closed 报错，需要控制列宽时改用 `doc import`。
+  - **适用范围**：`doc import` 与 `doc add`。`doc content-update` 不支持自定义列宽，传非 `auto` 的 flag 或内容中含该注释都会以退出码 2 拒绝，需要控制列宽时改用 `doc import`。
 
 ## Callout
 
@@ -87,7 +96,8 @@ Bob --> Alice: Hi
 > 风险提示
 ```
 
-支持：`NOTE`、`WARNING`、`TIP`、`CAUTION`、`IMPORTANT`、`SUCCESS`。Callout 内可包含段落和列表。
+支持：`NOTE`（浅蓝）、`WARNING`（浅红）、`TIP`（浅黄）、`CAUTION`（浅橙）、`IMPORTANT`（浅紫）、`SUCCESS`（浅绿）；`INFO` 与未知类型按 NOTE 处理。
+Callout 内可包含段落和列表。
 
 ## 图片与文件
 
@@ -96,27 +106,32 @@ Bob --> Alice: Hi
 ![远程图](https://example.com/image.png)
 ```
 
-各写命令的图片能力以 [写入工作流](../../write/workflow.md#markdown-图片) 为准：`doc import` 默认上传；`doc add` 要显式传 `--upload-images`；`content-update` 自动上传本地图片/附件（无需该 flag）。视频/文件类精确插入用 `feishu-cli doc media-insert`。
+各写命令的图片能力以 [写入工作流](../../write/workflow.md#markdown-图片) 为准：`doc import` 默认上传；`doc add` 要显式传 `--upload-images`；`content-update` 自动上传本地图片/附件（无需该 flag）。单独插入图片或附件用 `feishu-cli doc media-insert`。
 
-表格单元格里的图片（`| ![图](./a.png) |`）由 `doc import` 真正嵌入为单元格内图片（#164）；与文字混排的内联图片统一降级为 `[图片: 说明]`（http(s) 为可点击链接，本地路径为纯文本，不泄漏原始路径）。
+表格单元格里的图片由 `doc import` 真正嵌入为单元格内图片；与文字混排的行内图片统一降级为 `[图片: 说明]`（http(s) 为可点击链接，本地路径为纯文本，不泄漏原始路径）。
 
 ## 扩展标签
 
-导出再导入时会出现这些标签，导入端支持 roundtrip：
+导出端生成的扩展标签在 `doc import` 中的可用性（实测）：
 
 ```html
 <mention-user id="ou_xxx"/>
 <mention-doc token="doc_token_xxx" type="docx">标题</mention-doc>
-<callout type="NOTE">内容</callout>
-<grid cols="2"><column>左</column><column>右</column></grid>
+<callout type="NOTE">
+内容
+</callout>
 <sheet rows="5" cols="5"/>
 ```
 
-手写时只使用自己确实需要的标签；普通内容优先标准 Markdown。
+- 块级标签（`<callout>` 等）开标签独占一行、内容另起一行；写在同一行只会得到普通文字。
+- `<grid cols>` 分栏只建出空分栏（栏内内容写入失败，退出码 1）；需要分栏用 `content-update` 写入。
+- 带 token 的 `<image>` / `<file>` / `<whiteboard>` 以及 `<video>` 会让整次导入在建块阶段失败（`1770001`）；图片/附件 token 只能经
+  `content-update` 写回已有文档，视频导入后用 `doc media-insert --type file` 插入。
+- 手写时只使用自己确实需要的标签；普通内容优先标准 Markdown。完整标签表见 `../workflow.md`。
 
 ## 导入前验证
 
 1. 文件必须是 UTF-8，且不包含 U+FFFD 替换字符。
-2. Mermaid/PlantUML 先按上方规则扫一遍。
-3. 图片路径要能从 Markdown 文件所在目录解析。
+2. Mermaid/PlantUML 按上方规则扫一遍（类型受支持、PlantUML 有 `@startuml`）。
+3. 图片路径要能从 Markdown 文件所在目录解析（绝对路径最稳妥）。
 4. 超大表格改 Sheet，避免文档导入耗时过长。

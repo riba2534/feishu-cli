@@ -1,60 +1,67 @@
-# 飞书文档阅读技能
+# 飞书文档阅读
 
-从飞书云文档、电子表格或知识库读取内容，转换为 Markdown 格式后进行分析和展示。普通电子表格使用 `sheet export --format markdown`，知识库 sheet 使用 `wiki export`。
+从飞书云文档、知识库或电子表格读取内容（转为 Markdown/XML）后分析和展示，不主动把结果交付为本地文件（落盘交付走 `../export/workflow.md`）。
 
 ## 目录
 
-- [前置条件](#前置条件)
-- [核心概念](#核心概念)
-- [使用方法](#使用方法)
-- [文档元信息和块](#获取文档元信息doc-get)
-- [知识库读类](#知识库读类wiki-get--nodes--spaces)
-- [电子表格读类](#电子表格读类sheet-read--list-sheets)
-- [执行流程](#执行流程)
-- [URL 格式](#支持的-url-格式)
-- [错误处理](#错误处理与边界情况)
+- [身份与前置](#身份与前置)
+- [选择读取方式](#选择读取方式)
+- [大文档选择性读取（doc read）](#大文档选择性读取doc-read)
+- [docs_ai 引擎：带 block id 读取](#docs_ai-引擎带-block-id-读取)
+- [整篇读取与图片](#整篇读取与图片)
+- [文档元信息与块结构](#文档元信息与块结构)
+- [知识库与电子表格](#知识库与电子表格)
+- [导出格式说明](#导出格式说明)
+- [Wiki 目录节点](#wiki-目录节点)
+- [错误处理](#错误处理)
 
-## 前置条件
+## 身份与前置
 
-- **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
-- 已完成认证（`feishu-cli auth login`）
-- App 权限：需要 `docx:document` 或 `docx:document:readonly`（普通文档）、`wiki:wiki:readonly`（知识库）
-- **Token 解析（所有读命令通用）**：`doc export` / `wiki export` / `sheet export` 等读类命令统一走"User 优先 + Tenant 兜底"——优先用 token.json 里的 User Token，未找到回落 App Token。所以读他人文档时只要 `auth login` 一次，后续不用再传 `--user-access-token`。详见下方"User Token 优先级链"小节。
+- 读类命令（`doc read/export/get/blocks`、`wiki export/get/nodes`、`sheet export/read`）统一 **User 优先、Bot 兜底**：
+  显式 `--user-access-token` → `FEISHU_USER_ACCESS_TOKEN` → `auth login` 保存的 token（过期自动刷新）→ config 中的
+  `user_access_token` → App Token。读他人文档只需 `auth login` 一次，后续无需再传 token。
+- User Token 损坏或刷新失败时会在 stderr 告警后改用 Bot（stdout 不受影响）；看到告警说明已不是用户身份，Bot 读不到的文档会报无权限。
+- 所需 scope：普通文档 `docx:document:readonly`，知识库 `wiki:wiki:readonly`；展开 @用户需要 `contact:user.base:readonly`。
 
-## 核心概念
+## 选择读取方式
 
-**Markdown 作为中间态**：本地文档与飞书云文档之间通过 Markdown 格式进行转换，中间文件存储在 `/tmp` 目录中。
+| 场景 | 命令 |
+|---|---|
+| 普通大小的 docx，读完总结 | `doc export <doc> -o /tmp/x.md`，再用 Read 读取 |
+| 大文档（几百块以上）或只关心某一节 | 先 `doc read <doc> --outline`，再 `--heading` / `--keyword` 取局部 |
+| 要拿 block id 以便后续精确修改 | `doc read <doc> --with-ids [--heading "章节"]` |
+| 知识库节点 | 底层是 docx：`doc read` / `doc export` 直接传 wiki URL；底层是 sheet 或需整节点导出：`wiki export` |
+| 普通电子表格 | `sheet export <token_or_url> --format markdown -o /tmp/x.md` |
+| 分析块类型、查原始 API 结构 | `doc blocks <document_id> --all` |
 
-## 使用方法
+URL 判断：`/docx/<id>` 是 document_id；`/wiki/<token>` 是 node_token（不是 document_id）；`/sheets/<token>` 是 spreadsheet_token。
+`doc read`、`doc export`（以及写入侧 `content-update`、`media-insert`、`doc history`）直接接受 docx token、`/docx/` URL 与
+`/wiki/` URL：wiki 节点自动解析为底层 docx（stderr 提示"已将 wiki 节点 … 解析为 docx: …"），底层不是 docx 时报错。
+URL 只按路径前缀识别，`?from=/wiki/...` 这类查询参数不改变解析结果。`doc get`、`doc blocks` 只接受裸 document_id。
 
-```bash
-feishu-cli doc export <document_id> --output /tmp/feishu_doc.md --download-images --assets-dir /tmp/feishu_assets
-feishu-cli wiki export <node_token_or_url> --output /tmp/feishu_wiki.md --download-images --assets-dir /tmp/feishu_assets
-feishu-cli sheet export <spreadsheet_token_or_url> --format markdown --output /tmp/feishu_sheet.md
-```
-
-## 大文档选择性读取（doc read）⭐
+## 大文档选择性读取（doc read）
 
 **大文档不要整篇 export**——先看结构再取所需部分，节省上下文：
 
 ```bash
 # 第一步：看标题大纲（层级缩进 + block_id）
-feishu-cli doc read <document_id> --outline
+feishu-cli doc read <document_id_or_url> --outline
 
 # 第二步：只取目标章节（按标题子串匹配，输出到下一个同级/更高级标题前的 Markdown）
-feishu-cli doc read <document_id> --heading "性能优化"
+feishu-cli doc read <document_id_or_url> --heading "性能优化"
 
 # 或直接按内容定位（正则，多词用 | 连接；--context 控制上下文行数，默认 3）
-feishu-cli doc read <document_id> --keyword "QPS|限流" --context 5
+feishu-cli doc read <document_id_or_url> --keyword "QPS|限流" --context 5
 ```
 
-三种模式互斥（三选一）。`--heading` 命中多个标题时输出第一个并在 stderr 提示其余候选；
-代码块围栏内的 `#` 行不会被误判为标题。block 级精确分页仍用 `doc blocks`。
+- 本地引擎（默认）必须且只能选一种模式；三者都不传或同时传多个时以退出码 2 报错（读全文用 `doc export`，或改用 docs_ai 引擎）。
+- `--heading` 命中多个标题时输出第一个并在 stderr 提示其余候选；代码块围栏内的 `#` 行不会被误判为标题。
 
-### docs_ai 引擎：带 block id 读取（与 content-update 块级更新衔接）
+## docs_ai 引擎：带 block id 读取
 
-默认的本地引擎行为不变；使用下列任一 flag 时改走服务端 docs_ai 读取（`POST /docs_ai/v1/documents/{id}/fetch`，
-与官方 `docs +fetch` 同协议）：
+使用 `--with-ids`、`--scope`、`--detail`、`--doc-format`、`--start-block-id`、`--end-block-id`、`--context-before/after`、
+`--max-depth`、`--revision-id`、`-o json` 任一项（或显式 `--engine docs_ai`）时改走服务端 docs_ai 读取；显式 `--engine local`
+再用这些 flag 会以退出码 2 报错。docs_ai 引擎不传范围时读取全文。
 
 ```bash
 # 带 block id 读取某一节（--heading 自动换成标题块 ID，scope=section），输出 XML
@@ -63,7 +70,7 @@ feishu-cli doc read <doc> --with-ids --heading "性能优化"
 # 关键词定位：docs_ai 的 keyword 支持 a|b；上下文按"兄弟块数"计
 feishu-cli doc read <doc> --with-ids --scope keyword --keyword "QPS|限流" --context-before 1 --context-after 1
 
-# 按 block id 区间读取（-1 表示到文末）；服务端大纲（--max-depth 限制层级）
+# 按 block id 区间读取（-1 表示到文末）；服务端大纲（--max-depth 限制标题层级）
 feishu-cli doc read <doc> --with-ids --start-block-id <A> --end-block-id -1
 feishu-cli doc read <doc> --engine docs_ai --outline --max-depth 2
 
@@ -72,418 +79,114 @@ feishu-cli doc read <doc> --engine docs_ai --doc-format markdown
 feishu-cli doc read <doc> --with-ids -o json
 ```
 
-| flag | 说明 |
-|---|---|
-| `--engine local\|docs_ai` | 默认 local；用 docs_ai 专属 flag 时自动切换，显式 `--engine local` 再用它们会报错 |
-| `--with-ids` | 等价 `--detail with-ids`，默认输出 XML；block id 可直接用于 `doc content-update --block-id` |
-| `--doc-format xml\|markdown` | `--with-ids`/`--detail full` 时默认 xml，否则 markdown；Markdown 无法携带 block id |
-| `--detail simple\|with-ids\|full` | full 额外带样式属性与引用元数据 |
-| `--scope full\|outline\|range\|keyword\|section` | 也可由 `--outline` / `--heading` / `--keyword` / `--start-block-id` 推断 |
-| `--context-before/--context-after` | range/keyword/section 的前后兄弟块数 |
-| `--max-depth` | outline 的标题层级上限，其余范围的子树深度（-1 不限） |
-| `--revision-id` | 读取指定版本（-1 最新） |
+- `--with-ids` 等价 `--detail with-ids`；`--detail with-ids|full` 只能输出 XML（默认 xml，配 `--doc-format markdown` 以退出码 2 报错），
+  Markdown 无法携带 block id；`--detail full` 额外带样式属性与引用元数据。
+- `--scope full|outline|range|keyword|section` 也可由 `--outline` / `--heading` / `--keyword` / `--start-block-id` 推断，显式值与推断冲突时报错。
+- 文本级替换匹配不到时，用 `--engine docs_ai --doc-format xml`（或 markdown）查看服务端序列化原文。
 
 典型闭环：`doc read --with-ids --heading "章节"` 拿到 block id → `doc content-update --mode replace_range --block-id <id>`
-精确改写 → 再次 `doc read --with-ids` 验证（写操作后旧 block id 可能失效，必须重新读取）。
+精确改写 → 再次 `doc read --with-ids` 验证（写操作后被改写的块会换新 ID，必须重新读取）。
 
-`doc read` / `doc export` / `doc content-update` / `doc media-insert` 的文档参数统一接受 docx token、
-`/docx/` URL 和 `/wiki/` URL：wiki 节点自动经 `node_by_token` 换出底层 docx 的 obj_token（stderr 提示
-"已将 wiki 节点 … 解析为 docx: …"），底层不是 docx 时直接报错。URL 只按路径前缀识别，
-`?from=/wiki/...` 这类查询参数不会改变解析结果。
-
-## 获取文档元信息（doc get）
-
-读取文档基本信息（document_id、revision_id、title），用于在 export 之前确认目标、或拿 revision_id 作为后续 API 调用参数。同样走"User 优先 + Tenant 兜底"。
-
-| Flag | 默认值 | 说明 |
-| --- | --- | --- |
-| `<document_id>` | 必填 | 仅接受文档 ID，**不接受 URL**；URL 需先截取 `/docx/` 后段作为 ID（`doc read` / `doc export` 才支持直接传 URL） |
-| `-o, --output` | text | 输出格式，可选 `json` |
-| `--user-access-token` | 空 | 手动覆盖 User Token；不填则自动从 `~/.feishu-cli/token.json` 读取 |
+## 整篇读取与图片
 
 ```bash
-# 文本摘要
-feishu-cli doc get ABC123def456
+# 普通文档（含 /docx/ URL 与底层为 docx 的 /wiki/ URL）
+feishu-cli doc export <document_id_or_url> --output /tmp/feishu_doc.md --download-images --assets-dir /tmp/feishu_assets
 
-# JSON 输出（脚本里拿 revision_id / title）
-feishu-cli doc get ABC123def456 -o json
+# 知识库节点（docx 或 sheet）
+feishu-cli wiki export <node_token_or_url> --output /tmp/feishu_wiki.md --download-images --assets-dir /tmp/feishu_assets
 
-# doc get 不接受 URL：URL 场景先截取 /docx/ 后段作为 document_id（如上），
-# 或改用支持直接传 URL 的 doc read / doc export
+# 普通电子表格（不指定 --sheet-id 时读取所有可见工作表）
+feishu-cli sheet export <spreadsheet_token_or_url> --format markdown --output /tmp/feishu_sheet.md
 ```
 
-## 列出文档所有块（doc blocks）
+1. 显式传 `/tmp` 下的输出路径，避免把中间文件留在项目目录（`doc export` 不传路径时打印到 stdout）。
+2. 用 Read 工具读取导出的 Markdown，分析结构和内容。
+3. 有图片时检查 `--assets-dir` 目录，用 Read 工具逐个查看图片并把内容整合到分析中。
+4. 报告：标题、结构概要（标题层级）、内容摘要、图片内容描述；说明中间文件路径。
 
-`doc export` 拿不到结构化块树时（例如要分析每个块的类型、定位特定块、查 raw API 响应），用 `doc blocks`。默认列出第一页（500 块），加 `--all` 自动分页拉完。
+- `--download-images` 只属于 `doc export` / `wiki export`；`sheet export` 没有该 flag，电子表格内图片需用 sheet 图片命令或导出 XLSX 后处理。
+- 内嵌电子表格块默认展开为 Markdown 表格；要保留 `<sheet .../>` 引用时加 `--expand-sheets=false`。
+- 其他 `doc export` 参数（`--front-matter`、`--highlight`、`--expand-mentions`、`--engine docs_ai`）见 `../export/workflow.md`。
 
-| Flag | 默认值 | 说明 |
-| --- | --- | --- |
-| `<document_id>` | 必填 | 文档 ID（不接 URL，请先 `doc get` 拿 ID） |
-| `--all` | false | 自动分页获取所有块（覆盖 `--page-size` / `--page-token`） |
-| `--page-size` | 500 | 单页块数量 |
-| `--page-token` | 空 | 续页 token |
-| `--document-revision-id` | -1 | 文档版本（-1 = 最新） |
-| `--raw` | false | 输出飞书 API 原始 JSON（含未解析字段） |
-| `--user-id-type` | open_id | 用户 ID 类型（open_id/union_id/user_id） |
-| `-o, --output` | text | 输出格式，可选 `json`（CLI 归一化结构） |
-| `--user-access-token` | 空 | 手动覆盖 User Token |
+## 文档元信息与块结构
 
 ```bash
-# 默认：第一页，文本摘要
-feishu-cli doc blocks ABC123def456
+# 元信息（document_id、title、revision_id、链接）；只接受裸 document_id
+feishu-cli doc get <document_id> -o json
 
-# 全量分页 + 归一化 JSON
-feishu-cli doc blocks ABC123def456 --all -o json
-
-# 拿 API 原始响应（含未识别块类型的 raw 字段）
-feishu-cli doc blocks ABC123def456 --all --raw > /tmp/blocks_raw.json
+# 块结构：默认第一页（500 块），--all 自动分页；--raw 输出 API 原始 JSON
+feishu-cli doc blocks <document_id> --all -o json
+feishu-cli doc blocks <document_id> --all --raw > /tmp/blocks_raw.json
 ```
 
-## 知识库读类（wiki get / nodes / spaces）
+`doc get` / `doc blocks` 传 URL 会失败：从 `/docx/<id>` 截取 ID；wiki 节点先 `feishu-cli wiki get <url> -o json` 取 `obj_token`，
+或直接用接受 URL 的 `doc read` / `doc export`。
 
-知识库的"目录结构遍历三件套"，配合 `wiki export` 完成"找到节点 → 读内容"的链路。三个命令都走"User 优先 + Tenant 兜底"。
+## 知识库与电子表格
 
-### wiki get — 查节点元信息
-
-| Flag | 默认值 | 说明 |
-| --- | --- | --- |
-| `<node_token \| url>` | 必填 | 节点 Token、wiki URL，或挂载在知识库中的文档 obj_token / 文档 URL（`/docx/`、`/sheets/` 等，`node_by_token` 自动识别） |
-| `-o, --output` | text | 输出格式，可选 `json` |
-| `--user-access-token` | 空 | 手动覆盖 User Token |
-
-返回字段：`space_id` / `node_token` / `obj_token`（用于文档 API） / `obj_type`（docx/sheet/bitable/...） / `title` / `has_child`。
-
-### wiki nodes — 列出空间或父节点的子节点
-
-| Flag | 默认值 | 说明 |
-| --- | --- | --- |
-| `<space_id>` | 必填 | 知识空间 ID（由 `wiki get` 或 `wiki spaces` 得到） |
-| `--parent` | 空 | 父节点 Token；不填 = 列空间根节点 |
-| `--page-size` | 50 | 单页节点数量 |
-| `-o, --output` | text | 输出格式，可选 `json` |
-| `--user-access-token` | 空 | 手动覆盖 User Token |
-
-### wiki spaces — 列出当前身份可见的所有知识空间
-
-| Flag | 默认值 | 说明 |
-| --- | --- | --- |
-| `--page-size` | 50 | 单页空间数量 |
-| `-o, --output` | text | 输出格式，可选 `json` |
-| `--user-access-token` | 空 | 手动覆盖 User Token |
+知识库目录遍历与电子表格单元格读取分别由 `feishu-cli-storage`（wiki 工作流）和 `feishu-cli-data`（sheet 工作流）维护，
+完整参数以对应工作流和 `--help` 为准。阅读场景的常用链路：
 
 ```bash
-# 1. 列空间
-feishu-cli wiki spaces
-
-# 2. 看某节点信息，记下 space_id
-feishu-cli wiki get https://xxx.feishu.cn/wiki/Ad8Iw0oz3iSp4kkIi7QctVhin3e
-
-# 3. 列该节点下子文档
-feishu-cli wiki nodes 7012345678901234567 --parent Ad8Iw0oz3iSp4kkIi7QctVhin3e
-
-# 4. 找到目标后用 wiki export 读内容
+# 知识库：查节点（返回 space_id、obj_token、obj_type、has_child）→ 列子节点 → 导出目标节点
+feishu-cli wiki get https://xxx.feishu.cn/wiki/<node_token>
+feishu-cli wiki nodes <space_id> --parent <node_token> --page-all
 feishu-cli wiki export <child_node_token> -o /tmp/child.md
-```
 
-## 电子表格读类（sheet read / list-sheets）
-
-`sheet export --format markdown` 适合"整表导出阅读"；要按精确范围读单元格、或先列出工作表元信息，用下面两个命令。
-
-### sheet list-sheets — 列出电子表格的所有工作表
-
-| Flag | 默认值 | 说明 |
-| --- | --- | --- |
-| `<spreadsheet_token>` | 必填 | 电子表格 Token 或 URL |
-| `-o, --output` | text | 输出格式，可选 `json` |
-| `--user-access-token` | 空 | 手动覆盖 User Token |
-
-返回 `sheet_id` / `title` / 索引 / 隐藏状态，配合 `sheet read` 的 `SheetID!A1:C10` 范围语法用。
-
-### sheet read — 读指定范围单元格
-
-| Flag | 默认值 | 说明 |
-| --- | --- | --- |
-| `<spreadsheet_token>` | 必填 | 电子表格 Token 或 URL |
-| `<range>` | 必填 | 范围，例如 `SheetID!A1:C10`、`A1:B2`（配合 `--sheet-id`）、`Sheet1!A:C` 整列 |
-| `--sheet-id` | 空 | 当 range 不带 SheetID 前缀时必填 |
-| `--value-render` | 空 | 单元格值渲染：`ToString` / `FormattedValue` / `Formula` / `UnformattedValue` |
-| `--datetime-render` | 空 | 日期渲染：`FormattedString`（不填返回数字时间戳） |
-| `-o, --output` | text | 输出格式，可选 `json` |
-| `--user-access-token` | 空 | 手动覆盖 User Token |
-
-```bash
-# 列出所有工作表
-feishu-cli sheet list-sheets shtcnxxxxxx
-
-# 读单个范围（推荐先 list-sheets 拿 sheet_id）
-feishu-cli sheet read shtcnxxxxxx "0b12ab!A1:C10"
-
-# 用工作表 ID 简化范围
-feishu-cli sheet read shtcnxxxxxx "A1:C10" --sheet-id 0b12ab -o json
-
-# 拿公式而非求值结果
-feishu-cli sheet read shtcnxxxxxx "Sheet1!A1:B20" --value-render Formula
-```
-
-## 执行流程
-
-1. **解析参数**
-
-   - 判断 URL 类型：
-     - `/docx/` → 普通文档，使用 `doc export`
-     - `/wiki/` → 知识库文档，使用 `wiki export`（底层是 docx 时 `doc export`/`doc read` 也可直接传 wiki URL）
-   - 如果是 Token，根据格式判断类型
-
-2. **导出为 Markdown（含图片下载）**
-
-   **普通文档**:
-
-   ```bash
-   feishu-cli doc export <document_id> --output /tmp/feishu_doc.md --download-images --assets-dir /tmp/feishu_assets
-   ```
-
-   文档内嵌电子表格块默认会自动展开为 Markdown 表格，便于直接阅读和分析；如果要保留 `<sheet .../>` 标签用于 roundtrip，追加 `--expand-sheets=false`。
-
-   `doc export` 会自动解析 User Access Token（如已登录），解析优先级（与 `cmd/utils.go::resolveOptionalUserTokenWithFallback` + `internal/auth/resolve.go::ResolveUserAccessToken` 实现完全一致）：
-
-   1. `--user-access-token` 命令行参数（若该 token 等于 token.json 中已过期的 access_token，且 refresh_token 仍有效，自动刷新）
-   2. `FEISHU_USER_ACCESS_TOKEN` 环境变量（同样支持本机身份延伸的自动刷新）
-   3. `~/.feishu-cli/token.json`（通过 `auth login` 保存；access_token 过期则用 refresh_token 自动续期并写回）
-   4. `config.yaml` 中的 `user_access_token`（静态配置，不会自动刷新）
-   5. **App Token 兜底**（资源 API 也会接受，以租户身份访问；遇到 1770032/forbidden 等错误时说明该文档对 App 不可见，必须走前 4 步拿到 User Token）
-
-   找到 User Token 时使用用户身份访问，未找到或解析失败时回退为 App Access Token（租户身份）。
-
-   若遇到 `code=1770032 forBidden`（App 无权限且未登录）或 `code=99991679 Unauthorized`（User Token 缺少 scope），需先在飞书开放平台为应用开通 `docx:document:readonly`，然后完成 User Token 授权：
-
-   ```bash
-   # 第一步：在飞书开放平台 → 你的应用 → 权限管理 → 搜索 docx:document:readonly → 开通
-   # （或复制 README 的完整权限 JSON 一次性导入）
-   feishu-cli auth login
-   ```
-
-   **知识库文档**:
-
-   ```bash
-   feishu-cli wiki export <node_token> --output /tmp/feishu_wiki.md --download-images --assets-dir /tmp/feishu_assets
-   ```
-
-   **普通电子表格**:
-
-   ```bash
-   feishu-cli sheet export <spreadsheet_token> --format markdown --output /tmp/feishu_sheet.md
-   ```
-
-   不指定 `--sheet-id` 时会读取所有可见工作表；只看单个工作表时加 `--sheet-id <sheet_id>`。
-
-   **图片说明**：`--download-images` 仅属于 `doc export` / `wiki export`，用于把文档图片下载到本地。
-   `sheet export` 没有该 flag；电子表格内图片需用 sheet 图片命令或导出 XLSX 后处理。
-
-   **可选参数**：
-
-   - `--user-access-token`：手动指定 User Access Token（不填则自动从 `~/.feishu-cli/token.json` 读取）
-   - `--front-matter`：在 Markdown 顶部添加 YAML front matter（含标题和文档 ID）
-   - `--highlight`：保留文本颜色和背景色（输出为 HTML `<span>` 标签）
-   - `--expand-mentions`：展开 @用户为友好格式（默认开启，需要 contact:user.base:readonly 权限）
-   - `--expand-sheets`：展开文档内嵌电子表格为 Markdown 表格（默认开启；设为 `false` 时保留 `<sheet .../>` 标签）
-
-3. **读取文本内容**
-
-   - 使用 Read 工具读取导出的 Markdown 文件
-   - 分析文档结构和文本内容
-
-4. **读取并理解图片内容**
-
-   - 检查 `--assets-dir` 指定的目录是否有下载的图片
-   - **使用 Read 工具逐个读取图片文件**（Claude 支持多模态，可直接理解图片内容）
-   - 将图片内容整合到文档分析中
-
-   ```bash
-   # 列出下载的图片
-   ls /tmp/feishu_assets/
-
-   # 使用 Read 工具查看图片
-   # Read /tmp/feishu_assets/image_1.png
-   # Read /tmp/feishu_assets/image_2.png
-   ```
-
-5. **报告结果**
-   - 提供文档摘要（包含图片内容描述）
-   - 保留 Markdown 文件和图片供用户进一步操作
-
-## 输出格式
-
-向用户报告：
-
-- 文档标题
-- 文档结构概要（标题层级）
-- 内容摘要（关键信息）
-- 图片内容描述（如有图片）
-- Markdown 文件路径（供后续使用）
-- 图片文件路径（如有下载）
-
-## 支持的 URL 格式
-
-| URL 格式                                  | 类型     | 命令          |
-| ----------------------------------------- | -------- | ------------- |
-| `https://xxx.feishu.cn/docx/<id>`         | 普通文档 | `doc export`  |
-| `https://xxx.feishu.cn/sheets/<token>`    | 普通电子表格 | `sheet export --format markdown` |
-| `https://xxx.feishu.cn/wiki/<token>`      | 知识库（docx/sheet） | `wiki export`（底层 docx 时也可 `doc read/export`） |
-| `https://xxx.larkoffice.com/docx/<id>`    | 普通文档 | `doc export`  |
-| `https://xxx.larkoffice.com/sheets/<token>` | 普通电子表格 | `sheet export --format markdown` |
-| `https://xxx.larkoffice.com/wiki/<token>` | 知识库（docx/sheet） | `wiki export` |
-
-## 示例
-
-```bash
-# 读取普通文档
-feishu-cli doc export <document_id> --output /tmp/feishu_doc.md --download-images --assets-dir /tmp/feishu_assets
-feishu-cli doc export https://xxx.feishu.cn/docx/<document_id> --output /tmp/feishu_doc.md
-
-# 读取知识库文档
-feishu-cli wiki export <node_token> --output /tmp/feishu_wiki.md --download-images --assets-dir /tmp/feishu_assets
-feishu-cli wiki export https://xxx.feishu.cn/wiki/<node_token> --output /tmp/feishu_wiki.md
-
-# 读取普通电子表格为 Markdown
-feishu-cli sheet export <spreadsheet_token> --format markdown -o /tmp/feishu_sheet.md
+# 电子表格：先列工作表拿 sheet_id，再按范围读单元格
+feishu-cli sheet list-sheets <spreadsheet_token_or_url>
+feishu-cli sheet read <spreadsheet_token_or_url> "<sheet_id>!A1:C10"
+feishu-cli sheet read <spreadsheet_token_or_url> "A1:B20" --sheet-name Sheet1 --value-render Formula
 ```
 
 ## 导出格式说明
 
-导出的 Markdown 支持以下飞书特有块类型的转换：
+本地引擎导出的 Markdown 对飞书特有块的表示：
 
-| 飞书块类型         | Markdown 表现                                          |
-| ------------------ | ------------------------------------------------------ |
-| Callout 高亮块     | `> [!NOTE]`、`> [!WARNING]` 等 6 种 GitHub-style alert |
-| 块级/行内公式      | `$formula$`（LaTeX 格式）                              |
-| 画板 (Board)       | `--download-images` 时导出为 `![画板](assets/board_N.<ext>)` 图片；否则输出 `<whiteboard token="..." type="blank"/>` roundtrip 标签 |
-| 电子表格块 (Sheet) | 默认展开为 Markdown 表格；关闭 `--expand-sheets` 时输出 `<sheet .../>` |
-| ISV 块 (Mermaid)   | 画板链接                                               |
-| QuoteContainer     | `>` 引用语法（支持嵌套）                               |
-| AddOns/SyncedBlock | 透明展开子块内容                                       |
-| Iframe             | `<iframe>` HTML 标签                                   |
+| 飞书块类型 | Markdown 表现 |
+|---|---|
+| Callout 高亮块 | `> [!NOTE]`、`> [!WARNING]` 等 6 种 GitHub-style alert（按背景色还原类型） |
+| 块级/行内公式 | `$formula$`（LaTeX 原文） |
+| 画板 (Board) | `--download-images` 时为图片引用；否则 `<whiteboard token="..." type="blank"/>` 占位 |
+| 图片 | `--download-images` 时为本地图片引用；否则 `<image token="..." .../>` |
+| 电子表格块 (Sheet) | 默认展开为 Markdown 表格；`--expand-sheets=false` 时为 `<sheet .../>` |
+| 小组件 (AddOns) | 文本绘图组件输出 ```` ```mermaid ```` / ```` ```plantuml ```` 源码；其余为 `[小组件 ...]` 占位 |
+| ISV 文本绘图 / 时间线 | 带注释的 ```` ```mermaid ```` 占位（Open API 不暴露源码） |
+| QuoteContainer | `>` 引用语法 |
+| 同步块 | 展开子块内容（跨文档引用读取源文档，失败时输出 `WARNING` 占位） |
+| Iframe | `<iframe>` HTML 标签 |
+| 无法表达的块 | `<!-- 不支持的块类型: 名称 (type=N) -->` 注释 |
 
-使用 `--highlight` 参数时，带颜色的文本输出为 `<span style="color:...">` 标签。
+使用 `--highlight` 时，带颜色的文本输出为 `<span style="color:...">`。表格合并单元格等已知限制见 `../export/workflow.md`。
 
-## 高级：Wiki 目录节点处理
+## Wiki 目录节点
 
-知识库文档可能是**目录节点**（包含子节点），需要特殊处理。
-
-### 1. 识别目录节点
-
-当导出知识库文档时，如果 Markdown 内容显示为：
+导出内容显示为下面这行时，说明该节点是知识库目录块，正文就是子节点列表：
 
 ```markdown
 [Wiki 目录 - 使用 'wiki nodes <space_id> --parent <node_token>' 获取子节点列表]
 ```
 
-说明这是一个**Wiki 目录节点**（block_type=42），子文档列表存储在知识库元数据中。
-
-### 2. 获取子节点列表
-
 ```bash
-# 1. 先获取节点信息，记录 space_id
-feishu-cli wiki get <node_token>
-
-# 2. 列出该节点下的子节点
-feishu-cli wiki nodes <space_id> --parent <node_token>
+feishu-cli wiki get <node_token>                               # 记录 space_id、has_child
+feishu-cli wiki nodes <space_id> --parent <node_token> --page-all
+feishu-cli wiki export <child_node_token> -o /tmp/child.md     # 逐个导出子节点
 ```
 
-### 3. 完整处理流程
+## 错误处理
 
-```bash
-# 步骤 1：尝试导出文档
-feishu-cli wiki export <node_token> -o /tmp/doc.md
+| 错误 | 原因 | 处理 |
+|---|---|---|
+| `code=1770032, msg=forBidden` | 当前身份（常见为 Bot）无权读取该文档 | 确认 stderr 是否有 User Token 回退告警；`auth login` 后以 User 身份读取，或请文档所有者授权 |
+| `code=1770002, msg=not found` | document_id 不存在或传错（如把 wiki node_token 当 document_id 给 `doc get/blocks`） | 核对 token；wiki 链接改用 `doc read/export` 或先 `wiki get` 取 `obj_token` |
+| `code=99991679` / `99991672` 等 scope 错误（退出码 3） | User 未授权或应用未开通所需 scope | 按 feishu-cli-platform 的身份指引预检 scope 后补授 |
+| `code=131006` | 当前身份无权读取该知识库节点 | Bot 需被加为知识空间成员或协作者；或 `auth login` 后用 User 身份 |
+| `code=131012` | 知识库节点已删除或不存在 | 重新获取有效链接，不要重试同一 token |
+| `code=131013` / `131016` | token 无效或被截断 | 检查 URL/token 是否完整 |
+| `code=131014` | 文档不在知识库中 | 普通云文档直接用 `/docx/` 链接或 document_id |
+| 内容为空或只有目录行 | 目录节点或空文档 | 见「Wiki 目录节点」 |
 
-# 步骤 2：检查内容
-# 如果显示 "[Wiki 目录...]"，说明是目录节点
-
-# 步骤 3：获取节点信息
-feishu-cli wiki get <node_token>
-# 记录 space_id 和 has_child 字段
-
-# 步骤 4：获取子节点
-feishu-cli wiki nodes <space_id> --parent <node_token>
-
-# 步骤 5：逐个导出子节点
-feishu-cli wiki export <child_node_token_1> -o /tmp/child1.md
-feishu-cli wiki export <child_node_token_2> -o /tmp/child2.md
-```
-
-## 错误处理与边界情况
-
-### 1. 常见错误
-
-| 错误                              | 原因                                           | 解决                                                                                                        |
-| --------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `code=1770032, msg=forBidden`     | App Token 无权限访问该文档                     | 在飞书开放平台应用权限管理页面开通 `docx:document:readonly`，再 `auth login` 授权 User Token                 |
-| `code=99991679, msg=Unauthorized` | User Token 缺少 `docx:document:readonly` scope | 在飞书开放平台应用权限管理页面开通 `docx:document:readonly`，再重新 `auth login`                             |
-| `code=131002, param err`          | 参数错误                                       | 检查 token 格式                                                                                             |
-| `code=131001, node not found`     | 节点不存在                                     | 检查 token 是否正确                                                                                         |
-| `code=131003, no permission`      | 无权限访问                                     | 确认应用有 wiki:wiki:readonly 权限                                                                          |
-| `code=131004, space not found`    | 知识空间不存在                                 | 检查 space_id 是否正确                                                                                      |
-| 空内容或 `Unknown block type`     | 特殊块类型                                     | 见「高级：Wiki 目录节点处理」章节                                                                           |
-
-### 2. 边界情况处理
-
-**情况 1：文档内容为空**
-
-- 检查文档是否真的为空
-- 检查是否有权限查看内容
-- 检查是否是目录节点（见上文）
-
-**情况 2：图片下载失败**
-
-- 检查 `--assets-dir` 目录是否可写
-- 检查网络连接
-- 图片可能已被删除或过期
-
-**情况 3：部分块类型无法识别**
-
-- 飞书 API 可能返回未知的块类型
-- 这些块会显示为 `<!-- Unknown block type: XX -->`
-- 这是正常现象，不影响其他内容的读取
-
-**情况 4：大型文档**
-
-- 超过 1000 个块的文档可能需要分页获取
-- 使用 `feishu-cli doc blocks <doc_id> --all` 自动分页
-
-### 3. 重试机制
-
-如果遇到网络错误或 API 限流：
-
-```bash
-# 添加 --debug 查看详细错误信息
-feishu-cli wiki export <token> --debug
-
-# 等待几秒后重试
-sleep 5 && feishu-cli wiki export <token>
-```
-
-## 注意事项
-
-1. **识别目录节点**：目录节点的内容是子节点列表，不是实际文档内容
-2. **公式内容**：导出的 LaTeX 公式保持原文，可直接被 Markdown 渲染器显示
-3. **Callout 类型**：支持 NOTE/WARNING/TIP/CAUTION/IMPORTANT/SUCCESS 六种高亮块类型
-
-## 常见问题
-
-**Q: 提示权限不足 / `no permission` / `forBidden`**
-
-- 确认应用已获得 `docx:document:readonly`（普通文档）或 `wiki:wiki:readonly`（知识库）权限
-- 如果是他人文档且 App 没有被添加为协作者，需要使用 User Token：
-  1. 在飞书开放平台 → 你的应用 → 权限管理 → 开通 `docx:document:readonly`
-  2. 执行 `feishu-cli auth login`
-  3. 授权后 `doc export` 会自动读取，无需额外参数
-
-**Q: 文档不存在 / `node not found`**
-
-- 检查文档 ID 或 node_token 是否正确（注意区分 `document_id` 和 `node_token`）
-- 从 URL 中提取 ID 时确认使用了正确的路径段（`/docx/` 后为 document_id，`/wiki/` 后为 node_token）
-
-**Q: Token 过期 / 认证失败**
-
-- 运行 `feishu-cli auth status` 检查当前认证状态
-- 如已过期，运行 `feishu-cli auth login` 重新认证
-- 如使用 App Access Token，检查 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET` 环境变量是否正确
+- 图片下载失败：检查 `--assets-dir` 是否可写、网络是否可达；图片可能已删除。
+- 网络错误或限流：命令已内置限流重试；仍失败时加 `--debug` 查看请求详情，稍后重试。
+- 认证失败：`feishu-cli auth status` 查看状态，过期按 feishu-cli-platform 指引重新登录。

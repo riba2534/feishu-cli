@@ -1,325 +1,180 @@
-# Markdown 导入技能
+# Markdown 导入
 
-从本地 Markdown 文件创建飞书云文档，或把 Markdown 追加导入到已有文档。**支持 Mermaid/PlantUML 图表转飞书画板、大表格智能处理（行 > 9 单 block API 追加；列 > 9 拆分保留首列）**。
+从本地 Markdown 文件创建飞书云文档，或把 Markdown 追加导入到已有文档。Mermaid/PlantUML/SVG 代码块转飞书画板，
+大表格保持单 block（行 > 9 追加行；列 > 9 拆分并保留首列）。
 
 > **Owner 规则**：创建后按 [新建文档授权流程](../write/workflow.md#新建文档) 处理用户指定接收人或当前生效的 owner 配置，沿用本次 profile/config；只在 `transfer_ownership=true` 时转移所有权。不要把示例邮箱当成真实接收人。
 
 ## 目录
 
-- [核心特性](#核心特性)
-- [核心概念](#核心概念)
-- [前置条件](#前置条件)
-- [使用方法](#使用方法)
+- [适用范围与边界](#适用范围与边界)
+- [前置条件与身份](#前置条件与身份)
 - [执行流程](#执行流程)
-- [参数说明](#参数说明)
+- [参数要点](#参数要点)
 - [支持的 Markdown 语法](#支持的-markdown-语法)
-- [输出格式](#输出格式)
-- [示例](#示例)
-- [已验证功能](#已验证功能)
-  - [HTML 标签扩展语法](#html-标签扩展语法)
+- [HTML 扩展标签](#html-扩展标签)
+- [输出与结果判定](#输出与结果判定)
+- [图表转换与降级](#图表转换与降级)
 - [常见问题](#常见问题)
 
-## 核心特性
+## 适用范围与边界
 
-1. **三阶段并发管道**：顺序创建块 → 并发处理图表/表格 → 失败回退
-2. **Mermaid/PlantUML/SVG → 飞书画板**：`mermaid`/`plantuml`/`puml`/`svg` 代码块自动转换为飞书画板
-3. **图表故障容错**：语法错误自动降级为代码块展示，服务端错误自动重试（默认最多 10 次，可用 `--diagram-retries` 调整）
-4. **大表格智能处理**：行 > 9 时创建 9 行初始表 + `insert_table_row` API 追加到同一 block（视觉连贯，每行约 1 次 API 往返；verbose 模式 ≥ 5 行打印进度）；列 > 9 按列组拆分保留首列作为标识。**单元格内容填充已走 `batch_update` 批量加速（v1.29+，#159）**：阶段二预热 `cellMap` 后按批（single-group cell 每批 ≤ 30 个）一次性写入，失败再降级为 per-cell；典型 4×6×8 表从 ~70s 降到 ~3s（25-30x）。追加行产生的新 cell 由填充函数按表格局部补建映射，同样进入批量路径（#172 起）
-5. **表格列宽**：默认按内容启发式，可用紧邻表格上方注释 `<!-- feishu-colwidth: ... -->` 或 CLI flag `--table-column-width` 覆盖（注释优先级高于 flag）；仅 `doc import` / `doc add` 支持，`doc content-update` 会 fail-closed 报错；完整规则（单位/优先级/clamp/适用范围）以 `references/doc-guide.md` 表格章节为权威
-6. **API 限流自动重试**：画板创建和图表导入遇到 HTTP 429 时自动重试，读取服务端 `x-ogw-ratelimit-reset` 响应头精确计算退避时间，采用指数退避策略，默认最多重试 10 次
-7. **并发控制**：图表和表格分别使用独立的 worker 池（默认图表 5、表格 3 并发）
-8. **表格单元格图片真嵌入（#164）**：Markdown 表格单元格内的本地/网络图片，会在表格填充完成后（阶段 2.5）真正嵌入为单元格内的 Image 子块，而非丢失或退化为文字。细节：纯图片单元格不会把图片说明（alt）串成多余的标题文字；嵌入失败或单元格对不齐的图片计入统计 `cell_image_failed` 并打印，不静默丢弃；上传失败的空图块会被清理并补占位文本。仅 `doc import` 走这条真嵌入管线；`doc add` 的单元格图片降级为 `[图片: 说明]` 占位文本，`content-update` 则由服务端解析表格并经占位协议上传单元格内的本地图片。JSON 输出新增 `cell_image_total/success/failed`
-9. **部分失败非零退出**：图片/视频/表格/单元格图片写入失败、图表导入失败且降级为代码块也失败、嵌套子块创建失败时，命令在输出文档链接与统计后以退出码 1 结束；文本模式在 stderr 列出失败明细，JSON 模式输出 `partial_failure: true` 与 `failures` 数组（每项含 `kind`/`index`/`source`/`error`）。图表成功降级为代码块属于设计内降级，不计为失败。脚本/Agent 遇到非零退出时应读取 `failures`，按需用 `doc media-insert` 或 `doc content-update` 补齐，而不是重新导入整篇文档
+- 只处理 Markdown 源文本。Word/Excel 等二进制文件导入用 `feishu-cli doc import-file` 或 `feishu-cli-storage` 的 `drive import`。
+- 把 Markdown 里的表格变成飞书电子表格时不要走 `doc import`，改用 `feishu-cli sheet import-md report.md --title "报表"`。
+- `--document-id` 只会把内容**追加**到已有文档末尾，不会替换；修改已有内容用 `doc content-update`（见 `../write/workflow.md`）。
+- 生成 Markdown 前先按 `references/doc-guide.md` 检查语法；Mermaid 细节见 `references/mermaid-spec.md`。
 
-## 核心概念
+## 前置条件与身份
 
-**Markdown 作为中间态**：本地文档与飞书云文档之间通过 Markdown 格式进行转换。
-
-> **边界澄清**：本 skill 仅支持 Markdown 源文本导入。若需导入 Word/Excel 等二进制格式，请用 `feishu-cli doc import-file` 或 `feishu-cli-storage` skill 的 `drive import`。
-
-如果用户目标是“把 Markdown 里的表格变成飞书电子表格”，不要走 `doc import`，改用：
-
-```bash
-feishu-cli sheet import-md report.md --title "报表"
-```
-
-## 前置条件
-
-- **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
-- 已配置 App Token（`FEISHU_APP_ID` + `FEISHU_APP_SECRET`），无需 `auth login`
-- Markdown 文件使用 UTF-8 编码（CLI 会用 `utf8.Valid` 拒收非法 UTF-8 字节序列；合法 UTF-8 中包含的 `U+FFFD` 替换字符不会被拦截，建议先在编辑器里搜一遍）
-
-## 使用方法
-
-```bash
-# 创建新文档
-feishu-cli doc import ./document.md --title "文档标题"
-
-# 追加导入到已有文档（不会原地替换）
-feishu-cli doc import ./document.md --document-id <existing_doc_id>
-
-# 上传本地图片
-feishu-cli doc import ./document.md --title "带图文档" --upload-images
-```
+- 默认 **Bot 身份**，只需 App 凭证，无需 `auth login`。新建文档时 CLI 会自动给当前 CLI 登录用户授予 `full_access`
+  （输出 `permission_grant`）；追加到已有文档或以 User 身份执行时不触发。
+- `--document-id` 只接受裸 document_id（不接受 URL），且 Bot 必须对该文档有编辑权限；要以本人身份写入用户自己的文档时显式传
+  `--user-access-token "$(feishu-cli auth token --as user)"`。
+- Markdown 必须是合法 UTF-8（非法字节直接拒绝）；合法 UTF-8 中的 `U+FFFD` 替换字符不会被拦截，导入前自查（见 `../write/workflow.md`）。
 
 ## 执行流程
 
 ### 创建新文档
 
-1. **验证文件**
-   - 检查 Markdown 文件是否存在
-   - 预览文件内容
-   - **编码验证**：CLI 内置 `utf8.Valid` 校验，遇到非法 UTF-8 字节直接拒绝导入；合法 UTF-8 里残留的 `U+FFFD` 替换字符不会被拦截，建议导入前先用编辑器全局搜一遍 `�`
+```bash
+feishu-cli doc import ./document.md --title "文档标题" -o json
+```
 
-2. **执行导入**
-   ```bash
-   feishu-cli doc import <file.md> --title "<title>" [--upload-images]
-   ```
-
-3. **添加权限 / 转移所有权**（仅 owner 已配置时；`transfer_ownership=true` 才转移）
-   owner 解析与 `perm add` / `perm transfer-owner` 完整流程以 `../write/workflow.md`「新建文档」一节为权威，此处不重复命令。
-
-4. **交付结果**
-   在当前会话返回文档链接与导入统计。只有用户明确要求飞书通知，或已有适用的通知授权时，再按指定接收人发送消息。
+1. 确认文件存在、编码正确，按 doc-guide 检查图表与表格语法。
+2. 执行导入；`--title` 缺省时用文件名（去扩展名）。
+3. 按 owner 规则授权（仅 owner 已配置时；`transfer_ownership=true` 才转移所有权）。
+4. 检查退出码与 `failures`（见「输出与结果判定」），在当前会话返回文档链接与导入统计。只有用户明确要求飞书通知，
+   或已有适用的通知授权时，再按指定接收人发送消息。
 
 ### 追加导入到已有文档
 
-`--document-id` 不会替换已有内容，只会把 Markdown 转换后的块追加到文档末尾。修改/覆盖已有内容请用 `feishu-cli doc content-update`（详见 `feishu-cli-docs` skill）。
+```bash
+feishu-cli doc import ./document.md --document-id <document_id>
+```
 
-1. **执行追加导入**
-   ```bash
-   feishu-cli doc import <file.md> --document-id <doc_id> [--upload-images]
-   ```
+转换后的块追加到文档末尾；交付与通知规则同上。
 
-2. **交付结果**：在当前会话返回追加结果；飞书通知遵循上面的授权条件。
-
-## 参数说明
+## 参数要点
 
 | 参数 | 说明 | 默认值 |
-|------|------|--------|
-| markdown_file | Markdown 文件路径 | 必需 |
-| --title | 新文档标题 | 文件名 |
-| --document-id | 追加导入到已有文档 | 创建新文档 |
-| --upload-images | 上传本地和网络图片到飞书 | 是（默认开启） |
-| --image-workers | 图片并发上传数 | 2（API 限制 5 QPS） |
-| --folder, -f | 新文档的目标文件夹 Token | 根目录 |
-| --diagram-workers | 图表 (Mermaid/PlantUML/SVG) 并发导入数 | 5 |
-| --table-workers | 表格并发填充数 | 3 |
-| --table-column-width | 列宽策略：`auto` / `fixed` / `N1,N2,...`（像素列表，`*` 走 auto） | auto |
-| --diagram-retries | 图表最大重试次数 | 10 |
-| --verbose | 显示详细进度信息 | 否 |
-| --user-access-token | 显式覆盖 User Token；不传按命令默认身份解析 | 空 |
-| --output, -o | 输出格式 `json` | 文本摘要 |
+|---|---|---|
+| `--title, -t` | 新文档标题 | 文件名（去扩展名） |
+| `--document-id, -d` | 追加导入到已有文档（裸 document_id） | 新建文档 |
+| `--folder, -f` | 新文档的目标文件夹 token | 云空间根目录 |
+| `--upload-images` | 上传本地和网络图片；`--upload-images=false` 时图片变为 `[Image: 路径]` 文本占位 | 开启 |
+| `--table-column-width` | 列宽策略 `auto` / `fixed` / `N1,N2,...`（`*` 走 auto）；完整规则见 doc-guide 表格章节 | auto |
+| `--diagram-workers` / `--table-workers` / `--image-workers` | 图表 / 表格 / 图片并发数（图片受 API 5 QPS 限制） | 5 / 3 / 2 |
+| `--diagram-retries` | 图表服务端错误（5xx、限流）的最大重试次数 | 10 |
+| `--verbose, -v` | 打印每个图表/表格/图片的进度 | 否 |
+| `--output, -o` | `json` 输出统计与失败明细 | 文本 |
 
 ## 支持的 Markdown 语法
 
-- 标题（# ~ ######）
-- 段落文本
-- 无序/有序列表（支持无限深度嵌套、混合嵌套）
-- 任务列表（- [ ] / - [x]）
+- 标题（`#` ~ `######`）、段落、分割线、链接
+- 无序/有序列表（多级嵌套、有序/无序混合嵌套）、任务列表（`- [ ]` / `- [x]`，可嵌套）；列表项下可挂代码块等子块，
+  但同一列表项内的第二段文字会被并入首段（无分隔）
 - 代码块（带语言标识）
-- **Mermaid/PlantUML/SVG 图表** → 自动转换为飞书画板
+- **Mermaid / PlantUML / SVG 代码块** → 飞书画板（见「图表转换与降级」）
+- 引用块（转为 QuoteContainer，内部可含多段落与列表；`>` 空行会生成一个空段落）。⚠ **嵌套引用 `> >` 实测失败**：外层引用变为空块、
+  内容丢失，`failures` 记 `nested_blocks`（1770030），命令退出码 1——不要生成嵌套引用
+- **Callout**：`> [!NOTE]` 等 6 种类型，内部可含段落、列表等子块
+- **图片**：默认上传本地（相对 Markdown 文件所在目录）和网络图片；表格单元格内的图片会真正嵌入为单元格内图片；
+  与文字混排的行内图片统一转为 `[图片: 说明]` 占位（http(s) 为可点击链接）
+- **表格**：行 > 9 用 `insert_table_row` 追加保持单 block；列 > 9 按列组拆分（每组 ≤ 9 列，首列在每组保留）；
+  紧邻表格上方的 `<!-- feishu-colwidth: ... -->` 注释可控制列宽；单元格内的粗体/行内代码/链接保留，`<br>` 拆成多段，
+  `$...$` 公式**不转换**（保留为字面文本）
+- 粗体、斜体、删除线、行内代码、下划线（`<u>文本</u>`）
+- 行内公式 `$...$`（一段可多个）；块级 `$$...$$` 或独立行 `$...$` 导入为只含公式的文本块（飞书无独立块级公式块）
 
-SVG 使用恰好三个反引号的 `svg` fence；导入器把 SVG 转为画板节点，不走 PlantUML 渲染端点：
+### Callout 背景色映射
 
-````markdown
-```svg
-<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120">
-  <rect width="320" height="120" rx="16" fill="#3370ff"/>
-</svg>
-```
-````
-- **引用块**（支持嵌套引用，自动转换为 QuoteContainer）
-- **Callout 高亮块**（`> [!NOTE]`、`> [!WARNING]` 等 6 种类型）
-- 分割线
-- **图片**（默认自动上传本地和网络图片；显式 `--upload-images=false` 时使用占位块。**表格单元格内的图片会真正嵌入为单元格内图片**，见核心特性 #164；与文字混排的内联图片统一转为 `[图片: 说明]` 占位，http(s) 为可点击链接）
-- **表格**（行 > 9 用 `insert_table_row` API 追加保持单 block；列 > 9 按列组拆分保留首列；**单元格内可放图片，导入后真正嵌入**）
-- 粗体、斜体、删除线、行内代码、**下划线**（`<u>文本</u>`）
-- 链接
-- **行内公式**（`$E = mc^2$`，支持一段中多个公式）
-- **块级公式**（`$$formula$$` 或独立行 `$formula$`）
-
-### 图表示例（推荐使用 Mermaid）
-
-````markdown
-```mermaid
-flowchart TD
-    A[开始] --> B{判断}
-    B -->|是| C[处理]
-    B -->|否| D[结束]
-```
-````
-
-````markdown
-```plantuml
-@startuml
-Alice -> Bob: Hello
-Bob --> Alice: Hi
-@enduml
-```
-````
-
-支持的 Mermaid 图表类型（全部已验证）：
-- ✅ flowchart（流程图，支持 subgraph 嵌套）
-- ✅ sequenceDiagram（时序图）
-- ✅ classDiagram（类图）
-- ✅ stateDiagram-v2（状态图）
-- ✅ erDiagram（ER 图）
-- ✅ gantt（甘特图）
-- ✅ pie（饼图）
-- ✅ mindmap（思维导图）
-
-### Callout 高亮块示例
-
-````markdown
+```markdown
 > [!NOTE]
 > 这是一个提示信息。
 
 > [!WARNING]
 > 这是一个警告信息。
-
-> [!TIP]
-> 这是一个技巧提示。
-
-> [!CAUTION]
-> 这是一个警示。
-
-> [!IMPORTANT]
-> 这是一个重要信息。
-
-> [!SUCCESS]
-> 这是一个成功信息。
-````
-
-Callout 内部支持子块（段落、列表等），自动创建为 Callout 的子块。
-
-背景色映射：
-
-| 类型 | 背景色 |
-|------|--------|
-| NOTE/INFO | 蓝色 (6) |
-| WARNING | 红色 (2) |
-| TIP | 黄色 (4) |
-| CAUTION | 橙色 (3) |
-| IMPORTANT | 紫色 (7) |
-| SUCCESS | 绿色 (5) |
-
-### 公式示例
-
-````markdown
-行内公式：爱因斯坦质能方程 $E = mc^2$ 是最著名的公式。
-
-块级公式（独立行）：
-$\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
-````
-
-- 行内公式支持一段内多个 `$...$` 公式
-- 块级公式在飞书中创建为 Text 块内的 Equation 元素
-- 公式内容保持 LaTeX 原文
-
-### 下划线示例
-
-```markdown
-这段文本包含 <u>下划线</u> 样式。
 ```
 
-## 输出格式
+| 类型 | 背景色（飞书 Callout 枚举） |
+|---|---|
+| NOTE / INFO / 未知类型 | 浅蓝（5） |
+| WARNING | 浅红（1） |
+| CAUTION | 浅橙（2） |
+| TIP | 浅黄（3） |
+| SUCCESS | 浅绿（4） |
+| IMPORTANT | 浅紫（6） |
 
+（枚举：1 浅红、2 浅橙、3 浅黄、4 浅绿、5 浅蓝、6 浅紫、7 中灰；导入后经 docs_ai 回读实测颜色一致。）
+
+## HTML 扩展标签
+
+导出端生成的扩展标签在导入时会被识别，也可手写用于精确控制块类型。块级标签必须**开标签独占一行、内容另起一行**，
+写在同一行（`<callout type="NOTE">内容</callout>`）时只会得到一段普通文字。
+
+| 标签 | 导入结果（除标注外均为 2026-10 实测） |
+|---|---|
+| `<mention-user id="ou_xxx"/>`、`<mention-doc token="xxx" type="docx">标题</mention-doc>` | 行内 @用户 / @文档（未实测，按源码） |
+| 多行 `<callout type="NOTE" color="7">`…`</callout>` | 高亮块；`color` 为背景色枚举原值（1-14），优先于 `type`；内容按纯文本处理 |
+| `<whiteboard type="blank"/>`（不带 token） | 新建空白画板 |
+| `<sheet rows="5" cols="5"/>` | 新建空电子表格块 |
+| `<bitable view="table"/>` | 新建空多维表格块 |
+| `<image token="xxx" .../>`、`<file token="xxx" .../>`、`<whiteboard token="xxx" .../>` | ⚠ 即使 token 有效，建块阶段也被服务端拒绝（`1770001 invalid param`），**整次导入中止**（实测） |
+| `<video src="./demo.mp4" data-name="demo.mp4"></video>` | ⚠ 建块阶段同样被拒绝（`1770001`），整次导入中止（实测）；视频改为导入后用 `doc media-insert --type file` 作为附件插入 |
+| `<grid cols="2">` + `<column>` | ⚠ 当前只建出空分栏，栏内内容写入失败（`failures` 中 kind=`nested_blocks`，退出码 1）；需要分栏改用 `content-update` 写入 |
+
+**导出再导入（roundtrip）**：不带 `--download-images` 的 `doc export` 会输出 `<image token>` / `<file token>` /
+`<whiteboard token type="blank"/>` 占位，直接 `doc import` 会因上面的限制在建块阶段整体失败。要复制成新文档时先
+`doc export --download-images --assets-dir <绝对路径>` 让图片与画板落地为本地文件再导入（画板会以图片形式导入）。
+`--assets-dir` 要用绝对路径：导出的图片引用原样写入 `--assets-dir` 的值，而导入按 Markdown 文件所在目录解析相对路径，
+两者不在同一目录时会报"图片文件不存在"（实测）；要写回已有文档用 `doc content-update`
+（会把 `<image token>` / `<file token>` 转换为 docs_ai 写法，画板占位则拒绝写回，见 `../write/workflow.md`）。
+
+## 输出与结果判定
+
+文本模式（stderr 打印进度，stdout 打印汇总）：
+
+```text
+导入完成!
+  文档ID: <document_id>
+  添加块数: 25
+  表格: 4/4 成功
+  图表: 3/3 成功 (Mermaid: 2, PlantUML: 1)
+  总耗时: 11.9s
+  链接: https://www.feishu.cn/docx/<document_id>   # Lark 品牌为 www.larksuite.com
+  当前用户权限: 已授予 full_access（ou_xxx）
 ```
-已导入文档！
-  文档 ID: <document_id>
-  文档链接: https://www.feishu.cn/docx/<document_id>   # Lark 品牌为 https://www.larksuite.com/docx/...
-  导入块数: 25
-```
 
-## 示例
+`-o json` 输出 `document_id`、`url`、`blocks`、`image_*` / `video_*` / `table_*` / `diagram_*` / `cell_image_*` 统计、
+`diagram_fallback`、`permission_grant`、`partial_failure` 与 `failures`。
 
-```bash
-# 创建新文档
-feishu-cli doc import ./meeting-notes.md --title "会议纪要"
+- **部分失败以退出码 1 结束**：图片/视频/表格/单元格图片写入失败、图表导入失败且降级为代码块也失败、嵌套子块创建失败时，
+  命令仍输出文档链接与统计，文本模式在 stderr 列出失败明细，JSON 输出 `partial_failure: true` 与 `failures`
+  （每项含 `kind`/`index`/`source`/`error`）。按 `failures` 用 `doc media-insert` 或 `doc content-update` 补齐，**不要重新导入整篇**（会产生重复文档）。
+- 图表成功降级为代码块属于设计内降级，不计入 `failures`、退出码仍为 0；看 `diagram_fallback` / `diagram_failed` 判断有无降级。
+- 建块阶段（阶段一）失败（如手写标签的 token 无效）会中止导入并以退出码 1 结束，此时文档已创建但内容不全：修正 Markdown 后删除该文档再重新导入。
+- 写入均为本次新建的块，建块与画板写入的重试会复用幂等 token 或回读确认，不会因 5xx 重放产生重复块/重复图。
 
-# 追加导入到现有文档
-feishu-cli doc import ./updated-spec.md --document-id <document_id>
+## 图表转换与降级
 
-# 带图片导入（自动上传本地和网络图片）
-feishu-cli doc import ./blog-post.md --title "博客文章" --upload-images
+导入分三阶段：顺序创建所有块（收集图表、表格、图片任务）→ 并发导入图表、填充表格、上传图片 → 对失败图表删除空画板、在原位置插入代码块。
 
-# 批量导入（一次循环多个 Markdown）
-for f in *.md; do feishu-cli doc import "$f" --title "${f%.md}" --upload-images; done
-```
-
-## 已验证功能
-
-上述"支持的 Markdown 语法"中列出的所有语法均已通过测试验证，全部正常工作。表格/图片/视频的具体处理细节见上方"核心特性"和"支持的 Markdown 语法"小节，下面只列大规模测试结果。
-
-### 大规模测试结果
-
-已验证可成功导入的大型文档：
-- **10,000+ 行 Markdown** ✓
-- **127 个 Mermaid 图表** → 全部成功转换为飞书画板 ✓
-- **170+ 个表格**（含 17 行 × 5 列单 block 连贯追加、9 列以上列拆分、列宽自动计算）→ 全部成功 ✓
-- **8 种图表类型** → flowchart/sequenceDiagram/classDiagram/stateDiagram/erDiagram/gantt/pie/mindmap 全部成功 ✓
-- **88 个 Mermaid 图表逐个测试** → 82/88 成功，6 个失败（3 个服务端瞬时错误 + 2 个花括号语法 + 1 个提取异常）
-
-### 三阶段并发管道架构
-
-1. **阶段一（顺序）**：创建所有文档块，收集图表（Mermaid/PlantUML）和表格任务
-2. **阶段二（并发）**：使用 worker 池并发处理图表导入和表格填充。表格单元格填充先预热 `cellMap`，再走 `batch_update` API 批量写入（single-group cell 每批 ≤ 30 个，追加行新 cell 经局部补建映射后同样进批量），仅在批量失败时降级为 per-cell；行 > 9 的 `insert_table_row` 追加仍逐行串行（受单文档 3 QPS 节流）
-3. **阶段三（逆序）**：处理失败的图表 → 删除空画板块，插入代码块作为降级展示
-
-### Mermaid 已知限制
-
-| 限制 | 说明 | 处理方式 |
-|------|------|----------|
-| `{}` 花括号 | Mermaid 解析器将 `{text}` 识别为菱形节点 | 自动降级为代码块 |
-| `par...and...end` | 飞书解析器完全不支持 par 并行语法 | 用 `Note over X: 并行执行` 替代 |
-| 渲染复杂度组合超限 | 单一因素不会触发，但 10+ participant + 2+ alt 块 + 30+ 长消息标签组合时服务端返回 500 | 重试后降级为代码块 |
-| 服务端瞬时错误 | 偶发 HTTP 500（并发压力导致） | 自动重试（默认最多 10 次，指数退避） |
-| Parse error 不重试 | 语法错误直接降级 | 自动降级为代码块 |
-
-**渲染复杂度安全阈值**（二分法实测）：
-- 8 participant + 1 alt + 短标签 → 通常安全（单一维度超限不一定失败）
-- 10 participant + 2 alt + 30 条长消息标签 → 超限
-- 建议：sequenceDiagram 保持 participant 安全 ≤6（7-9 为警告区）、alt ≤1、消息标签简短；完整阈值表以 `references/mermaid-spec.md` 为准
-
-### 技术说明
-
-图表通过飞书画板 API 导入：
-- API 端点：`/open-apis/board/v1/whiteboards/{id}/nodes/plantuml`
-- `syntax_type=1` 表示 PlantUML 语法，`syntax_type=2` 表示 Mermaid 语法
-- `diagram_type` 使用整数（0=auto, 6=flowchart 等）
-- 重试策略：指数退避 + 读取 `x-ogw-ratelimit-reset` 响应头精确退避，默认最多 10 次；Parse error 和 Invalid request parameter 不重试
-- 失败回退：删除空画板块，在原位置插入代码块
-- 支持的代码块标识：` ```mermaid `、` ```plantuml `、` ```puml `
-
-### HTML 标签扩展语法
-
-除标准 Markdown 语法外，导入时还识别以下 HTML 标签形式的扩展语法。这些标签由导出端自动生成，支持 roundtrip（导出→导入不丢失信息）。
-
-| 标签 | 说明 | 示例 |
-|------|------|------|
-| `<mention-user id="ou_xxx"/>` | @用户 | 创建 MentionUser 元素 |
-| `<mention-doc token="xxx" type="docx">标题</mention-doc>` | @文档 | 创建 MentionDoc 元素 |
-| `<grid cols="2"><column>...</column><column>...</column></grid>` | 分栏布局 | 创建 Grid Block + GridColumn 子块 |
-| `<callout type="NOTE">内容</callout>` | 高亮块（HTML 标签形式） | 与 `> [!NOTE]` 等效 |
-| `<whiteboard type="blank"/>` | 空白画板 | 创建 Board Block |
-| `<sheet rows="5" cols="5"/>` | 电子表格 | 创建 Sheet Block |
-| `<bitable view="table"/>` | 多维表格 | 创建 Bitable Block |
-| `<image token="xxx" width="800" align="center" caption="说明"/>` | 带属性图片 | 创建 Image Block，保留尺寸/对齐 |
-| `<file token="xxx" name="report.pdf" view-type="1"/>` | 文件块 | 创建 File Block |
-| `<video src="./demo.mp4" data-name="demo.mp4" data-view-type="1"></video>` | 视频块（v1.22+） | 创建 File Block (type=23)，识别 mp4/mov/avi/mkv 等扩展名作为视频；`src` 为本地路径或上传后的 token；单文件 ≤ 20MB 直传 |
-
-这些标签主要用于 roundtrip 场景（导出后重新导入），也可手动编写用于精确控制飞书块类型。
-
-**视频导入并发**：与图片共用 worker 池（默认 2 并发，受 API 5 QPS 限制），导入统计含 `video_total/success/failed/skipped`。verbose 模式打印每个视频的上传进度。
+- 代码块标识：` ```mermaid `、` ```plantuml ` / ` ```puml `、` ```svg `（围栏必须恰好三个反引号）。
+- Mermaid 当前可渲染：flowchart / graph、sequenceDiagram、classDiagram、stateDiagram / stateDiagram-v2、erDiagram、gantt、pie、
+  mindmap、timeline、quadrantChart、xychart（服务端报错信息列出的支持集合，2026-10 实测）；`journey`、`gitGraph` 等不支持 → 降级为代码块。
+- SVG 代码块整体作为一个 svg 节点写入画板（不拆成可编辑节点）。
+- 只有服务端错误（5xx）和限流会重试（`--diagram-retries`，默认 10，指数退避）；语法错误、不支持的图表类型等 4xx（如 `code=2890002`）
+  不重试，直接降级为代码块。
+- 语法限制与复杂度建议见 `references/doc-guide.md` 与 `references/mermaid-spec.md`。
 
 ## 常见问题
 
 | 现象 | 原因 | 解决方式 |
-|------|------|----------|
-| 认证失败 / Token 过期 | 未登录或 Token 已失效 | 执行 `feishu-cli auth login` 重新认证（Device Flow，自动注入 offline_access） |
-| 图表降级为代码块 | Mermaid/PlantUML 语法不兼容飞书渲染引擎 | 参考 `references/doc-guide.md` 调整语法（禁花括号、禁 par 等） |
-| 超长表格导入耗时显著 | 单元格内容填充已走 `batch_update` 批量加速（v1.29+，~25-30x），主要耗时来自行 > 9 时 `insert_table_row` API **逐行串行追加**到同一 block（受单文档 3 QPS 节流，每行约 1 次 API 往返） | 属于正常行为；verbose 模式每 5 行打印进度。行数极多（200+）时建议改用电子表格（Sheet）承载 |
-| 表格被拆分为多个 block | 列 > 9 时 CLI 按列组拆分（每组 ≤ 9 列），首列作为标识在所有组中保留 | 属于正常行为，避免拆分后行无法识别 |
-| 图片上传失败 | 网络不通、图片 URL 不可访问或本地路径不存在 | 失败的图片保留占位块，命令以退出码 1 结束并在 `failures` 中给出明细；修正后用 `doc media-insert` 单独补图 |
-| 文档创建成功但无法编辑 | 未按 owner 配置添加权限 | 设置 `FEISHU_OWNER_EMAIL` 后执行 `perm add`；仅当 `transfer_ownership=true` 时再执行 `perm transfer-owner` |
+|---|---|---|
+| 认证失败 / Token 无效 | App 凭证错误，或显式传入的 User Token 失效 | 检查 App 凭证；User 身份按 feishu-cli-platform 指引重新登录 |
+| 图表降级为代码块 | 图表类型不受支持、语法错误或服务端持续报错 | 按 doc-guide / mermaid-spec 调整后，用 `content-update` 替换该代码块，或改用 `board import` 单独导入 |
+| 超长表格导入耗时显著 | 行 > 9 时逐行追加到同一 block，受单文档写入限流（约 3 次/秒） | 正常行为；200+ 行的数据改用 Sheet |
+| 表格被拆分为多个 block | 列 > 9 时按列组拆分 | 正常行为，首列在每组保留以便对照 |
+| 图片上传失败 | 网络不通、图片 URL 不可访问或本地路径不存在 | 命令以退出码 1 结束并在 `failures` 中给出明细；修正后用 `doc media-insert` 补图 |
+| `<callout>` / `<grid>` 变成普通文字 | 块级标签与内容写在同一行 | 开标签独占一行、内容另起一行；分栏改用 `content-update` |
+| 文档创建成功但用户无法编辑 | 未按 owner 配置授权（Bot 自动授权只覆盖当前 CLI 登录用户） | 按 [新建文档授权流程](../write/workflow.md#新建文档) 读取 `owner_email` 后 `perm add`；仅 `transfer_ownership=true` 时转移所有权 |
