@@ -8,7 +8,7 @@
 Step 1: whiteboard-cli 翻译 SVG → 节点 JSON
 Step 2: 修 z_index（按 JSON 数组顺序，画家算法 - 修陷阱 1）
 Step 3: 修剪 viewBox 溢出节点（避免"半截楼" - 修陷阱 2）
-Step 4: 分批 create-notes 上传（每批 300，间隔 0.3s）
+Step 4: 分批 create-notes 上传（每批 300，间隔 0.3s；每批带确定性 client_token，重跑幂等）
 Step 5: 验证 + 报告
 
 依赖
@@ -28,10 +28,11 @@ Step 5: 验证 + 报告
     0 - 成功
     1 - whiteboard-cli 未安装或不可用
     2 - SVG 解析失败
-    3 - 上传或回读验证未完成（应先核对画板，勿直接重传）
+    3 - 上传或回读验证未完成（先回读核对；补传时原样重跑本命令，已落地的批次不会重复创建）
 """
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -165,6 +166,7 @@ def step3_trim_overflow(nodes, vw, vh, keep_overflow, min_x=0.0, min_y=0.0):
     trimmed = 0
     max_x, max_y = min_x + vw, min_y + vh
     for node in nodes:
+        clipped = False
         x = float(node.get("x", 0) or 0)
         y = float(node.get("y", 0) or 0)
         w = float(node.get("width", 0) or 0)
@@ -179,13 +181,13 @@ def step3_trim_overflow(nodes, vw, vh, keep_overflow, min_x=0.0, min_y=0.0):
             node["x"] = min_x
             node["width"] = new_w
             x, w = min_x, new_w
-            trimmed += 1
+            clipped = True
         if y < min_y:
             new_h = max(1.0, h + y - min_y)
             node["y"] = min_y
             node["height"] = new_h
             y, h = min_y, new_h
-            trimmed += 1
+            clipped = True
         # 右/下越界
         if x + w > max_x:
             # svg 节点的 svg_code 内部坐标与节点 width 绑定，截断会扭曲渲染 → 直接删
@@ -197,7 +199,7 @@ def step3_trim_overflow(nodes, vw, vh, keep_overflow, min_x=0.0, min_y=0.0):
                 removed += 1
                 continue
             node["width"] = new_w
-            trimmed += 1
+            clipped = True
         if y + h > max_y:
             if node.get("type") == "svg":
                 removed += 1
@@ -207,6 +209,8 @@ def step3_trim_overflow(nodes, vw, vh, keep_overflow, min_x=0.0, min_y=0.0):
                 removed += 1
                 continue
             node["height"] = new_h
+            clipped = True
+        if clipped:
             trimmed += 1
         kept.append(node)
     info(f"保留 {len(kept)}，删除 {removed} 个完全溢出节点，截断 {trimmed} 个边缘节点")
@@ -226,8 +230,18 @@ def parse_create_notes_response(stdout):
         return None
 
 
+def batch_client_token(board_id, chunk):
+    """按画板 ID + 本批节点内容生成确定性 client_token。
+
+    同一 SVG 重跑时每批 token 不变：服务端对已落地的批次直接返回首次创建的节点 ID，
+    只有上次没落地的批次会真正创建，避免整批重传导致节点翻倍（陷阱 3）。
+    """
+    payload = board_id + "\n" + json.dumps(chunk, sort_keys=True, ensure_ascii=False)
+    return "svg2board-" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+
+
 def step4_upload(nodes, board_id, feishu_cli, batch, interval):
-    """分批 create-notes 上传。"""
+    """分批 create-notes 上传（每批带确定性 client_token，重跑幂等）。"""
     step(4, f"分批上传（batch={batch} interval={interval}s）")
     if batch <= 0:
         fail("--batch 必须大于 0", 2)
@@ -246,7 +260,8 @@ def step4_upload(nodes, board_id, feishu_cli, batch, interval):
             json.dump(chunk, tmp)
             tmp_path = tmp.name
         try:
-            rc, out, err = run([feishu_cli, "board", "create-notes", board_id, tmp_path, "-o", "json"])
+            rc, out, err = run([feishu_cli, "board", "create-notes", board_id, tmp_path, "-o", "json",
+                                "--client-token", batch_client_token(board_id, chunk)])
             if rc != 0:
                 info(f"✗ 批 {i}-{i+len(chunk)} 失败: rc={rc} {err.strip()[:160]}")
                 n_fail += len(chunk)
@@ -260,13 +275,13 @@ def step4_upload(nodes, board_id, feishu_cli, batch, interval):
                 n_fail += len(chunk)
                 failed_batches.append((i, i+len(chunk)))
                 info(f"✗ 批 {i}-{i+len(chunk)} 结果不确定：输出无法解析或 count 无效；"
-                     "请回读画板核对，未自动重传")
+                     "请回读画板核对，未自动重传（补传时原样重跑本命令）")
             elif cnt != len(chunk):
                 n_ok += cnt
                 n_fail += len(chunk) - cnt
                 failed_batches.append((i, i+len(chunk)))
                 info(f"✗ 批 {i}-{i+len(chunk)} 创建不完整：确认 {cnt}/{len(chunk)} 个；"
-                     "请回读画板核对，未自动重传")
+                     "请回读画板核对，未自动重传（补传时原样重跑本命令）")
             else:
                 n_ok += cnt
                 info(f"✓ 批 {i}-{i+len(chunk)} 上传 {len(chunk)}")
@@ -364,14 +379,14 @@ def main():
     elapsed = time.time() - t0
     status = "未完成" if failed_batches or not verified else "完成"
     print(f"\n========== {status}（{elapsed:.1f}s）==========")
-    print(f"画板：https://feishu.cn/wiki/wikcn ⟂ 或 docx 嵌入位置")
     print(f"节点：已确认 {n_ok} 个独立可编辑节点落到 {args.board_id}")
 
     if failed_batches:
         print(f"\n⚠ {len(failed_batches)} 批失败、不完整或结果不确定：{failed_batches}；"
-              "请先回读核对，不要直接整批重传")
+              "请先回读核对，不要直接整批重传。补传时用同一 SVG、同一画板原样重跑本命令："
+              "每批 client_token 不变，已落地的批次直接返回原节点，不会翻倍")
     if not verified:
-        print("\n⚠ 回读验证未完成；请先核对已落地节点，不要直接整批重传")
+        print("\n⚠ 回读验证未完成；请先核对已落地节点，不要直接整批重传（原样重跑本命令是幂等的）")
     if failed_batches or not verified:
         sys.exit(3)
 
