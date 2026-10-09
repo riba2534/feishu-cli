@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/riba2534/feishu-cli/internal/registry"
@@ -71,7 +72,8 @@ var doctorCmd = &cobra.Command{
 
 退出码：
   0 = 全部通过（或仅 warn）
-  1 = 至少一项 fail`,
+  1 = 至少一项 fail
+  2 = 用法错误（如 --only 含未知检查名）`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if doctorOffline {
 			registry.DisableRemoteForProcess()
@@ -198,11 +200,11 @@ func parseOnly(s string) (map[string]bool, error) {
 			valid = append(valid, k)
 		}
 		sort.Strings(valid)
-		return nil, fmt.Errorf("--only 包含未知 check 名: %s（合法值: %s）",
+		return nil, clierr.Usagef("--only 包含未知 check 名: %s（合法值: %s）",
 			strings.Join(bad, ", "), strings.Join(valid, ", "))
 	}
 	if len(m) == 0 {
-		return nil, fmt.Errorf("--only 为空（去除空白后）")
+		return nil, clierr.Usagef("--only 为空（去除空白后）")
 	}
 	return m, nil
 }
