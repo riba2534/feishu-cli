@@ -58,8 +58,14 @@
 - `<cite type="citation"><a href="URL" url-type="5">标题</a></cite>`：参考文献容器，只含多个 `<a>`（实测）。
   `url-type`：`5`（网页，须在 `<a></a>` 中写标题）、`1`（Docx）、`6`（妙记）、`12`（多维表格）、`13`（电子表格），后四种可留空。
 - `<whiteboard>`：画板，`type` 与 `token` 二选一：
-  - `type="mermaid" | "plantuml" | "svg"` 时在标签内直接写源码（三种均实测），如
-    `<whiteboard type="mermaid">flowchart LR\n  A --> B</whiteboard>`；`type="blank"` 新建空白画板（实测）。
+  - `type="mermaid" | "plantuml" | "svg"` 时在标签内直接写源码，源码中的换行原样保留（三种均实测）；`type="blank"` 新建空白画板（实测）：
+
+    ```xml
+    <whiteboard type="mermaid">flowchart LR
+      A[草稿] --> B{parse 通过?}
+      B -->|是| C[doc create]</whiteboard>
+    ```
+
   - `token="WHITEBOARD_TOKEN"` 复制已有画板（实测；官方写法 `src=` 在本项目所连服务端报 `degrade_code=5004`）。
   - 官方的 `path="@./diagram.svg"` 文件写法本项目**暂不支持**（服务端报 `degrade_code=5002`），把文件内容内联到标签内。
   - 复杂图表、需要精确布局或后续编辑的画板，按 `feishu-cli-visual` 的 board 工作流制作。

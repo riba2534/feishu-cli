@@ -9,7 +9,8 @@
 - `<bookmark name="示例站点" href="https://example.com"></bookmark>`：网页书签卡片（实测）。
 - `<button action="OpenLink" src="https://example.com" background-color="blue">操作按钮</button>`：行内按钮（实测 `OpenLink`）。
   `action` 还可为 `DuplicatePage`、`FollowPage`；可选 `background-color`、`src`。
-- `<time expire-time="1775916000000" notify-time="1775912400000" should-notify="false">提醒</time>`：日期提醒，使用毫秒时间戳（实测）。
+- `<time expire-time="1775916000000" notify-time="1775912400000" should-notify="false">提醒</time>`：日期提醒，使用毫秒时间戳（实测；
+  标签内的文字回读时作为普通文本跟在提醒之后，提醒本身显示日期）。
 - `<sheet type="blank"/>`：在文档中新建空白电子表格（实测）；`<sheet sheet-id="SHEET_ID" token="SPREADSHEET_TOKEN"/>` 复制已有表格（未实测）。
   需要写入单元格时按 `feishu-cli-data` 的 sheet 工作流操作。
 - `<task task-id="TASK_GUID"/>`：挂载任务，`task-id` 为任务 GUID（未实测）。
