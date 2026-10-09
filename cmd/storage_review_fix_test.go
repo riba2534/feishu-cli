@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -94,5 +95,31 @@ func TestFileVersionRevertHelpPointsToVersionHistory(t *testing.T) {
 	c, _, err := rootCmd.Find([]string{"drive", "version-history"})
 	if err != nil || c.Name() != "version-history" || c.Flags().Lookup("file-token") == nil {
 		t.Fatalf("drive version-history --file-token 不存在: %v", err)
+	}
+}
+
+// TestDeleteTaskFailedErrorHintsUseRealFlags 异步删除失败的提示命令必须能直接执行：
+// drive inspect 只接受 --url，不接受位置参数。
+func TestDeleteTaskFailedErrorHintsUseRealFlags(t *testing.T) {
+	base := errors.New("删除任务失败: status=fail")
+	userHint := deleteTaskFailedError(base, "user").Error()
+	if !strings.Contains(userHint, "feishu-cli drive inspect --url <token>") || strings.Contains(userHint, "drive inspect <token>") {
+		t.Fatalf("user 身份提示应为 drive inspect --url <token>: %s", userHint)
+	}
+	if !errors.Is(deleteTaskFailedError(base, "user"), base) {
+		t.Fatal("提示应包裹原错误")
+	}
+	inspect, _, err := rootCmd.Find([]string{"drive", "inspect"})
+	if err != nil || inspect.Flags().Lookup("url") == nil {
+		t.Fatalf("drive inspect --url 不存在: %v", err)
+	}
+
+	botHint := deleteTaskFailedError(base, "bot").Error()
+	if !strings.Contains(botHint, "feishu-cli perm list <token> --doc-type <type> --as user") {
+		t.Fatalf("bot 身份提示不对: %s", botHint)
+	}
+	perm, _, err := rootCmd.Find([]string{"perm", "list"})
+	if err != nil || perm.Flags().Lookup("doc-type") == nil || perm.InheritedFlags().Lookup("as") == nil {
+		t.Fatalf("perm list --doc-type/--as 不存在: %v", err)
 	}
 }
