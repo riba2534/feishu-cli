@@ -1,3 +1,5 @@
+// 部分实现改编自 larksuite/cli（MIT License, Copyright (c) 2026 Lark Technologies Pte. Ltd.）
+
 package cmd
 
 import (
