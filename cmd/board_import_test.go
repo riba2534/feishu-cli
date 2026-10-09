@@ -159,22 +159,55 @@ func TestBoardExportCodeSource(t *testing.T) {
 	if len(blocks) != 2 || blocks[0].NodeID != "t1:2" || blocks[0].Syntax != "mermaid" || blocks[1].Syntax != "plantuml" {
 		t.Fatalf("blocks = %+v", blocks)
 	}
-	if err := exportBoardDiagramSource(nodes, "", ""); err == nil || !clierr.HasKind(err, clierr.KindUsage) || !strings.Contains(err.Error(), "--node-id") {
+	if err := exportBoardDiagramSource(nodes, "", "", false); err == nil || !clierr.HasKind(err, clierr.KindUsage) || !strings.Contains(err.Error(), "--node-id") {
 		t.Fatalf("多块未指定 --node-id 应用法错误: %v", err)
 	}
-	out, err := captureAppsStdout(t, func() error { return exportBoardDiagramSource(nodes, "t1:2", "") })
+	out, err := captureAppsStdout(t, func() error { return exportBoardDiagramSource(nodes, "t1:2", "", false) })
 	if err != nil || out != "graph TD\nA-->B\n" {
 		t.Fatalf("stdout = %q, err=%v", out, err)
 	}
 	dir := t.TempDir()
-	if _, err := captureAppsStdout(t, func() error { return exportBoardDiagramSource(nodes, "t1:4", dir+"/diagram") }); err != nil {
+	if _, err := captureAppsStdout(t, func() error { return exportBoardDiagramSource(nodes, "t1:4", dir+"/diagram", false) }); err != nil {
 		t.Fatal(err)
 	}
 	if b, err := os.ReadFile(dir + "/diagram.puml"); err != nil || !strings.Contains(string(b), "@startuml") {
 		t.Fatalf("应按语法补 .puml 扩展名: %v %q", err, b)
 	}
-	if err := exportBoardDiagramSource(nodes[2:3], "", ""); err == nil {
+	if err := exportBoardDiagramSource(nodes[2:3], "", "", false); err == nil {
 		t.Fatal("没有源码块应报错")
+	}
+}
+
+// TestBoardExportCodeSourceNoSilentOverwrite --source 写文件：已存在且未加 --overwrite 时报错、保留原文件；
+// 加 --overwrite 才覆盖（与 board svg-export 一致）。
+func TestBoardExportCodeSourceNoSilentOverwrite(t *testing.T) {
+	nodes, err := parseBoardExportNodes(json.RawMessage(`[{"id":"t1:2","type":"section","syntax":{"code":"graph TD\nA-->B\n","syntax_type":2}}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := t.TempDir() + "/diagram.mmd"
+	if err := os.WriteFile(path, []byte("ORIGINAL"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = captureAppsStdout(t, func() error { return exportBoardDiagramSource(nodes, "", path, false) })
+	if err == nil || !strings.Contains(err.Error(), "--overwrite") {
+		t.Fatalf("已存在文件未加 --overwrite 应报错，got %v", err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "ORIGINAL" {
+		t.Fatalf("未加 --overwrite 不应改动原文件: %q", b)
+	}
+	// 不带扩展名时按语法补 .mmd 后再判断是否存在
+	if _, err := captureAppsStdout(t, func() error { return exportBoardDiagramSource(nodes, "", strings.TrimSuffix(path, ".mmd"), false) }); err == nil {
+		t.Fatal("补扩展名后的路径已存在，也应报错")
+	}
+	if _, err := captureAppsStdout(t, func() error { return exportBoardDiagramSource(nodes, "", path, true) }); err != nil {
+		t.Fatalf("--overwrite 应覆盖: %v", err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "graph TD\nA-->B\n" {
+		t.Fatalf("--overwrite 后内容 = %q", b)
+	}
+	if boardExportCodeCmd.Flags().Lookup("overwrite") == nil {
+		t.Fatal("board export-code 应注册 --overwrite")
 	}
 }
 
@@ -204,5 +237,42 @@ func TestBoardUpdate_ClientTokenQuery(t *testing.T) {
 	}
 	if !strings.Contains(gotQuery, "client_token=fp-token-0001") || !strings.Contains(out, `"client_token": "fp-token-0001"`) {
 		t.Fatalf("query=%q out=%s", gotQuery, out)
+	}
+}
+
+// TestBoardExportCodeSVGModeNoSilentOverwrite 默认 svg 模式同样不静默覆盖已有文件。
+func TestBoardExportCodeSVGModeNoSilentOverwrite(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if mockAuthHandler(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"code":0,"data":{"nodes":[{"id":"s:1","type":"svg","svg":{"svg_code":"<svg><rect/></svg>"},"x":0,"y":0,"width":10,"height":10}]}}`)
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(setupCmdTestConfig(t, srv.URL))
+	path := t.TempDir() + "/out.svg"
+	if err := os.WriteFile(path, []byte("ORIGINAL"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(overwrite string) error {
+		resetSlidesCmdFlags(boardExportCodeCmd)
+		t.Cleanup(func() { resetSlidesCmdFlags(boardExportCodeCmd) })
+		_ = boardExportCodeCmd.Flags().Set("output-path", path)
+		_ = boardExportCodeCmd.Flags().Set("overwrite", overwrite)
+		_, err := captureAppsStdout(t, func() error { return boardExportCodeCmd.RunE(boardExportCodeCmd, []string{"wb_fp_test"}) })
+		return err
+	}
+	if err := run("false"); err == nil || !strings.Contains(err.Error(), "已存在") {
+		t.Fatalf("svg 模式已存在文件应报错: %v", err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "ORIGINAL" {
+		t.Fatalf("不应改动原文件: %q", b)
+	}
+	if err := run("true"); err != nil {
+		t.Fatalf("--overwrite 应成功: %v", err)
+	}
+	if b, _ := os.ReadFile(path); !strings.Contains(string(b), "<rect/>") {
+		t.Fatalf("--overwrite 后内容 = %q", b)
 	}
 }
