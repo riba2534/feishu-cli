@@ -134,33 +134,9 @@ func NormalizeResourceType(t string) string {
 //   - 只按 URL path 的前缀推断类型，query / fragment 中出现的 /wiki/ 等字样一律忽略；
 //   - token 取前缀后的第一个路径段，必须满足 IsSafeResourceToken。
 func ParseResourceURL(rawURL string) (ResourceRef, error) {
-	raw := strings.TrimSpace(rawURL)
-	if raw == "" {
-		return ResourceRef{}, fmt.Errorf("URL 不能为空")
-	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return ResourceRef{}, fmt.Errorf("URL 格式无效: %q", raw)
-	}
-	if u.User != nil {
-		return ResourceRef{}, fmt.Errorf("URL 不能包含用户信息 (userinfo): %q", raw)
-	}
-	hostname := strings.ToLower(u.Hostname())
-	switch strings.ToLower(u.Scheme) {
-	case "https":
-		if !IsFeishuResourceHost(hostname) && !isLoopbackResourceHost(hostname) && !config.AllowCustomBaseURL() {
-			return ResourceRef{}, fmt.Errorf("不支持的域名 %q：仅接受飞书/Lark 文档域名（*.feishu.cn、*.larksuite.com、*.larkoffice.com）；私有化部署请开启 allow_custom_base_url", hostname)
-		}
-	case "http":
-		if !isLoopbackResourceHost(hostname) {
-			return ResourceRef{}, fmt.Errorf("文档 URL 必须使用 https 协议: %q", raw)
-		}
-	default:
-		return ResourceRef{}, fmt.Errorf("不支持的 URL 协议 %q，仅支持 https", u.Scheme)
-	}
-	lowerEscaped := strings.ToLower(u.EscapedPath())
-	if strings.Contains(lowerEscaped, "%2f") || strings.Contains(lowerEscaped, "%5c") {
-		return ResourceRef{}, fmt.Errorf("URL 路径包含非法的转义分隔符: %q", raw)
+	u, err := parseFeishuURL(rawURL)
+	if err != nil {
+		return ResourceRef{}, err
 	}
 
 	for _, m := range resourceURLPathTypes {
@@ -180,6 +156,64 @@ func ParseResourceURL(rawURL string) (ResourceRef, error) {
 		return ResourceRef{Type: m.Type, Token: token}, nil
 	}
 	return ResourceRef{}, fmt.Errorf("无法从 URL 路径 %q 识别资源类型；支持的路径前缀: %s", u.Path, SupportedResourceURLPaths())
+}
+
+// parseFeishuURL 校验并解析飞书/Lark URL（协议、域名白名单、userinfo、转义分隔符），
+// 供 ParseResourceURL 与 ParseMinuteURL 共用，保证各类资源 URL 的主机白名单一致。
+func parseFeishuURL(rawURL string) (*url.URL, error) {
+	raw := strings.TrimSpace(rawURL)
+	if raw == "" {
+		return nil, fmt.Errorf("URL 不能为空")
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return nil, fmt.Errorf("URL 格式无效: %q", raw)
+	}
+	if u.User != nil {
+		return nil, fmt.Errorf("URL 不能包含用户信息 (userinfo): %q", raw)
+	}
+	hostname := strings.ToLower(u.Hostname())
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		if !IsFeishuResourceHost(hostname) && !isLoopbackResourceHost(hostname) && !config.AllowCustomBaseURL() {
+			return nil, fmt.Errorf("不支持的域名 %q：仅接受飞书/Lark 文档域名（*.feishu.cn、*.larksuite.com、*.larkoffice.com）；私有化部署请开启 allow_custom_base_url", hostname)
+		}
+	case "http":
+		if !isLoopbackResourceHost(hostname) {
+			return nil, fmt.Errorf("文档 URL 必须使用 https 协议: %q", raw)
+		}
+	default:
+		return nil, fmt.Errorf("不支持的 URL 协议 %q，仅支持 https", u.Scheme)
+	}
+	lowerEscaped := strings.ToLower(u.EscapedPath())
+	if strings.Contains(lowerEscaped, "%2f") || strings.Contains(lowerEscaped, "%5c") {
+		return nil, fmt.Errorf("URL 路径包含非法的转义分隔符: %q", raw)
+	}
+	return u, nil
+}
+
+// minuteURLPathPrefix 妙记链接的路径前缀：https://xxx.feishu.cn/minutes/<minute_token>
+const minuteURLPathPrefix = "/minutes/"
+
+// ParseMinuteURL 从妙记链接（https://*.feishu.cn|larksuite.com|larkoffice.com/minutes/<token>）
+// 提取 minute_token。主机白名单与 ParseResourceURL 一致；token 取 /minutes/ 后的第一个路径段，
+// query / fragment 一律忽略。token 的具体格式由调用方校验。
+func ParseMinuteURL(rawURL string) (string, error) {
+	u, err := parseFeishuURL(rawURL)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(u.Path, minuteURLPathPrefix) {
+		return "", fmt.Errorf("不是妙记链接：路径 %q 应以 %s 开头（形如 https://xxx.feishu.cn/minutes/obcnxxxx）", u.Path, minuteURLPathPrefix)
+	}
+	token := u.Path[len(minuteURLPathPrefix):]
+	if i := strings.IndexByte(token, '/'); i >= 0 {
+		token = token[:i]
+	}
+	if token == "" {
+		return "", fmt.Errorf("妙记链接 %q 缺少 minute_token", u.Path)
+	}
+	return token, nil
 }
 
 // 各品牌的标准文档入口域名：服务端会把 /docx/<token> 等路径重定向到租户自己的域名。

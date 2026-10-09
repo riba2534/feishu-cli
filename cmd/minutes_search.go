@@ -35,6 +35,7 @@ var minutesSearchCmd = &cobra.Command{
   --output, -o       输出格式（json）
 
 旧参数名继续可用（已废弃）：--owner-id → --owner-ids，--start-time → --start，--end-time → --end。
+新旧参数名同时指定且取值不同时报用法错误（exit 2），不会合并。
 
 权限:
   默认 User 身份（--as user），可用 --as bot|auto 切换；需要 minutes:minutes.search:read 权限
@@ -59,8 +60,6 @@ var minutesSearchCmd = &cobra.Command{
 
 		query, _ := cmd.Flags().GetString("query")
 		keyword, _ := cmd.Flags().GetString("keyword")
-		ownerRaw, _ := cmd.Flags().GetString("owner-ids")
-		legacyOwner, _ := cmd.Flags().GetString("owner-id")
 		participantRaw, _ := cmd.Flags().GetString("participant-ids")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
@@ -81,11 +80,13 @@ var minutesSearchCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// --owner-id（旧，单值）与 --owner-ids（新，多值）合并
-		ownerList := splitAndTrim(ownerRaw)
-		if s := strings.TrimSpace(legacyOwner); s != "" {
-			ownerList = append(ownerList, s)
+		// --owner-id（旧名）与 --owner-ids（新名）：与 --start/--start-time 一致，
+		// 同时指定且取值不同时报用法错误，不再静默合并
+		ownerPicked, err := pickRenamedFlag(cmd, "owner-ids", "owner-id")
+		if err != nil {
+			return err
 		}
+		ownerList := splitAndTrim(ownerPicked)
 		participantList := splitAndTrim(participantRaw)
 
 		// 至少一个过滤条件

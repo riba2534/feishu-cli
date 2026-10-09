@@ -36,11 +36,6 @@ var vcRecordingCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := resolveVCReadIdentity(cmd)
-		if err != nil {
-			return err
-		}
-
 		meetingRaw, _ := cmd.Flags().GetString("meeting-ids")
 		calendarRaw, _ := cmd.Flags().GetString("calendar-event-ids")
 		output, _ := cmd.Flags().GetString("output")
@@ -57,14 +52,20 @@ var vcRecordingCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		calendarIDs, err := parseCSVIDs(calendarRaw, "calendar-event-ids")
+		if err != nil {
+			return err
+		}
+
+		// 本地参数校验（用法错误 exit 2）通过后再解析身份，避免被"未登录"（exit 3）遮住
+		token, err := resolveVCReadIdentity(cmd)
+		if err != nil {
+			return err
+		}
 
 		// 入口 2：通过 calendar-event-ids 反查 meeting-ids
 		var sourceCalendarEvents map[string][]string // calendar_event_id → meeting_ids
 		if calendarRaw != "" {
-			calendarIDs, err := parseCSVIDs(calendarRaw, "calendar-event-ids")
-			if err != nil {
-				return err
-			}
 			cal, err := client.GetPrimaryCalendar(token)
 			if err != nil {
 				return fmt.Errorf("获取主日历失败: %w", err)
