@@ -33,11 +33,12 @@
       "workflows": [
         "auth"
       ],
-      "prompt": "我要跑 bitable 定时任务，不想依赖个人登录；同时告诉我 vc bot 入会读取哪些 User Token 来源。",
-      "expected_output": "bitable 使用 --as bot；vc bot join/leave 只接受显式 flag，不自动读环境或 token.json。",
+      "prompt": "我要跑 bitable 定时任务，不想依赖个人登录；同时告诉我 vc bot 入会/离会会用哪种身份、会不会读取 User Token。",
+      "expected_output": "bitable 使用 --as bot；vc bot meeting-join/leave 仅支持 Bot 身份，不读取 token.json 或环境变量中的 User Token，显式传 --user-access-token 会报用法错误。",
       "expectations": [
         "Bitable 定时任务使用 --as bot",
-        "说明 vc bot join/leave 只认显式 --user-access-token"
+        "说明 vc bot meeting-join/leave 仅支持 Bot，不读取 token.json 或 FEISHU_USER_ACCESS_TOKEN",
+        "说明显式传 --user-access-token 会报用法错误（退出码 2），而不是切换为用户身份"
       ],
       "files": []
     },
