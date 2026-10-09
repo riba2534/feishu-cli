@@ -277,7 +277,7 @@ var driveExportCmd = &cobra.Command{
 			return fmt.Errorf("文件已存在: %s（使用 --overwrite 覆盖）", savedPath)
 		}
 		if err := client.DownloadExportFile(status.FileToken, savedPath, token); err != nil {
-			nextCmd := fmt.Sprintf("feishu-cli drive export-download --file-token %s --output-dir %s", status.FileToken, outputDir)
+			nextCmd := driveExportDownloadRetryCommand(status.FileToken, outputDir, fileName, token)
 			return fmt.Errorf("下载导出文件失败: %w\n可重试: %s", err, nextCmd)
 		}
 
@@ -371,6 +371,19 @@ func sanitizeExportName(title, fallback string) string {
 		name = fallback
 	}
 	return safeOutputPath(name, "")
+}
+
+// driveExportDownloadRetryCommand 构造导出文件下载失败后的重试命令。
+// 身份取本次实际使用的身份（token 非空为 user，否则 bot），不原样回显 auto：导出产物归创建任务的
+// 身份所有，auto 在重试时可能因登录态变化解析成另一身份而无权下载（与 file delete / wiki 删除的续查命令一致）。
+// 同时带上本次的文件名（export-download 默认以 file_token 命名、不带扩展名），参数按 POSIX shell 转义。
+func driveExportDownloadRetryCommand(fileToken, outputDir, fileName, token string) string {
+	identity := "bot"
+	if token != "" {
+		identity = "user"
+	}
+	return fmt.Sprintf("feishu-cli drive export-download --file-token %s --output-dir %s --file-name %s --as %s",
+		quotePOSIXShell(fileToken), quotePOSIXShell(outputDir), quotePOSIXShell(fileName), identity)
 }
 
 var driveExportDownloadCmd = &cobra.Command{

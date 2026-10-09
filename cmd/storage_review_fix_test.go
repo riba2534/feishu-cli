@@ -164,3 +164,57 @@ func TestPasswordCreate1063002HintsPublicLink(t *testing.T) {
 		t.Fatalf("1063004 应沿用通用提示: %v", err)
 	}
 }
+
+// TestDriveExportDownloadRetryCarriesIdentity 导出文件下载失败时给出的重试命令带上本次实际使用的身份，
+// 文件名与目录按 shell 转义，且命令参数在 export-download 上真实存在。
+func TestDriveExportDownloadRetryCarriesIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		flags    []string
+		wantAs   string
+		wantAuth string
+	}{
+		{"显式 --as bot", []string{"--as", "bot"}, "--as bot", "Bearer t-test-token"},
+		{"auto 解析为 User", []string{"--as", "auto", "--user-access-token", "u-fake"}, "--as user", "Bearer u-fake"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var downloadAuth string
+			newCommentPermTestServer(t, func(w http.ResponseWriter, r *http.Request, _ []byte) {
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/open-apis/drive/v1/export_tasks":
+					_, _ = fmt.Fprint(w, `{"code":0,"data":{"ticket":"tk_fake"}}`)
+				case r.URL.Path == "/open-apis/drive/v1/export_tasks/tk_fake":
+					_, _ = fmt.Fprint(w, `{"code":0,"data":{"result":{"job_status":0,"file_token":"boxFakeExport","file_name":"fp-test 报告","file_extension":"pdf","type":"docx"}}}`)
+				case r.URL.Path == "/open-apis/drive/v1/export_tasks/file/boxFakeExport/download":
+					downloadAuth = r.Header.Get("Authorization")
+					w.WriteHeader(http.StatusForbidden)
+					_, _ = fmt.Fprint(w, `{"code":1061004,"msg":"forbidden"}`)
+				default:
+					http.Error(w, "unexpected "+r.URL.Path, http.StatusNotFound)
+				}
+			})
+			outDir := filepath.Join(t.TempDir(), "out dir")
+			flags := append([]string{"--token", "doxcnFake", "--doc-type", "docx", "--file-extension", "pdf", "--output-dir", outDir}, tc.flags...)
+			_, _, err := runCmdWithFlags(t, driveExportCmd, nil, flags...)
+			if err == nil {
+				t.Fatal("下载失败应返回错误")
+			}
+			if downloadAuth != tc.wantAuth {
+				t.Fatalf("下载身份 = %q, want %q", downloadAuth, tc.wantAuth)
+			}
+			want := "可重试: feishu-cli drive export-download --file-token 'boxFakeExport' --output-dir '" + outDir + "' --file-name 'fp-test 报告.pdf' " + tc.wantAs
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("重试命令不对:\n%s\nwant 包含:\n%s", err.Error(), want)
+			}
+		})
+	}
+	dl, _, err := rootCmd.Find([]string{"drive", "export-download"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"file-token", "output-dir", "file-name", "as"} {
+		if dl.Flags().Lookup(name) == nil {
+			t.Fatalf("drive export-download 缺少 --%s", name)
+		}
+	}
+}
