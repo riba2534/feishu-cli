@@ -93,9 +93,21 @@ func TestOKRV2ContentAndBuilders(t *testing.T) {
 	if _, err := BuildOKRCommentCreate(OKRCommentCreate{TargetType: "objective", TargetID: "o1", Content: c}, ""); err == nil {
 		t.Fatal("目标评论缺选区应报错")
 	}
-	req, err = BuildOKRCommentCreate(OKRCommentCreate{TargetType: "objective", TargetID: "o1", Content: c, SelectAll: true, PlainText: "评论"}, "")
+	req, err = BuildOKRCommentCreate(OKRCommentCreate{TargetType: "objective", TargetID: "o1", Content: OKRV2TextContent("评论"), SelectAll: true}, "")
 	if err != nil || req.Body["selected_text"] != "**" {
 		t.Fatalf("select-all 应生成通配选区: %+v %v", req, err)
+	}
+	// --content-json 传入的 ContentBlock 同样按结构取文本（含 mention），不能得到空选区
+	raw, err := ParseOKRV2Content("", `{"blocks":[{"block_element_type":"paragraph","paragraph":{"elements":[`+
+		`{"paragraph_element_type":"textRun","text_run":{"text":"看下"}},`+
+		`{"paragraph_element_type":"mention","mention":{"user_id":"ou_x"}}]}},`+
+		`{"block_element_type":"paragraph","paragraph":{"elements":[{"paragraph_element_type":"textRun","text_run":{"text":"口径"}}]}}]}`, "content")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err = BuildOKRCommentCreate(OKRCommentCreate{TargetType: "objective", TargetID: "o1", Content: raw, SelectAll: true}, "")
+	if want := strings.Repeat("*", len([]rune("看下 @{ou_x} 口径"))); err != nil || req.Body["selected_text"] != want {
+		t.Fatalf("--content-json + select-all 应按结构生成通配选区 %q: %+v %v", want, req.Body["selected_text"], err)
 	}
 	if _, err := BuildOKRCommentCreate(OKRCommentCreate{TargetType: "cycle", TargetID: "c1", Content: c, SelectedText: "x"}, ""); err == nil {
 		t.Fatal("周期评论不支持选区")

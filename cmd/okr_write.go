@@ -318,7 +318,6 @@ var okrCommentCreateCmd = &cobra.Command{
 			SelectedText: flagString(cmd, "selected-text"),
 			SelectAll:    selectAll,
 			RefCommentID: flagString(cmd, "ref-comment-id"),
-			PlainText:    flagString(cmd, "content"),
 		}, flagString(cmd, "user-id-type"))
 		if err != nil {
 			return clierr.Usage(err)

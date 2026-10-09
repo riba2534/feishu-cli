@@ -591,7 +591,8 @@ feishu-cli search apps "审批"
 # 搜索文档和 Wiki
 feishu-cli search docs "产品需求"
 feishu-cli search docs "季度报告" --docs-types doc,sheet
-feishu-cli search docs "技术方案" --count 10 --offset 0
+feishu-cli search docs "技术方案" --count 10
+feishu-cli search docs "技术方案" --count 10 --page-token <上一页输出的 page_token>  # 翻页（--offset 已不支持）
 
 # 也可以手动指定 Token
 feishu-cli search docs "产品需求" --user-access-token <token>
@@ -872,7 +873,7 @@ feishu-cli drive pull   --folder-token fldxxx --local-dir ./mirror --if-exists o
 feishu-cli drive push   --folder-token fldxxx --local-dir ./mirror --if-exists skip
 feishu-cli drive pull   --folder-token fldxxx --local-dir ./mirror --delete-local --yes  # 高危：双确认
 
-# 云盘 v2 搜索（扁平 filter；search docs 走 v1，drive search 走 v2）
+# 云盘 v2 搜索（与 search docs 同一 Search v2 端点，drive search 暴露更多 filter 与排序）
 feishu-cli drive search --query "季度报告" --doc-types DOC,SHEET --sort edit_time
 feishu-cli drive search --folder-tokens fldxxx --only-title
 

@@ -159,7 +159,6 @@ type OKRCommentCreate struct {
 	SelectedText string
 	SelectAll    bool
 	RefCommentID string
-	PlainText    string // --select-all 时用于生成通配选区
 }
 
 // BuildOKRCommentCreate 构造评论请求：目标/关键结果评论必须且只能指定选区（--selected-text / --select-all / --ref-comment-id 之一）
@@ -196,12 +195,40 @@ func BuildOKRCommentCreate(c OKRCommentCreate, userIDType string) (*OKRWriteRequ
 		body["selected_text"] = c.SelectedText
 	}
 	if c.SelectAll {
-		body["selected_text"] = strings.Repeat("*", len([]rune(c.PlainText)))
+		// 与官方 ToSemiPlain 一致：按 content 结构提取纯文本（--content 与 --content-json 同口径）
+		body["selected_text"] = strings.Repeat("*", len([]rune(okrContentPlainText(c.Content))))
 	}
 	if c.RefCommentID != "" {
 		body["ref_comment_id"] = c.RefCommentID
 	}
 	return &OKRWriteRequest{Method: "POST", Path: "/open-apis/okr/v2/comments", Query: map[string]any{"user_id_type": okrUserIDType(userIDType)}, Body: body}, nil
+}
+
+// okrContentPlainText 提取 v2 ContentBlock 段落中的文本：text_run 取原文，mention 记为 " @{user_id} "，
+// 段落之间不加分隔（与官方 ContentBlock.ToSemiPlain 相同），用于 --select-all 生成等长通配选区。
+func okrContentPlainText(content map[string]any) string {
+	var sb strings.Builder
+	blocks, _ := content["blocks"].([]any)
+	for _, b := range blocks {
+		block, _ := b.(map[string]any)
+		para, _ := block["paragraph"].(map[string]any)
+		elems, _ := para["elements"].([]any)
+		for _, e := range elems {
+			elem, _ := e.(map[string]any)
+			if tr, ok := elem["text_run"].(map[string]any); ok {
+				if t, ok := tr["text"].(string); ok {
+					sb.WriteString(t)
+				}
+				continue
+			}
+			if m, ok := elem["mention"].(map[string]any); ok {
+				if id, ok := m["user_id"].(string); ok {
+					sb.WriteString(" @{" + id + "} ")
+				}
+			}
+		}
+	}
+	return sb.String()
 }
 
 func okrUserIDType(t string) string {
