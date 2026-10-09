@@ -6,6 +6,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/textutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,13 +38,14 @@ var minutesCmd = &cobra.Command{
 }
 
 var minutesGetCmd = &cobra.Command{
-	Use:   "get <minute_token>",
+	Use:   "get <minute_token|妙记链接>",
 	Short: "获取妙记信息（可选择获取 AI 产物）",
 	Long: `通过妙记 Token 获取妙记基础信息，包括标题、链接、创建时间、时长等，
 并可按需选择获取 AI 产物（对齐官方 minutes +detail 的选择性获取）。
 
 参数:
-  minute_token  妙记 Token
+  minute_token  妙记 Token，或妙记链接（https://xxx.feishu.cn/minutes/<token>，
+                也接受 *.larksuite.com / *.larkoffice.com，自动提取末段 token）
 
 AI 产物（按需选择，可组合）:
   --summary         AI 摘要（summary）
@@ -62,6 +64,7 @@ AI 产物（按需选择，可组合）:
   -o, --output json 以 JSON 格式输出
 
 无权限（2091005）时会提示用 minutes apply-permission 申请查看权限（申请前先征得用户同意）。
+已选择 AI 产物但产物接口失败时，仍输出妙记基础信息（JSON 带 artifacts_error），并以非零退出码结束。
 
 权限:
   - 默认 User 身份（--as user），可用 --as bot|auto 切换
@@ -70,6 +73,7 @@ AI 产物（按需选择，可组合）:
 
 示例:
   feishu-cli minutes get obcnxxxx
+  feishu-cli minutes get https://example.feishu.cn/minutes/obcnxxxx --summary
   feishu-cli minutes get obcnxxxx --summary --todo -o json
   feishu-cli minutes get obcnxxxx --transcript --output-dir ./notes
   feishu-cli minutes get obcnxxxx --wait-ready --wait-timeout 600`,
@@ -79,8 +83,8 @@ AI 产物（按需选择，可组合）:
 			return err
 		}
 
-		minuteToken := args[0]
-		if err := ensureMinuteToken(minuteToken); err != nil {
+		minuteToken, err := normalizeMinuteTokenInput(args[0])
+		if err != nil {
 			return err
 		}
 
@@ -117,16 +121,21 @@ AI 产物（按需选择，可组合）:
 				return client.GetMinuteArtifacts(minuteToken, token)
 			})
 			if artErr != nil {
+				// 部分失败：先完整输出已取到的妙记基础信息，再以非零退出码结束。
+				// 错误链保留原分类（如缺 scope / 无权限为鉴权类 exit 3），其余为一般错误 exit 1。
 				artErr = decorateMinutePermissionError(artErr, minuteToken)
 				if output == "json" {
-					return printJSON(map[string]any{
+					if err := printJSON(map[string]any{
 						"minute":          json.RawMessage(minuteData),
 						"artifacts_error": artErr.Error(),
-					})
+					}); err != nil {
+						return err
+					}
+				} else {
+					printMinuteText(minuteData, nil)
+					fmt.Printf("\nAI 产物获取失败: %v\n", artErr)
 				}
-				printMinuteText(minuteData, nil)
-				fmt.Printf("\nAI 产物获取失败: %v\n", artErr)
-				return nil
+				return fmt.Errorf("妙记基础信息已输出，但 AI 产物获取失败: %w", artErr)
 			}
 			artifacts, err = selectMinuteArtifacts(artData, sel, minuteToken, minuteTitle(minuteData), outputDir, overwrite)
 			if err != nil {
@@ -308,6 +317,25 @@ func isMinuteProcessing(err error) bool {
 	return client.HasAPICode(err, minuteProcessingCodeNum)
 }
 
+// formatMinuteDuration 把妙记 duration（毫秒字符串）转为人类可读时长，如 3723000 → 1h02m03s；
+// 无法解析时原样返回。仅用于文本输出，JSON 保持服务端原值。
+func formatMinuteDuration(ms string) string {
+	v, err := strconv.ParseInt(strings.TrimSpace(ms), 10, 64)
+	if err != nil || v < 0 {
+		return ms
+	}
+	total := v / 1000
+	h, m, sec := total/3600, total%3600/60, total%60
+	switch {
+	case h > 0:
+		return fmt.Sprintf("%dh%02dm%02ds", h, m, sec)
+	case m > 0:
+		return fmt.Sprintf("%dm%02ds", m, sec)
+	default:
+		return fmt.Sprintf("%ds", sec)
+	}
+}
+
 // printMinuteText 文本格式化输出妙记信息与已选择的 AI 产物
 func printMinuteText(minuteData json.RawMessage, artifacts map[string]any) {
 	var parsed struct {
@@ -346,7 +374,7 @@ func printMinuteText(minuteData json.RawMessage, artifacts map[string]any) {
 		fmt.Printf("  创建者:    %s\n", m.OwnerID)
 	}
 	if m.Duration != "" {
-		fmt.Printf("  时长:      %s\n", m.Duration)
+		fmt.Printf("  时长:      %s\n", formatMinuteDuration(m.Duration))
 	}
 
 	if artifacts == nil {

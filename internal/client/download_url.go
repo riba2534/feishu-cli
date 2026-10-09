@@ -21,6 +21,9 @@ type DownloadOptions struct {
 	Filename  string        // 强制指定文件名；为空时从响应头解析
 	Overwrite bool          // 是否覆盖已存在文件
 	Timeout   time.Duration // 整个下载的超时；<=0 时不设置（由调用方用 ctx 控制）
+	// UniqueName 可选：文件名确定后、覆盖检查前调用，返回实际使用的文件名。
+	// 批量下载用它在同一批次内去重（如 a.mp4 → a-2.mp4），避免后一个文件覆盖本批次已写出的文件。
+	UniqueName func(filename string) string
 }
 
 // DownloadResult 下载结果
@@ -75,6 +78,11 @@ func DownloadFromPresignedURL(presignedURL string, defaultFallbackName string, o
 	}
 	if filename == "" {
 		filename = "download"
+	}
+	if opts.UniqueName != nil {
+		if alt := sanitizeFilename(opts.UniqueName(filename)); alt != "" {
+			filename = alt
+		}
 	}
 
 	// 输出目录
