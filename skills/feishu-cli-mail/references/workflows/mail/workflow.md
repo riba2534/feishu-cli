@@ -81,7 +81,7 @@ feishu-cli mail thread --thread-id <thread_id>
   `--list-labels` 只列自定义标签。
 - **正文解码**：`message/messages/thread` 的 `body_plain_text/body_html/body_preview` 默认从 base64url 解码为明文
   （`body_plain_text` 额外清除控制字符）；需要 API 原始编码值时加 `--raw-body`。文本模式输出邮件头 + 纯文本正文。
-- **`--format`**：`full`（默认）/ `plain_text_full`。`message --format raw` 虽出现在帮助里，但服务端拒绝（99992402），不要使用。
+- **`--format`**：`full`（默认）/ `plain_text_full` / `metadata`（只返回元信息，不含正文）；其他取值（如 `raw`）本地报用法错误（退出码 2）。
 - **批量读取**：`messages` 按 20 条一批自动分块并保序，取不到的 ID 列在 `unavailable_message_ids`；已有多个 ID 时用它而不是循环调用 `message`。
   `thread` 按时间升序输出。
 

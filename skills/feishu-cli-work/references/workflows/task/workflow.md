@@ -83,7 +83,7 @@ feishu-cli tasklist delete <tasklist_guid>
 - 命令名是 `task-add` 和 `task-remove`（不存在 `add-task` / `remove-task`）。
 - `tasklist member` 仅支持 `add` / `remove`（角色 `editor` / `viewer`），没有 `list` 子命令。
 - `tasklist search` 至少传 `--query` 或 `--creator` 之一。
-- 实测 `tasklist list` 在部分 `--page-size`（含默认值）下稳定返回 1470500（服务端内部错误），换一个 `--page-size`（如 100）可绕过。
+- `tasklist list` 默认显式传 `page_size=100`（取值 1–100，越界为用法错误）；此前不传 page_size 时服务端会稳定返回 1470500。
 
 ## 坑点与错误处理
 

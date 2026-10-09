@@ -232,7 +232,7 @@ feishu-cli calendar update-event <calendar_id> <master_event_id> --rrule "FREQ=W
    被移除的参与人仍会出现在 `attendee list` 中，`rsvp_status=removed`。
 5. **分享链接**：`get-event --share-link` / `event-share` 返回 `share_link`；`get-event -o json` 仍带 `app_link` 字段，
    但它只能本人打开，不要拿来分享或自行拼接。
-6. **`calendar list --page-size` 最小 50**（服务端校验，传更小值报 99992402），默认就是 50。
+6. **`calendar list --page-size` 取值 50–1000**（服务端最小 50），默认 50；越界在本地报用法错误（退出码 2）。
 
 ## 权限速查
 
