@@ -17,8 +17,10 @@ import (
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -461,20 +463,20 @@ JSON 输出 permission_grant；导入到已有文档（--document-id）或 User 
 			return err
 		}
 
-		// 检查文件大小限制（100MB）
+		// 检查文件大小限制（100MB）；敏感目录、不存在、是目录、无权限读取均为用法错误（退出码 2）
 		const maxFileSize = 100 * 1024 * 1024
-		fileInfo, err := os.Stat(filePath)
+		fileInfo, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("获取文件信息失败: %w", err)
+			return err
 		}
 		if fileInfo.Size() > maxFileSize {
-			return fmt.Errorf("文件超过最大限制 %d MB", maxFileSize/(1024*1024))
+			return clierr.Usagef("文件超过最大限制 %d MB", maxFileSize/(1024*1024))
 		}
 
 		// Read markdown file
-		content, err := os.ReadFile(filePath)
+		content, err := safefile.ReadInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("读取文件失败: %w", err)
+			return err
 		}
 		if err := validateMarkdownEncoding(content); err != nil {
 			return err
@@ -1787,6 +1789,15 @@ func resolveMediaSource(source, basePath, defaultExt string) (string, string, fu
 		localPath = filepath.Join(basePath, localPath)
 	}
 
+	// Markdown 引用的本地文件同样是用户输入：按敏感目录拒绝名单校验（按绝对路径判断，
+	// 允许 ../images/a.png 这类相对 Markdown 目录的正常引用），失败计入该图片/附件的 failures
+	absPath, err := filepath.Abs(localPath)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("解析本地文件路径失败 %s: %w", localPath, err)
+	}
+	if err := safefile.ValidateInputPath(absPath); err != nil {
+		return "", "", nil, err
+	}
 	if _, err := os.Stat(localPath); err != nil {
 		return "", "", nil, fmt.Errorf("图片文件不存在: %s", localPath)
 	}

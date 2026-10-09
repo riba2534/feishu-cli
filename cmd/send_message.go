@@ -13,6 +13,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -332,7 +333,8 @@ func resolveLocalPath(path, basePath string) (string, error) {
 }
 
 func validateLocalIMImage(path string) error {
-	info, err := os.Stat(path)
+	// 图片会上传到飞书：敏感目录、不存在、是目录、无权限读取均为用法错误
+	info, err := safefile.StatInputFile(path)
 	if err != nil {
 		return err
 	}

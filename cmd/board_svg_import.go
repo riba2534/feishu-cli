@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -67,7 +66,7 @@ board import --syntax svg（服务端把 SVG 拆成原生节点）或 svg_to_boa
 		if sourceType == "content" {
 			svgCode = source
 		} else {
-			data, err := os.ReadFile(source)
+			data, err := readLocalInputFile(source)
 			if err != nil {
 				return fmt.Errorf("读取 SVG 文件失败: %w", err)
 			}

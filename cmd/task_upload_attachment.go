@@ -7,6 +7,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -56,9 +57,10 @@ var taskUploadAttachmentCmd = &cobra.Command{
 			resourceType = "task"
 		}
 
-		stat, err := os.Stat(filePath)
+		// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
+		stat, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("读取文件失败: %w", err)
+			return fmt.Errorf("--file 无效: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "上传附件: %s (%d bytes) → task=%s\n", filepath.Base(filePath), stat.Size(), taskGuid)
 

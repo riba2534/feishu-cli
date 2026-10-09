@@ -9,6 +9,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -91,6 +92,12 @@ var markdownDiffCmd = &cobra.Command{
 		if oerr != nil {
 			return oerr
 		}
+		// 本地文件敏感目录先于一切网络请求拒绝（dry-run 不要求文件存在）
+		if localFile != "" {
+			if err := safefile.ValidateInputPath(localFile); err != nil {
+				return err
+			}
+		}
 
 		if dryRun {
 			var steps []dryRunStep
@@ -125,6 +132,12 @@ var markdownDiffCmd = &cobra.Command{
 				extra["local_file"] = localFile
 			}
 			return printDryRunPlan(cmd, "Download the requested Markdown content and compute a unified diff locally", extra, steps)
+		}
+		// 非 dry-run：本地文件不存在 / 是目录 / 无权限读取在下载远端内容之前报用法错误
+		if localFile != "" {
+			if _, err := safefile.StatInputFile(localFile); err != nil {
+				return err
+			}
 		}
 
 		token, err := resolveIdentityToken(cmd)

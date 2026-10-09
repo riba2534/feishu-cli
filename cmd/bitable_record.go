@@ -568,7 +568,7 @@ func loadBatchDeleteRecordIDs(csv, fromFile string) ([]string, error) {
 		ids = append(ids, splitAndTrim(csv)...)
 	}
 	if fromFile != "" {
-		data, err := os.ReadFile(fromFile)
+		data, err := readLocalInputFile(fromFile)
 		if err != nil {
 			return nil, fmt.Errorf("读取 --from-file 失败: %w", err)
 		}

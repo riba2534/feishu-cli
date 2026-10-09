@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -130,7 +131,7 @@ func (input messageContentInput) validate() error {
 			return fmt.Errorf("--content 必须是有效 JSON")
 		}
 	case input.contentFile != "":
-		data, err := os.ReadFile(input.contentFile)
+		data, err := readLocalInputFile(input.contentFile)
 		if err != nil {
 			return fmt.Errorf("读取内容文件失败: %w", err)
 		}
@@ -241,9 +242,10 @@ func validateFileInput(flagName, value, label string) error {
 	if err != nil {
 		return fmt.Errorf("解析 %s 路径失败: %w", flagName, err)
 	}
-	info, err := os.Stat(path)
+	// 文件会上传到飞书：敏感目录、不存在、是目录、无权限读取均为用法错误
+	info, err := safefile.StatInputFile(path)
 	if err != nil {
-		return fmt.Errorf("%s %s 不可用 %s: %w", flagName, label, path, err)
+		return fmt.Errorf("%s %s 不可用: %w", flagName, label, err)
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%s %s 不是普通文件: %s", flagName, label, path)
@@ -261,7 +263,7 @@ func (input messageContentInput) resolve() (string, string, error) {
 
 	switch {
 	case input.contentFile != "":
-		data, err := os.ReadFile(input.contentFile)
+		data, err := readLocalInputFile(input.contentFile)
 		if err != nil {
 			return "", "", fmt.Errorf("读取内容文件失败: %w", err)
 		}

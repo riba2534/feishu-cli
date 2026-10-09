@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -87,12 +89,13 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
 			return err
 		}
 
-		stat, err := os.Stat(filePath)
+		// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
+		stat, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("读取文件失败: %w", err)
+			return fmt.Errorf("--file 无效: %w", err)
 		}
 		if !stat.Mode().IsRegular() {
-			return fmt.Errorf("--file 必须指向普通文件")
+			return clierr.Usagef("--file 必须指向普通文件")
 		}
 
 		ext := driveImportFileExtension(filePath, "")

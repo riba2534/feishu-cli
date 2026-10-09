@@ -10,6 +10,7 @@ import (
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/converter"
 	"github.com/spf13/cobra"
@@ -67,13 +68,6 @@ var addContentCmd = &cobra.Command{
 		if errFlag != nil {
 			return errFlag
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
-		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
-		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
-		if err != nil {
-			return err
-		}
-
 		// Get source from args or flags
 		var source string
 		var basePath string
@@ -93,19 +87,26 @@ var addContentCmd = &cobra.Command{
 			source = contentStr
 			sourceType = "content"
 		} else {
-			return fmt.Errorf("必须指定源文件（第二个参数）、--content 或 --content-file")
+			return clierr.Usagef("必须指定源文件（第二个参数）、--content 或 --content-file")
 		}
 
-		// Get content
+		// Get content（本地文件在任何网络请求之前读取：敏感目录、不存在、是目录、无权限均为用法错误）
 		var contentData string
 		if sourceType == "file" {
-			data, err := os.ReadFile(source)
+			data, err := readLocalInputFile(source)
 			if err != nil {
 				return fmt.Errorf("读取内容文件失败: %w", err)
 			}
 			contentData = string(data)
 		} else {
 			contentData = source
+		}
+
+		userAccessToken := resolveOptionalUserToken(cmd)
+		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
 		}
 
 		// If no block ID specified, use document root

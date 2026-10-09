@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -51,7 +50,7 @@ var batchAddPermissionCmd = &cobra.Command{
 		membersFile, _ := cmd.Flags().GetString("members-file")
 		notification, _ := cmd.Flags().GetBool("notification")
 
-		data, err := os.ReadFile(membersFile)
+		data, err := readLocalInputFile(membersFile)
 		if err != nil {
 			return fmt.Errorf("读取成员列表文件失败: %w", err)
 		}

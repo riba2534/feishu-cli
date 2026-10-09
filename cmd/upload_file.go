@@ -7,6 +7,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -43,6 +44,10 @@ Bot 身份上传时自动给当前 CLI 登录用户授予 full_access（JSON 输
 		parentToken, _ := cmd.Flags().GetString("parent")
 		fileName, _ := cmd.Flags().GetString("name")
 		output, _ := cmd.Flags().GetString("output")
+		// 本地文件在任何网络请求之前校验：敏感目录、不存在、是目录、无权限读取均为用法错误
+		if _, err := safefile.StatInputFile(localPath); err != nil {
+			return err
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		fileToken, err := client.UploadFileWithToken(localPath, parentToken, fileName, userAccessToken)

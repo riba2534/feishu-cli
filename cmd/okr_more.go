@@ -7,6 +7,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -230,6 +231,10 @@ var okrUploadImageCmd = &cobra.Command{
 		targetID, targetType, err := pickOKRTarget(flagString(cmd, "objective-id"), flagString(cmd, "key-result-id"))
 		if err != nil {
 			return err
+		}
+		// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
+		if _, err := safefile.StatInputFile(filePath); err != nil {
+			return fmt.Errorf("--file 无效: %w", err)
 		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {

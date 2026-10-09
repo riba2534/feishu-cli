@@ -6,6 +6,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -56,6 +57,10 @@ var uploadMediaCmd = &cobra.Command{
 
 		if fileName == "" {
 			fileName = filepath.Base(filePath)
+		}
+		// 本地文件在任何网络请求之前校验：敏感目录、不存在、是目录、无权限读取均为用法错误
+		if _, err := safefile.StatInputFile(filePath); err != nil {
+			return err
 		}
 
 		token, _, err := client.UploadMedia(filePath, parentType, parentNode, fileName)

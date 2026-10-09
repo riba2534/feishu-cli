@@ -17,6 +17,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/riba2534/feishu-cli/internal/runctx"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -81,8 +82,18 @@ var appsHTMLPublishCmd = &cobra.Command{
 		}
 		allowSensitive, _ := cmd.Flags().GetBool("allow-sensitive")
 		dry, _ := cmd.Flags().GetBool("dry-run")
+		// 发布内容会公开到公网：--path 落在 ~/.ssh、~/.feishu-cli、/etc 等敏感目录时直接拒绝（不受 --allow-sensitive 影响）
+		if err := safefile.ValidateInputPath(pathArg); err != nil {
+			return err
+		}
 
 		candidates, walkErr := appsWalkCandidates(pathArg)
+		// 目录形态（如 --path ~）可能把敏感目录整棵带进来：逐个文件按同一拒绝名单校验，dry-run 同样非零退出
+		for _, c := range candidates {
+			if err := safefile.ValidateInputPath(c.AbsPath); err != nil {
+				return err
+			}
+		}
 		// --path 是目录还是单文件，决定凭证扫描如何回填缺失的父目录上下文（见 appsIsSensitiveCandidate）。
 		pathIsDir := false
 		if fi, statErr := os.Stat(pathArg); statErr == nil {

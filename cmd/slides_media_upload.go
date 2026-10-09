@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -48,6 +48,11 @@ var slidesMediaUploadCmd = &cobra.Command{
 		if presentationToken == "" {
 			return fmt.Errorf("--presentation-token 不能为空")
 		}
+		// 本地文件先于任何网络请求（含 wiki 链接解析）校验：敏感目录、不存在、是目录均为用法错误
+		stat, err := safefile.StatInputFile(filePath)
+		if err != nil {
+			return fmt.Errorf("--file 无效: %w", err)
+		}
 		// 与其他 slides 命令一致：接受 URL / wiki URL；图片必须上传到真实演示文稿（parent_node 不能是 wiki 节点 token）
 		resolved, err := resolvePresentationArg(presentationToken, userAccessToken)
 		if err != nil {
@@ -55,10 +60,6 @@ var slidesMediaUploadCmd = &cobra.Command{
 		}
 		presentationToken = resolved
 
-		stat, err := os.Stat(filePath)
-		if err != nil {
-			return fmt.Errorf("读取文件失败: %w", err)
-		}
 		if !stat.Mode().IsRegular() {
 			return fmt.Errorf("--file 必须是普通文件: %s", filePath)
 		}

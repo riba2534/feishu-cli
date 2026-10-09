@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -95,7 +94,7 @@ func runSheetImportMD(cmd *cobra.Command, args []string, deps sheetImportMDDeps)
 		fmt.Fprintf(cmd.ErrOrStderr(), "提示: 文件扩展名不是 .md/.markdown，仍按 Markdown 解析\n")
 	}
 
-	raw, err := os.ReadFile(mdPath)
+	raw, err := readLocalInputFile(mdPath)
 	if err != nil {
 		return fmt.Errorf("读取文件失败: %w", err)
 	}

@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -49,12 +51,6 @@ var driveUploadCmd = &cobra.Command{
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
-		token, err := resolveIdentityWithLegacyDefault(cmd, func(c *cobra.Command) (string, error) {
-			return requireUserToken(c, "drive upload")
-		})
-		if err != nil {
-			return err
-		}
 
 		filePath, _ := cmd.Flags().GetString("file")
 		folderToken, _ := cmd.Flags().GetString("folder-token")
@@ -63,18 +59,23 @@ var driveUploadCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if filePath == "" {
-			return fmt.Errorf("--file 必填")
+			return clierr.Usagef("--file 必填")
 		}
 		if overwriteToken != "" && folderToken != "" {
-			return fmt.Errorf("--file-token 与 --folder-token 互斥：覆盖已有文件时不需要指定目标文件夹")
+			return clierr.Usagef("--file-token 与 --folder-token 互斥：覆盖已有文件时不需要指定目标文件夹")
 		}
 
-		stat, err := os.Stat(filePath)
+		// 本地文件在任何网络请求（含 token 刷新）之前校验：敏感目录、不存在、是目录、无权限读取均为用法错误
+		stat, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("读取文件失败: %w", err)
+			return fmt.Errorf("--file 无效: %w", err)
 		}
-		if stat.IsDir() {
-			return fmt.Errorf("--file 必须指向文件，不是目录")
+
+		token, err := resolveIdentityWithLegacyDefault(cmd, func(c *cobra.Command) (string, error) {
+			return requireUserToken(c, "drive upload")
+		})
+		if err != nil {
+			return err
 		}
 
 		displayName := fileName
