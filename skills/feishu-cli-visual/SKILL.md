@@ -3,7 +3,7 @@ name: feishu-cli-visual
 description: >-
   为飞书创建或编辑画板、Slides、文档内 HTMLBox 动态组件和妙搭 HTML 应用，选择图表与配色。适用于明确需要飞书载体的架构图、SVG/Mermaid、演示文稿、ECharts、地图或交互大屏。仅要求本地 SVG、PPTX 或 HTML 时不适用。消息卡片使用 feishu-cli-messaging；Markdown 图表导入使用 feishu-cli-docs。
 compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls. SVG conversion needs whiteboard-cli; local checks need Python 3.10+, Node.js and agent-browser.
-allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(python3:*) Bash(node:*) Bash(npm:*) Read Write
+allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(python3:*) Bash(node:*) Bash(jq:*) Bash(sleep:*) Bash(whiteboard-cli:*) Read Write
 ---
 
 # 飞书可视化与展示
@@ -51,4 +51,4 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 
 主题和风格是默认选项，优先满足用户指定的品牌色、明暗主题和载体，并验证可读性。
 
-遇到 Token、身份或 scope 报错（如 99991663/99991668/99991672/99991679）时，读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md` 确认应使用的身份与预检方式，排错表见 `../feishu-cli-platform/references/workflows/auth/workflow.md`。
+删除、覆盖类命令返回退出码 10 时，向用户确认目标与影响后追加全局 `--yes` 重跑，不要自行添加。身份或 scope 报错（如 99991663/99991668/99991672/99991679）读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md`；判断成败、编写脚本或处理确认门禁读取 `../feishu-cli-platform/references/workflows/auth/references/agent-contract.md`。

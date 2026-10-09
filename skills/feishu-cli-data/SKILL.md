@@ -29,19 +29,19 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 
 ## 执行规则
 
-1. 先识别 URL：`/sheets/` 是 Sheet，`/base/` 是 Bitable。
-2. 表格参数与 `--base-token` 都可直接传链接（含 `/spreadsheets/`、知识库 `/wiki/`）。Bitable 链接里的 `?table=` 不一定是数据表，
-   `/record/`、表单分享链接也不能直接拆，先 `bitable resolve --url` 判型。
+1. `/wiki/` 链接或类型不明的 token 先 `drive inspect --url` 解析；Bitable 链接用 `bitable resolve`（`?table=` 不一定是数据表，
+   `/record/`、表单分享链接也不能直接拆）。`/sheets/` 是 Sheet，`/base/` 是 Bitable。
+2. 表格参数与 `--base-token` 都可直接传链接（含 `/spreadsheets/`、知识库 `/wiki/`）。
 3. 身份：Sheet 不传 `--as` 时 User 优先、不可用时告警后回退 Bot；Bitable 默认 `--as auto`。cron / 无人值守显式 `--as bot`；
    `--as bot` 报 91403 是 Bot 不是协作者，按工作流把 Bot 加为协作者，不要反复换 token。
 4. Sheet 范围前缀可写 sheetId 或子表名（`Sheet1!A1`）；多子表时必须带前缀或 `--sheet-id/--sheet-name`。行列命令
    `--range "3:5"` 是 1 起始两端包含，`--start/--end` 是 0 起始且不含 end；删除行列/子表前先 `--dry-run` 核对实际行号。
-5. 数据类型：长 ID、前导零编码写成 JSON 字符串（JSON 数字超过约 15 位会被舍入）；`table-put` 的数字列 dtype 写
-   `int64` / `float64`，`number` 不是合法 dtype 会按文本写入。`sheet find/replace` 必须带 `--range`。
+5. 长 ID、前导零编码写成 JSON 字符串（超过约 15 位的数字会被舍入）；`table-put` 数字列 dtype 用 `int64` / `float64`（`number` 不合法，会按文本写入）。
+   `sheet find/replace` 必须带 `--range`。
 6. Bitable 写入用 base/v3 结构：字段 JSON 顶层 `type`，不要包 `field` / `property`；`record batch-create` 用
    `create_records` 或 `fields`+`rows`，不是 v1 的 `records`。写前先用少量记录验证字段类型与选项。
 7. 布尔 flag 写 `--flag` 或 `--flag=false`，不要写 `--flag false`（会被当成 true）。删除表/字段/记录/视图没有确认门禁、
    执行即生效；`form field delete` 默认连字段和整列数据一起删，只移除题目时用 `--keep-field`。
 8. Sheet 单元格图片用 `sheet image write-image`（单张）/ `write-batch`（批量），不要用 `=IMAGE()` 公式或 Markdown 图片语法。
 
-遇到 Token、身份或 scope 报错（如 99991663/99991668/99991672/99991679）时，读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md` 确认应使用的身份与预检方式，排错表见 `../feishu-cli-platform/references/workflows/auth/workflow.md`。
+删除、覆盖类命令返回退出码 10 时，向用户确认目标与影响后追加全局 `--yes` 重跑，不要自行添加。身份或 scope 报错（如 99991663/99991668/99991672/99991679）读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md`；判断成败、编写脚本或处理确认门禁读取 `../feishu-cli-platform/references/workflows/auth/references/agent-contract.md`。
