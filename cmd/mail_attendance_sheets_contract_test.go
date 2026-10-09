@@ -426,7 +426,7 @@ func TestMailMessagesCmd_PreflightValidationZeroNetworkAndTokenRefresh(t *testin
 		t.Error("非法 CSV 时不应发起任何网络调用或触发 token 刷新")
 	}
 
-	// 2. 非法 format 校验（如 format=raw 仅单封支持，批量不支持）：应在本地报错，零网络
+	// 2. 非法 format 校验（服务端只接受 full/plain_text_full/metadata，raw 不支持）：应在本地报错，零网络
 	networkCalled = false
 	_ = mailMessagesCmd.Flags().Set("as", "auto")
 	_ = mailMessagesCmd.Flags().Set("mailbox", "me")
@@ -439,8 +439,11 @@ func TestMailMessagesCmd_PreflightValidationZeroNetworkAndTokenRefresh(t *testin
 	if err == nil {
 		t.Fatal("非法 format 必须报错")
 	}
-	if !strings.Contains(err.Error(), "--format 仅支持 full|plain_text_full") {
+	if !strings.Contains(err.Error(), "--format 仅支持 full / plain_text_full / metadata") {
 		t.Errorf("error = %v, want format 校验错误", err)
+	}
+	if exitCodeFor(err) != 2 {
+		t.Errorf("非法 format 应为用法错误 exit 2，实际 %d", exitCodeFor(err))
 	}
 	if networkCalled {
 		t.Error("非法 format 时不应发起任何网络调用或触发 token 刷新")

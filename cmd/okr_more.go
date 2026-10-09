@@ -20,7 +20,8 @@ var okrCycleDetailCmd = &cobra.Command{
   <cycle_id>      周期 ID（okr cycle list 可查）
   --output, -o    输出格式：json
 
-权限要求: okr:okr:readonly（bot 身份需应用后台开通；user 身份需登录时带该 scope）
+权限要求: okr:okr.content:readonly（实测只接受该 scope，okr:okr:readonly 不生效；
+  bot 身份需应用后台开通，user 身份需登录时授予同名 scope）
 
 示例:
   feishu-cli okr cycle detail 7123456789012345678
@@ -67,7 +68,7 @@ var okrProgressGetCmd = &cobra.Command{
   --user-id-type   用户 ID 类型：open_id（默认）/ union_id / user_id
   --output, -o     输出格式：json
 
-权限要求: okr:okr:readonly 或 okr:okr.progress:readonly
+权限要求: okr:okr.progress:readonly（User/Bot 均可；user 缺 scope 时服务端报 99991679）
 
 示例:
   feishu-cli okr progress get 7123456789012345678 -o json`,

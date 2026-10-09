@@ -180,3 +180,33 @@ func TestResourceURLBase_FollowsConfiguredBrand(t *testing.T) {
 		t.Fatalf("飞书 base_url 时 ResourceURLBase = %q, want %q", got, feishuResourceURLBase)
 	}
 }
+
+func TestParseMinuteURL(t *testing.T) {
+	ok := map[string]string{
+		"https://example.feishu.cn/minutes/obcnabc123":                     "obcnabc123",
+		"https://example.larkoffice.com/minutes/obsgh0000000000000000000":  "obsgh0000000000000000000",
+		"https://example.larksuite.com/minutes/obcnabc123?from=/minutes/x": "obcnabc123",
+		"https://example.feishu.cn/minutes/obcnabc123/#t=10":               "obcnabc123",
+		"  https://example.feishu.cn/minutes/obcnabc123  ":                 "obcnabc123",
+	}
+	for in, want := range ok {
+		got, err := ParseMinuteURL(in)
+		if err != nil || got != want {
+			t.Errorf("ParseMinuteURL(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	bad := []string{
+		"",
+		"https://evilfeishu.cn/minutes/obcnabc123",        // 伪造域名
+		"http://example.feishu.cn/minutes/obcnabc123",     // 非 https
+		"https://example.feishu.cn/docx/obcnabc123",       // 不是妙记路径
+		"https://example.feishu.cn/minutes/",              // 缺 token
+		"https://user@example.feishu.cn/minutes/obcnabc1", // userinfo
+		"ftp://example.feishu.cn/minutes/obcnabc123",
+	}
+	for _, in := range bad {
+		if got, err := ParseMinuteURL(in); err == nil {
+			t.Errorf("ParseMinuteURL(%q) = %q，应报错", in, got)
+		}
+	}
+}

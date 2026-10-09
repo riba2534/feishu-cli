@@ -1,11 +1,12 @@
 """校验器回归：畸形 YAML、示例参数和原有 8 正/8 负生成约定。"""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from build_trigger_eval_set import build_eval_set
-from check_skills import load_frontmatters, validate_metadata
+from check_skills import MANIFEST, check_explicit_group_prefixes, load_frontmatters, resolve_owner, validate_metadata
 from skill_command_contracts import check_example, examples, parse_help
 
 
@@ -107,6 +108,64 @@ class ExampleTests(unittest.TestCase):
     def test_help_ignores_description_flag_mentions(self):
         help_text = "说明: --wrong 不是真的参数\n\nAliases:\n  attendee, attendees\n\nFlags:\n  -h, --help   help\n      --name string   名称\nGlobal Flags:\n      --debug   调试\n"
         self.assertEqual(parse_help(help_text), {"flags": {"--help": False, "-h": False, "--name": True, "--debug": False}, "aliases": ["attendee", "attendees"], "runnable": False})
+
+
+class ExplicitGroupPrefixTests(unittest.TestCase):
+    OWNERS = [
+        ("s", "send", ("msg",)),
+        ("s", "send", ("msg", "send")),
+        ("s", "read", ("msg", "get")),
+        ("s", "read", ("msg", "reaction")),
+        ("s", "sheet", ("sheet",)),
+    ]
+
+    def test_split_group_requires_explicit_prefix_for_every_subcommand(self):
+        commands = [("msg",), ("msg", "send"), ("msg", "get"), ("msg", "reaction"), ("msg", "reaction", "add"), ("msg", "urgent")]
+        errors = check_explicit_group_prefixes(commands, self.OWNERS)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("msg urgent 只靠长度 1 的兜底前缀归属", errors[0])
+        self.assertIn("长度 ≥2", errors[0])
+        # 补上显式前缀后通过；组路径本身 ("msg",) 仍可只靠兜底前缀
+        owners = self.OWNERS + [("s", "send", ("msg", "urgent"))]
+        self.assertEqual(check_explicit_group_prefixes(commands, owners), [])
+
+    def test_single_workflow_group_may_rely_on_fallback(self):
+        commands = [("sheet",), ("sheet", "read"), ("sheet", "image"), ("sheet", "image", "add")]
+        self.assertEqual(check_explicit_group_prefixes(commands, self.OWNERS), [])
+
+    def test_nested_split_group_requires_deeper_prefix(self):
+        owners = [
+            ("s", "a", ("x",)),
+            ("s", "a", ("x", "g")),
+            ("s", "b", ("x", "g", "one")),
+        ]
+        commands = [("x", "g", "one"), ("x", "g", "two")]
+        errors = check_explicit_group_prefixes(commands, owners)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("命令组 x g", errors[0])
+        self.assertIn("x g two 只靠长度 2", errors[0])
+        self.assertIn("长度 ≥3", errors[0])
+
+    def test_resolve_owner_longest_prefix(self):
+        self.assertEqual(resolve_owner(("msg", "get"), self.OWNERS), ({("s", "read")}, 2))
+        self.assertEqual(resolve_owner(("msg", "urgent"), self.OWNERS), ({("s", "send")}, 1))
+        self.assertEqual(resolve_owner(("nope",), self.OWNERS), (set(), 0))
+
+    def test_real_manifest_catches_new_subcommand_in_split_groups(self):
+        manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        owners = [(o["skill"], o["workflow"], tuple(p)) for o in manifest["owners"] for p in o["prefixes"]]
+        # 真实 manifest 下这些跨工作流组的现有子命令都有显式前缀
+        existing = [
+            ("msg", "send"), ("msg", "delete"), ("msg", "history"), ("msg", "resource-download"), ("msg", "flag", "create"),
+            ("doc", "import"), ("doc", "import-file"), ("doc", "htmlbox", "create"), ("doc", "table", "insert-row"),
+            ("drive", "upload"), ("drive", "search"), ("drive", "add-comment"), ("drive", "secure-label", "set"),
+        ]
+        self.assertEqual(check_explicit_group_prefixes(existing, owners), [])
+        for group in ("msg", "doc", "drive"):
+            with self.subTest(group=group):
+                errors = check_explicit_group_prefixes(existing + [(group, "brand-new")], owners)
+                self.assertEqual(len(errors), 1, errors)
+                self.assertIn(f"{group} brand-new 只靠长度 1 的兜底前缀归属", errors[0])
 
 
 class TriggerTests(unittest.TestCase):

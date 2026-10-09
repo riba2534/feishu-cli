@@ -56,7 +56,8 @@ var vcBotCmd = &cobra.Command{
 权限:
   - meeting-join 需要 vc:meeting.bot.join:write
   - meeting-leave 需要 vc:meeting.bot.join:write（与入会同一 scope；官方无独立 leave scope）
-  - meeting-events：User 身份需要 vc:meeting.meetingevent:read；Bot 身份需要 vc:meeting.bot.join:write
+  - meeting-events：User 身份需要 vc:meeting.meetingevent:read；
+    Bot 身份需要 vc:meeting.meetingevent:read 与 vc:meeting.bot.join:write 任一（应用身份权限，开通其一即可）
 
 身份:
   meeting-join / meeting-leave 仅支持 Bot 身份（默认使用 Bot/Tenant Access Token；对齐官方，
@@ -275,6 +276,10 @@ var vcBotEventsCmd = &cobra.Command{
   --as           身份：bot | user | auto（默认 auto）。必须与 meeting_id 来源一致；
                  --as user 缺 Token 失败；--as bot 即使已登录也走 Bot
   --user-access-token 覆盖登录态（仅 --as user/auto 使用）
+
+权限:
+  - User 身份: vc:meeting.meetingevent:read
+  - Bot 身份:  vc:meeting.meetingevent:read 与 vc:meeting.bot.join:write 任一（应用身份权限，开通其一即可；机器人须在会中）
 
 示例:
   feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --as user
@@ -576,11 +581,12 @@ func peekVCBotEventsIdentity(cmd *cobra.Command) (identity string, err error) {
 	case "user":
 		flagToken, _ := cmd.Flags().GetString("user-access-token")
 		if !auth.HasUserTokenConfigured(flagToken, config.Get().UserAccessToken) {
-			return "", fmt.Errorf("--as user 需要 User Access Token（请先 `feishu-cli auth login`，或改用 --as bot）")
+			// 与实调一致：缺 User Token 属鉴权类错误（exit 3）
+			return "", clierr.Authf("--as user 需要 User Access Token（请先 `feishu-cli auth login`，或改用 --as bot）")
 		}
 		return "user", nil
 	default:
-		return "", fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", as)
+		return "", clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
 	}
 }
 
@@ -607,6 +613,6 @@ func resolveVCBotEventsIdentity(cmd *cobra.Command) (token string, identity stri
 		}
 		return token, "user", nil
 	default:
-		return "", "", fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", as)
+		return "", "", clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
 	}
 }

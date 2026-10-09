@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -35,16 +36,19 @@ var listCalendarsCmd = &cobra.Command{
   # JSON 格式输出
   feishu-cli calendar list --output json
 
-  # 指定每页数量
-  feishu-cli calendar list --page-size 20`,
+  # 指定每页数量（服务端取值范围 50–1000）
+  feishu-cli calendar list --page-size 100`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		pageSize, _ := cmd.Flags().GetInt("page-size")
+		if err := validateCalendarListPageSize(pageSize); err != nil {
+			return err
+		}
 		if err := config.Validate(); err != nil {
 			return err
 		}
 
 		token := resolveOptionalUserTokenWithFallback(cmd)
 
-		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
 
@@ -102,9 +106,27 @@ var listCalendarsCmd = &cobra.Command{
 	},
 }
 
+// calendar list 的 page_size 服务端取值范围（小于 50 会被服务端拒绝）
+const (
+	calendarListMinPageSize = 50
+	calendarListMaxPageSize = 1000
+)
+
+// validateCalendarListPageSize 本地校验 --page-size（0 表示不传，由服务端取默认值）
+func validateCalendarListPageSize(pageSize int) error {
+	if pageSize == 0 {
+		return nil
+	}
+	if pageSize < calendarListMinPageSize || pageSize > calendarListMaxPageSize {
+		return clierr.Usagef("--page-size 取值范围为 %d–%d（服务端最小 %d），当前为 %d",
+			calendarListMinPageSize, calendarListMaxPageSize, calendarListMinPageSize, pageSize)
+	}
+	return nil
+}
+
 func init() {
 	calendarCmd.AddCommand(listCalendarsCmd)
-	listCalendarsCmd.Flags().Int("page-size", 50, "每页数量")
+	listCalendarsCmd.Flags().Int("page-size", 50, "每页数量（50–1000，服务端最小 50）")
 	listCalendarsCmd.Flags().String("page-token", "", "分页标记")
 	listCalendarsCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	listCalendarsCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")

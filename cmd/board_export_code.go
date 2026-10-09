@@ -24,6 +24,8 @@ var boardExportCodeCmd = &cobra.Command{
 便于"导出源码 → 本地修改 → board import --overwrite 写回"。画板上有多个图表时用 --node-id 指定其一；
 --output-path 不带扩展名时按语法补 .mmd / .puml。
 
+输出文件已存在时默认报错、不覆盖（与 board svg-export 一致），加 --overwrite 覆盖。
+
 适用场景:
   - 把 AI 生成 + 落板后的 SVG 拉回本地，便于版本管理和二次编辑
   - 把多个 svg 节点的代码导出为单一 SVG 文件
@@ -34,7 +36,8 @@ var boardExportCodeCmd = &cobra.Command{
   feishu-cli board export-code <id> --output-path design.svg
   feishu-cli board export-code <id> --output-path design.svg --merge
   feishu-cli board export-code <id> --source                       # 打印 Mermaid/PlantUML 源码
-  feishu-cli board export-code <id> --source --node-id t1:2 --output-path diagram`,
+  feishu-cli board export-code <id> --source --node-id t1:2 --output-path diagram
+  feishu-cli board export-code <id> --source --output-path diagram.mmd --overwrite`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -47,6 +50,7 @@ var boardExportCodeCmd = &cobra.Command{
 			outputPath = legacyOutputPath
 		}
 		merge, _ := cmd.Flags().GetBool("merge")
+		overwrite, _ := cmd.Flags().GetBool("overwrite")
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		raw, err := client.GetBoardNodes(whiteboardID, userAccessToken)
@@ -68,7 +72,7 @@ var boardExportCodeCmd = &cobra.Command{
 		}
 		if source, _ := cmd.Flags().GetBool("source"); source {
 			nodeID, _ := cmd.Flags().GetString("node-id")
-			return exportBoardDiagramSource(nodes, strings.TrimSpace(nodeID), outputPath)
+			return exportBoardDiagramSource(nodes, strings.TrimSpace(nodeID), outputPath, overwrite)
 		}
 
 		type svgItem struct {
@@ -150,6 +154,9 @@ var boardExportCodeCmd = &cobra.Command{
 		if outputPath == "" {
 			fmt.Print(content)
 		} else {
+			if err := ensureBoardExportWritable(outputPath, overwrite); err != nil {
+				return err
+			}
 			if err := os.WriteFile(outputPath, []byte(content), 0644); err != nil {
 				return fmt.Errorf("写文件失败: %w", err)
 			}
@@ -192,7 +199,7 @@ func collectBoardSourceBlocks(nodes []map[string]any) []boardSourceBlock {
 
 // exportBoardDiagramSource 取回画板上 Mermaid/PlantUML 图表的源码（对齐官方 whiteboard +export --output-type source）。
 // 只有一个源码块时直接输出；多个时要求 --node-id 指定，避免把多张图拼成无法解析的文件。
-func exportBoardDiagramSource(nodes []map[string]any, nodeID, outputPath string) error {
+func exportBoardDiagramSource(nodes []map[string]any, nodeID, outputPath string, overwrite bool) error {
 	blocks := collectBoardSourceBlocks(nodes)
 	if len(blocks) == 0 {
 		return fmt.Errorf("画板中没有可取回源码的 Mermaid/PlantUML 图表（只有经 board import 服务端引擎或文档导入生成的图表保留 syntax.code；SVG/手绘节点请用 board export-code 或 board svg-export）")
@@ -226,10 +233,24 @@ func exportBoardDiagramSource(nodes []map[string]any, nodeID, outputPath string)
 	if err := safefile.ValidateOutputPath(outputPath); err != nil {
 		return err
 	}
+	if err := ensureBoardExportWritable(outputPath, overwrite); err != nil {
+		return err
+	}
 	if err := safefile.AtomicWriteFile(outputPath, []byte(b.Code), 0o644); err != nil {
 		return fmt.Errorf("写文件失败: %w", err)
 	}
 	fmt.Printf("已导出 %s 源码（节点 %s）→ %s\n", b.Syntax, b.NodeID, outputPath)
+	return nil
+}
+
+// ensureBoardExportWritable 输出文件已存在且未加 --overwrite 时拒绝写入（与 board svg-export 一致）。
+func ensureBoardExportWritable(outputPath string, overwrite bool) error {
+	if overwrite {
+		return nil
+	}
+	if _, err := os.Stat(outputPath); err == nil {
+		return fmt.Errorf("输出文件 %s 已存在，加 --overwrite 覆盖", outputPath)
+	}
 	return nil
 }
 
@@ -291,5 +312,6 @@ func init() {
 	boardExportCodeCmd.Flags().Bool("merge", false, "合并所有 svg 为单一 SVG（带 viewBox 自动包围）")
 	boardExportCodeCmd.Flags().Bool("source", false, "取回 Mermaid/PlantUML 图表源码（节点 syntax.code）而不是 svg 代码")
 	boardExportCodeCmd.Flags().String("node-id", "", "--source 模式下指定图表节点（画板有多个图表时必填）")
+	boardExportCodeCmd.Flags().Bool("overwrite", false, "覆盖已存在的输出文件（默认已存在时报错）")
 	boardExportCodeCmd.Flags().String("user-access-token", "", "User Access Token")
 }

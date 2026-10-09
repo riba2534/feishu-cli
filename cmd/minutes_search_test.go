@@ -94,6 +94,8 @@ func TestMinutesSearchFlagAlignment(t *testing.T) {
 		for _, args := range [][]string{
 			{"minutes", "search", "--owner-ids", "u123"},
 			{"minutes", "search", "--start", "2026-03-01", "--start-time", "2026-03-02"},
+			// 新旧名同时指定不同值：与 --start/--start-time 一致报用法错误，不再静默合并
+			{"minutes", "search", "--owner-ids", "ou_new", "--owner-id", "ou_old"},
 			{"minutes", "search", "--query", "a", "--keyword", "b"},
 			{"minutes", "search"},
 		} {

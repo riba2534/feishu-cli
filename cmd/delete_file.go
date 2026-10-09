@@ -180,5 +180,5 @@ func deleteTaskFailedError(err error, identity string) error {
 			"或用 feishu-cli perm list <token> --doc-type <type> --as user 确认 Bot 是否有管理权限", err)
 	}
 	return fmt.Errorf("%w\n提示：服务端未返回失败原因，常见原因是当前用户不是所有者且无管理权限，"+
-		"或文件已被删除；可用 feishu-cli drive inspect <token> 核对文件状态", err)
+		"或文件已被删除；可用 feishu-cli drive inspect --url <token> 核对文件状态", err)
 }

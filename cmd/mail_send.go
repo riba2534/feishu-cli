@@ -125,7 +125,7 @@ CID 内联图片走 --inline-images-auto-scan 自动扫描。
 			input.BodyText = body
 		}
 
-		// --inline-images-auto-scan: 扫 <img src="local-path"> → drive 上传 → 改写为 cid:xxx
+		// --inline-images-auto-scan: 扫 <img src="local-path"> → 读盘作为 multipart/related 内联 part → 改写为 cid:xxx（不上传云盘）
 		// 仅在 HTML body 下生效；纯文本下跳过
 		if autoScanInline && input.BodyHTML != "" {
 			rewritten, parts, scanErr := scanAndUploadInlineImages(input.BodyHTML, mailbox, token)
@@ -207,7 +207,7 @@ func init() {
 	mailSendCmd.Flags().Bool("confirm-send", false, "保存草稿后立即发送")
 	mailSendCmd.Flags().Bool("html", false, "强制视为 HTML body")
 	mailSendCmd.Flags().Bool("plain-text", false, "强制视为纯文本")
-	mailSendCmd.Flags().Bool("inline-images-auto-scan", false, "扫描 HTML body 中 <img src=\"local-path\"> 自动上传飞书云盘并改写为 cid: 引用")
+	mailSendCmd.Flags().Bool("inline-images-auto-scan", false, "扫描 HTML body 中 <img src=\"本地路径\">，改写为 cid: 引用并作为内联图片直接嵌入邮件（不上传云盘；路径须在当前目录或 home 下，单张 ≤10MB）")
 	mailSendCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailSendCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	addMailAttachFlag(mailSendCmd)

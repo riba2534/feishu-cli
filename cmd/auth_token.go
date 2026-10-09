@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -43,16 +44,16 @@ var authTokenCmd = &cobra.Command{
 		as = strings.ToLower(strings.TrimSpace(as))
 		flagUserToken, _ := cmd.Flags().GetString("user-access-token")
 		if flagUserToken != "" && (as == "bot" || as == "tenant" || as == "app") {
-			return fmt.Errorf("不能同时使用 --as bot 与 --user-access-token：前者要求 App/Tenant 身份，后者是显式 User Token。请去掉其中一个")
+			return clierr.Usagef("不能同时使用 --as bot 与 --user-access-token：前者要求 App/Tenant 身份，后者是显式 User Token。请去掉其中一个")
 		}
 
 		bindLegacy, _ := cmd.Flags().GetBool("bind-legacy-app")
 		if bindLegacy {
 			if as == "bot" || as == "tenant" || as == "app" {
-				return fmt.Errorf("不能同时使用 --bind-legacy-app 与 --as bot：绑定的是 User Token 文件，与 App 身份无关")
+				return clierr.Usagef("不能同时使用 --bind-legacy-app 与 --as bot：绑定的是 User Token 文件，与 App 身份无关")
 			}
 			if flagUserToken != "" {
-				return fmt.Errorf("不能同时使用 --bind-legacy-app 与 --user-access-token：绑定只针对本地 token.json")
+				return clierr.Usagef("不能同时使用 --bind-legacy-app 与 --user-access-token：绑定只针对本地 token.json")
 			}
 			cfg := config.Get()
 			if err := auth.BindLegacyToken(cfg.AppID); err != nil {
@@ -95,7 +96,7 @@ var authTokenCmd = &cobra.Command{
 			return nil
 
 		default:
-			return fmt.Errorf("--as 仅支持 user|bot|auto，得到 %q", as)
+			return clierr.Usagef("--as 仅支持 user|bot|auto，得到 %q", as)
 		}
 	},
 }

@@ -19,15 +19,17 @@ var addCommentCmd = &cobra.Command{
   --text        评论内容（必填）
 
 身份说明:
-  默认以 App Token（Bot 身份）创建；推荐 feishu-cli auth login 后传 --user-access-token，
-  以用户身份创建评论。Bot 身份创建的评论只能被同一 App 自身删除。
+  User 优先：--user-access-token > FEISHU_USER_ACCESS_TOKEN > auth login 保存的 token.json
+  （过期自动刷新）> config.yaml 的 user_access_token；都未配置时以 App Token（Bot 身份）创建。
+  已配置 User Token 但不可用（如刷新失败）时会在 stderr 告警后改用 App Token。
+  Bot 身份创建的评论只能被同一 App 自身删除；App 未被加为协作者的个人文档会得到 1069303 forbidden。
 
 示例:
-  # 添加评论（Bot 身份）
+  # 添加评论（已 auth login 时自动以用户身份创建）
+  feishu-cli auth login
   feishu-cli comment add doccnXXX --type docx --text "这是一条评论"
 
-  # 添加评论（用户身份，推荐）
-  feishu-cli auth login
+  # 显式指定 User Token
   feishu-cli comment add doccnXXX --type docx --text "这是一条评论" \
     --user-access-token "u-xxxxx"
 

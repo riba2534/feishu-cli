@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/riba2534/feishu-cli/internal/textutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +10,8 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
+	"github.com/riba2534/feishu-cli/internal/textutil"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +22,7 @@ var vcNotesCmd = &cobra.Command{
 
 支持三种输入方式（互斥，均支持逗号分隔批量，最多 50 条）:
   --meeting-ids         通过会议 ID 查
-  --minute-tokens       通过妙记 token 查
+  --minute-tokens       通过妙记 token 或妙记链接查（https://xxx.feishu.cn/minutes/<token>）
   --calendar-event-ids  通过日历事件实例 ID 查（自动反查 meeting_ids + meeting_notes）
 
 可选开关:
@@ -30,13 +31,21 @@ var vcNotesCmd = &cobra.Command{
   --output-dir          逐字稿落盘目录（默认当前目录）
   --overwrite           覆盖已存在的逐字稿文件
 
+  三条路径都支持这两个开关：--meeting-ids / --calendar-event-ids 先通过会议录制
+  解析出 minute_token 再拉取；会议没有录制（解析不到 minute_token）时在 hint 与
+  stderr 说明未获取，不会静默忽略。
+
+退出码:
+  任一条目失败（含已请求的 AI 产物 / 逐字稿获取或写文件失败）时退出码为 1，
+  已获取的数据仍完整输出（JSON 中该条目 ok=false，error 说明原因）。
+
 权限:
   - 默认 User 身份（--as user），可用 --as bot|auto 切换
   - 基础: vc:note:read
-  - meeting-ids 路径: vc:meeting.meetingevent:read
+  - meeting-ids 路径: vc:meeting.meetingevent:read（解析 minute_token 还需 vc:record:readonly）
   - minute-tokens 路径: minutes:minutes:readonly
-    - --with-artifacts: + minutes:minutes.artifacts:read
-    - --download-transcript: + minutes:minutes.transcript:export
+  - --with-artifacts: + minutes:minutes.artifacts:read（任一路径）
+  - --download-transcript: + minutes:minutes.transcript:export（任一路径）
   - calendar-event-ids 路径: + calendar:calendar:read / calendar:calendar.event:read
 
 示例:
@@ -46,15 +55,13 @@ var vcNotesCmd = &cobra.Command{
   # 通过妙记 token 查 + 获取 AI 产物
   feishu-cli vc notes --minute-tokens obcnxxxx --with-artifacts
 
-  # 从日历事件直达妙记并下载逐字稿
+  # 通过会议 ID 查，并经录制解析出的妙记拉取 AI 产物
+  feishu-cli vc notes --meeting-ids 69xxxx --with-artifacts
+
+  # 从日历事件直达妙记并下载逐字稿（会议需有录制 / 妙记）
   feishu-cli vc notes --calendar-event-ids <event_id> --download-transcript --output-dir ./notes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, err := resolveVCReadIdentity(cmd)
-		if err != nil {
 			return err
 		}
 
@@ -71,6 +78,26 @@ var vcNotesCmd = &cobra.Command{
 			[]string{"meeting-ids", "minute-tokens", "calendar-event-ids"},
 			[]string{meetingRaw, minuteRaw, calendarRaw},
 		); err != nil {
+			return err
+		}
+
+		// 先做本地参数校验（用法错误 exit 2），再解析身份，避免被"未登录"（exit 3）遮住
+		var ids []string
+		var err error
+		switch {
+		case meetingRaw != "":
+			ids, err = parseCSVIDs(meetingRaw, "meeting-ids")
+		case minuteRaw != "":
+			ids, err = parseMinuteTokenList(minuteRaw, "minute-tokens")
+		default:
+			ids, err = parseCSVIDs(calendarRaw, "calendar-event-ids")
+		}
+		if err != nil {
+			return err
+		}
+
+		token, err := resolveVCReadIdentity(cmd)
+		if err != nil {
 			return err
 		}
 
@@ -96,50 +123,43 @@ var vcNotesCmd = &cobra.Command{
 
 		switch {
 		case meetingRaw != "":
-			ids, err := parseCSVIDs(meetingRaw, "meeting-ids")
-			if err != nil {
-				return err
-			}
 			items = runNotesBatch(ids, func(id string) (*noteView, error) {
 				return processMeetingID(id, opts)
 			})
 		case minuteRaw != "":
-			tokens, err := parseCSVIDs(minuteRaw, "minute-tokens")
-			if err != nil {
-				return err
-			}
-			for _, t := range tokens {
-				if err := ensureMinuteToken(t); err != nil {
-					return err
-				}
-			}
-			items = runNotesBatch(tokens, func(mt string) (*noteView, error) {
+			items = runNotesBatch(ids, func(mt string) (*noteView, error) {
 				return processMinuteToken(mt, opts)
 			})
-		case calendarRaw != "":
-			ids, err := parseCSVIDs(calendarRaw, "calendar-event-ids")
-			if err != nil {
-				return err
-			}
+		default:
 			items = runCalendarNotesBatch(ids, opts)
 		}
 
 		summary := summarizeBatch(items)
 
 		if output == "json" {
-			return printJSON(map[string]any{
+			if err := printJSON(map[string]any{
 				"items":   items,
 				"summary": summary,
-			})
+			}); err != nil {
+				return err
+			}
+		} else {
+			printNotesText(items, summary)
 		}
-
-		printNotesText(items, summary)
-
-		if summary.Failed > 0 && summary.Succeeded == 0 {
-			return fmt.Errorf("全部请求失败")
-		}
-		return nil
+		return notesBatchError(summary)
 	},
+}
+
+// notesBatchError 任一条目失败（含已请求的 AI 产物 / 逐字稿失败）时返回一般错误（exit 1）；
+// 调用前结果已完整输出，错误只用于让脚本 / Agent 感知部分失败。
+func notesBatchError(summary vcBatchSummary) error {
+	if summary.Failed == 0 {
+		return nil
+	}
+	if summary.Succeeded == 0 {
+		return fmt.Errorf("全部请求失败（%d 条），详见上方输出", summary.Failed)
+	}
+	return fmt.Errorf("%d/%d 条失败（含 AI 产物或逐字稿获取失败），已输出全部结果", summary.Failed, summary.Total)
 }
 
 // notesOptions vc notes 命令共享参数
@@ -168,6 +188,23 @@ type noteView struct {
 	SharedDocs      []string `json:"shared_docs,omitempty"`
 	Artifacts       any      `json:"artifacts,omitempty"`
 	TranscriptPath  string   `json:"transcript_path,omitempty"`
+	TranscriptError string   `json:"transcript_error,omitempty"`
+
+	// extraErrors 已请求的 AI 产物 / 逐字稿失败原因；非空时所在批量条目记为失败（ok=false）
+	extraErrors []string
+}
+
+// partialError 返回已请求附加产物的失败汇总（无失败返回空串）
+func (v *noteView) partialError() string {
+	if v == nil {
+		return ""
+	}
+	return strings.Join(v.extraErrors, "; ")
+}
+
+// addExtraError 记录已请求附加产物的失败（所在批量条目记为失败，error 汇总这些原因）
+func (v *noteView) addExtraError(msg string) {
+	v.extraErrors = append(v.extraErrors, msg)
 }
 
 // runNotesBatch 串行处理一批 ID
@@ -182,7 +219,15 @@ func runNotesBatch[T any](ids []string, fn func(string) (*T, error)) []vcBatchIt
 			out = append(out, vcBatchItem{ID: id, OK: false, Error: err.Error()})
 			continue
 		}
-		out = append(out, vcBatchItem{ID: id, OK: true, Data: data})
+		item := vcBatchItem{ID: id, OK: true, Data: data}
+		if pe, ok := any(data).(interface{ partialError() string }); ok {
+			if msg := pe.partialError(); msg != "" {
+				// 部分失败：保留已取到的数据，条目记为失败
+				item.OK = false
+				item.Error = msg
+			}
+		}
+		out = append(out, item)
 	}
 	return out
 }
@@ -266,11 +311,22 @@ func runCalendarNotesBatch(eventIDs []string, opts *notesOptions) []vcBatchItem 
 			subViews = append(subViews, v)
 		}
 
-		out = append(out, vcBatchItem{
+		item := vcBatchItem{
 			ID:   eventID,
 			OK:   len(subViews) > 0,
 			Data: subViews,
-		})
+		}
+		var partial []string
+		for _, sub := range subViews {
+			if msg := sub.partialError(); msg != "" {
+				partial = append(partial, msg)
+			}
+		}
+		if len(partial) > 0 {
+			item.OK = false
+			item.Error = strings.Join(partial, "; ")
+		}
+		out = append(out, item)
 	}
 	return out
 }
@@ -309,10 +365,32 @@ func processMeetingID(meetingID string, opts *notesOptions) (*noteView, error) {
 	}
 	if parsed.Meeting.NoteID == "" {
 		view.addHint("该会议没有智能纪要")
-		return view, nil
+	} else {
+		applyNoteDocs(view, parsed.Meeting.NoteID, opts)
 	}
-	applyNoteDocs(view, parsed.Meeting.NoteID, opts)
+	// --with-artifacts / --download-transcript：按录制解析出的 minute_token 补拉（与 minute-tokens 路径同一逻辑）
+	if opts.WithArtifacts || opts.DownloadTranscript {
+		if view.MinuteToken != "" {
+			applyMinuteExtras(view, view.MinuteToken, view.Title, opts)
+		} else {
+			msg := "未能从会议录制解析出 minute_token（会议可能没有录制 / 妙记），未获取 " + requestedExtrasLabel(opts)
+			view.addHint(msg)
+			fmt.Fprintf(os.Stderr, "警告: 会议 %s %s\n", meetingID, msg)
+		}
+	}
 	return view, nil
+}
+
+// requestedExtrasLabel 返回已请求的附加产物 flag 名（用于提示）
+func requestedExtrasLabel(opts *notesOptions) string {
+	var names []string
+	if opts.WithArtifacts {
+		names = append(names, "--with-artifacts")
+	}
+	if opts.DownloadTranscript {
+		names = append(names, "--download-transcript")
+	}
+	return strings.Join(names, " / ")
 }
 
 // addHint 追加一条说明（多条用 "; " 连接）
@@ -365,13 +443,22 @@ func processMinuteToken(minuteToken string, opts *notesOptions) (*noteView, erro
 		}
 	}
 
+	applyMinuteExtras(view, minuteToken, view.Title, opts)
+	return view, nil
+}
+
+// applyMinuteExtras 按 minute_token 拉取已请求的 AI 产物 / 逐字稿（三条路径共用）。
+// 失败不丢弃已取到的数据，记入 extraErrors，使所在条目 ok=false、命令以 exit 1 结束。
+func applyMinuteExtras(view *noteView, minuteToken, title string, opts *notesOptions) {
 	if opts.WithArtifacts {
 		if art, err := client.GetMinuteArtifacts(minuteToken, opts.Token); err != nil {
 			view.Artifacts = map[string]string{"error": err.Error()}
+			view.addExtraError("AI 产物获取失败: " + err.Error())
 		} else {
 			var artData any
 			if err := json.Unmarshal(art, &artData); err != nil {
 				view.Artifacts = map[string]string{"error": "解析 artifacts 失败: " + err.Error()}
+				view.addExtraError("AI 产物解析失败: " + err.Error())
 			} else {
 				view.Artifacts = artData
 			}
@@ -382,17 +469,16 @@ func processMinuteToken(minuteToken string, opts *notesOptions) (*noteView, erro
 		if existing, ok := opts.seenTranscripts[minuteToken]; ok {
 			view.TranscriptPath = existing
 		} else {
-			path, err := downloadTranscriptFile(minuteToken, view.Title, opts)
+			path, err := downloadTranscriptFile(minuteToken, title, opts)
 			if err != nil {
-				view.TranscriptPath = "下载失败: " + err.Error()
+				view.TranscriptError = err.Error()
+				view.addExtraError("逐字稿下载失败: " + err.Error())
 			} else {
 				view.TranscriptPath = path
 				opts.seenTranscripts[minuteToken] = path
 			}
 		}
 	}
-
-	return view, nil
 }
 
 // applyNoteDocs 调用 GetMeetingNote 并把纪要类型、文档 token 填入 view；
@@ -442,7 +528,7 @@ func downloadTranscriptFile(minuteToken, title string, opts *notesOptions) (stri
 	if _, statErr := os.Stat(path); statErr == nil && !opts.Overwrite {
 		return "", fmt.Errorf("文件已存在: %s（使用 --overwrite 覆盖）", path)
 	}
-	if err := os.WriteFile(path, body, 0o644); err != nil {
+	if err := safefile.AtomicWriteFile(path, body, 0o644); err != nil {
 		return "", fmt.Errorf("写文件失败: %w", err)
 	}
 	return path, nil
@@ -454,7 +540,10 @@ func printNotesText(items []vcBatchItem, summary vcBatchSummary) {
 		fmt.Printf("[%d] %s\n", i+1, it.ID)
 		if !it.OK {
 			fmt.Printf("    FAIL: %s\n", it.Error)
-			continue
+			if it.Data == nil {
+				continue
+			}
+			// 部分失败：继续输出已取到的数据
 		}
 		switch v := it.Data.(type) {
 		case *noteView:
@@ -506,6 +595,9 @@ func printOneNoteView(v *noteView, indent string) {
 	if v.TranscriptPath != "" {
 		fmt.Printf("%stranscript:  %s\n", indent, v.TranscriptPath)
 	}
+	if v.TranscriptError != "" {
+		fmt.Printf("%stranscript:  下载失败: %s\n", indent, v.TranscriptError)
+	}
 	if v.Hint != "" {
 		fmt.Printf("%s说明:        %s\n", indent, v.Hint)
 	}
@@ -519,7 +611,7 @@ func printOneNoteView(v *noteView, indent string) {
 func init() {
 	vcCmd.AddCommand(vcNotesCmd)
 	vcNotesCmd.Flags().String("meeting-ids", "", "会议 ID 列表，逗号分隔（最多 50 条）")
-	vcNotesCmd.Flags().String("minute-tokens", "", "妙记 token 列表，逗号分隔（最多 50 条）")
+	vcNotesCmd.Flags().String("minute-tokens", "", "妙记 token 或妙记链接列表，逗号分隔（最多 50 条）")
 	vcNotesCmd.Flags().String("calendar-event-ids", "", "日历事件实例 ID 列表，逗号分隔（最多 50 条）")
 	vcNotesCmd.Flags().Bool("with-artifacts", false, "获取 AI 产物（summary/todos/chapters）")
 	vcNotesCmd.Flags().Bool("download-transcript", false, "下载逐字稿 txt 到 --output-dir")

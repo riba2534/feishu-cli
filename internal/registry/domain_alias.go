@@ -162,6 +162,8 @@ var extraDomainScopes = map[string][]string{
 		"mail:user_mailbox.mail_contact:read",
 		"mail:user_mailbox.mail_contact:write",
 		"mail:user_mailbox.folder:read", // triage --list-folders
+		"mail:user_mailbox.rule:read",   // rule-list / rule-get
+		"mail:user_mailbox.rule:write",  // rule-create / rule-update / rule-delete / rule-reorder
 	},
 
 	// sheets shortcuts: +info, +read, +write, +append, +find, +create, +export, +merge-cells, etc.
@@ -189,9 +191,15 @@ var extraDomainScopes = map[string][]string{
 		"docs:document.media:upload", "docs:document.media:download",
 	},
 
-	// slides shortcuts: +create, +media-upload
+	// slides 命令所需 scope（对齐官方 shortcuts/slides 各命令 Scopes；不依赖 meta/overlay 是否收录对应方法）:
+	//   create → create / write_only（含图片 docs:document.media:upload）
+	//   add-slide / delete-slide / replace-slide / update-slide → update / write_only
+	//   get → read；screenshot → screenshot；media-upload → docs:document.media:upload
+	// wiki URL 输入另需 wiki:node:read，属按输入追加的条件 scope，不放进域默认集合。
 	"slides": {
 		"slides:presentation:create", "slides:presentation:write_only",
+		"slides:presentation:update", "slides:presentation:read",
+		"slides:presentation:screenshot",
 		"docs:document.media:upload",
 	},
 

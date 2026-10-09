@@ -47,3 +47,20 @@ func wrapPermError(err error, userAccessToken string) error {
 	}
 	return err
 }
+
+// wrapPasswordError 为分享密码 API 追加提示。1063002 在密码创建/刷新场景下的常见原因不是身份，
+// 而是链接未设为互联网公开（分享密码只对互联网公开链接生效），因此给出 perm public-update 的可执行命令。
+func wrapPasswordError(err error, userAccessToken, docToken, docType string) error {
+	if err == nil {
+		return nil
+	}
+	if !client.HasAPICode(err, 1063002) {
+		return wrapPermError(err, userAccessToken)
+	}
+	if docType == "" {
+		docType = "docx"
+	}
+	return fmt.Errorf("%w\n提示：分享密码只对「互联网公开」的链接生效。请先（以与本次相同的身份参数）把链接设为互联网公开再设置密码：\n"+
+		"  feishu-cli perm public-update %s --doc-type %s --external-access=true --link-share-entity anyone_readable\n"+
+		"（需要互联网可编辑时用 anyone_editable）。若链接已是互联网公开仍报此错，再检查当前身份是否有该文档的管理权限", err, docToken, docType)
+}

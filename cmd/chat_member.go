@@ -47,6 +47,7 @@ var chatMemberCmd = &cobra.Command{
 
 // resolveChatToken 按 --as 解析应该传给 client 的 token 字符串。
 // 返回空字符串表示走 App/Tenant Token（Bot 身份）。
+// auto 沿用 resolveOptionalUserTokenWithFallback（stderr 告警后改用 Bot），非法取值为用法错误（退出码 2）。
 func resolveChatToken(cmd *cobra.Command, asFlag string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(asFlag)) {
 	case "bot", "tenant", "app":
@@ -60,7 +61,7 @@ func resolveChatToken(cmd *cobra.Command, asFlag string) (string, error) {
 	case "", "auto":
 		return resolveOptionalUserTokenWithFallback(cmd), nil
 	default:
-		return "", fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", asFlag)
+		return "", clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", asFlag)
 	}
 }
 

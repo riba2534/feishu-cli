@@ -81,3 +81,64 @@ func TestScanInlineImagePaths_WindowsDrive(t *testing.T) {
 		t.Errorf("[1] got %q, want d:/x.jpg", got[1])
 	}
 }
+
+// TestLoadInlineImageBytes_SymlinkedHomeAndCwd home / cwd 本身是软链接时（如 /home/u → /data00/home/u），
+// home 子树内的图片必须放行；以前只对图片路径做 EvalSymlinks、安全根未解析，Rel 得到 ".." 而被误拒。
+func TestLoadInlineImageBytes_SymlinkedHomeAndCwd(t *testing.T) {
+	base := t.TempDir()
+	realHome := filepath.Join(base, "data00", "home", "u")
+	realWork := filepath.Join(base, "data00", "work")
+	outside := filepath.Join(base, "outside")
+	for _, d := range []string{filepath.Join(realHome, "pics"), realWork, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	linkHome := filepath.Join(base, "home-link")
+	linkWork := filepath.Join(base, "work-link")
+	if err := os.Symlink(realHome, linkHome); err != nil {
+		t.Skipf("当前平台不支持创建软链接: %v", err)
+	}
+	if err := os.Symlink(realWork, linkWork); err != nil {
+		t.Fatal(err)
+	}
+	png := []byte{0x89, 0x50, 0x4e, 0x47}
+	for _, p := range []string{filepath.Join(realHome, "pics", "a.png"), filepath.Join(realWork, "b.png"), filepath.Join(outside, "c.png")} {
+		if err := os.WriteFile(p, png, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	oldCwd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(oldCwd) })
+	if err := os.Chdir(linkWork); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PWD", linkWork) // os.Getwd 优先返回 $PWD（软链接形式的 cwd）
+	t.Setenv("HOME", linkHome)
+
+	// home 子树（经软链接 home 引用）
+	ref := &MailInlineImageRef{LocalPath: filepath.Join(linkHome, "pics", "a.png")}
+	if err := LoadInlineImageBytes(ref); err != nil {
+		t.Fatalf("软链接 home 下的图片应放行: %v", err)
+	}
+	// cwd 子树（cwd 是软链接）
+	ref = &MailInlineImageRef{LocalPath: "b.png"}
+	if err := LoadInlineImageBytes(ref); err != nil {
+		t.Fatalf("软链接 cwd 下的图片应放行: %v", err)
+	}
+	// home / cwd 之外仍拒绝
+	ref = &MailInlineImageRef{LocalPath: filepath.Join(outside, "c.png")}
+	if err := LoadInlineImageBytes(ref); err == nil || !strings.Contains(err.Error(), "home 子树内") {
+		t.Fatalf("home/cwd 之外的图片应被拒绝: %v", err)
+	}
+	// home 内指向外部的软链接仍拒绝（按解析后的真实路径判断）
+	escape := filepath.Join(realHome, "pics", "escape.png")
+	if err := os.Symlink(filepath.Join(outside, "c.png"), escape); err != nil {
+		t.Fatal(err)
+	}
+	ref = &MailInlineImageRef{LocalPath: filepath.Join(linkHome, "pics", "escape.png")}
+	if err := LoadInlineImageBytes(ref); err == nil {
+		t.Fatal("home 内指向外部文件的软链接应被拒绝")
+	}
+}

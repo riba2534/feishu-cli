@@ -66,7 +66,7 @@
     {"skill": "feishu-cli-platform", "workflow": "auth", "prefixes": [["auth"], ["config"], ["doctor"], ["profile"], ["skills"], ["update"]]},
     {"skill": "feishu-cli-platform", "workflow": "api", "prefixes": [["api"]]},
     {"skill": "feishu-cli-platform", "workflow": "schema", "prefixes": [["schema"]]},
-    {"skill": "feishu-cli-platform", "workflow": "search", "prefixes": [["search"]]},
+    {"skill": "feishu-cli-platform", "workflow": "search", "prefixes": [["search"], ["drive", "search"]]},
     {"skill": "feishu-cli-platform", "workflow": "directory", "prefixes": [["user"], ["dept"]]},
 
     {"skill": "feishu-cli-docs", "workflow": "read", "prefixes": [["doc"], ["doc", "get"], ["doc", "blocks"], ["doc", "read"]]},
@@ -75,14 +75,14 @@
     {"skill": "feishu-cli-docs", "workflow": "export", "prefixes": [["doc", "export"], ["doc", "export-file"], ["doc", "media-download"]]},
     {"skill": "feishu-cli-docs", "workflow": "markdown", "prefixes": [["markdown"]]},
 
-    {"skill": "feishu-cli-storage", "workflow": "drive", "prefixes": [["drive"], ["doc", "import-file"]]},
+    {"skill": "feishu-cli-storage", "workflow": "drive", "prefixes": [["drive"], ["drive", "download"], ["drive", "export"], ["drive", "export-download"], ["drive", "import"], ["drive", "inspect"], ["drive", "move"], ["drive", "pull"], ["drive", "push"], ["drive", "status"], ["drive", "task-result"], ["drive", "update-title"], ["drive", "upload"], ["drive", "version-get"], ["drive", "version-history"], ["doc", "import-file"]]},
     {"skill": "feishu-cli-storage", "workflow": "file-media", "prefixes": [["file"], ["media"]]},
     {"skill": "feishu-cli-storage", "workflow": "wiki", "prefixes": [["wiki"]]},
-    {"skill": "feishu-cli-storage", "workflow": "comment", "prefixes": [["comment"]]},
-    {"skill": "feishu-cli-storage", "workflow": "perm", "prefixes": [["perm"]]},
+    {"skill": "feishu-cli-storage", "workflow": "comment", "prefixes": [["comment"], ["drive", "add-comment"]]},
+    {"skill": "feishu-cli-storage", "workflow": "perm", "prefixes": [["perm"], ["drive", "apply-permission"], ["drive", "secure-label"]]},
 
-    {"skill": "feishu-cli-messaging", "workflow": "msg", "prefixes": [["msg"]]},
-    {"skill": "feishu-cli-messaging", "workflow": "chat", "prefixes": [["chat"], ["msg", "delete"], ["msg", "get"], ["msg", "history"], ["msg", "list"], ["msg", "mget"], ["msg", "pin"], ["msg", "pins"], ["msg", "reaction"], ["msg", "read-users"], ["msg", "search-chats"], ["msg", "thread-messages"], ["msg", "unpin"]]},
+    {"skill": "feishu-cli-messaging", "workflow": "msg", "prefixes": [["msg"], ["msg", "send"], ["msg", "reply"], ["msg", "forward"], ["msg", "merge-forward"], ["msg", "urgent"], ["msg", "edit"], ["msg", "delete"]]},
+    {"skill": "feishu-cli-messaging", "workflow": "chat", "prefixes": [["chat"], ["msg", "flag"], ["msg", "get"], ["msg", "history"], ["msg", "list"], ["msg", "mget"], ["msg", "pin"], ["msg", "pins"], ["msg", "reaction"], ["msg", "read-users"], ["msg", "resource-download"], ["msg", "search-chats"], ["msg", "thread-messages"], ["msg", "unpin"]]},
     {"skill": "feishu-cli-messaging", "workflow": "event", "prefixes": [["event"]]},
 
     {"skill": "feishu-cli-data", "workflow": "bitable", "prefixes": [["bitable"]]},

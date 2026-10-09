@@ -18,6 +18,9 @@ var approvalCmd = &cobra.Command{
   - 通过审批任务（approval task approve）
   - 拒绝审批任务（approval task reject）
   - 转交审批任务（approval task transfer）
+  - 退回审批任务（approval task rollback）
+  - 审批任务加签（approval task add-sign）
+  - 催办审批任务（approval task remind）
 
 所有当前审批 API 均使用 User Token。
 

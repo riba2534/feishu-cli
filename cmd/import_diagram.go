@@ -15,7 +15,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// estimateMermaidComplexity 简单估算复杂度，返回非空字符串表示有风险
+// Mermaid 复杂度预警阈值。实测服务端已能渲染 par、12 个 participant、3 层嵌套 alt，
+// 这里只对明显超出实测范围的规模给出"可能失败"提示，不再把 par 当作不支持。
+const (
+	mermaidWarnParticipants = 20 // participant / actor 声明数
+	mermaidWarnAltBlocks    = 6  // alt 块数
+	mermaidWarnLongLines    = 50 // 超过 60 字节的长行数
+)
+
+// mermaidComplexityHint 服务端渲染可能失败时的建议：只建议本地引擎（节点仍可编辑），
+// 不建议 svg-import（会把整张图变成一个不可编辑的图片节点）。
+const mermaidComplexityHint = "服务端渲染可能失败；先照常导入，真遇到 Parse error 再加 --engine local 改用本地引擎（生成的节点仍可编辑）"
+
+// estimateMermaidComplexity 简单估算复杂度，返回非空字符串表示规模超出实测可渲染范围
 func estimateMermaidComplexity(source, sourceType string) string {
 	content := source
 	if sourceType == "" || sourceType == "file" {
@@ -25,28 +37,38 @@ func estimateMermaidComplexity(source, sourceType string) string {
 		}
 		content = string(data)
 	}
-	participantCount := strings.Count(content, "participant ")
-	alt := strings.Count(content, "alt ") + strings.Count(content, "\nalt")
-	par := strings.Count(content, "par ") + strings.Count(content, "\npar")
-	longLabels := 0
+	participantCount, alt, longLines := 0, 0, 0
 	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "participant ") || strings.HasPrefix(trimmed, "actor ") {
+			participantCount++
+		}
+		if trimmed == "alt" || strings.HasPrefix(trimmed, "alt ") {
+			alt++
+		}
 		if len(line) > 60 {
-			longLabels++
+			longLines++
 		}
 	}
-	if par > 0 {
-		return fmt.Sprintf("含 par 语法 %d 次（飞书服务端不支持）", par)
+	var reasons []string
+	if participantCount >= mermaidWarnParticipants {
+		reasons = append(reasons, fmt.Sprintf("participant 数 %d ≥ %d", participantCount, mermaidWarnParticipants))
 	}
-	if participantCount >= 10 {
-		return fmt.Sprintf("participant 数 %d ≥ 10", participantCount)
+	if alt >= mermaidWarnAltBlocks {
+		reasons = append(reasons, fmt.Sprintf("alt 块 %d 个 ≥ %d", alt, mermaidWarnAltBlocks))
 	}
-	if alt >= 3 {
-		return fmt.Sprintf("alt 嵌套 %d 次", alt)
+	if longLines >= mermaidWarnLongLines {
+		reasons = append(reasons, fmt.Sprintf("长标签行 %d 个 ≥ %d", longLines, mermaidWarnLongLines))
 	}
-	if longLabels >= 30 {
-		return fmt.Sprintf("长标签行 %d 个 ≥ 30", longLabels)
+	return strings.Join(reasons, "，")
+}
+
+// mermaidParseErrorHint 服务端引擎返回 Parse error 时追加切换本地引擎的提示（保留原错误分类）。
+func mermaidParseErrorHint(err error, syntax string) error {
+	if err == nil || syntax != "mermaid" || !strings.Contains(err.Error(), "Parse error") {
+		return err
 	}
-	return ""
+	return fmt.Errorf("%w\n提示: 服务端无法解析该 Mermaid，可加 --engine local 改用本地引擎（需 whiteboard-cli，生成的节点仍可编辑）", err)
 }
 
 var importDiagramCmd = &cobra.Command{
@@ -145,10 +167,10 @@ var importDiagramCmd = &cobra.Command{
 			return clierr.Usagef("--client-token 仅对 --engine local 生效：服务端引擎接口（/nodes/plantuml）不认 client_token，重复请求仍会重复建图；服务端引擎的重试去重由 CLI 自动处理")
 		}
 
-		// 复杂度估算 + 警告（仅 Mermaid，server engine）
+		// 复杂度估算 + 提示（仅 Mermaid，server engine）
 		if syntax == "mermaid" && engine != "local" {
 			if warn := estimateMermaidComplexity(source, sourceType); warn != "" {
-				fmt.Fprintf(os.Stderr, "⚠ Mermaid 复杂度警告: %s\n  服务端可能渲染失败，建议改 --engine local 或改用 svg-import\n", warn)
+				fmt.Fprintf(os.Stderr, "⚠ Mermaid 复杂度提示: %s\n  %s\n", warn, mermaidComplexityHint)
 			}
 		}
 
@@ -192,7 +214,7 @@ var importDiagramCmd = &cobra.Command{
 		opts.UserAccessToken = userAccessToken
 
 		// 本地引擎路径：通过 whiteboard-cli 把 Mermaid/DSL 转节点 JSON 再 create_nodes
-		// 适合复杂 Mermaid（10+ participant / par / 30+ 长标签）服务端会失败的场景
+		// 适合服务端引擎返回 Parse error 的复杂 Mermaid
 		if engine == "local" {
 			if !client.WhiteboardCLIBridgeAvailable() {
 				return fmt.Errorf("--engine local 需要 whiteboard-cli。安装：npm install -g @larksuite/whiteboard-cli")
@@ -257,7 +279,7 @@ var importDiagramCmd = &cobra.Command{
 			},
 		})
 		if retryResult.Err != nil {
-			return retryResult.Err
+			return mermaidParseErrorHint(retryResult.Err, syntax)
 		}
 		result := retryResult.Value
 

@@ -894,7 +894,7 @@ feishu-cli mail forward --message-id msg_xxx --to team@example.com --body "请�
 feishu-cli mail signature                                          # 列出邮箱签名
 feishu-cli mail signature --detail 7012345678901234567 -o json     # 单个签名详情
 
-# 视频会议（vc）：search/notes/recording 需 User Token；bot meeting-join/leave 默认 Bot/Tenant 身份
+# 视频会议（vc）：search/notes/recording 默认 User，可 `--as bot`；bot meeting-join/leave 默认 Bot/Tenant 身份
 feishu-cli vc search --query "周会" --start 2026-03-20 --end 2026-03-28
 feishu-cli vc detail <meeting_id|会议号>                            # 聚合会议信息 + note_id + minute_token
 feishu-cli vc note detail <note_id>                                # 智能纪要详情
@@ -907,7 +907,7 @@ feishu-cli vc bot meeting-leave --meeting-id 6911188411932033028   # 机器人�
 feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --as user --start 2026-03-01 --end 2026-03-31
 feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --as bot --dry-run  # 与 meeting_id 来源身份一致；禁止静默回落
 
-# 妙记（minutes，需 User Token）
+# 妙记（minutes，默认 User，可 `--as bot`）
 feishu-cli minutes get <minute_token> --with-artifacts
 feishu-cli minutes get <minute_token> --wait-ready                  # 轮询等待妙记转写就绪
 feishu-cli minutes search --query "周会"                            # 搜索妙记
