@@ -27,7 +27,34 @@ type createdBlockNode struct {
 // blockContentRejectedCodes 是建块接口「这批内容本身不被接受」的业务码：整批原子失败，
 // 逐块重建可以把问题块隔离出来，其余内容照常写入（实测：带 token 的 Image/File/Board/Sheet/Bitable 报 1770001，
 // QuoteContainer 嵌套报 1770030，显式创建 grid_column 报 1770028，字段越界报 99992402）。
-var blockContentRejectedCodes = []int{1770001, 1770028, 1770030, 99992402}
+// 1770035（单次请求画板块超限）正常不会出现——分批时已按 maxBoardsPerCreate 切开，列在这里作为兜底：万一触发就逐块重建。
+var blockContentRejectedCodes = []int{1770001, 1770028, 1770030, 1770035, 99992402}
+
+// maxBoardsPerCreate 单次建块请求中画板块（Board）的上限。实测：同一请求 6 个画板即报
+// 1770035 resource count exceed limit，5 个成功且与文档已有画板数量无关；图片、附件不受此限
+// （单批 50 张图片、20 个附件、5 画板 + 45 图片均成功）。
+const maxBoardsPerCreate = 5
+
+// blockBatchRanges 把 blocks 切成连续批次 [start, end)：每批不超过 maxBlocks 个块、不超过
+// maxBoardsPerCreate 个画板块，保持原有顺序。
+func blockBatchRanges(blocks []*larkdocx.Block, maxBlocks int) [][2]int {
+	var ranges [][2]int
+	start, boards := 0, 0
+	for i, b := range blocks {
+		isBoard := b != nil && b.BlockType != nil && *b.BlockType == int(converter.BlockTypeBoard)
+		if i-start >= maxBlocks || (isBoard && boards >= maxBoardsPerCreate) {
+			ranges = append(ranges, [2]int{start, i})
+			start, boards = i, 0
+		}
+		if isBoard {
+			boards++
+		}
+	}
+	if start < len(blocks) {
+		ranges = append(ranges, [2]int{start, len(blocks)})
+	}
+	return ranges
+}
 
 func isBlockContentRejected(err error) bool {
 	for _, code := range blockContentRejectedCodes {
@@ -46,7 +73,7 @@ func blockLabel(b *larkdocx.Block) string {
 	return converter.BlockTypeName(converter.BlockType(*b.BlockType))
 }
 
-// createChildrenIsolated 在 parentID 下按顺序追加创建 blocks（每批 ≤50，复用幂等 client_token 重试）。
+// createChildrenIsolated 在 parentID 下按顺序追加创建 blocks（每批 ≤50 块且 ≤5 个画板，复用幂等 client_token 重试）。
 // 某批因内容被拒（见 blockContentRejectedCodes）整批失败时，改为逐块创建以隔离问题块：
 // 被拒的块记入 blockErrs、其余块照常写入。返回值 created 与 blocks 一一对应（失败位置为 nil）。
 // 非内容类错误（权限、网络重试耗尽等）作为 fatalErr 返回并停止后续创建——此时继续写只会重复失败。
@@ -54,8 +81,8 @@ func createChildrenIsolated(documentID, parentID string, blocks []*larkdocx.Bloc
 	created = make([]*larkdocx.Block, len(blocks))
 	retryCfg := client.RetryConfig{MaxRetries: 5, RetryOnRateLimit: true}
 	const batchSize = 50
-	for i := 0; i < len(blocks); i += batchSize {
-		end := min(i+batchSize, len(blocks))
+	for _, r := range blockBatchRanges(blocks, batchSize) {
+		i, end := r[0], r[1]
 		res := client.CreateBlockWithRetry(documentID, parentID, blocks[i:end], -1, retryCfg, userAccessToken)
 		if res.Err == nil {
 			for k, b := range res.Value {

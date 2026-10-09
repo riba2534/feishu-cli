@@ -246,15 +246,14 @@ func addContentMarkdownWithOptions(documentID, blockID, contentData, basePath st
 		topLevelBlocks[i] = node.Block
 	}
 
-	// 批量添加顶层块（飞书 API 限制每次最多 50 个块）
+	// 批量添加顶层块（飞书 API 限制每次最多 50 个块，且单次最多 5 个画板块，见 blockBatchRanges）
 	const batchSize = 50
 	var createdTop []*larkdocx.Block
 	totalCreated := 0
 	currentIndex := index
 
-	for i := 0; i < len(topLevelBlocks); i += batchSize {
-		end := min(i+batchSize, len(topLevelBlocks))
-		batch := topLevelBlocks[i:end]
+	for _, r := range blockBatchRanges(topLevelBlocks, batchSize) {
+		batch := topLevelBlocks[r[0]:r[1]]
 
 		createdBlocks, _, err := client.CreateBlock(documentID, blockID, batch, currentIndex, userAccessToken)
 		if err != nil {

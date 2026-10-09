@@ -127,6 +127,8 @@ func APIErrorHint(info apidiag.Info) string {
 		return "提示：token 刷新服务暂时不可用，请稍后重试。"
 	case 99991400:
 		return "提示：请求被限流，请降低并发或稍后重试。"
+	case 1770035:
+		return "提示：单次建块请求最多包含 5 个画板块（图片、附件不受此限），请把画板分到多次请求中创建；doc import / doc add 已自动分批。"
 	}
 	return ""
 }

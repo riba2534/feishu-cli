@@ -14,24 +14,28 @@ import (
 	"sync"
 	"testing"
 
+	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/converter"
 )
 
 // docxMock 模拟导入涉及的 docx / drive / board 接口，并按 2026-10 实测的服务端约束拒绝非法建块：
 //   - 带 token 的 Image/File/Board/Sheet/Bitable、带 name 的 File → 1770001
 //   - 在 Grid 下显式创建子块 → 1770028；QuoteContainer/Callout 作为 QuoteContainer 子块 → 1770030
+//   - 单次请求超过 5 个画板块 → 1770035 resource count exceed limit
 //
 // Grid 建块时服务端自动生成两列（响应 children），File 建块返回外层 View 块（children[0] 为 File 块）。
 type docxMock struct {
-	t        *testing.T
-	mu       sync.Mutex
-	next     int
-	types    map[string]int // block_id → block_type
-	created  map[string][]map[string]any
-	fatal    bool // 所有建块请求返回 1770002 not found
-	patches  map[string]map[string]any
-	uploads  []map[string]string
-	diagrams []string
+	t           *testing.T
+	mu          sync.Mutex
+	next        int
+	types       map[string]int // block_id → block_type
+	created     map[string][]map[string]any
+	fatal       bool // 所有建块请求返回 1770002 not found
+	patches     map[string]map[string]any
+	uploads     []map[string]string
+	diagrams    []string
+	maxBoards   int // 单次建块请求中出现过的最多画板块数
+	over1770035 int // 因画板超限被拒的请求数
 }
 
 func newDocxMock(t *testing.T) *docxMock {
@@ -113,6 +117,18 @@ func (m *docxMock) handler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		boards := 0
+		for _, c := range req.Children {
+			if bt, _ := c["block_type"].(float64); int(bt) == int(converter.BlockTypeBoard) {
+				boards++
+			}
+		}
+		if boards > 5 {
+			m.over1770035++
+			mockWriteJSON(w, 400, map[string]any{"code": 1770035, "msg": "resource count exceed limit"})
+			return
+		}
+		m.maxBoards = max(m.maxBoards, boards)
 		out := make([]map[string]any, 0, len(req.Children))
 		for _, c := range req.Children {
 			bt := int(c["block_type"].(float64))
@@ -438,6 +454,56 @@ func TestImportReusesTokenMediaAndCopiesBoard(t *testing.T) {
 	}
 	if len(m.diagrams) != 1 || !strings.Contains(m.diagrams[0], "plant_uml_code") || !strings.Contains(m.diagrams[0], "@startuml") {
 		t.Fatalf("画板应按源码重新导入: %v", m.diagrams)
+	}
+}
+
+// TestImportSplitsBoardsPerRequest doc export 的 Markdown 含大量 <whiteboard token> 时，同一批建块不能超过 5 个画板块
+// （实测第 6 个即 1770035，此前整篇在第二批中止）。12 个画板应全部建出并复制成功，且每次请求 ≤5 个画板。
+func TestImportSplitsBoardsPerRequest(t *testing.T) {
+	m := newDocxMock(t)
+	var md strings.Builder
+	for i := 0; i < 12; i++ {
+		fmt.Fprintf(&md, "段落 %d\n\n<whiteboard token=\"srcBoard\" type=\"blank\"/>\n\n", i)
+	}
+	out, runErr, stdout := runImportJSON(t, m, md.String(), nil)
+	if runErr != nil || out.PartialFailure {
+		t.Fatalf("12 个画板应全部导入成功: err=%v\n%s", runErr, stdout)
+	}
+	if out.WhiteboardOK != 12 || m.maxBoards == 0 || m.maxBoards > 5 || m.over1770035 != 0 {
+		t.Fatalf("画板复制 %d/12，单次请求最多画板 %d（应 1–5），1770035 被拒 %d 次（应 0：分批时就切开，不靠逐块兜底）",
+			out.WhiteboardOK, m.maxBoards, m.over1770035)
+	}
+	if got := len(m.created["doc1"]); got != 24 {
+		t.Fatalf("文档根下应创建 24 个块（12 段落 + 12 画板）, got %d", got)
+	}
+}
+
+func TestBlockBatchRanges(t *testing.T) {
+	board, text := int(converter.BlockTypeBoard), int(converter.BlockTypeText)
+	mk := func(types ...int) []*larkdocx.Block {
+		var bs []*larkdocx.Block
+		for _, ty := range types {
+			ty := ty
+			bs = append(bs, &larkdocx.Block{BlockType: &ty})
+		}
+		return bs
+	}
+	cases := []struct {
+		name  string
+		types []int
+		max   int
+		want  [][2]int
+	}{
+		{"空", nil, 50, nil},
+		{"纯文本按块数切", []int{text, text, text, text, text}, 2, [][2]int{{0, 2}, {2, 4}, {4, 5}}},
+		{"第 6 个画板另起一批", []int{board, board, board, board, board, text, board, text}, 50, [][2]int{{0, 6}, {6, 8}}},
+		{"画板与块数双约束", []int{board, board, board, board, board, board, board, board, board, board, board}, 50, [][2]int{{0, 5}, {5, 10}, {10, 11}}},
+	}
+	for _, c := range cases {
+		got := blockBatchRanges(mk(c.types...), c.max)
+		if fmt.Sprint(got) != fmt.Sprint(c.want) {
+			t.Errorf("%s: got %v want %v", c.name, got, c.want)
+		}
 	}
 }
 

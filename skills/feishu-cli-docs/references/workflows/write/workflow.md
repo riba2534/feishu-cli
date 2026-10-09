@@ -245,6 +245,8 @@ feishu-cli doc add <document_id> --content '[{"block_type":2,"text":{"elements":
 feishu-cli doc add <document_id> doc.md --content-type markdown --block-id <parent_block_id> --index 0
 # 带表格的 Markdown 可指定列宽（仅 markdown 内容类型生效）
 feishu-cli doc add <document_id> table.md --content-type markdown --table-column-width auto
+# 注意：doc add 不把 ```mermaid / plantuml / svg 代码块转成画板（按代码块写入）；要图表用 doc import 或 board import。
+# 导出 Markdown 里的 <whiteboard token> 会复制源画板，单次建块最多 5 个画板，CLI 已自动分批。
 
 feishu-cli doc update <document_id> <block_id> --content-file update.json
 
