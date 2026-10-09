@@ -12,6 +12,7 @@ import (
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // 最大递归深度，防止栈溢出
@@ -1016,7 +1017,7 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 		c.imageCount++
 		filename := fmt.Sprintf("image_%d.png", c.imageCount)
 
-		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
+		if err := safefile.MkdirAll(c.options.AssetsDir, 0755); err != nil {
 			return "", fmt.Errorf("创建资源目录失败: %w", err)
 		}
 
@@ -1315,7 +1316,7 @@ func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (s
 	attrs := []string{"controls"}
 
 	if token != "" && c.options.DownloadImages {
-		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
+		if err := safefile.MkdirAll(c.options.AssetsDir, 0755); err != nil {
 			return "", fmt.Errorf("创建资源目录失败: %w", err)
 		}
 
@@ -1360,7 +1361,8 @@ func appendVideoMetadata(attrs []string, name string, viewType *int) []string {
 
 func (c *BlockToMarkdown) nextVideoAssetPath(name string) string {
 	c.videoCount++
-	filename := name
+	// 文件名来自文档内容（任何协作者都能改），去掉路径分隔符，防止经 "../" 写出资源目录
+	filename := sanitizeAssetFilename(name)
 	if filename == "" {
 		filename = fmt.Sprintf("video_%d.mp4", c.videoCount)
 	}
@@ -1368,6 +1370,21 @@ func (c *BlockToMarkdown) nextVideoAssetPath(name string) string {
 		filename += ".mp4"
 	}
 	return filepath.Join(c.options.AssetsDir, c.reserveUniqueVideoFilename(filename))
+}
+
+// sanitizeAssetFilename 把远端文件名收敛为资源目录内的单段文件名：路径分隔符替换为 "_"，
+// "." / ".." 视为无名（调用方回退默认名）。
+func sanitizeAssetFilename(name string) string {
+	name = strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' || r == 0 {
+			return '_'
+		}
+		return r
+	}, strings.TrimSpace(name))
+	if name == "." || name == ".." {
+		return ""
+	}
+	return name
 }
 
 func (c *BlockToMarkdown) reserveUniqueVideoFilename(filename string) string {
@@ -1555,7 +1572,7 @@ func (c *BlockToMarkdown) convertBoard(block *larkdocx.Block) (string, error) {
 		// 不带扩展名，由 GetBoardImage 按服务端实际图片格式补齐
 		filename := fmt.Sprintf("board_%d", c.imageCount)
 
-		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
+		if err := safefile.MkdirAll(c.options.AssetsDir, 0755); err != nil {
 			return "", fmt.Errorf("创建资源目录失败: %w", err)
 		}
 

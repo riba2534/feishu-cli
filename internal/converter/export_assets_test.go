@@ -63,3 +63,46 @@ func TestExportAssetLinksRelativeToMarkdownFile(t *testing.T) {
 		t.Fatalf("导入端应解析 <...> 包裹的路径: %#v", ref)
 	}
 }
+
+// TestVideoAssetNameCannotEscapeAssetsDir 视频文件名来自文档内容（协作者可改），含 "../" 或分隔符时
+// 必须收敛为资源目录内的单段文件名，不能写出 --assets-dir。
+func TestVideoAssetNameCannotEscapeAssetsDir(t *testing.T) {
+	assetsDir := t.TempDir()
+	conv := NewBlockToMarkdown(nil, ConvertOptions{AssetsDir: assetsDir})
+	for _, name := range []string{"../../.bashrc.mp4", "a/b/c.mp4", `..\..\evil.mp4`, "..", "."} {
+		got := conv.nextVideoAssetPath(name)
+		if filepath.Dir(got) != assetsDir {
+			t.Fatalf("nextVideoAssetPath(%q) = %q，越出资源目录 %q", name, got, assetsDir)
+		}
+	}
+}
+
+// TestDownloadImagesRejectsSensitiveAssetsDir --assets-dir 落在敏感目录时不创建目录、不下载（降级为可 roundtrip 的标签）。
+func TestDownloadImagesRejectsSensitiveAssetsDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	assets := filepath.Join(home, ".ssh", "assets")
+	blocks := []*larkdocx.Block{
+		{BlockId: strPtr("img"), BlockType: intPtr(int(BlockTypeImage)), Image: &larkdocx.Image{Token: strPtr("imgTok")}},
+	}
+	conv := NewBlockToMarkdown(blocks, ConvertOptions{DownloadImages: true, AssetsDir: assets})
+	downloads := 0
+	conv.services = &blockToMarkdownServices{
+		getMediaTempURL: func(string, client.DownloadMediaOptions) (string, error) { downloads++; return "", nil },
+		downloadFromURL: func(string, string) error { downloads++; return nil },
+		downloadMedia:   func(string, string, client.DownloadMediaOptions) error { downloads++; return nil },
+		getBoardImage:   func(string, string, string) (string, error) { downloads++; return "", nil },
+	}
+	if _, err := conv.Convert(); err == nil || !strings.Contains(err.Error(), "~/.ssh") {
+		t.Fatalf("敏感 --assets-dir 应报错，得到 %v", err)
+	}
+	if downloads != 0 {
+		t.Fatalf("敏感 --assets-dir 不应发起下载，实际 %d 次", downloads)
+	}
+	if _, err := os.Stat(assets); !os.IsNotExist(err) {
+		t.Fatal("不应在 ~/.ssh 下创建资源目录")
+	}
+}
