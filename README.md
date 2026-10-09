@@ -132,7 +132,8 @@ feishu-cli doc import large-doc.md --title "大文档" \
 
 | 模块 | 能力 |
 |------|------|
-| **文档** | 创建、导入、导出、**大文档选择性读取（doc read：大纲/按标题取节/关键词定位）**、编辑、批量更新、Callout、画板、异步导出/导入文件 |
+| **文档** | 创建（**带本地图片/附件/HTML 块/画板源文件**）、导入、导出、**大文档选择性读取（doc read：大纲/按标题取节/关键词定位，可转成直接发 IM 的 Markdown）**、编辑、批量更新、Callout、画板、**文档封面**、素材插入/下载/预览、**写作草稿与 DocxXML 预检（doc script）**、异步导出/导入文件 |
+| **思维笔记** | 读取已有思维笔记的节点、新增子节点或更新节点（mindnote nodes list/create） |
 | **知识库** | 空间列表、节点增删改查、导出（含整树递归镜像）、**移出知识库到云盘（move-to-drive）**、空间详情、成员管理 |
 | **电子表格** | V2 基础读写 + V3 富文本 API，行列操作、样式、批量样式、合并、查找替换、导出 XLSX/CSV、浮动图片读写、素材上传、单元格写图、筛选视图与筛选条件 CRUD、下拉菜单数据验证、**类型保真整表读写 table-get/table-put（数字/日期/布尔 dtype 保真，支持 get→改→put round-trip）** |
 | **多维表格** | base/v3 + bitable/v1 全覆盖：数据表/字段/记录 CRUD（含批量获取）、记录附件上传/下载/移除、视图配置（filter/sort/group/visible-fields/timebar/card）、仪表盘 CRUD 与智能排版、仪表盘块 CRUD、表单 CRUD 与分享详情/提交、表单问题 CRUD、角色 CRUD 与协作者管理、高级权限、数据聚合、工作流 CRUD、多维表格重命名与权限设置 |
@@ -351,6 +352,26 @@ feishu-cli doc read <doc_id> --engine docs_ai --with-ids --scope keyword --keywo
 feishu-cli doc content-update <doc_id> --mode block_replace --block-id <block_id> --markdown "新段落"
 # 历史版本
 feishu-cli doc history list <doc_id>
+
+# 带内容建文档：内容里的本地资源在建文档后自动上传绑定（<img href="https://..."> 由服务端下载）
+feishu-cli doc create --doc-format xml --content-file draft.xml --dry-run   # 先预览请求与上传计划
+feishu-cli doc create --doc-format xml --content-file draft.xml             # draft.xml 可含 <img path="@./a.png"/>、<source path="@./f.pdf"/>、
+                                                                             # <whiteboard type="mermaid" path="@./x.mmd"/>、<html5-block path="@./w.html"/>
+# 转成可直接发到 IM 的 Markdown
+feishu-cli doc read <doc_id> --doc-format im-markdown --lang en-US
+
+# 文档封面
+feishu-cli doc resource update <doc_id> --type cover --file cover.png --offset-ratio-y -0.2
+feishu-cli doc resource download <doc_id> --type cover -o ./cover
+feishu-cli doc resource delete <doc_id> --type cover
+
+# 写作草稿：初始化工作区 → 写 DocxXML → 解析预检（字数、块分布、资源）
+feishu-cli doc script --command init-draft --presentation-decision '{}'
+feishu-cli doc script --command parse --content @draft_xxxxxxxx_folder/draft.xml
+
+# 思维笔记节点（需要应用开通 mindnote:node:read / mindnote:node:create）
+feishu-cli mindnote nodes list <mindnote_token_or_url>
+feishu-cli mindnote nodes create <mindnote_token_or_url> --data @nodes.json --dry-run
 
 # 添加高亮块
 feishu-cli doc add-callout <doc_id> "提示内容" --callout-type info
@@ -967,7 +988,10 @@ feishu-cli doc content-update <doc_id> --mode append --markdown "## 新内容"
 feishu-cli doc content-update <doc_id> --mode overwrite --markdown "# 全新文档" [--revision-id 42]
 feishu-cli doc content-update <doc_id> --mode replace_range --selection-by-title "章节标题" --markdown "## 新章节"
 feishu-cli doc media-insert <doc_id> --file photo.png --type image --align center
+feishu-cli doc media-insert <doc_id> --from-clipboard --type image            # 从剪贴板插图（Linux 需 xclip / wl-paste / xsel）
+feishu-cli doc media-insert <doc_id> --file report.pdf --type file --file-view preview
 feishu-cli doc media-download <file_token> -o image.png
+feishu-cli doc media-preview <file_token> -o ./preview                         # 预览接口下载素材或评论图片
 feishu-cli doc media-download <file_token> --doc-token DOC_TOKEN --doc-type docx -o image.png
 
 # 妙笔BOX HTML 小组件（文档里跑动画 / ECharts / 可交互图表，唯一能"动"的载体）
@@ -1773,7 +1797,7 @@ make release-package VERSION=vX.Y.Z
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE)。部分实现与技能文档改编自 [larksuite/cli](https://github.com/larksuite/cli)（MIT），版权与许可声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 相关链接
 

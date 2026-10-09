@@ -64,7 +64,7 @@ CI（`.github/workflows/ci.yml`）在 PR 与 push main 时运行 gofmt / vet / t
 9. **业务错误解析**：飞书大量业务错误随 HTTP 400 下发，禁止先按 HTTP 状态码短路；手写请求用 `client.ParseAPIResponse` / `client.CheckAPIResponse` 先解析业务信封，再用 `client.AsAPIError` 取 code/log_id/缺失 scope 做分支提示
 10. **退出码与错误分类**：用 `internal/clierr` 打标签（`clierr.Usagef` → 2、`clierr.Authf` → 3、`clierr.Network` → 4、`clierr.ConfirmationRequiredf` → 10），只改退出码不改错误文本；参数校验错误一律 `clierr.Usagef`
 11. **危险操作确认**：删除/覆盖类用 `confirmDangerousAction(cmd, prompt)`，必须放在 `--dry-run` 判断之后；全局 `--yes`（命令级 `--force` 等价）跳过确认，非交互且未确认时 exit 10、不执行
-12. **HTTP 与本地文件**：手写 Bearer 请求用包内 `rawHTTPClient()` + `http.NewRequestWithContext(Context(), ...)`（共享连接池、host 白名单、Ctrl-C 可中断），禁止 `http.DefaultClient` / `http.Get` / 裸 `&http.Client{}`；本地读写路径用 `internal/safefile`（敏感目录拒绝、原子写）；按字节截断字符串用 `internal/textutil.TruncateUTF8`
+12. **HTTP 与本地文件**：手写 Bearer 请求用包内 `rawHTTPClient()` + `http.NewRequestWithContext(Context(), ...)`（共享连接池、host 白名单、Ctrl-C 可中断），禁止 `http.DefaultClient` / `http.Get` / 裸 `&http.Client{}`；本地读写路径用 `internal/safefile`：`AtomicWriteFile/AtomicWriteFrom/MkdirAll` 默认拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），只有 CLI 自管路径（~/.feishu-cli 下的配置、token、缓存）才用 `*Trusted` 变体；本地输入用 `readLocalInputFile` 或 `safefile.StatInputFile/ReadInputFile`（不存在/是目录/无权限为 exit 2）；用户给的输出/输入路径必须在第一次网络请求（含 token 刷新、wiki 解析）之前校验。下载用户给的外部 URL 时，受限地址统一用 `client.isRestrictedRemoteIP` 判定（请求前、每跳重定向与 `Dialer.Control` 拨号时都要校验，防 SSRF 与 DNS rebinding）；按字节截断字符串用 `internal/textutil.TruncateUTF8`
 13. **隐私安全（开源项目，必须遵守）**：
    - 代码、文档、技能文件中**禁止出现任何真实的个人邮箱、密码、Token、密钥**
    - 示例邮箱统一使用 `user@example.com`，示例 Token 使用 `cli_xxx`、`u-xxx` 等占位符
@@ -113,13 +113,13 @@ export FEISHU_APP_SECRET=xxx
 通过 **OAuth 2.0 Device Flow（RFC 8628）** 获取 User Access Token，用于搜索、审批任务查询等需要用户授权的功能。**无需配置重定向 URL 白名单**（v1.18+ 已删除 Authorization Code Flow）。
 
 **Token 使用策略**（按命令分四类，对应 `cmd/utils.go` 五个 helper；越来越多的命令提供 `--as bot|user|auto`，以命令 `--help` 为准）：
-- **读类 · User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`）：`msg list/get/mget/thread-messages/resource-download`、`chat list`、`doc read`、`doc history list/revert-status`、`task get/list/subtask list/comment list/tasklist get/list/tasks`、`calendar get/list/primary/freebusy/suggestion/room-find/event get/list/attendee list`、`file meta/stats/list/version list/get/download`、`board image/nodes/export-code/lint`、`wiki get/nodes/spaces/export/member list`、`drive pull/push/status`、**sheet 全家桶**（所有 sheet 子命令含写）等。优先级链：`--user-access-token` → `FEISHU_USER_ACCESS_TOKEN` → `~/.feishu-cli/token.json`（过期自动刷新）→ `config.yaml` 的 `user_access_token` → App Token 兜底。**注意**：此 helper 在 token 损坏/刷新失败时会**在 stderr 告警后**切 Bot（不再静默；stdout 不受影响，`-o json` 管道安全），仍不适合身份敏感的 Markdown/Drive import-export-move。sheet、`drive pull/push/status/download/upload`、`file list` 另有 `--as`：不传保持上述默认，`--as bot` 强制 App Token（例如访问应用自己的表格），`--as user` 强制 User。
+- **读类 · User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`）：`msg list/get/mget/thread-messages/resource-download`、`chat list`、`doc read`、`doc history list/revert-status`、`doc resource download`、`doc media-preview`、`task get/list/subtask list/comment list/tasklist get/list/tasks`、`calendar get/list/primary/freebusy/suggestion/room-find/event get/list/attendee list`、`file meta/stats/list/version list/get/download`、`board image/nodes/export-code/lint`、`wiki get/nodes/spaces/export/member list`、`drive pull/push/status`、**sheet 全家桶**（所有 sheet 子命令含写）等。优先级链：`--user-access-token` → `FEISHU_USER_ACCESS_TOKEN` → `~/.feishu-cli/token.json`（过期自动刷新）→ `config.yaml` 的 `user_access_token` → App Token 兜底。**注意**：此 helper 在 token 损坏/刷新失败时会**在 stderr 告警后**切 Bot（不再静默；stdout 不受影响，`-o json` 管道安全），仍不适合身份敏感的 Markdown/Drive import-export-move。sheet、`drive pull/push/status/download/upload`、`file list` 另有 `--as`：不传保持上述默认，`--as bot` 强制 App Token（例如访问应用自己的表格），`--as user` 强制 User。
   **破坏性操作例外**：`drive pull --delete-local` / `drive push --delete-remote` 走 `resolveOptionalUserTokenForDestructive`——已配置 User Token 但不可用时 **fail-closed 报错、拒绝降级 Bot**（Bot 视角远端条目更少、差集更大，会误删本地文件）。未配置 User Token 的纯 Bot 场景仍正常放行。
-- **写类 · 默认 Bot 身份**（`resolveOptionalUserToken`）：`doc create/import/add/add-callout/add-board/content-update/media-insert`、`doc history revert`、`msg send/reply/forward/delete`（Bot 自撤回）、`comment reply`、`file version revert`、`wiki move-to-drive`、`slides` 写命令等。**不会自动加载 token.json**，仅当显式传 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到 User Token。`msg merge-forward` 接口只接受 Tenant，固定 Bot。`vc bot meeting-join/leave` **仅 Bot**：传 `--user-access-token` 直接报用法错误（exit 2）。
+- **写类 · 默认 Bot 身份**（`resolveOptionalUserToken`）：`doc create/import/add/add-callout/add-board/content-update/media-insert`、`doc resource update/delete`、`doc history revert`、`msg send/reply/forward/delete`（Bot 自撤回）、`comment reply`、`file version revert`、`wiki move-to-drive`、`slides` 写命令等。**不会自动加载 token.json**，仅当显式传 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到 User Token。`msg merge-forward` 接口只接受 Tenant，固定 Bot。`vc bot meeting-join/leave` **仅 Bot**：传 `--user-access-token` 直接报用法错误（exit 2）。
   **例外（v1.42+ 改为 `--as` 默认 auto）**：日历写命令（`calendar create-event/update-event/delete-event/attendee add|remove/event-transfer`）与任务/清单写命令——日程和任务是个人资源，用户从 `agenda`/`task my` 拿到的 ID 用 Bot 改删大概率无权限。
 - **必须 User Token**（`resolveRequiredUserToken` / `requireUserToken`）：`search docs/apps`、`approval` 全部（含 `task rollback/add-sign/remind`）、`task my/search/related`、`vc note transcript`、`mail` 写类与管理命令（`send/reply/forward/draft-*/message-modify/message-trash/rule-*/thread-*/template *`）、`drive secure-label/add-comment/search/apply-permission`、`wiki space-create`、`msg flag`、`user search --query`、`user search-bot`、`calendar rsvp/event-reply`、`okr comment create`、`file quota`、`apps` 全部等。失败直接报错（exit 3）。`drive upload/download` 默认同样要求 User，可用 `--as bot` 显式改用应用身份。
 - **身份可选 · `--as` 显式切换**（`resolveIdentityToken` / `resolveVCBotEventsIdentity`）：`--as bot|user|auto`，`auto` 为 User 优先、未配置回退 Bot，**已配置 User 但解析/刷新失败 fail-closed**（禁止静默切 Bot）；`--as bot` 强制 App Token（cron/无人值守）；`--as user` 强制 User Token（缺失报错）。身份在 `--dry-run` 之后才 resolve。按默认值分组：
-  - 默认 **auto**：`bitable` 全家桶、native Markdown 全家桶（`markdown create/fetch/overwrite/patch/diff`）、Drive `import/export/export-download/move/task-result/update-title/version-history/version-get`、`search messages`/`msg search-chats`、`calendar agenda/event-search` 与上述日历/任务写命令、`msg reaction/pin`、`msg read-users`（只能查调用身份自己发出的消息，查 Bot 发的须显式 `--as bot`）、`chat get/update/delete`、`wiki delete/delete-space/node-copy`、`attendance user-task`、`mail triage/message/messages/thread`（Bot 身份不支持 `mailbox="me"`，需显式指定邮箱）、`vc bot meeting-events`（dry-run 用 `HasUserTokenConfigured` 静态探测，不联网不写 token）。
+  - 默认 **auto**：`bitable` 全家桶、`mindnote nodes list/create`、`doc script`、native Markdown 全家桶（`markdown create/fetch/overwrite/patch/diff`）、Drive `import/export/export-download/move/task-result/update-title/version-history/version-get`、`search messages`/`msg search-chats`、`calendar agenda/event-search` 与上述日历/任务写命令、`msg reaction/pin`、`msg read-users`（只能查调用身份自己发出的消息，查 Bot 发的须显式 `--as bot`）、`chat get/update/delete`、`wiki delete/delete-space/node-copy`、`attendance user-task`、`mail triage/message/messages/thread`（Bot 身份不支持 `mailbox="me"`，需显式指定邮箱）、`vc bot meeting-events`（dry-run 用 `HasUserTokenConfigured` 静态探测，不联网不写 token）。
   - 默认 **auto 但告警回退**（已配置 User 不可用时 stderr 告警后改用 Bot，不 fail-closed）：`msg history`（群聊入口；`--user-id/--user-email` 私聊入口必须 User）、`chat member list/add/remove`、`wiki space-list`。
   - 默认 **user**：`vc search/detail/recording/notes`、`vc note detail`、`vc meeting list-active`、`minutes search/get/download/apply-permission`（实测端点接受 Bot，Bot 缺 scope 时报 99991672）。
   - 默认 **bot**：`okr` 全家桶（OKR 的 user scope 通常未随默认登录域授予；`cycle list` 默认走 v2 用户周期、user/tenant 双支持，`--tenant` 查旧租户周期仅收 Tenant）、`perm` 全家桶（操作用户自己的文档用 `--as user` 或显式 `--user-access-token`，**不读** `FEISHU_USER_ACCESS_TOKEN`；Bot 无权时提示改用 User）、`user info`（`--as user` 走 basic_batch，只返回姓名类字段）。
@@ -218,6 +218,13 @@ feishu-cli doc content-update <doc_id> --mode <mode> --markdown "..."
 #   替换父范围会连带删掉其中未匹配的兄弟章节。改用带级别选择器（"## 子标题"）或 replace_range 逐个处理
 feishu-cli doc read <doc_id> --engine docs_ai --with-ids [--scope outline|range|keyword|section]   # 服务端读取，带 block id
 feishu-cli doc create --title "..." --content-file x.md        # docs_ai 服务端建文档（异步任务，只轮询不重放）
+#   内容里可写本地资源：![](@./a.png)、<img path="@./a.png"/>、<source path="@./f.pdf"/>、<whiteboard type="mermaid" path="@./x.mmd"/>、
+#   <html5-block path="@./w.html"/>（建文档后 CLI 上传绑定）；<img href="https://..."> 由服务端下载；--reference-map、--dry-run（content-update 同样支持）
+feishu-cli doc read <doc_id> --doc-format im-markdown [--lang en-US]   # 转成可直接发 IM 的 Markdown（docs_ai）
+feishu-cli doc resource {download|update|delete} <doc_id> --type cover [--file x.png|--url https://...|--from-clipboard]  # 文档封面
+feishu-cli doc media-preview <token> -o ./out ; feishu-cli doc media-insert <doc_id> --type file --file x.pdf --file-view card|preview
+feishu-cli doc script --command init-draft|parse ...           # 写作草稿工作区与 DocxXML 解析预检（author 工作流）
+feishu-cli mindnote nodes {list|create} <mindnote_token|url> [--data @nodes.json] [--dry-run]   # 已有思维笔记的节点
 feishu-cli doc history {list|revert|revert-status} <doc_id>   # 文档历史版本
 feishu-cli doc htmlbox {create|update|get|delete} <doc_id> [block_id] --html-file x.html  # 妙笔BOX HTML 小组件（文档里跑动画/ECharts/可交互图表，唯一能"动"的载体）
 
@@ -392,7 +399,7 @@ Agent 的路由上下文；按功能点持续拆分会增加触发冲突和维�
 | 技能 | 说明 |
 |------|------|
 | 平台基础 | `feishu-cli-platform`：auth/config/profile/doctor/api/schema/search/user/dept |
-| 文档核心 | `feishu-cli-docs`：read/write/import/export/markdown |
+| 文档核心 | `feishu-cli-docs`：read/write/import/export/markdown/author/mindnote |
 | 云盘与权限 | `feishu-cli-storage`：drive/file/media/wiki/comment/perm |
 | 消息协作 | `feishu-cli-messaging`：msg/chat/card/event |
 | 数据与表格 | `feishu-cli-data`：sheet/bitable |
@@ -422,7 +429,7 @@ feishu-cli auth login                 # OAuth 用户授权
 
 完整权限清单（tenant + user 共 400+ scope）见 [README.md 权限要求](README.md#权限要求)。关键 scope 速查：
 
-- **doc**：`docx:document:*`、`docs:document.media:*`
+- **doc**：`docx:document:*`、`docs:document.media:*`；思维笔记 `mindnote:node:read`、`mindnote:node:create`
 - **wiki**：`wiki:wiki:readonly`、`wiki:node:*`、`wiki:space:*`、`wiki:member:*`
 - **drive**：`drive:drive`、`drive:drive.metadata:readonly`、`drive:file:*`（注意：没有 `drive:drive:readonly`）
 - **消息**：`im:message`、`im:message:send_as_bot`；加急 `im:message.urgent*`；群聊 `im:chat:*`、`im:chat.members:*`；历史 `im:message:readonly`
