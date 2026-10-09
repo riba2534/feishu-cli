@@ -266,7 +266,8 @@ feishu-cli vc meeting list-active                                # 进行中的�
 feishu-cli vc note detail <note_id> ; feishu-cli vc note transcript <note_id> --format markdown|plain_text  # 逐字稿仅 User；普通纪要提示改读 verbatim 文档
 feishu-cli vc bot {meeting-join|meeting-leave} ...               # 仅 Bot（传 --user-access-token 报错），会议号 9 位数字
 feishu-cli vc bot meeting-events --meeting-id ... --as user|bot  # 显式身份，须与 meeting_id 来源一致
-feishu-cli minutes {get|download} --minute-tokens ...           # 默认 User，可 --as bot；get 用 --summary/--todo/--transcript 选择 AI 产物
+feishu-cli minutes get <minute_token|妙记链接> --summary          # 默认 User，可 --as bot；--summary/--todo/--chapter/--keyword/--transcript 选择 AI 产物
+feishu-cli minutes download --minute-tokens <t1,t2> --output ./media  # 默认 User，可 --as bot；token 也可传妙记链接
 
 # 画板（v1.25+ 新增能力 ⭐）
 feishu-cli board import <id> drawing.svg --syntax svg           # 服务端 SVG 解析（syntax_type=3），可识别元素转为可编辑节点
