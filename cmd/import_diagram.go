@@ -12,6 +12,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -166,6 +167,13 @@ var importDiagramCmd = &cobra.Command{
 		if clientToken != "" && engine != "local" {
 			return clierr.Usagef("--client-token 仅对 --engine local 生效：服务端引擎接口（/nodes/plantuml）不认 client_token，重复请求仍会重复建图；服务端引擎的重试去重由 CLI 自动处理")
 		}
+		sourceIsFile := sourceType == "" || sourceType == "file"
+		// 本地图表文件会发往服务端：敏感目录先于一切网络请求拒绝（dry-run 不要求文件存在）
+		if sourceIsFile {
+			if err := safefile.ValidateInputPath(source); err != nil {
+				return err
+			}
+		}
 
 		// 复杂度估算 + 提示（仅 Mermaid，server engine）
 		if syntax == "mermaid" && engine != "local" {
@@ -210,6 +218,13 @@ var importDiagramCmd = &cobra.Command{
 			return nil
 		}
 
+		// 非 dry-run：文件不存在 / 是目录 / 无权限读取在联网前报用法错误
+		if sourceIsFile {
+			if _, err := safefile.StatInputFile(source); err != nil {
+				return err
+			}
+		}
+
 		userAccessToken := resolveOptionalUserToken(cmd)
 		opts.UserAccessToken = userAccessToken
 
@@ -219,8 +234,7 @@ var importDiagramCmd = &cobra.Command{
 			if !client.WhiteboardCLIBridgeAvailable() {
 				return fmt.Errorf("--engine local 需要 whiteboard-cli。安装：npm install -g @larksuite/whiteboard-cli")
 			}
-			asFile := (sourceType == "" || sourceType == "file")
-			nodesJSON, err := client.RenderDiagramToOpenAPINodes(source, syntax, asFile)
+			nodesJSON, err := client.RenderDiagramToOpenAPINodes(source, syntax, sourceIsFile)
 			if err != nil {
 				return fmt.Errorf("本地引擎转换失败: %w", err)
 			}

@@ -50,6 +50,12 @@ var exportFileCmd = &cobra.Command{
 		fileType, _ := cmd.Flags().GetString("type")
 		docType, _ := cmd.Flags().GetString("doc-type")
 		outputPath, _ := cmd.Flags().GetString("output")
+		// 显式输出路径在任何网络请求（含 token 刷新、wiki 解析）之前校验，敏感目录直接拒绝
+		if outputPath != "" {
+			if err := validateOutputPath(outputPath, ""); err != nil {
+				return err
+			}
+		}
 
 		// 获取可选的 User Access Token
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
@@ -76,6 +82,10 @@ var exportFileCmd = &cobra.Command{
 
 		if outputPath == "" {
 			outputPath = fmt.Sprintf("%s.%s", docToken, fileType)
+			// 默认路径落在当前目录：同样在创建导出任务（远端副作用）之前校验
+			if err := validateOutputPath(outputPath, ""); err != nil {
+				return err
+			}
 		}
 
 		// 创建导出任务

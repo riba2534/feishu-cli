@@ -41,11 +41,15 @@ var downloadFileCmd = &cobra.Command{
 		fileToken := args[0]
 		outputPath, _ := cmd.Flags().GetString("output")
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		if outputPath == "" {
 			outputPath = fileToken
 		}
+		// 输出路径在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
+		if err := validateOutputPath(outputPath, ""); err != nil {
+			return err
+		}
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		var timeout time.Duration
 		if timeoutStr != "" {

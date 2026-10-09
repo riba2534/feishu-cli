@@ -10,6 +10,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -64,6 +65,12 @@ var minutesDownloadCmd = &cobra.Command{
 		if len(tokens) == 0 {
 			return clierr.Usagef("请通过 --minute-tokens 指定至少一个妙记 token")
 		}
+		// 本地输出位置在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝；--url-only 不落盘
+		if !urlOnly {
+			if err := validateOutputPath(markdownFirstNonEmpty(outputPath, "."), ""); err != nil {
+				return err
+			}
+		}
 
 		// 参数校验通过后再解析身份：用法错误（exit 2）不应被"未登录"（exit 3）遮住
 		token, err := resolveVCReadIdentity(cmd)
@@ -97,7 +104,7 @@ var minutesDownloadCmd = &cobra.Command{
 		}
 
 		if !urlOnly {
-			if err := os.MkdirAll(outputDir, 0o755); err != nil {
+			if err := safefile.MkdirAll(outputDir, 0o755); err != nil {
 				return fmt.Errorf("创建输出目录失败: %w", err)
 			}
 		}

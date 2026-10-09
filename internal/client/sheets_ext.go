@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	larksheets "github.com/larksuite/oapi-sdk-go/v3/service/sheets/v3"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // ==================== 浮动图片：获取 / 更新 / 上传 / 写入 (V3 + drive + V2 values_image) ====================
@@ -147,6 +148,10 @@ func UploadSheetImageMedia(filePath, spreadsheetToken, fileName string, userAcce
 // 起止单元格必须相同（单格）。rangeStr 形如 "<sheetId>!A1" 或 "<sheetId>!A1:A1"。
 // POST /open-apis/sheets/v2/spreadsheets/:token/values_image
 func WriteSheetImage(ctx context.Context, spreadsheetToken, rangeStr, filePath, name string, userAccessToken ...string) error {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return err
+	}
 	cli, err := GetClient()
 	if err != nil {
 		return err

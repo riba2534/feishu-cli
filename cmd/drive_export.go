@@ -8,6 +8,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -98,6 +99,10 @@ var driveExportCmd = &cobra.Command{
 		if outputDir == "" {
 			outputDir = "."
 		}
+		// 输出目录在任何网络请求（含 token 刷新、wiki 解析、创建导出任务）之前校验，敏感目录直接拒绝
+		if err := validateOutputPath(outputDir, ""); err != nil {
+			return fmt.Errorf("--output-dir 无效: %w", err)
+		}
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
@@ -158,7 +163,7 @@ var driveExportCmd = &cobra.Command{
 			return err
 		}
 
-		if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		if err := safefile.MkdirAll(outputDir, 0o755); err != nil {
 			return fmt.Errorf("创建 --output-dir 失败: %w", err)
 		}
 
@@ -419,21 +424,27 @@ var driveExportDownloadCmd = &cobra.Command{
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
-		token, err := resolveIdentityToken(cmd)
-		if err != nil {
-			return err
-		}
 		if outputDir == "" {
 			outputDir = "."
 		}
-		if err := os.MkdirAll(outputDir, 0o755); err != nil {
-			return fmt.Errorf("创建 --output-dir 失败: %w", err)
-		}
-
 		if fileName == "" {
 			fileName = safeOutputPath(fileToken, "")
 		}
 		savedPath := filepath.Join(outputDir, fileName)
+		// 输出目录与最终文件在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
+		if err := validateOutputPath(outputDir, ""); err != nil {
+			return fmt.Errorf("--output-dir 无效: %w", err)
+		}
+		if err := validateOutputPath(savedPath, ""); err != nil {
+			return err
+		}
+		token, err := resolveIdentityToken(cmd)
+		if err != nil {
+			return err
+		}
+		if err := safefile.MkdirAll(outputDir, 0o755); err != nil {
+			return fmt.Errorf("创建 --output-dir 失败: %w", err)
+		}
 		if _, err := os.Stat(savedPath); err == nil && !overwrite {
 			return fmt.Errorf("文件已存在: %s（使用 --overwrite 覆盖）", savedPath)
 		}

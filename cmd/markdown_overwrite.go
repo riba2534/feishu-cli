@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -76,12 +76,10 @@ var markdownOverwriteCmd = &cobra.Command{
 		if contentChanged {
 			size = int64(len(content))
 		} else {
-			stat, err := os.Stat(contentFile)
+			// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
+			stat, err := safefile.StatInputFile(contentFile)
 			if err != nil {
-				return clierr.Usagef("读取本地文件失败: %w", err)
-			}
-			if stat.IsDir() {
-				return clierr.Usagef("--content-file 必须指向文件，不是目录")
+				return fmt.Errorf("--content-file 无效: %w", err)
 			}
 			size = stat.Size()
 		}

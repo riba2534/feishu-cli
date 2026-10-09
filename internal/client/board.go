@@ -13,6 +13,8 @@ import (
 	"time"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
+
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // boardImageContentTypeExt 画板缩略图响应 Content-Type → 文件扩展名。
@@ -28,6 +30,10 @@ var boardImageContentTypeExt = map[string]string{
 //   - outputPath 无扩展名：自动补实际扩展名（推荐用法）
 //   - outputPath 带 .png/.jpg/.jpeg：与实际格式不符时报错，避免写出扩展名与内容不符的文件
 func GetBoardImage(whiteboardID string, outputPath string, userAccessToken ...string) (string, error) {
+	// 请求前先拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），不发出任何网络请求
+	if err := validatePath(outputPath); err != nil {
+		return "", err
+	}
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -62,14 +68,14 @@ func GetBoardImage(whiteboardID string, outputPath string, userAccessToken ...st
 		return "", err
 	}
 
-	// Ensure directory exists
+	// Ensure directory exists（目录与最终文件都经 safefile 校验：outputPath 是目录时文件名由服务端格式决定）
 	dir := filepath.Dir(savePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := safefile.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
 
 	// Write to file
-	if err := os.WriteFile(savePath, resp.RawBody, 0644); err != nil {
+	if err := safefile.AtomicWriteFile(savePath, resp.RawBody, 0o644); err != nil {
 		return "", fmt.Errorf("写入文件失败: %w", err)
 	}
 
@@ -335,7 +341,8 @@ func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions
 	// Get content
 	var content string
 	if opts.SourceType == "file" || opts.SourceType == "" {
-		data, err := os.ReadFile(source)
+		// 本地文件内容会发往服务端：拒绝敏感目录，不存在/是目录归为用法错误
+		data, err := safefile.ReadInputFile(source)
 		if err != nil {
 			return nil, nil, fmt.Errorf("读取图表文件失败: %w", err)
 		}

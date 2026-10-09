@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -70,7 +69,7 @@ var createBoardNotesCmd = &cobra.Command{
 			nodesJSON = source
 		} else {
 			// Read from file
-			data, err := os.ReadFile(source)
+			data, err := readLocalInputFile(source)
 			if err != nil {
 				return fmt.Errorf("读取节点文件失败: %w", err)
 			}

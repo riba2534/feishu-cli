@@ -94,7 +94,7 @@ func readSheetImageBatchManifest(manifestStr, sheetID string, in io.Reader) ([]c
 		}
 	} else if _, statErr := os.Stat(text); statErr == nil {
 		// 优先：若路径在磁盘上真实存在，直接读取文件（兼容带 [ 前缀的文件路径）
-		raw, err = os.ReadFile(text)
+		raw, err = readLocalInputFile(text)
 		if err != nil {
 			return nil, fmt.Errorf("读取 manifest 文件失败: %w", err)
 		}

@@ -14,6 +14,7 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkokr "github.com/larksuite/oapi-sdk-go/v3/service/okr/v1"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // --------- OKR 业务结构（输出层）---------
@@ -1015,6 +1016,10 @@ type OKRImageUploadResult struct {
 // UploadOKRImage 上传一张图片到 OKR Progress 富文本图床。
 // 通过 SDK 的 Image.Upload 走 multipart/form-data。
 func UploadOKRImage(filePath string, targetID string, targetType OKRProgressTargetType, userAccessToken string) (*OKRImageUploadResult, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return nil, err
+	}
 	client, err := GetClient()
 	if err != nil {
 		return nil, err

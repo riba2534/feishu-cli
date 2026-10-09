@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // UploadDocMedia 上传文档素材（docx_image / docx_file 等）并返回 file_token。
@@ -19,6 +20,10 @@ import (
 // 超过 20MB 的图片/附件/视频直接失败）。extra 携带 drive_route_token=docID，
 // 素材按文档路由鉴权。
 func UploadDocMedia(filePath, parentType, parentNode, fileName, docID, userAccessToken string) (string, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return "", err
+	}
 	stat, err := os.Stat(filePath)
 	if err != nil {
 		return "", fmt.Errorf("获取文件信息失败: %w", err)

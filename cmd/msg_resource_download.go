@@ -52,7 +52,6 @@ var msgResourceDownloadCmd = &cobra.Command{
 		resourceType, _ := cmd.Flags().GetString("type")
 		outputPath, _ := cmd.Flags().GetString("output")
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		if strings.ContainsAny(fileKey, `/\`) || strings.TrimSpace(fileKey) == "" {
 			return clierr.Usagef("file_key 无效（不能为空或包含路径分隔符）: %q", fileKey)
@@ -61,9 +60,11 @@ var msgResourceDownloadCmd = &cobra.Command{
 		if outputPath == "" {
 			outputPath = fileKey
 		}
+		// 输出路径在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
 		if err := validateOutputPath(outputPath, ""); err != nil {
 			return err
 		}
+		userToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		var timeout time.Duration
 		if timeoutStr != "" {
@@ -83,7 +84,10 @@ var msgResourceDownloadCmd = &cobra.Command{
 		// 指定了无扩展名的 -o → 保留文件名，只补扩展名。不覆盖已存在的文件。
 		if final := resolveResourceDownloadName(outputPath, explicitOutput, meta); final != outputPath {
 			final = nonClobberingPath(final)
-			if renameErr := os.Rename(outputPath, final); renameErr != nil {
+			// 改名绕过了原子写的兜底校验，这里对最终路径再校验一次
+			if vErr := validateOutputPath(final, ""); vErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "[提示] 已下载到 %s，未重命名为 %s: %v\n", outputPath, final, vErr)
+			} else if renameErr := os.Rename(outputPath, final); renameErr != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "[提示] 已下载到 %s，重命名为 %s 失败: %v\n", outputPath, final, renameErr)
 			} else {
 				outputPath = final

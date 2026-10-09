@@ -42,6 +42,10 @@ var getBoardImageCmd = &cobra.Command{
 		whiteboardID := args[0]
 		outputPath := args[1]
 		output, _ := cmd.Flags().GetString("output")
+		// 输出路径在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
+		if err := validateOutputPath(outputPath, ""); err != nil {
+			return err
+		}
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		savedPath, err := client.GetBoardImage(whiteboardID, outputPath, userAccessToken)

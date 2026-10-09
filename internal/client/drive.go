@@ -51,6 +51,10 @@ func DriveNeedsMultipart(size int64) bool {
 //
 // 不会在用户云盘留下中间文件。
 func UploadMediaForImport(filePath, fileName, objType, fileExtension, userAccessToken string) (string, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return "", err
+	}
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", fmt.Errorf("打开文件失败: %w", err)
@@ -219,6 +223,10 @@ func uploadMediaForImportMultipart(filePath, fileName string, fileSize int64, ex
 // UploadMediaWithExtra uploads a file to Feishu drive with extra parameter.
 // extra 为 JSON 字符串，用于指定扩展信息（如 {"drive_route_token":"documentID"}）。
 func UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra string, userAccessToken ...string) (string, http.Header, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return "", nil, err
+	}
 	client, err := GetClient()
 	if err != nil {
 		return "", nil, err
@@ -1073,6 +1081,10 @@ func UploadFile(filePath, parentToken, fileName string) (string, error) {
 // UploadFileWithToken 上传文件到飞书云空间，支持 User Access Token 覆盖
 // userAccessToken 为空时退回 App/Tenant Token
 func UploadFileWithToken(filePath, parentToken, fileName, userAccessToken string) (string, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return "", err
+	}
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", fmt.Errorf("打开文件失败: %w", err)
@@ -1263,6 +1275,10 @@ type DriveOverwriteResult struct {
 // 绝不回退为"先删后传"（那样删除成功、上传失败就会丢文件）。服务端若未返回 version
 // （租户未灰度覆盖字段），视为失败而不是虚报成功。
 func OverwriteDriveFileFromPath(filePath, parentToken, fileName, fileToken, userAccessToken string) (*DriveOverwriteResult, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(fileToken) == "" {
 		return nil, fmt.Errorf("覆盖上传需要已有文件的 file_token")
 	}

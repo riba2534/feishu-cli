@@ -100,13 +100,13 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
-		if deleteRemote && !yes && !confirmationBypassed(cmd) {
-			return clierr.ConfirmationRequiredf("--delete-remote 是高危操作，必须同时加 --yes 才执行")
-		}
-
-		safeRoot, _, err := resolveSafeLocalDir(localDir)
+		// 本地目录先于确认门禁校验：路径本身不合法（用法错误）时不该让调用方先去补 --yes
+		safeRoot, _, err := resolveSafeLocalDir(localDir, false)
 		if err != nil {
 			return err
+		}
+		if deleteRemote && !yes && !confirmationBypassed(cmd) {
+			return clierr.ConfirmationRequiredf("--delete-remote 是高危操作，必须同时加 --yes 才执行")
 		}
 
 		// --delete-remote 会删远端文件：身份降级会让"本地不存在"的判定基于错误的远端视图，

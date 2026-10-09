@@ -125,6 +125,10 @@ var driveVersionGetCmd = &cobra.Command{
 		}
 		outputIsDir := false
 		if outputPath != "" {
+			// 敏感目录在任何网络请求（含 token 刷新）之前拒绝
+			if err := validateOutputPath(outputPath, ""); err != nil {
+				return err
+			}
 			if st, err := os.Stat(outputPath); err == nil && st.IsDir() {
 				outputIsDir = true
 			} else if err == nil && !overwrite {

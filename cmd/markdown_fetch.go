@@ -9,6 +9,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -63,6 +64,12 @@ var markdownFetchCmd = &cobra.Command{
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
+		// 本地保存路径在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
+		if outputPath != "" {
+			if err := validateOutputPath(outputPath, ""); err != nil {
+				return err
+			}
+		}
 
 		if dryRun {
 			return printDryRunPlan(cmd, "download markdown source file preview artifact bytes", map[string]any{
@@ -99,18 +106,20 @@ var markdownFetchCmd = &cobra.Command{
 		}
 
 		finalPath := outputPath
+		// 保存到目录时文件名取自服务端，按单段文件名收敛（去掉路径分隔符），防止越出目标目录
+		localName := safeOutputPath(markdownFirstNonEmpty(strings.TrimSpace(fileName), fileToken+".md"), "")
 		if strings.HasSuffix(finalPath, string(os.PathSeparator)) || strings.HasSuffix(finalPath, "/") || strings.HasSuffix(finalPath, "\\") {
-			finalPath = filepath.Join(finalPath, fileName)
+			finalPath = filepath.Join(finalPath, localName)
 		} else if stat, err := os.Stat(finalPath); err == nil && stat.IsDir() {
-			finalPath = filepath.Join(finalPath, fileName)
+			finalPath = filepath.Join(finalPath, localName)
 		}
 		if _, err := os.Stat(finalPath); err == nil && !overwrite {
 			return clierr.Usagef("本地文件已存在: %s（使用 --overwrite 覆盖）", finalPath)
 		}
-		if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
+		if err := safefile.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
 			return fmt.Errorf("创建输出目录失败: %w", err)
 		}
-		if err := os.WriteFile(finalPath, data, 0o644); err != nil {
+		if err := safefile.AtomicWriteFile(finalPath, data, 0o644); err != nil {
 			return fmt.Errorf("写文件失败: %w", err)
 		}
 

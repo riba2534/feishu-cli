@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/itchyny/gojq"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -153,6 +154,12 @@ func ParseOptions(cmd *cobra.Command) (*Options, error) {
 	}
 	if !isValidFormat(o.Format) {
 		return nil, fmt.Errorf("不支持的 --format %q，可选值: %s", o.Format, strings.Join(validFormats, ", "))
+	}
+	// -o 结果文件：命令通常在发请求前解析选项，此处即拒绝敏感目录（用法错误），写入时另有兜底校验
+	if o.OutputFile != "" {
+		if err := safefile.ValidateOutputPath(o.OutputFile); err != nil {
+			return nil, err
+		}
 	}
 	return o, nil
 }
@@ -547,7 +554,7 @@ func writeOut(path, text string) error {
 		fmt.Print(text)
 		return nil
 	}
-	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+	if err := safefile.AtomicWriteFile(path, []byte(text), 0o644); err != nil {
 		return fmt.Errorf("写入文件 %s 失败: %w", path, err)
 	}
 	fmt.Fprintf(os.Stderr, "已写入 %s\n", path)

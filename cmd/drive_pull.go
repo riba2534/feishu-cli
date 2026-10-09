@@ -12,6 +12,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -97,13 +98,13 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
-		if deleteLocal && !yes && !confirmationBypassed(cmd) {
-			return clierr.ConfirmationRequiredf("--delete-local 是高危操作，必须同时加 --yes 才执行")
-		}
-
-		safeRoot, _, err := resolveSafeLocalDir(localDir)
+		// 本地目录先于确认门禁校验：路径本身不合法（用法错误）时不该让调用方先去补 --yes
+		safeRoot, _, err := resolveSafeLocalDir(localDir, true)
 		if err != nil {
 			return err
+		}
+		if deleteLocal && !yes && !confirmationBypassed(cmd) {
+			return clierr.ConfirmationRequiredf("--delete-local 是高危操作，必须同时加 --yes 才执行")
 		}
 
 		// --delete-local 会删本地文件：身份意外降级到 Bot 时远端视图更小、差集更大，
@@ -188,7 +189,7 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
 					atomic.AddInt64(&notAttemptedCnt, 1)
 					return
 				}
-				if mkErr := os.MkdirAll(filepath.Dir(target), 0755); mkErr != nil {
+				if mkErr := safefile.MkdirAll(filepath.Dir(target), 0755); mkErr != nil {
 					results[i], _ = failItem(rel, f, "failed", mkErr)
 					atomic.AddInt64(&downloadFailedCnt, 1)
 					return

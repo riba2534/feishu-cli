@@ -190,7 +190,7 @@ func saveAppConfig(appID, appSecret, baseURL string) error {
 			head = append(head, fmt.Sprintf("base_url: %q", baseURL))
 		}
 		newLines = append(head, newLines...)
-		return safefile.AtomicWriteFile(configFile, []byte(strings.Join(newLines, "\n")), 0600)
+		return safefile.AtomicWriteFileTrusted(configFile, []byte(strings.Join(newLines, "\n")), 0600)
 	}
 
 	// 新建配置文件
@@ -203,7 +203,7 @@ transfer_ownership: false
 debug: false
 `, appID, appSecret, baseURL)
 
-	return safefile.AtomicWriteFile(configFile, []byte(content), 0600)
+	return safefile.AtomicWriteFileTrusted(configFile, []byte(content), 0600)
 }
 
 func init() {

@@ -123,7 +123,7 @@ func loadHTMLInput(cmd *cobra.Command) (string, error) {
 		}
 		content = string(data)
 	case htmlFile != "":
-		data, err := os.ReadFile(htmlFile)
+		data, err := readLocalInputFile(htmlFile)
 		if err != nil {
 			return "", fmt.Errorf("读取 HTML 文件失败: %w", err)
 		}

@@ -95,17 +95,23 @@ var vcNotesCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if outputDir == "" {
+			outputDir = "."
+		}
+		// 逐字稿落盘目录在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
+		if downloadTranscript {
+			if err := validateOutputPath(outputDir, ""); err != nil {
+				return fmt.Errorf("--output-dir 无效: %w", err)
+			}
+		}
 
 		token, err := resolveVCReadIdentity(cmd)
 		if err != nil {
 			return err
 		}
 
-		if outputDir == "" {
-			outputDir = "."
-		}
 		if downloadTranscript {
-			if err := os.MkdirAll(outputDir, 0o755); err != nil {
+			if err := safefile.MkdirAll(outputDir, 0o755); err != nil {
 				return fmt.Errorf("创建 --output-dir 失败: %w", err)
 			}
 		}
@@ -520,7 +526,7 @@ func downloadTranscriptFile(minuteToken, title string, opts *notesOptions) (stri
 	}
 	dirName := fmt.Sprintf("artifact-%s-%s", sanitized, minuteToken)
 	dir := filepath.Join(opts.OutputDir, dirName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := safefile.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
 

@@ -434,12 +434,10 @@ func validateOutputPath(outputPath string, allowedDir string) error {
 	return nil
 }
 
-// readLocalInputFile 读取用户指定的本地输入文件，先拒绝敏感目录（防止把凭证当请求体发往远端）。
+// readLocalInputFile 读取用户指定的本地输入文件，先拒绝敏感目录（防止把凭证当请求体发往远端）；
+// 文件不存在、是目录或无权限读取时返回带路径的用法错误（退出码 2）。
 func readLocalInputFile(path string) ([]byte, error) {
-	if err := safefile.ValidateInputPath(path); err != nil {
-		return nil, err
-	}
-	return os.ReadFile(path)
+	return safefile.ReadInputFile(path)
 }
 
 // unescapeSheetRange 处理 shell 转义的范围字符串
@@ -459,6 +457,10 @@ func safeOutputPath(baseName string, ext string) string {
 		}
 		return r
 	}, baseName)
+	// "." / ".." 作为文件名拼到目录后会指向目录本身或上级目录
+	if safeName == "." || safeName == ".." {
+		safeName = "_"
+	}
 
 	// 限制文件名长度
 	if len(safeName) > 200 {

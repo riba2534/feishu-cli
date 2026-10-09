@@ -174,6 +174,10 @@ func LoadInlineImageBytes(ref *MailInlineImageRef) error {
 	if err := assertPathInSafeRoots(resolved); err != nil {
 		return err
 	}
+	// home 子树包含 ~/.ssh、~/.feishu-cli 等凭证目录：解析符号链接后按敏感目录拒绝名单再校验
+	if err := safefile.ValidateInputPath(resolved); err != nil {
+		return err
+	}
 	// 安全 #2：拒绝非常规文件（设备文件 / FIFO / socket）和过大文件。
 	info, err := os.Lstat(resolved)
 	if err != nil {

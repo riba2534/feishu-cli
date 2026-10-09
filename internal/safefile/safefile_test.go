@@ -196,3 +196,122 @@ func TestReplaceFileWindowsFallback(t *testing.T) {
 		t.Fatal("成功路径不应残留 .bak")
 	}
 }
+
+// TestAtomicWriteRejectsSensitiveDirs 兜底层：用户输出经 AtomicWriteFile / AtomicWriteFrom 写出时
+// 不会落进敏感目录（返回用法错误，不留任何文件）；CLI 自管路径用 Trusted 变体照常写入。
+func TestAtomicWriteRejectsSensitiveDirs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("系统目录规则仅适用于类 Unix")
+	}
+	home := setupHome(t)
+	for _, target := range []string{
+		filepath.Join(home, ".ssh", "authorized_keys"),
+		filepath.Join(home, ".feishu-cli", "fp-out.md"),
+		filepath.Join(home, ".aws", "new", "credentials"),
+	} {
+		if err := AtomicWriteFile(target, []byte("x"), 0o600); err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+			t.Fatalf("AtomicWriteFile(%q) 应返回用法错误，得到 %v", target, err)
+		}
+		if _, err := AtomicWriteFrom(target, strings.NewReader("x"), 0o600); err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+			t.Fatalf("AtomicWriteFrom(%q) 应返回用法错误，得到 %v", target, err)
+		}
+		if _, err := os.Stat(target); !os.IsNotExist(err) {
+			t.Fatalf("被拒绝的路径不应生成文件: %s", target)
+		}
+	}
+	for _, d := range []string{filepath.Join(home, ".ssh"), filepath.Join(home, ".feishu-cli")} {
+		entries, _ := os.ReadDir(d)
+		if len(entries) != 0 {
+			t.Fatalf("%s 下不应残留临时文件: %d 个", d, len(entries))
+		}
+	}
+
+	// 内部写入：~/.feishu-cli 下的配置 / token 等由 CLI 自己决定位置，走 Trusted 变体不受拦截
+	internal := filepath.Join(home, ".feishu-cli", "config.yaml")
+	if err := AtomicWriteFileTrusted(internal, []byte("app_id: cli_xxx\n"), 0o600); err != nil {
+		t.Fatalf("Trusted 写入 CLI 自管路径失败: %v", err)
+	}
+	if n, err := AtomicWriteFromTrusted(internal, strings.NewReader("v2"), 0o600); err != nil || n != 2 {
+		t.Fatalf("AtomicWriteFromTrusted 失败: n=%d err=%v", n, err)
+	}
+	if b, _ := os.ReadFile(internal); string(b) != "v2" {
+		t.Fatalf("Trusted 写入内容 = %q", b)
+	}
+}
+
+func TestMkdirAllRejectsSensitiveDirs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("系统目录规则仅适用于类 Unix")
+	}
+	home := setupHome(t)
+	bad := filepath.Join(home, ".ssh", "assets")
+	if err := MkdirAll(bad, 0o755); err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+		t.Fatalf("MkdirAll(%q) 应返回用法错误，得到 %v", bad, err)
+	}
+	if _, err := os.Stat(bad); !os.IsNotExist(err) {
+		t.Fatal("被拒绝的目录不应被创建")
+	}
+	ok := filepath.Join(t.TempDir(), "a", "b")
+	if err := MkdirAll(ok, 0o755); err != nil {
+		t.Fatalf("普通目录应可创建: %v", err)
+	}
+}
+
+// TestInputFileHelpers 输入文件：敏感目录 / 不存在 / 是目录 / 无权限读取均为带路径的用法错误；普通文件正常读取。
+func TestInputFileHelpers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("系统目录规则仅适用于类 Unix")
+	}
+	home := setupHome(t)
+	secret := filepath.Join(home, ".ssh", "id_test")
+	if err := os.WriteFile(secret, []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	ok := filepath.Join(dir, "in.md")
+	if err := os.WriteFile(ok, []byte("# hi"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	noPerm := filepath.Join(dir, "noperm.md")
+	if err := os.WriteFile(noPerm, []byte("x"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name, path, want string
+	}{
+		{"敏感目录", secret, "拒绝读取"},
+		{"不存在", filepath.Join(dir, "missing.md"), "不存在"},
+		{"是目录", dir, "是目录"},
+	}
+	if os.Geteuid() != 0 { // root 无视权限位
+		cases = append(cases, struct{ name, path, want string }{"无权限", noPerm, "无权限读取"})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ReadInputFile(tc.path); err == nil || !clierr.HasKind(err, clierr.KindUsage) ||
+				!strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), tc.path) {
+				t.Fatalf("ReadInputFile(%q) 应为含 %q 与路径的用法错误，得到 %v", tc.path, tc.want, err)
+			}
+			if f, _, err := OpenInputFile(tc.path); err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+				if f != nil {
+					_ = f.Close()
+				}
+				t.Fatalf("OpenInputFile(%q) 应为用法错误，得到 %v", tc.path, err)
+			}
+		})
+	}
+
+	data, err := ReadInputFile(ok)
+	if err != nil || string(data) != "# hi" {
+		t.Fatalf("普通文件应可读取: %q %v", data, err)
+	}
+	f, info, err := OpenInputFile(ok)
+	if err != nil || info.Size() != 4 {
+		t.Fatalf("OpenInputFile 普通文件失败: %v", err)
+	}
+	_ = f.Close()
+	if err := InputFileError(ok, errors.New("磁盘坏道")); clierr.HasKind(err, clierr.KindUsage) {
+		t.Fatal("非参数类 I/O 错误不应归为用法错误")
+	}
+}

@@ -2,13 +2,13 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -73,8 +73,9 @@ var docMediaInsertCmd = &cobra.Command{
 		if heightSet && (userHeight <= 0 || userHeight > maxImageDimension) {
 			return clierr.Usagef("--height 必须是 1-%d 的整数像素，当前: %d", maxImageDimension, userHeight)
 		}
-		if st, statErr := os.Stat(filePath); statErr != nil {
-			return clierr.Usagef("无法读取 --file %s: %v", filePath, statErr)
+		// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
+		if st, statErr := safefile.StatInputFile(filePath); statErr != nil {
+			return fmt.Errorf("--file 无效: %w", statErr)
 		} else if !st.Mode().IsRegular() || st.Size() == 0 {
 			return clierr.Usagef("--file %s 不是非空的普通文件", filePath)
 		}
