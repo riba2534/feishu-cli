@@ -22,9 +22,9 @@
   编辑用户自己的文档而 Bot 不是协作者时（报 forbidden / 1770032 等），显式以本人身份写：
   `--user-access-token "$(feishu-cli auth token --as user)"`（或设置 `FEISHU_USER_ACCESS_TOKEN`）。
 - `doc history list`、`doc history revert-status` 属于读类：User 优先、Bot 兜底。
-- 文档参数：`doc content-update`、`doc media-insert`、`doc history *` 接受 docx token、`/docx/` URL 和 `/wiki/` URL
-  （wiki 自动解析为底层 docx，底层不是 docx 时报错）。`doc add/add-board/add-callout/update/delete/batch-update/table`
-  与 `doc import --document-id` **只接受裸 document_id**：从 `/docx/<id>` 截取，wiki 节点先 `feishu-cli wiki get` 取 `obj_token`。
+- 文档参数：`doc content-update`、`doc media-insert`、`doc history *`、`doc add/add-board/add-callout/update/delete/batch-update/table`
+  与 `doc import --document-id` 都接受 docx token、`/docx/` URL 和 `/wiki/` URL（wiki 自动解析为底层 docx，底层不是 docx 时报错）。
+  `doc htmlbox` 暂只接受裸 document_id。
 
 ## 新建文档
 
@@ -236,7 +236,7 @@ feishu-cli doc media-insert <document_id> --file /path/to/report.pdf --type file
 
 ## 低层块操作
 
-这些命令只接受裸 document_id / block_id，需要熟悉飞书 Block 结构；普通章节编辑优先用 `content-update`。
+这些命令的文档参数接受 document_id 或 URL，块参数只接受 block_id；需要熟悉飞书 Block 结构，普通章节编辑优先用 `content-update`。
 
 ```bash
 # doc add：默认 --content-type json；--source-type file/content；可指定父块和插入位置
@@ -332,8 +332,8 @@ feishu-cli doc table unmerge-cells DOC_ID TABLE_BLOCK_ID --row 0 --col 0
 
 - `<callout>`、`<grid>` 这类块级标签必须**开标签独占一行、内容另起行**；写在同一行（`<callout type="NOTE">内容</callout>`）
   时 `doc import` 只会得到一段普通文字。
-- `doc import` 由本地转换器解析，`<grid cols>` 分栏当前只能建出空分栏（栏内内容写入失败、命令退出码 1，实测）；需要分栏时用
-  `content-update` / `doc create --content` 写入（多行 `<grid cols="2">` + `<column>` 会转换为 docs_ai 的 `<grid><column width-ratio>`）。
+- `doc import` / `doc add` 由本地转换器解析 `<grid cols>` 分栏：列由服务端自动生成，各列内容写入对应列（列内可含多段落、列表）；
+  `content-update` / `doc create --content` 同样可写（多行 `<grid cols="2">` + `<column>` 会转换为 docs_ai 的 `<grid><column width-ratio>`）。
 - `content-update` 在发送前把这些标签转换为 docs_ai 写法（`<cite>`、带颜色属性的 `<callout>`、带 `width-ratio` 的 `<grid>`），
   也可直接书写 docs_ai XML 标签（如 `<callout background-color="light-blue" border-color="blue">`）。
 

@@ -35,9 +35,9 @@
 | 分析块类型、查原始 API 结构 | `doc blocks <document_id> --all` |
 
 URL 判断：`/docx/<id>` 是 document_id；`/wiki/<token>` 是 node_token（不是 document_id）；`/sheets/<token>` 是 spreadsheet_token。
-`doc read`、`doc export`（以及写入侧 `content-update`、`media-insert`、`doc history`）直接接受 docx token、`/docx/` URL 与
-`/wiki/` URL：wiki 节点自动解析为底层 docx（stderr 提示"已将 wiki 节点 … 解析为 docx: …"），底层不是 docx 时报错。
-URL 只按路径前缀识别，`?from=/wiki/...` 这类查询参数不改变解析结果。`doc get`、`doc blocks` 只接受裸 document_id。
+`doc read`、`doc export`、`doc get`、`doc blocks`（以及写入侧 `content-update`、`media-insert`、`doc history`、`doc add` 等）直接接受
+docx token、`/docx/` URL 与 `/wiki/` URL：wiki 节点自动解析为底层 docx（stderr 提示"已将 wiki 节点 … 解析为 docx: …"），
+底层不是 docx 时报错。URL 只按路径前缀识别，`?from=/wiki/...` 这类查询参数不改变解析结果。
 
 ## 大文档选择性读取（doc read）
 
@@ -112,8 +112,8 @@ feishu-cli sheet export <spreadsheet_token_or_url> --format markdown --output /t
 ## 文档元信息与块结构
 
 ```bash
-# 元信息（document_id、title、revision_id、链接）；只接受裸 document_id
-feishu-cli doc get <document_id> -o json
+# 元信息（document_id、title、revision_id、链接）；document_id 或 URL 均可
+feishu-cli doc get <document_id_or_url> -o json
 
 # 块结构：默认第一页（500 块），--all 自动分页；--raw 输出 API 原始 JSON
 feishu-cli doc blocks <document_id> --all -o json

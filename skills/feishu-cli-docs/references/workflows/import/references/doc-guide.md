@@ -13,10 +13,11 @@
 | SVG | 恰好三个反引号的 `svg` fence；整段作为一个 svg 节点写入画板 |
 | 表格 | 行 > 9 可导入同一 block；列 > 9 会拆列组；超大表建议 Sheet |
 | 图片 | `doc import` 默认上传（相对路径按 Markdown 文件所在目录）；`doc add` 需 `--upload-images`；`content-update` 自动上传本地图片/附件 |
-| 公式 | 行内 `$...$`；块级 `$$...$$` 导入为只含公式的文本块（飞书无独立块级公式块） |
+| 公式 | 行内 `$...$`（正文与表格单元格均转为公式）；块级 `$$...$$` 导入为只含公式的文本块（飞书无独立块级公式块） |
 | Callout | 仅 NOTE/WARNING/TIP/CAUTION/IMPORTANT/SUCCESS（另接受 INFO，按 NOTE 处理） |
-| 引用 | 不要嵌套引用（`> >` 导入失败、外层内容丢失）；单层引用内可放段落和列表 |
-| HTML 扩展标签 | 块级标签开标签独占一行；`<grid>`、`<video>`、带 token 的 `<image>/<file>/<whiteboard>` 在 `doc import` 中不可用（见下文） |
+| 引用 | 单层引用内可放段落和列表；嵌套引用 `> >` 会被扁平化进外层引用（飞书不支持引用嵌套，内容不丢但层级消失） |
+| 列表 | 列表项的第二段起要缩进到列表正文列并与首段空一行，才会作为该项的子段落保留 |
+| HTML 扩展标签 | 块级标签开标签独占一行；带 token 的 `<image>/<file>/<whiteboard>` 复用原素材/复制画板，带 token 的 `<sheet>/<bitable>` 降级为链接（见下文） |
 
 ## Mermaid
 
@@ -124,9 +125,10 @@ Callout 内可包含段落和列表。
 ```
 
 - 块级标签（`<callout>` 等）开标签独占一行、内容另起一行；写在同一行只会得到普通文字。
-- `<grid cols>` 分栏只建出空分栏（栏内内容写入失败，退出码 1）；需要分栏用 `content-update` 写入。
-- 带 token 的 `<image>` / `<file>` / `<whiteboard>` 以及 `<video>` 会让整次导入在建块阶段失败（`1770001`）；图片/附件 token 只能经
-  `content-update` 写回已有文档，视频导入后用 `doc media-insert --type file` 插入。
+- `<grid cols>` + `<column>` 分栏：列内可含多段落、列表、表格、图片（列内空行不影响解析）；列数取 `<column>` 实际数量，范围 2-5。
+- 带 token 的 `<image>` / `<file>` / `<video src="feishu://media/…">` 导入时下载原素材重新上传；`<whiteboard token>` 复制源画板。
+  当前身份读不到源素材时降级为占位文本并计入 `failures`（退出码 1），其余内容照常导入。
+- 带 token 的 `<sheet>` / `<bitable>` 无法挂进新文档，降级为指向原表格的链接并计入 `failures`。
 - 手写时只使用自己确实需要的标签；普通内容优先标准 Markdown。完整标签表见 `../workflow.md`。
 
 ## 导入前验证

@@ -37,7 +37,7 @@
 | `markdown create` | `drive:file:upload`（或 `drive:drive`）；创建后查询 URL 用到元数据接口，失败只在 stderr 告警 |
 | `markdown fetch` / `diff` | `drive:file:download`（或 `drive:drive`） |
 | `markdown overwrite` | `drive:file:upload`；未传 `--name` 时还需读元数据（`drive:drive.metadata:readonly`） |
-| `markdown patch` | `drive:file:download` + `drive:file:upload` + `drive:drive.metadata:readonly`（总会读取远端文件名） |
+| `markdown patch` | `drive:file:download` + `drive:file:upload`；未传 `--name` 时还需读元数据（`drive:drive.metadata:readonly`） |
 
 User 身份预检：`feishu-cli auth check --scope "drive:file:upload drive:file:download"`；缺 scope 时按提示补授。
 
@@ -97,7 +97,7 @@ feishu-cli markdown patch --file-token boxcnxxx --regex --pattern 'v([0-9]+)' --
 - `--pattern`、`--content` 必填（`--content ""` 表示删除命中文本）；替换后内容为空会被拒绝。
 - `match_count=0` 时不写回，输出 `updated: false` 且退出码 0——脚本应检查 `updated` / `match_count`，不要只看退出码。
 - `-o json` 输出 `updated`、`mode`、`match_count`、`version`、`size_bytes_before`、`size_bytes_after`。
-- 与 overwrite 不同：patch 读不到远端文件名时会以 `<file_token>.md` 作为文件名写回，对文件名敏感时先用 `fetch -o json` 确认 `file_name`。
+- 与 overwrite 一致：不传 `--name` 时读取远端现有文件名写回；读不到时拒绝写回（不会以 `<file_token>.md` 静默改名），此时显式传 `--name <原文件名.md>`。
 
 ### `markdown diff` — 本地比对（只读，不改远端）
 
@@ -116,7 +116,7 @@ feishu-cli markdown diff --file-token boxcnxxx --file ./local.md --jq '{identica
 feishu-cli markdown diff --file-token boxcnxxx --file ./local.md --format table --jq '{identical,added_lines,removed_lines}'
 ```
 
-- 缺省输出 unified diff 文本（无差异时打印 `No differences.`）；只有显式传 `--format`、`--jq` 或 `-o json` 才输出结构化结果（帮助中 `--format` 显示的默认值 json 仅在这种情况下生效）。
+- 缺省输出 unified diff 文本（无差异时打印 `No differences.`）；只有显式传 `--format`、`--jq` 或 `-o json` 才输出结构化结果（只传 `--jq` 时按 json）。
 - 版本号必须是数字；`--to-version` 必须配合 `--from-version`，且不能与 `--file` 同用；`--file` 可与 `--from-version` 组合。
 - 覆盖前先 `diff --file ./local.md` 预览改动，确认后再 overwrite，避免误覆盖。
 
@@ -149,7 +149,7 @@ feishu-cli markdown diff --file-token boxcnxxx --file ./local.md --format table 
 2. **拒绝空内容**：空字符串或空文件会被拒绝（create：`Markdown 内容为空，不支持创建空 .md 文件`；overwrite：`Markdown 内容为空，不支持把 .md 覆盖为空文件`）。需要"清空"语义时写入一个占位空格 `--content " "`。
 3. **20MB 分片**：恰好 20MB 仍走单次 `upload_all`，超过 20MB 自动切 `upload_prepare/upload_part/upload_finish`；覆盖（overwrite/patch）同样携带 file_token。
 4. **diff 体积上限**（在计算 diff 之前拦截，防 OOM）：每侧内容 ≤ 10MB；每侧 ≤ 20000 行，且两侧行数乘积 ≤ 2000 万。超限时报错并建议用外部 diff 工具——先用 `markdown fetch` 落盘两侧，再用本地 `diff` / `git diff`。
-5. **参数错误的退出码**：`markdown` 命令的参数校验错误（缺 `--name`、后缀不对、版本号非数字等）目前以退出码 1 结束，不是 2；脚本按"非 0 即失败"处理。
+5. **参数错误的退出码**：`markdown` 命令的参数校验错误（缺 `--name`、后缀不对、版本号非数字、`--format` 非法等）以退出码 2 结束，与其它命令一致；运行期失败（下载/上传失败等）为 1。
 
 ## 典型工作流
 

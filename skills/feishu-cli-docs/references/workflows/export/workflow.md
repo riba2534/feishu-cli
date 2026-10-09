@@ -51,7 +51,7 @@ feishu-cli doc export <document_id> \
 
 | 参数 | 说明 |
 |---|---|
-| `--download-images` | 下载图片与画板到 `--assets-dir`（默认 `./assets`）并改写引用；画板导出为图片（实测为 JPEG，如 `board_N.jpg`）。引用路径原样使用 `--assets-dir` 的值（相对当前目录），之后要 `doc import` 回飞书时用绝对路径 |
+| `--download-images` | 下载图片、视频与画板到 `--assets-dir`（默认 `./assets`，相对当前目录）并改写引用；画板导出为图片（实测为 JPEG，如 `board_N.jpg`）。用 `--output` 写文件时引用路径相对输出 Markdown 所在目录，导出后可直接对该文件 `doc import`；输出到 stdout 时引用路径相对当前目录 |
 | `--front-matter` | 顶部加 YAML front matter（title、document_id） |
 | `--highlight` | 文字颜色/背景色输出为 `<span style>` |
 | `--expand-mentions` | 默认 true；把 @用户 展开为名字（需 `contact:user.base:readonly`），`=false` 保留可回导的 `<mention-user/>` 标签 |
@@ -101,7 +101,7 @@ feishu-cli doc export-file <sheet_token> --doc-type sheet --type xlsx -o /tmp/re
 ```
 
 - `--type` 必填（`pdf` / `docx` / `xlsx`）；`--doc-type` 默认 `docx`，可选 `doc` / `docx` / `sheet` / `bitable`，组合须与源类型匹配（docx → pdf/docx，sheet/bitable → xlsx）。
-- 只接受裸 token：传 URL 会被服务端以 `99992402 field validation failed` 拒绝；wiki 节点先 `wiki get` 取 `obj_token`，或改用 `drive export --url`。
+- 文档参数接受 token 或 URL：`/docx/`、`/sheets/`、`/base/` URL 按路径推断 `--doc-type`（与显式 `--doc-type` 冲突时报错），`/wiki/` URL 自动解析为底层文档。
 - 内部固定轮询约 60 秒；大文档或需要续跑时改走下方 `drive export`。
 
 ## 长任务 / 可恢复导出（drive export）
