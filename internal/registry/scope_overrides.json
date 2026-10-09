@@ -39,6 +39,8 @@
       "mail:user_mailbox.message:modify",
       "mail:user_mailbox.message:readonly",
       "mail:user_mailbox.message:send",
+      "mail:user_mailbox.rule:read",
+      "mail:user_mailbox.rule:write",
       "mail:user_mailbox:readonly",
       "minutes:minute:download",
       "minutes:minutes.artifacts:read",

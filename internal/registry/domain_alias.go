@@ -162,6 +162,8 @@ var extraDomainScopes = map[string][]string{
 		"mail:user_mailbox.mail_contact:read",
 		"mail:user_mailbox.mail_contact:write",
 		"mail:user_mailbox.folder:read", // triage --list-folders
+		"mail:user_mailbox.rule:read",   // rule-list / rule-get
+		"mail:user_mailbox.rule:write",  // rule-create / rule-update / rule-delete / rule-reorder
 	},
 
 	// sheets shortcuts: +info, +read, +write, +append, +find, +create, +export, +merge-cells, etc.
