@@ -27,7 +27,7 @@
 - **IM**：`msg history` 在话题群只返回根消息（回复在 `thread_replies` 中，不再重复出现在 `items`）；`msg thread-messages` 的时间范围改为按秒在客户端过滤；`msg reaction/pin`、`chat get/update/delete` 新增 `--as`（默认 auto，未登录时可用 Bot）；`msg merge-forward` 固定使用应用身份；`chat member list` 新增 `users/bots/truncations` 字段（`items` 仍只含用户）；`user search --query` 改走 `contact/v3/users/search`，不再返回 `user_id`（需要时用 `--email/--mobile`）；`user search --email/--mobile` 的 `user_id` 字段改为真实 user_id（此前填的是 open_id）；`event consume` 同一应用单进程单连接并加单实例锁。
 - **搜索文档**：`search docs` 改走官方使用的 Search v2 端点（`POST /open-apis/search/v2/doc_wiki/search`）：每页最多 20 条（原 50），翻页改用 `--page-token`，`--offset` 大于 0 时报用法错误；`--owner-ids`/`--chat-ids`/`--docs-types` 映射为 v2 filter，输出字段保持兼容并新增 `page_token`。
 - **画板**：`board export-code --output-path` 目标文件已存在时默认报错，覆盖需加 `--overwrite`（此前静默覆盖）。
-- **其他**：`mail message/messages/thread --format` 只接受服务端取值（full/plain_text_full/metadata）；`doctor --only`、`auth token` 参数冲突、`--page-limit` 越界、非法 `--as` 取值等改为用法错误（退出码 2）。
+- **其他**：`mail message/messages/thread --format` 只接受服务端取值（full/plain_text_full/metadata）；`doctor --only`、`auth token` 参数冲突、`--page-limit` 越界、非法 `--as` 取值、输出文件已存在且未带 `--overwrite`（`board export-code/svg-export`、`drive export`）等改为用法错误（退出码 2）。
 
 ### 新增
 
