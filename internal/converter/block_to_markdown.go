@@ -268,6 +268,11 @@ func isListBlockType(bt BlockType) bool {
 	return bt == BlockTypeBullet || bt == BlockTypeOrdered || bt == BlockTypeTodo
 }
 
+// passesListIndent 判断块作为列表项子块时是否自行处理缩进：列表块，以及把缩进透传给子块的同步块容器。
+func passesListIndent(bt BlockType) bool {
+	return isListBlockType(bt) || bt == BlockTypeSyncSource || bt == BlockTypeSyncReference
+}
+
 // Convert converts all blocks to Markdown
 func (c *BlockToMarkdown) Convert() (string, error) {
 	var sb strings.Builder
@@ -854,18 +859,37 @@ func (c *BlockToMarkdown) convertBullet(block *larkdocx.Block, indent, depth int
 	prefix := strings.Repeat(" ", indent)
 	result := fmt.Sprintf("%s- %s\n", prefix, text)
 
-	// 递归处理嵌套子列表
-	if block.Children != nil {
-		for _, childID := range block.Children {
-			childBlock := c.blockMap[childID]
-			if childBlock != nil {
-				// CommonMark 要求子块缩进到父列表正文起始列；"- " 宽 2 列。
-				childMd, _ := c.convertBlockWithDepth(childBlock, indent+2, depth+1)
-				result += childMd
-			}
+	// 递归处理子块（嵌套列表、段落、代码块等）
+	for _, childID := range block.Children {
+		if childBlock := c.blockMap[childID]; childBlock != nil {
+			// CommonMark 要求子块缩进到父列表正文起始列；"- " 宽 2 列。
+			result += c.listChildMarkdown(childBlock, indent+2, depth)
 		}
 	}
 	return result, nil
+}
+
+// listChildMarkdown 渲染列表项的子块。嵌套列表沿用累计缩进；其它子块（段落、代码块、引用、图片等）
+// 按 CommonMark 缩进到父列表正文列，并在前面空一行——否则再导入时段落会被惰性续行并入列表项正文、
+// 代码块/引用会跳出列表成为顶层块（列表项多段落往返丢结构的根因之一）。
+func (c *BlockToMarkdown) listChildMarkdown(child *larkdocx.Block, childIndent, depth int) string {
+	if child.BlockType != nil && passesListIndent(BlockType(*child.BlockType)) {
+		md, _ := c.convertBlockWithDepth(child, childIndent, depth+1)
+		return md
+	}
+	md, _ := c.convertBlockWithDepth(child, 0, depth+1)
+	md = strings.TrimRight(md, "\n")
+	if strings.TrimSpace(md) == "" {
+		return ""
+	}
+	pad := strings.Repeat(" ", childIndent)
+	lines := strings.Split(md, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = pad + line
+		}
+	}
+	return "\n" + strings.Join(lines, "\n") + "\n"
 }
 
 func (c *BlockToMarkdown) convertOrdered(block *larkdocx.Block, indent, depth int) (string, error) {
@@ -884,15 +908,11 @@ func (c *BlockToMarkdown) convertOrdered(block *larkdocx.Block, indent, depth in
 	}
 	result := fmt.Sprintf("%s%s. %s\n", prefix, seq, text)
 
-	// 递归处理嵌套子列表
-	if block.Children != nil {
-		for _, childID := range block.Children {
-			childBlock := c.blockMap[childID]
-			if childBlock != nil {
-				// 有序 marker 宽度随编号变化："1. "=3，"10. "=4。
-				childMd, _ := c.convertBlockWithDepth(childBlock, indent+len(seq)+2, depth+1)
-				result += childMd
-			}
+	// 递归处理子块（嵌套列表、段落、代码块等）
+	for _, childID := range block.Children {
+		if childBlock := c.blockMap[childID]; childBlock != nil {
+			// 有序 marker 宽度随编号变化："1. "=3，"10. "=4。
+			result += c.listChildMarkdown(childBlock, indent+len(seq)+2, depth)
 		}
 	}
 	return result, nil
@@ -952,15 +972,11 @@ func (c *BlockToMarkdown) convertTodoWithDepth(block *larkdocx.Block, indent, de
 	prefix := strings.Repeat(" ", indent)
 	result := fmt.Sprintf("%s- %s %s\n", prefix, checkbox, text)
 
-	// 递归处理嵌套子项
-	if block.Children != nil {
-		for _, childID := range block.Children {
-			childBlock := c.blockMap[childID]
-			if childBlock != nil {
-				// Todo 仍是 bullet list item，父 marker "- " 宽 2 列；[ ] 属于正文。
-				childMd, _ := c.convertBlockWithDepth(childBlock, indent+2, depth+1)
-				result += childMd
-			}
+	// 递归处理子块（嵌套列表、段落、代码块等）
+	for _, childID := range block.Children {
+		if childBlock := c.blockMap[childID]; childBlock != nil {
+			// Todo 仍是 bullet list item，父 marker "- " 宽 2 列；[ ] 属于正文。
+			result += c.listChildMarkdown(childBlock, indent+2, depth)
 		}
 	}
 	return result, nil

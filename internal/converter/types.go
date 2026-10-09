@@ -136,12 +136,73 @@ type ConvertOptions struct {
 
 // ConvertResult contains converted blocks and table data
 type ConvertResult struct {
-	BlockNodes   []*BlockNode // 支持嵌套层级的块树
-	TableDatas   []*TableData // Table data in order of appearance, used for filling content
-	ImageStats   ImageStats   // 图片处理统计
-	ImageSources []string     // 每个 Image Block 对应的图片来源路径，与 BlockNodes 中的 Image Block 按序对应
-	VideoStats   VideoStats   // 视频处理统计
-	VideoSources []string     // 每个 Video(File) Block 对应的视频来源路径，与 BlockNodes 中的视频块按序对应
+	BlockNodes []*BlockNode // 支持嵌套层级的块树
+	TableDatas []*TableData // Table data in order of appearance, used for filling content（仅顶层表格）
+	// TableDataByBlock 以表格块指针为键的填充数据，覆盖嵌套在分栏列等容器内的表格（TableDatas 只含顶层表格）。
+	TableDataByBlock map[*larkdocx.Block]*TableData
+	ImageStats       ImageStats // 图片处理统计
+	ImageSources     []string   // 每个本地/网络图片 Image Block 的来源路径（按出现顺序；token 复用的图片不在此列，见 MediaRefs）
+	VideoStats       VideoStats // 视频处理统计
+	VideoSources     []string   // 每个本地视频 File Block 的来源路径（按出现顺序；token 复用的视频不在此列，见 MediaRefs）
+	FileStats        VideoStats // 附件（非视频 <file token>）统计，字段含义同 VideoStats
+	// MediaRefs 记录「建块后才能补齐内容」的块（以块指针为键，与 BlockNodes 中的 Block 同一指针）：
+	// 图片、附件/视频、带 token 的画板。导入层建块后按此描述上传素材 / 复用 token / 复制画板。
+	MediaRefs map[*larkdocx.Block]*MediaRef
+	// Degradations 记录转换期已确定无法原样导入、已降级为占位文本的内容（如带 token 的 <sheet>/<bitable>），
+	// 导入层应计入 failures，避免静默丢失。
+	Degradations []Degradation
+}
+
+// MediaKind 标识建块后需要补齐内容的资源类型。
+type MediaKind string
+
+const (
+	// MediaKindImage 图片：建空 Image 块 → 上传素材到该块 → replace_image。
+	MediaKindImage MediaKind = "image"
+	// MediaKindFile 附件/视频：建空 File 块（服务端外包一层 View 块）→ 上传素材到 File 块 → replace_file。
+	MediaKindFile MediaKind = "file"
+	// MediaKindWhiteboard 带 token 的画板：建空 Board 块 → 复制源画板节点。
+	MediaKindWhiteboard MediaKind = "whiteboard"
+)
+
+// FeishuMediaScheme 是飞书素材 token 引用前缀（feishu://media/<token>），导入时按 token 复用素材。
+const FeishuMediaScheme = "feishu://media/"
+
+// MediaRef 描述一个块在建块后才能补齐的资源。
+//
+// 服务端约束（2026-10 实测）：docx 建块接口拒绝带 token 的 Image/File/Board/Sheet/Bitable（1770001 invalid param），
+// File 块只能以 {"token":""} 建空块（带 name 同样 1770001）；跨文档素材 token 直接 replace_image 报
+// 1770013 relation mismatch——素材必须「上传到该块」。因此导入层统一先建空块，再按本描述补齐。
+type MediaRef struct {
+	Kind   MediaKind
+	Source string // 本地路径或 http(s) URL；为空时复用 Token
+	Token  string // 复用的已有素材 token（图片/附件/视频）或源画板 token
+	Name   string // 附件/视频文件名（建块时不能带 name，上传素材时用作文件名）
+	Video  bool   // 附件是否为视频（统计口径）
+	Width  int    // 图片显示宽度（<image width>），0 表示按原图像素
+	Height int    // 图片显示高度（<image height>）
+	Align  int    // 图片对齐（1 左 2 中 3 右），0 表示默认
+}
+
+// UploadSource 返回素材上传来源：本地路径/URL，或 feishu://media/<token>（下载后重新上传）。
+func (r *MediaRef) UploadSource() string {
+	if r == nil {
+		return ""
+	}
+	if r.Source != "" {
+		return r.Source
+	}
+	if r.Token != "" {
+		return FeishuMediaScheme + r.Token
+	}
+	return ""
+}
+
+// Degradation 记录转换期已降级为占位文本的内容。
+type Degradation struct {
+	Kind   string // sheet / bitable / file
+	Source string // 原始引用（token、文件名等）
+	Reason string
 }
 
 // ImageStats 记录图片处理统计

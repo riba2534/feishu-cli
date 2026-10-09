@@ -1086,10 +1086,22 @@ func buildCellUpdateContent(elements []*larkdocx.TextElement) map[string]any {
 }
 
 // buildElementsJSON 将 TextElement 转换为 UpdateBlock API 所需的 JSON 格式
+//
+// 除 text_run 外还保留行内公式（equation）：表格单元格经 batch_update / update_text_elements 填充，
+// 此前公式元素被直接丢弃（单元格里的 $...$ 无法导入为公式）。
 func buildElementsJSON(elements []*larkdocx.TextElement) []map[string]any {
 	var result []map[string]any
 	for _, elem := range elements {
-		if elem == nil || elem.TextRun == nil || elem.TextRun.Content == nil {
+		if elem == nil {
+			continue
+		}
+		if elem.Equation != nil && elem.Equation.Content != nil {
+			result = append(result, map[string]any{
+				"equation": map[string]any{"content": *elem.Equation.Content},
+			})
+			continue
+		}
+		if elem.TextRun == nil || elem.TextRun.Content == nil {
 			continue
 		}
 
