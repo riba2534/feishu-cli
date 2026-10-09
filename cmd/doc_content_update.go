@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -57,6 +56,18 @@ Markdown 中由 'doc export' 产生的本地方言（> [!NOTE] 高亮块、<imag
 本地图片/附件: ![说明](./a.png)（相对 --markdown-file 所在目录）、![说明](@./a.png)、
 <img path="@./a.png"/>、<source path="@./r.pdf" name="r.pdf"/> 会自动上传并绑定（占位标记协议，
 >20MB 自动分片），仅支持 append/overwrite/insert_*/块级 replace_range；失败项清理占位块并非零退出。
+<img> 的 width/height 按图片真实像素归一化，给出的显示宽度换算为 scale（对齐官方）。
+
+本地 HTML / 画板源文件（markdown 与 xml 均可，围栏代码块内不处理）:
+  <html5-block path="@./widget.html"/>   读取本地单文件 HTML 写入 HTML 块（docs_ai html5-block），
+                                         请求中改写为 data-ref 并随 reference_map 发送
+  <whiteboard type="mermaid" path="@./flow.mmd"/>   读取本地源文件生成画板（type=svg|mermaid|plantuml，
+                                         也可写成 <whiteboard type="svg">@./d.svg</whiteboard>）
+  路径以 @ 开头、相对当前目录；--doc-format xml 且内容来自文件时，当前目录不存在则回退到该文件所在目录。
+  --reference-map  结构化 reference_map（内联 JSON、@file 或 - 读 stdin），用于保留/回放
+                   doc read --engine docs_ai 返回的 document.reference_map；需与写入内容一起使用。
+
+--dry-run 只打印将发出的请求（含待上传的本地资源与绑定计划），不联网、不修改文档。
 
 结果: 服务端返回 partial_success 或 failed 时以非零退出码结束，并输出 warnings 与 log_id。
 
@@ -86,7 +97,11 @@ Markdown 中由 'doc export' 产生的本地方言（> [!NOTE] 高亮块、<imag
     --selection-by-title "## 目标章节" --markdown "## 插入的章节\n\n内容"
 
   # 从文件读取 markdown
-  feishu-cli doc content-update DOC_ID --mode append --markdown-file content.md`,
+  feishu-cli doc content-update DOC_ID --mode append --markdown-file content.md
+
+  # 追加本地 HTML 组件与本地 Mermaid 画板（XML），先预览请求
+  feishu-cli doc content-update DOC_ID --mode append --doc-format xml \
+    --markdown '<html5-block path="@./widget.html"/><whiteboard type="mermaid" path="@./flow.mmd"/>' --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: runDocContentUpdate,
 }
@@ -113,6 +128,8 @@ func init() {
 	f.String("table-column-width", "auto",
 		"Markdown 表格列宽策略：auto | fixed | 像素列表如 80,200,*,120（* 表示该列走 auto）")
 	f.Int("revision-id", -1, "文档版本号（用于并发冲突保护，-1 表示自动基于当前版本）")
+	f.String("reference-map", "", "结构化 reference_map JSON 对象（内联 JSON、@file 或 - 读 stdin），需与写入内容一起使用")
+	f.Bool("dry-run", false, "只打印将发出的请求（含本地资源上传计划），不联网、不修改文档")
 	mustMarkFlagRequired(docContentUpdateCmd, "mode")
 }
 
@@ -137,6 +154,7 @@ type contentUpdateParams struct {
 	stdout       io.Writer
 	stderr       io.Writer
 	resources    []*localDocResource // 本地图片/附件（占位标记协议）
+	referenceMap map[string]any      // 随写入内容发送的 reference_map（--reference-map 与 html5-block path）
 }
 
 func (p *contentUpdateParams) out() io.Writer {
@@ -281,23 +299,39 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 		p.content = converted
 	}
 
-	// 本地图片/附件 → 占位标签（离线校验文件存在与路径安全；上传绑定在写入成功后进行）
-	if p.content != "" {
-		baseDir := ""
-		if markdownFile != "" {
-			baseDir = filepath.Dir(markdownFile)
+	// --reference-map：只用于发送写入内容的模式，且必须有内容
+	var refMap map[string]any
+	if flags.Changed("reference-map") {
+		if !contentUpdateModeSendsContent(p.mode) {
+			return clierr.Usagef("--reference-map 只能用于写入内容的模式（append/overwrite/replace_range/replace_all/insert_*/str_replace），当前 --mode %s", p.mode)
 		}
-		rewritten, resources, err := prepareLocalDocResources(p.content, p.format(), baseDir)
+		if p.content == "" {
+			return clierr.Usagef("--reference-map 需要与 --markdown/--content（或对应 -file）一起使用")
+		}
+		raw, _ := flags.GetString("reference-map")
+		if refMap, err = readReferenceMapFlag(raw, false); err != nil {
+			return err
+		}
+	}
+
+	// 本地图片/附件 → 占位标签；html5-block / 画板本地文件 → 内联（离线校验文件存在与路径安全；上传绑定在写入成功后进行）
+	if p.content != "" {
+		in, err := prepareDocsAIWriteInput(p.content, refMap, docsAIWriteOptions{Format: p.format(), SourceFile: markdownFile})
 		if err != nil {
 			return err
 		}
-		if len(resources) > 0 {
+		if len(in.Resources) > 0 {
 			if !localResourceModes[p.mode] || (p.mode == "replace_range" && isPlainTextSelector(p.selEllipsis)) {
 				return clierr.Usagef("内容含本地图片/附件，只支持 --mode append / overwrite / insert_before / insert_after / replace_range（块级定位）；文本级替换无法插入图片")
 			}
-			p.content = rewritten
-			p.resources = resources
+			p.resources = in.Resources
 		}
+		p.content = in.Content
+		p.referenceMap = in.ReferenceMap
+	}
+
+	if dryRun, _ := flags.GetBool("dry-run"); dryRun {
+		return printContentUpdateDryRun(cmd, p, args[0])
 	}
 
 	// 参数校验通过后再解析文档（wiki URL 需要一次 node_by_token 请求）
@@ -324,6 +358,15 @@ func resolveMarkdownContent(markdownStr, markdownFile string) (string, error) {
 	}
 	// 处理命令行中的 \n 转义；文件读取必须保持 LaTeX 反斜杠原样。
 	return strings.ReplaceAll(content, "\\n", "\n"), nil
+}
+
+// contentUpdateModeSendsContent 判断模式是否会把写入内容发给服务端（--reference-map 只对这些模式有意义）。
+func contentUpdateModeSendsContent(mode string) bool {
+	switch mode {
+	case "delete_range", "block_move_after", "block_copy_insert_after":
+		return false
+	}
+	return true
 }
 
 // contentUpdateModeNeedsContent 判断模式是否必须提供非空内容。
@@ -882,7 +925,15 @@ func (p *contentUpdateParams) newBody(command string) map[string]any {
 // sendUpdate 发送一次原子更新；返回 data 与错误（含 *client.DocsAIResultError）。
 func (p *contentUpdateParams) sendUpdate(body map[string]any, revisionID int) (map[string]any, error) {
 	injectRevisionID(body, revisionID)
+	p.injectReferenceMap(body)
 	return client.UpdateDocContentAtomic(p.documentID, body, p.userToken)
+}
+
+// injectReferenceMap 给携带写入内容的请求附上 reference_map（占位块清理等无内容请求不带）。
+func (p *contentUpdateParams) injectReferenceMap(body map[string]any) {
+	if _, hasContent := body["content"]; hasContent && len(p.referenceMap) > 0 {
+		body["reference_map"] = p.referenceMap
+	}
 }
 
 // finishUpdate 统一输出一次更新的结果：
