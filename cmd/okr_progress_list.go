@@ -21,8 +21,9 @@ var okrProgressListCmd = &cobra.Command{
   --user-id-type      用户 ID 类型：open_id（默认） / union_id / user_id
   --output, -o        输出格式：json
 
-权限要求（应用 Token / Tenant，实测 user token 被服务端拒：99991668）:
-  okr:okr:readonly 或 okr:okr.progress:readonly
+身份与权限（--as，命令组默认 bot）:
+  User/Bot 均可调用；实测只接受 okr:okr.progress:readonly（okr:okr:readonly 不生效）。
+  bot 需应用后台开通该 scope（缺时 99991672）；user 需登录时授予同名 scope（缺时 99991679）
 
 示例:
   # 列出某个 Objective 的所有进展

@@ -18,13 +18,13 @@ var okrCmd = &cobra.Command{
 身份（--as，所有子命令继承）:
   bot（默认）  App/Tenant Token，无需 auth login，适合 cron 无人值守；
               scope 需在飞书应用后台开通（缺时报 99991672 + 给出申请链接）
-  user        User Token（需 auth login 时带 okr scope，否则服务端报 99991668/99991679）
+  user        User Token（需 auth login 时带对应 okr scope，缺 scope 时服务端报 99991679）
   auto        User 优先、Tenant 兜底
 
 权限要求（bot 走 tenant scope，user 走同名 user scope）:
   cycle list            okr:okr.period:readonly（v2 用户周期；--tenant 走 v1 时 okr:okr:readonly 亦可）
-  cycle detail          okr:okr:readonly（user 身份为 okr:okr.content:readonly）
-  progress list / get   okr:okr:readonly 或 okr:okr.progress:readonly
+  cycle detail          okr:okr.content:readonly（实测只接受该 scope，okr:okr:readonly 不生效）
+  progress list / get   okr:okr.progress:readonly（实测只接受该 scope；User/Bot 均可）
   progress create/update  okr:okr 或 okr:okr.progress:writeonly
   progress delete       okr:okr 或 okr:okr.progress:delete
   upload-image          okr:okr 或 okr:okr.progress.file:upload

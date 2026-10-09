@@ -42,3 +42,41 @@ func TestApprovalHelpListsAllTaskSubcommands(t *testing.T) {
 		t.Error("approval task --help 应指向 approval instance initiated 查询我发起的审批")
 	}
 }
+
+// TestOKRHelpScopesMatchVerifiedBehavior OKR help 的身份与 scope 与实测一致：
+// cycle detail 只接受 okr:okr.content:readonly，progress list/get 只接受 okr:okr.progress:readonly，
+// progress list/get/create 接受 User Token（缺 scope 为 99991679），不再声称 User Token 被 99991668 拒绝。
+func TestOKRHelpScopesMatchVerifiedBehavior(t *testing.T) {
+	for _, c := range []*cobra.Command{okrCmd, okrProgressListCmd, okrProgressCreateCmd, okrProgressGetCmd, okrCycleDetailCmd} {
+		if strings.Contains(c.Long, "99991668") {
+			t.Errorf("%s --help 仍声称 User Token 被 99991668 拒绝", c.CommandPath())
+		}
+	}
+	lineOf := func(long, key string) string {
+		for _, line := range strings.Split(long, "\n") {
+			if strings.Contains(line, key) {
+				return line
+			}
+		}
+		return ""
+	}
+	if line := lineOf(okrCmd.Long, "cycle detail "); !strings.Contains(line, "okr:okr.content:readonly") || strings.Contains(strings.ReplaceAll(line, "okr:okr:readonly 不生效", ""), "okr:okr:readonly") {
+		t.Errorf("okr --help 的 cycle detail scope 应只有 okr:okr.content:readonly: %q", line)
+	}
+	if line := lineOf(okrCmd.Long, "progress list / get"); !strings.Contains(line, "okr:okr.progress:readonly") || strings.Contains(line, "okr:okr:readonly 或") {
+		t.Errorf("okr --help 的 progress list/get scope 应只有 okr:okr.progress:readonly: %q", line)
+	}
+	if line := lineOf(okrCycleDetailCmd.Long, "权限要求"); !strings.Contains(line, "okr:okr.content:readonly") {
+		t.Errorf("okr cycle detail --help scope 应为 okr:okr.content:readonly: %q", line)
+	}
+	for _, c := range []*cobra.Command{okrProgressListCmd, okrProgressGetCmd} {
+		if !strings.Contains(c.Long, "okr:okr.progress:readonly") || strings.Contains(c.Long, "okr:okr:readonly 或") {
+			t.Errorf("%s --help scope 应只有 okr:okr.progress:readonly", c.CommandPath())
+		}
+	}
+	for _, c := range []*cobra.Command{okrProgressListCmd, okrProgressCreateCmd} {
+		if !strings.Contains(c.Long, "User/Bot 均可") || !strings.Contains(c.Long, "99991679") {
+			t.Errorf("%s --help 应说明 User/Bot 均可调用、user 缺 scope 时 99991679", c.CommandPath())
+		}
+	}
+}
