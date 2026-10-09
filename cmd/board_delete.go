@@ -39,6 +39,13 @@ var boardDeleteCmd = &cobra.Command{
 				return fmt.Errorf("获取画板节点失败: %w", err)
 			}
 			if len(ids) == 0 {
+				if output == "json" {
+					return printJSON(map[string]any{
+						"whiteboard_id": whiteboardID,
+						"deleted_ids":   []string{},
+						"deleted_count": 0,
+					})
+				}
 				fmt.Println("画板中没有节点，无需删除")
 				return nil
 			}

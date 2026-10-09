@@ -125,3 +125,71 @@ func TestBoardDeleteAll_EmptyBoard(t *testing.T) {
 		t.Fatalf("空画板不应调用 batch_delete，实际 %d 次", deleteCalls)
 	}
 }
+
+// TestBoardDeleteAll_EmptyBoardJSON -o json 时空画板也输出 JSON（deleted_count=0），便于管道消费。
+func TestBoardDeleteAll_EmptyBoardJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if mockAuthHandler(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"code":0,"data":{},"msg":""}`)
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(setupCmdTestConfig(t, srv.URL))
+
+	c := &cobra.Command{Use: "delete"}
+	c.Flags().String("node-ids", "", "")
+	c.Flags().Bool("all", false, "")
+	c.Flags().StringP("output", "o", "", "")
+	c.Flags().String("user-access-token", "", "")
+	_ = c.Flags().Set("all", "true")
+	_ = c.Flags().Set("output", "json")
+
+	out, err := captureAppsStdout(t, func() error { return boardDeleteCmd.RunE(c, []string{"wb_empty"}) })
+	if err != nil {
+		t.Fatalf("空画板 delete --all -o json 不应报错: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("输出应为 JSON，实际: %q (%v)", out, err)
+	}
+	if got["deleted_count"] != float64(0) {
+		t.Fatalf("deleted_count = %v, want 0", got["deleted_count"])
+	}
+}
+
+// TestBoardLint_JSONWithFontSizes 回归：font_sizes 曾是 map[float64]int，encoding/json 不支持 float key，
+// 画板含任意字号节点时 -o json 直接失败（json: unsupported type）。
+func TestBoardLint_JSONWithFontSizes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if mockAuthHandler(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"code":0,"msg":"","data":{"nodes":[
+			{"id":"o1:1","type":"text_shape","x":0,"y":0,"width":100,"height":40,"text":{"text":"a","font_size":14}},
+			{"id":"o1:2","type":"text_shape","x":200,"y":0,"width":100,"height":40,"text":{"text":"b","font_size":14.5}}]}}`)
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(setupCmdTestConfig(t, srv.URL))
+
+	c := &cobra.Command{Use: "lint"}
+	c.Flags().String("user-access-token", "", "")
+	c.Flags().StringP("output", "o", "", "")
+	_ = c.Flags().Set("output", "json")
+
+	out, err := captureAppsStdout(t, func() error { return boardLintCmd.RunE(c, []string{"wb_lint"}) })
+	if err != nil {
+		t.Fatalf("board lint -o json 不应失败: %v", err)
+	}
+	var got struct {
+		FontSizes map[string]int `json:"font_sizes"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("输出应为 JSON: %q (%v)", out, err)
+	}
+	if got.FontSizes["14"] != 1 || got.FontSizes["14.5"] != 1 {
+		t.Fatalf("font_sizes = %v，期望 {\"14\":1,\"14.5\":1}", got.FontSizes)
+	}
+}
