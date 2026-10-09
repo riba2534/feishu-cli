@@ -15,12 +15,12 @@ var revertVersionCmd = &cobra.Command{
 
 参数:
   file_token    文件的 Token
-  version       目标版本号（file version list 返回的长数字 version，不是 tag）
+  version       目标版本号（drive version-history 输出的长数字 version，不是 tag）
 
 底层接口：POST /open-apis/drive/v1/files/{file_token}/revert，请求体 {"version": version}
 
 提示:
-  - version 从 feishu-cli file version list <file_token> 获取
+  - version 从 feishu-cli drive version-history --file-token <file_token> 获取（与官方一致）
   - 回滚是写操作，默认以 Bot 身份执行；如需用户身份，传 --user-access-token
 
 示例:
