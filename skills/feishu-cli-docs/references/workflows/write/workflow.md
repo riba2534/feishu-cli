@@ -112,7 +112,11 @@ feishu-cli doc content-update <doc> --mode append --doc-format xml \
   `doc create` 下空值 / `null` 视为未提供；`content-update` 要求非空对象，且只能用于写入内容的模式
   （`delete_range`、`block_move_*`/`block_copy_*` 以退出码 2 拒绝）。
 - HTML 块写入后用 `doc read <doc> --engine docs_ai -o json` 回读：正文是 `<html5-block data-ref="html5_N">` 占位，
-  HTML 在 `document.reference_map["html5-block"]["html5_N"].data`。需要逐块增删改、读回 HTML 的妙笔BOX 组件见 `feishu-cli-visual` 的 htmlbox。
+  HTML 在 `document.reference_map["html5-block"]["html5_N"].data`。
+- 与 `doc htmlbox` 的区别（实测）：`<html5-block>` 建出的是 AddOns 块（block_type=40），组件类型
+  `blk_6358a421bca0001c190a9805`，随正文一起写入、适合 XML/Markdown 写作时内嵌 HTML 组件；`doc htmlbox` 建的是另一个组件
+  「妙笔BOX」（`blk_6900429af84180025ce76527`），按块单独增删改查、能读回 HTML，适合已有文档里单独维护动态图表
+  （见 `feishu-cli-visual` 的 htmlbox）。两者组件不同，互相不能替代读写。
 
 ## 用 Markdown 创建文档
 
@@ -262,10 +266,13 @@ feishu-cli doc content-update <document_id> --mode append --markdown-file /tmp/w
 | `![说明](@./img.png)`、`![说明](<@./带 空格.png>)` | 官方写法，`@` 路径相对**当前目录** |
 | `<img path="@./img.png" width="600" align="center"/>` | XML 写法（`--doc-format xml` 时只认这种），路径相对当前目录；XML 内容来自文件时当前目录不存在则回退到文件所在目录 |
 | `<source path="@./report.pdf" name="报告.pdf"/>` | 本地附件 |
+| `<img href="https://example.com/a.png"/>` | 网络图片：**不经 CLI**，原样交给服务端下载（现有行为，URL 须服务端可达）；`doc create` 中不能与 `path`/`src`/`token`/`img_key`/`url` 混用（退出码 2） |
 
 `<img>` 尺寸按官方归一化：`width/height` 改为图片真实像素，给出的显示尺寸换算为 `scale`
 （优先级 `scale` > `width` > `height`，支持百分比如 `width="50%"`）；都没给且原图宽度 ≥1020px 时缩放到略小于页面宽度。
 例：1200×800 的图写 `width="600"` → 以 `scale=0.5` 显示，宽高比不变。
+`align="left|center|right"` 随绑定写入（实测 docx 块 API 回读 `image.align`=1/2/3）；`doc read --engine docs_ai` 的 XML 回读不输出
+`align` 属性，核对对齐时用 `feishu-cli api GET /open-apis/docx/v1/documents/<doc>/blocks/<block_id>`。
 
 上传流程：本地资源先改写为占位标签 → 服务端在 `document.new_blocks` 回传占位块 → 以占位块为父节点上传素材
 （>20MB 自动分片）→ 绑定。任一资源失败时删除其占位块，命令以退出码 1 结束，
