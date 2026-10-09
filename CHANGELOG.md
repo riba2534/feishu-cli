@@ -45,6 +45,7 @@
 - `content-update`：`--block-id`、`--start-block-id/--end-block-id`、`--mode str_replace`、`block_move_after`、`block_copy_insert_after`、`--doc-format xml`、本地图片/附件插入。
 - `doc read --engine docs_ai`（`--with-ids`、`--scope outline|range|keyword|section`）；`doc create --content`（docs_ai 服务端建文档）；`doc export --engine docs_ai`；`doc history list|revert|revert-status`。
 - 文档素材 >20MB 分片上传；`media-insert --width/--height`；`media-download --overwrite`。
+- `doc get/blocks/add/add-board/add-callout/update/delete/batch-update/table`、`doc import --document-id`、`doc export-file` 接受文档或知识库链接；`doc import -o json` 新增 `file_*`、`whiteboard_*`、`blocks_failed` 统计。
 
 **电子表格**
 - `--as bot|user|auto`；表格参数接受 sheets/wiki URL；`--sheet-name`；`Sheet1!A1` 子表名前缀自动换算。
@@ -111,6 +112,7 @@
 - 运行时：限流等待只向上抖动并支持 Retry-After；手写请求统一走共享连接池与受控客户端；Ctrl-C 可中断进行中的请求；拼错子命令给出建议；错误预览与落盘文件名按 UTF-8 字符边界截断。
 - IM：话题群 `msg history` 线程回复重复输出、翻页被回复占用；`--markdown/--content` 的 @ 标签未规范化导致 @ 失效；`chat member list` 拿不到群内机器人；事件订阅按事件类型各开一条连接、与同应用其他连接争抢事件；设了 `--timeout/--max-events` 时 stdin EOF 仍提前退出；`msg history` 文本模式也全量拉取群成员；User 身份降级到搜索时提示语与身份不符且静默丢弃时间参数；`--user-email` 模糊匹配可能定位到错误的人；`search messages/chats` 丢弃服务端 notice；资源下载默认文件名改为服务端文件名。
 - 集成阶段：SDK token 缓存改为随 client 实例重建而丢弃（同一 app_id 切换 base_url 或轮换 secret 后不再复用旧 token）；异步删除任务失败时按身份提示原因；`table-put` 数值列写入前重置残留的文本格式。
+- 文档导入往返：`doc export` 输出的 `<image/file token>`、`feishu://media/` 视频导入时下载原素材重新上传，`<whiteboard token>` 按源码重建或复制节点（不再整篇报 1770001 失败），带 token 的 `<sheet>`/`<bitable>` 降级为链接并计入 `failures`；嵌套引用扁平化（原 1770030）；分栏内容写入服务端生成的列（原 1770028），列内空行不再截断；列表项的后续段落保留为子块；表格单元格里的 `$..$` 转为公式；被服务端拒绝的单个块隔离跳过，建块阶段失败也输出 JSON（退出码 1）；`doc export --download-images -o` 的资源路径相对输出文件，可原地再导入；`markdown patch` 读不到远端文件名时拒绝写回（新增 `--name`），参数错误退出码 2。
 - 技能 review 阶段：`msg read-users` 已登录时必然失败（接口只收 Tenant）改用原始请求并新增 `--as`；`file version create/get/list` 兼容数字 status，避免创建成功后误报失败而重复建版本；妙记命令接受妙记链接，`vc notes` 在会议号/日历路径下也补拉纪要产物，产物部分失败时非零退出，`minutes download` 同批同名文件自动改名；邮件内联图片在 home 为软链接时不再被误拒；`--domain mail --recommend` 补收信规则 scope、slides 授权域补齐子命令 scope；`slides create` 按服务端返回统计页数；`calendar attendee remove` 的 dry-run 与真实请求一致；`okr comment create --select-all` 配 `--content-json` 时选区不再为空；`perm password` 遇 1063002 提示先开放链接；多处 help 与错误提示修正。
 
 ### 技能与验证
