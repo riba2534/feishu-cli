@@ -98,8 +98,8 @@ feishu-cli board export-code $BOARD_ID --source
 ### 限制（详见 references/mermaid-engines.md）
 
 - 布局由服务端决定，不能指定落点坐标
-- CLI 对 Mermaid 的复杂度警告（par / ≥10 participant / ≥3 层 alt / ≥30 长行）只是提示：2026-10 复测
-  par、12 个 participant、3 层嵌套 alt 均能正常渲染；真正失败（Parse error / Invalid request parameter）时再改 `--engine local`
+- CLI 只在规模明显超出实测范围（≥20 participant / ≥6 个 alt 块 / ≥50 行长标签）时在 stderr 提示，不阻断执行；2026-10 复测
+  par、12 个 participant、3 层嵌套 alt 均能正常渲染。真正失败（Parse error / Invalid request parameter）时再改 `--engine local`
 - `board import` 失败直接报错，不会降级为代码块（降级只发生在 `doc import`）
 
 ---
