@@ -4,7 +4,7 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
-## [Unreleased]
+## [v1.42.0] - 2026-10-09
 
 对照飞书官方 CLI（larksuite/cli）逐领域审查后的全面对齐：修复一批"代码自洽但与服务端契约不符"的缺陷，
 补齐官方已有、本项目缺失的能力，并保留本项目更稳妥的设计（fail-closed 身份、host 白名单、本地转换器、画板全家桶等）。
