@@ -202,10 +202,11 @@ sudo mv feishu-cli_*/feishu-cli /usr/local/bin/
 **使用 go install**
 
 ```bash
-go install github.com/riba2534/feishu-cli/v2@latest
+go install github.com/riba2534/feishu-cli@latest
 ```
 
-> v2.0.0 起模块路径带 `/v2` 后缀（Go 大版本规则）。旧写法 `go install github.com/riba2534/feishu-cli@latest` 只会安装 v1.x 的最后一个版本。
+> 模块路径没有 `/v2` 后缀，按 Go 的版本规则，`go install` 无法安装 v2.0.0 及以后的 tag（`@latest` 只能拿到 v1.x，
+> 指定 `@v2.x.x` 会报 invalid version）。安装 v2 请用上面的一键安装脚本、Release 包，或下方的从源码编译。
 
 **从源码编译**
 

@@ -17,7 +17,7 @@ v2.0.0 是大版本：为对齐官方 CLI 与服务端契约，下列旧用法�
 
 | 旧用法 | v2 中的变化 | 改法 |
 |---|---|---|
-| `go install github.com/riba2534/feishu-cli@latest` | 模块路径带 `/v2` 后缀（Go 大版本规则），旧路径只能装到 v1.x | 改为 `go install github.com/riba2534/feishu-cli/v2@latest`；Release 包与 `install.sh` 不变 |
+| `go install github.com/riba2534/feishu-cli@latest` | 模块路径保持不变（未加 `/v2`），按 Go 版本规则 `go install` 无法安装 v2 tag | 改用一键安装脚本 `install.sh`、Release 包或从源码编译（v2 起可用 `feishu-cli update` 升级后续版本） |
 | 已安装的 Claude Code 技能 | 技能与 CLI 版本配套，要求 v2.0.0+ | 升级后运行 `feishu-cli skills install`，`feishu-cli doctor --only skills` 检查 |
 | 脚本判断 `$? == 1` | 错误按类别返回 2 用法 / 3 鉴权 / 4 网络 / 10 需确认；`auth check` 未通过为 3 | 改为判断 `!= 0`，或按类别分支 |
 | 非交互执行删除类命令不带 `--yes` | 旧版打印"已取消"、exit 0 但并未删除；v2 exit 10 | 确认要删时加 `--yes`（或命令级 `--force`） |
