@@ -92,7 +92,7 @@ var mailThreadModifyCmd = &cobra.Command{
 				}
 			}
 		}
-		folderID, err := normalizeMailManageFolder(folderRaw)
+		folderID, err := normalizeMailThreadFolder(folderRaw)
 		if err != nil {
 			return err
 		}

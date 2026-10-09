@@ -72,13 +72,23 @@ func normalizeMailManageLabels(raw, flagName string) ([]string, error) {
 }
 
 // normalizeMailManageFolder 系统文件夹规范化（inbox/archive → INBOX/ARCHIVED），拒绝 TRASH。
+// 拒绝时指向邮件删除命令（message-modify → message-trash）。
 func normalizeMailManageFolder(raw string) (string, error) {
+	return normalizeMailFolderFor(raw, "删除邮件请用 `feishu-cli mail message-trash`")
+}
+
+// normalizeMailThreadFolder 同 normalizeMailManageFolder，拒绝 TRASH 时指向线程删除命令 thread-trash。
+func normalizeMailThreadFolder(raw string) (string, error) {
+	return normalizeMailFolderFor(raw, "删除线程请用 `feishu-cli mail thread-trash --thread-ids ...`")
+}
+
+func normalizeMailFolderFor(raw, trashHint string) (string, error) {
 	folder := strings.TrimSpace(raw)
 	if folder == "" {
 		return "", nil
 	}
 	if strings.EqualFold(folder, "TRASH") {
-		return "", clierr.Usagef("--folder-id 不支持 TRASH；删除邮件请用 `feishu-cli mail message-trash`")
+		return "", clierr.Usagef("--folder-id 不支持 TRASH；%s", trashHint)
 	}
 	if sys, ok := mailManageSystemFolders[strings.ToUpper(folder)]; ok {
 		return sys, nil
