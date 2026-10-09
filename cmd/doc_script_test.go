@@ -797,9 +797,20 @@ func TestDocScriptDryRun(t *testing.T) {
 	}
 	_ = os.WriteFile(filepath.Join("ws", "draft.xml"), []byte("<p>draft</p>"), 0o600)
 	_ = os.WriteFile(filepath.Join("ws", docScriptDecisionFile), []byte(`{"invalid":true}`), 0o600)
-	_, err = runDocScriptForTest(t, map[string]string{"command": "parse", "content": "@ws/draft.xml", "dry-run": "true"})
-	if err == nil || !strings.Contains(err.Error(), "已保存的 Presentation Decision") || clierr.HasKind(err, clierr.KindUsage) {
-		t.Fatalf("无效的已保存决策应报一般错误: %v", err)
+	// dry-run 与正式执行都会校验已保存的决策；损坏时与官方一致为校验错误（退出码 2），并保留原因链
+	for _, dryRun := range []string{"true", "false"} {
+		_, err = runDocScriptForTest(t, map[string]string{"command": "parse", "content": "@ws/draft.xml", "dry-run": dryRun})
+		requireDocScriptUsage(t, err, "已保存的 Presentation Decision")
+		if !strings.Contains(err.Error(), `unknown field "invalid"`) || !strings.Contains(err.Error(), "重新执行 init-draft") {
+			t.Fatalf("应说明损坏原因与修复方式: %v", err)
+		}
+	}
+	_ = os.WriteFile(filepath.Join("ws", docScriptDecisionFile), []byte(`{"word_count":`), 0o600)
+	_, err = runDocScriptForTest(t, map[string]string{"command": "parse", "content": "@ws/draft.xml"})
+	requireDocScriptUsage(t, err, "已保存的 Presentation Decision")
+	var syntaxErr *json.SyntaxError
+	if !errors.As(err, &syntaxErr) && !strings.Contains(err.Error(), "unexpected EOF") {
+		t.Fatalf("截断的决策文件应保留 JSON 解析原因: %T %v", err, err)
 	}
 }
 
@@ -865,6 +876,24 @@ func TestDocScriptParsesOnlineDocument(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(paths, ","), "POST /open-apis/docs_ai/v1/documents/doxcnFromWiki/fetch") {
 		t.Fatalf("wiki 应先解析为底层 docx: %v", paths)
+	}
+}
+
+func TestDocScriptOnlineUnparsableContentIsUsageError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal" {
+			fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
+			return
+		}
+		fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"document":{"document_id":"x","content":"<!DOCTYPE x><p>bad</p>"}}}`)
+	}))
+	defer server.Close()
+	initDocUpdateTestConfig(t, server.URL)
+	_, err := runDocScriptForTest(t, map[string]string{"command": "parse", "doc": "doxcnBadXML", "as": "bot"})
+	requireDocScriptUsage(t, err, "无法把在线文档内容解析为 DocxXML")
+	if !strings.Contains(err.Error(), "DOCTYPE") {
+		t.Fatalf("应保留解析失败原因: %v", err)
 	}
 }
 

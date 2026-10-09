@@ -54,7 +54,7 @@ feishu-cli doc script --command parse --content "@./doc.xml" --presentation-deci
 | `--as bot\|user\|auto` | `--doc` 使用的身份，默认 `auto`（User 优先，未登录回退 Bot）；需要 `docx:document:readonly` |
 
 - 用 `--content "@./<draft_path>"` 时自动加载同目录的 `.presentation-decision.json`；显式 `--presentation-decision` 优先。
-  已保存的决策被改坏时以退出码 1 报错，重新执行 `init-draft`。
+  已保存的决策被改坏时以退出码 2 报错（不要重试），重新执行 `init-draft`。
 - 输出：`assessment.status`（`passed` / `failed`）、`profile`（`word_count`、`char_count`、`block_count`、`blocks[]` 的
   `type` / `count` / `ratio`）和按需出现的 `diagnostics[]`。**检查未通过时退出码仍为 0**，判断看 `assessment.status`。
 - `word_count` 按飞书写作口径计数：汉字、中文标点逐字计，英文单词、数字、URL 各计 1；列表序号、勾选框也计入。
