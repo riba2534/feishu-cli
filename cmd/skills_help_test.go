@@ -104,6 +104,7 @@ func TestSkillHelpGroupListsAllWorkflows(t *testing.T) {
 		want []string
 	}{
 		{[]string{"doc"}, []string{
+			"feishu-cli-docs/author:script",
 			"feishu-cli-docs/export:export,export-file,media-download",
 			"feishu-cli-docs/import:import",
 			"feishu-cli-docs/read:blocks,get,read",
@@ -131,7 +132,7 @@ func TestSkillHelpGroupListsAllWorkflows(t *testing.T) {
 	docCmd, _, _ := rootCmd.Find([]string{"doc"})
 	help := relatedSkillHelp(docCmd)
 	for _, want := range []string{
-		"本命令组的子命令分布在 6 个工作流",
+		"本命令组的子命令分布在 7 个工作流",
 		"feishu-cli-docs（references/workflows/import/workflow.md）: import\n",
 		"feishu-cli-visual（references/workflows/htmlbox/workflow.md）: htmlbox\n",
 		"feishu-cli-storage（references/workflows/drive/workflow.md）: import-file\n",

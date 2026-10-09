@@ -96,6 +96,14 @@
       "expected_output": "doc history list doxcnxxx --page-all -o json 按 edit_time 定位 history_version_id；用户确认后 doc history revert --history-version-id <id> --yes；status=done 才算成功，running 时用 revert-status --task-id 继续查。",
       "expectations": ["先用 doc history list 取 history_version_id，不把 revision_id 传给 revert", "revert 先 --dry-run 或向用户确认，非交互环境确认后才加 --yes（不带时退出码 10）", "以 status=done 判定成功，running 时用 doc history revert-status --task-id 查询，partial_failed/failed 非零退出", "说明 revert 默认 Bot 身份，Bot 无编辑权限时显式传本人 --user-access-token"],
       "files": []
+    },
+    {
+      "id": 13,
+      "workflows": ["author"],
+      "prompt": "帮我写一份上周发布评审会的会议纪要放到飞书里，要求有行动项表格，800 字以内。素材是我贴的聊天记录。",
+      "expected_output": "按 author 工作流选会议纪要体裁，先用 doc script init-draft 提交 Presentation Decision，把 DocxXML 写到返回的 draft_path，parse 通过后再 doc create --doc-format xml。",
+      "expectations": ["读取 route-workplace 与 meeting-minutes 体裁文件后再写草稿", "Presentation Decision 含 word_count（max 约 800）与 table 的最低数量约束", "先执行 feishu-cli doc script --command init-draft，并把草稿写到返回的 draft_path", "创建前执行 doc script --command parse，以 assessment.status=passed 为准", "用 doc create --doc-format xml --content-file 创建，且不额外传 --title"],
+      "files": []
     }
   ]
 }

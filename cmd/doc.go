@@ -33,6 +33,8 @@ var docCmd = &cobra.Command{
     batch-update   批量更新块
     delete         删除父块下的子块
     table          表格操作（插入/删除行列、合并/取消合并单元格）
+  写作辅助
+    script         AI 写文档：init-draft 初始化草稿工作区 / parse 解析 XML 画像与预检
 
 文档参数（<document_id> 等）除裸 ID 外也接受 /docx/ 与 /wiki/ URL（wiki 自动解析为底层文档；htmlbox 暂只接受裸 ID）。
 
