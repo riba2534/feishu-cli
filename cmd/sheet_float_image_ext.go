@@ -2,16 +2,18 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
 // image get
 var sheetImageGetCmd = &cobra.Command{
-	Use:   "get <spreadsheet_token> <sheet_id> <float_image_id>",
+	Use:   "get <spreadsheet_token|url> <sheet_id> <float_image_id>",
 	Short: "获取浮动图片",
 	Long: `根据 ID 获取工作表中的单个浮动图片。
 
@@ -19,12 +21,15 @@ var sheetImageGetCmd = &cobra.Command{
   feishu-cli sheet image get shtcnxxxxxx 0b1212 ScDmuyHm`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		sheetID := args[1]
 		floatImageID := args[2]
 		output, _ := cmd.Flags().GetString("output")
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
 
 		img, err := client.GetFloatImage(client.Context(), spreadsheetToken, sheetID, floatImageID, userAccessToken)
 		if err != nil {
@@ -46,7 +51,7 @@ var sheetImageGetCmd = &cobra.Command{
 
 // image update
 var sheetImageUpdateCmd = &cobra.Command{
-	Use:   "update <spreadsheet_token> <sheet_id> <float_image_id>",
+	Use:   "update <spreadsheet_token|url> <sheet_id> <float_image_id>",
 	Short: "更新浮动图片",
 	Long: `更新浮动图片的锚点单元格 / 尺寸 / 偏移。仅更新显式传入的字段。
 --range 为新锚点单元格，必须是单个单元格（如 0b1212!B2:B2）。
@@ -56,7 +61,6 @@ var sheetImageUpdateCmd = &cobra.Command{
   feishu-cli sheet image update shtcnxxxxxx 0b1212 ScDmuyHm --range "0b1212!B2:B2" --offset-x 5`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		sheetID := args[1]
 		floatImageID := args[2]
 		rangeStr, _ := cmd.Flags().GetString("range")
@@ -90,13 +94,21 @@ var sheetImageUpdateCmd = &cobra.Command{
 			return err
 		}
 
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
+		if rangeStr != "" {
+			if rangeStr, err = target.qualifyRange(rangeStr, sheetID, ""); err != nil {
+				return err
+			}
+		}
 		image := &client.FloatImage{
-			Range:  unescapeSheetRange(rangeStr),
+			Range:  rangeStr,
 			Width:  width,
 			Height: height,
 		}
-
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		result, err := client.UpdateFloatImage(client.Context(), spreadsheetToken, sheetID, floatImageID, image, offsetX, offsetY, userAccessToken)
 		if err != nil {
@@ -116,18 +128,19 @@ var sheetImageUpdateCmd = &cobra.Command{
 
 // image media-upload
 var sheetImageMediaUploadCmd = &cobra.Command{
-	Use:   "media-upload <spreadsheet_token> <file>",
+	Use:   "media-upload <spreadsheet_token|url> <file>",
 	Short: "上传本地图片素材，返回 file_token",
 	Long: `上传本地图片作为浮动图片素材，返回 file_token（再用于 sheet image add）。
 parent_type 按表格类型自动选择：原生飞书表格用 sheet_image，导入型 office 表格
-（token 以 fake_office_ 开头）用 office_sheet_file；parent_node 为电子表格 token。
+（token 以 fake_office_/local_office_ 开头，或长度 ≥25 且第 5/10/15/20/25 位依次为 OFL0X）用 office_sheet_file；parent_node 为电子表格 token。
+文件 ≤20MB 走 medias/upload_all，超过 20MB 自动改用分片上传（upload_prepare/upload_part/upload_finish）；
+注意实测浮动图片接口不接受超过 20MB 的图片（1310245），作浮动图片前请先压缩。
 
 示例:
   feishu-cli sheet image media-upload shtcnxxxxxx ./logo.png
   feishu-cli sheet image media-upload shtcnxxxxxx ./logo.png --name banner.png -o json`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		filePath := args[1]
 		name, _ := cmd.Flags().GetString("name")
 		output, _ := cmd.Flags().GetString("output")
@@ -135,10 +148,22 @@ parent_type 按表格类型自动选择：原生飞书表格用 sheet_image，�
 		if name == "" {
 			name = filepath.Base(filePath)
 		}
+		if err := safefile.ValidateInputPath(filePath); err != nil {
+			return err
+		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
 
-		fileToken, err := client.UploadSheetImageMedia(filePath, spreadsheetToken, name, userAccessToken)
+		// >20MB 自动走分片上传（upload_all 对超限文件只回 1061002 params error）
+		if client.SheetImageUsesMultipart(filePath) {
+			fmt.Fprintln(os.Stderr, "提示：文件超过 20MB，改用分片上传。实测浮动图片接口（sheet image add）不接受超过 20MB 的图片"+
+				"（返回 1310245 Wrong Float Image Token），如需作为浮动图片使用请先压缩到 20MB 以内")
+		}
+		fileToken, err := client.UploadSheetImageMediaAuto(filePath, spreadsheetToken, name, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -154,7 +179,7 @@ parent_type 按表格类型自动选择：原生飞书表格用 sheet_image，�
 
 // image write-image
 var sheetImageWriteCmd = &cobra.Command{
-	Use:   "write-image <spreadsheet_token> <sheet_id>",
+	Use:   "write-image <spreadsheet_token|url> <sheet_id>",
 	Short: "把网络或本地图片写入单元格",
 	Long: `将网络图片（HTTPS URL）或本地图片写入指定单元格（原生图片单元格，非浮动图片），并通过 V3 read-rich 回读验证。
 目标范围起止单元格必须相同（单格）。
@@ -177,7 +202,6 @@ var sheetImageWriteCmd = &cobra.Command{
   feishu-cli sheet image write-image shtcnxxxxxx 0b1212 --range "0b1212!B2" --image ./logo.png --name logo.png -o json`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		sheetID := args[1]
 		rangeStr, _ := cmd.Flags().GetString("range")
 		imagePath, _ := cmd.Flags().GetString("image")
@@ -192,12 +216,32 @@ var sheetImageWriteCmd = &cobra.Command{
 			return fmt.Errorf("--range、--image 均为必填项")
 		}
 
-		normalizedRange, err := normalizeSheetWriteImageRange(unescapeSheetRange(rangeStr), sheetID)
+		rangeStr = unescapeSheetRange(rangeStr)
+		prefix, rest, hasPrefix := client.SplitSheetRangePrefix(rangeStr)
+		if !hasPrefix || prefix == sheetID {
+			// 前缀缺省或就是 sheetId：联网前先做本地校验
+			if _, err := normalizeSheetWriteImageRange(rangeStr, sheetID); err != nil {
+				return err
+			}
+		}
+
+		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {
 			return err
 		}
-
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
+		if hasPrefix && prefix != sheetID {
+			// 前缀是子表名：换算成 sheetId 后再校验（与 <sheet_id> 不是同一子表时照常报错）
+			id, err := target.resolveSheetRef(prefix)
+			if err != nil {
+				return err
+			}
+			rangeStr = id + "!" + rest
+		}
+		normalizedRange, err := normalizeSheetWriteImageRange(rangeStr, sheetID)
+		if err != nil {
+			return err
+		}
 
 		item := client.BatchWriteSheetImageItem{
 			Cell: normalizedRange,

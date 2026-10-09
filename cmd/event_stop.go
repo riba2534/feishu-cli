@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -16,7 +17,7 @@ var eventStopCmd = &cobra.Command{
 	Long: `停止本机活跃的 consume 进程。可以按以下三种方式之一指定目标：
 
   --pid <N>          按 PID 精确停止
-  --event-key <key>  停止订阅该 EventKey 的所有进程
+  --event-key <key>  停止订阅该 EventKey 的所有进程（同时订阅了多个 key 的进程会整体退出）
   --all              停止所有 consume 进程（当前 AppID）
 
 实现:
@@ -80,6 +81,10 @@ var eventStopCmd = &cobra.Command{
 
 		signalName := eventStopSignalName(force)
 
+		// 一个 consume 进程可同时订阅多个 EventKey（bus.json 中每个 key 一条记录），
+		// 按 PID 合并，避免对同一进程重复发信号。
+		targets = mergeConsumersByPID(targets, snap.Consumers)
+
 		results := make([]map[string]any, 0, len(targets))
 		for _, t := range targets {
 			r := map[string]any{
@@ -141,8 +146,29 @@ var eventStopCmd = &cobra.Command{
 func init() {
 	eventCmd.AddCommand(eventStopCmd)
 	eventStopCmd.Flags().Int("pid", 0, "按 PID 停止")
-	eventStopCmd.Flags().String("event-key", "", "按 EventKey 停止（停掉所有订阅该 key 的进程）")
+	eventStopCmd.Flags().String("event-key", "", "按 EventKey 停止（停掉所有订阅该 key 的进程；多 key 进程会整体退出）")
 	eventStopCmd.Flags().Bool("all", false, "停止当前 AppID 下所有 consume 进程")
 	eventStopCmd.Flags().Bool("force", false, "用 SIGKILL 而非 SIGTERM（紧急情况）")
 	eventStopCmd.Flags().Bool("json", false, "以 JSON 输出停止结果")
+}
+
+// mergeConsumersByPID 把目标条目按 PID 去重；EventKey 合并为该进程订阅的全部 key（逗号分隔）。
+func mergeConsumersByPID(targets, all []event.ConsumerEntry) []event.ConsumerEntry {
+	keysByPID := map[int][]string{}
+	for _, c := range all {
+		keysByPID[c.PID] = append(keysByPID[c.PID], c.EventKey)
+	}
+	seen := map[int]bool{}
+	out := make([]event.ConsumerEntry, 0, len(targets))
+	for _, t := range targets {
+		if seen[t.PID] {
+			continue
+		}
+		seen[t.PID] = true
+		if keys := keysByPID[t.PID]; len(keys) > 0 {
+			t.EventKey = strings.Join(keys, ",")
+		}
+		out = append(out, t)
+	}
+	return out
 }

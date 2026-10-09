@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -11,22 +10,10 @@ import (
 )
 
 // isOfficePresentation 判定演示文稿 token 是否为导入的 Office deck。
-// 识别规则（对齐官方 lark-cli / slides 规范）：
-// 1. 兼容 legacy 前缀: "fake_office_" 或 "local_office_"
-// 2. 官方 28 字符交织标记: 长度恰好为 28，且 0-based 下标 [4],[9],[14],[19],[24]（人类 1-based 第 5,10,15,20,25 位）依次为 'O', 'F', 'L', '0', 'X'
+// 规则统一由 IsLocalOfficeToken 维护（前缀 fake_office_/local_office_，或长度 ≥25 且固定偏移为 OFL0X），
+// 避免 slides 与 sheets 各存一份副本、格式变化时漏改。
 func isOfficePresentation(token string) bool {
-	if strings.HasPrefix(token, "fake_office_") || strings.HasPrefix(token, "local_office_") {
-		return true
-	}
-	if len(token) == 28 &&
-		token[4] == 'O' &&
-		token[9] == 'F' &&
-		token[14] == 'L' &&
-		token[19] == '0' &&
-		token[24] == 'X' {
-		return true
-	}
-	return false
+	return IsLocalOfficeToken(token)
 }
 
 // slidesMediaParentType 根据演示文稿 token 返回上传 media 时使用的 parent_type。
@@ -100,13 +87,12 @@ func CreateSlides(opts CreateSlidesOptions) (*CreateSlidesResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("创建 slides 失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("创建 slides 失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	// 先解析业务信封再看 HTTP 状态：飞书大量业务错误（如 99991672 缺 scope）随 HTTP 400 下发
+	if err := CheckAPIResponse("创建 slides", resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
 		Data struct {
 			XmlPresentationID string `json:"xml_presentation_id"`
 			RevisionID        int    `json:"revision_id"`
@@ -114,9 +100,6 @@ func CreateSlides(opts CreateSlidesOptions) (*CreateSlidesResult, error) {
 	}
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("解析 slides 创建响应失败: %w", err)
-	}
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("创建 slides 失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
 	}
 	if apiResp.Data.XmlPresentationID == "" {
 		return nil, fmt.Errorf("创建 slides 成功但未返回 xml_presentation_id")
@@ -149,37 +132,43 @@ type GetSlidesResult struct {
 // GetSlides 读取指定 XML 演示文稿的全文信息
 // API: GET /open-apis/slides_ai/v1/xml_presentations/{xml_presentation_id}
 // 权限: slides:presentation:read
+//
+// revisionID 原样下发（-1 表示最新）。实测服务端对正整数版本号忽略、始终返回最新版本，
+// 0 则报 3350001；过去这里把 0 静默改成 -1，掩盖了调用方的错误输入，现在交给命令层校验。
 func GetSlides(presentationID string, revisionID int, userAccessToken ...string) (*GetSlidesResult, error) {
+	return GetSlidesWithOptions(presentationID, revisionID, false, firstString(userAccessToken))
+}
+
+// GetSlidesWithOptions 同 GetSlides，removeAttrID=true 时请求服务端去掉返回 XML 中的 id 属性（只读查看用）。
+func GetSlidesWithOptions(presentationID string, revisionID int, removeAttrID bool, userAccessToken string) (*GetSlidesResult, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
 
-	reqRevisionID := revisionID
-	if reqRevisionID == 0 {
-		reqRevisionID = -1
+	q := url.Values{}
+	q.Set("revision_id", fmt.Sprintf("%d", revisionID))
+	if removeAttrID {
+		q.Set("remove_attr_id", "true")
 	}
-
-	apiPath := fmt.Sprintf("/open-apis/slides_ai/v1/xml_presentations/%s?revision_id=%d", url.PathEscape(presentationID), reqRevisionID)
+	apiPath := fmt.Sprintf("/open-apis/slides_ai/v1/xml_presentations/%s?%s", url.PathEscape(presentationID), q.Encode())
 
 	tokenType := larkcore.AccessTokenTypeTenant
 	var reqOpts []larkcore.RequestOptionFunc
-	if token := firstString(userAccessToken); token != "" {
+	if userAccessToken != "" {
 		tokenType = larkcore.AccessTokenTypeUser
-		reqOpts = UserTokenOption(token)
+		reqOpts = UserTokenOption(userAccessToken)
 	}
 
 	resp, err := client.Get(Context(), apiPath, nil, tokenType, reqOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("读取 slides 失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("读取 slides 失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("读取 slides", resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
 		Data struct {
 			XmlPresentation struct {
 				Content        string `json:"content"`
@@ -190,9 +179,6 @@ func GetSlides(presentationID string, revisionID int, userAccessToken ...string)
 	}
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("解析 slides 响应失败: %w", err)
-	}
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("读取 slides 失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
 	}
 
 	if strings.TrimSpace(apiResp.Data.XmlPresentation.Content) == "" {
@@ -227,4 +213,66 @@ func xmlEscape(s string) string {
 	s = strings.ReplaceAll(s, "\"", "&quot;")
 	s = strings.ReplaceAll(s, "'", "&apos;")
 	return s
+}
+
+// SlidesCall 调用 slides_ai JSON 端点并返回 data 子对象（不存在时返回空 map）。
+//
+// 身份：userAccessToken 非空走 User Token，否则走 Tenant Token。
+// 错误：先按飞书业务信封解析（业务错误常随 HTTP 400 下发），返回 *APIError（Error() 为
+// "<action>失败: code=N, msg=..."），HasAPICode / AsAPIError 照常可用。
+// query 中 nil 值跳过，[]string 展开为重复参数。
+func SlidesCall(action, method, path string, query map[string]any, body any, userAccessToken string) (map[string]any, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	queryParams := make(larkcore.QueryParams)
+	for k, v := range query {
+		switch val := v.(type) {
+		case nil:
+		case []string:
+			for _, item := range val {
+				queryParams.Add(k, item)
+			}
+		default:
+			queryParams.Set(k, fmt.Sprintf("%v", v))
+		}
+	}
+	tokenTypes := []larkcore.AccessTokenType{larkcore.AccessTokenTypeTenant}
+	var opts []larkcore.RequestOptionFunc
+	if userAccessToken != "" {
+		tokenTypes = []larkcore.AccessTokenType{larkcore.AccessTokenTypeUser}
+		opts = append(opts, larkcore.WithUserAccessToken(userAccessToken))
+	}
+	req := &larkcore.ApiReq{
+		HttpMethod:                strings.ToUpper(method),
+		ApiPath:                   path,
+		Body:                      body,
+		QueryParams:               queryParams,
+		SupportedAccessTokenTypes: tokenTypes,
+	}
+	resp, err := cli.Do(Context(), req, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("%s失败: %w", action, err)
+	}
+	if err := CheckAPIResponse(action, resp); err != nil {
+		return nil, err
+	}
+	var envelope struct {
+		Data map[string]any `json:"data"`
+	}
+	dec := json.NewDecoder(strings.NewReader(string(resp.RawBody)))
+	dec.UseNumber()
+	if err := dec.Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("解析%s响应失败: %w", action, err)
+	}
+	if envelope.Data == nil {
+		envelope.Data = map[string]any{}
+	}
+	return envelope.Data, nil
+}
+
+// SlidesPresentationPath 返回 /open-apis/slides_ai/v1/xml_presentations/{id}{suffix}。
+func SlidesPresentationPath(presentationID, suffix string) string {
+	return fmt.Sprintf("/open-apis/slides_ai/v1/xml_presentations/%s%s", url.PathEscape(presentationID), suffix)
 }

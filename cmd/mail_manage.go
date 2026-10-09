@@ -3,26 +3,147 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
-// mailManageMaxMessageIDs 单次批量操作邮件的数量上限（飞书 batch 端点约束）。
+// mailManageMaxMessageIDs 飞书 batch_modify / batch_trash 单次请求的邮件数上限；超过时 CLI 自动按此分批。
 const mailManageMaxMessageIDs = 20
 
-// parseMailManageMessageIDs 解析 --message-ids（逗号分隔），去空白、去空项，
-// 并校验非空与数量上限（≤ mailManageMaxMessageIDs），供 message-modify / message-trash 复用。
+// parseMailManageMessageIDs 解析 --message-ids（逗号分隔），去空白、去空项、去重保序；
+// 不再限制总数（超过 20 封由调用方按 mailManageMaxMessageIDs 自动分批，对齐官方）。
 func parseMailManageMessageIDs(raw string) ([]string, error) {
 	ids := splitAndTrim(raw)
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("--message-ids 至少提供一个邮件 ID（逗号分隔）")
+		return nil, clierr.Usagef("--message-ids 至少提供一个邮件 ID（逗号分隔）")
 	}
-	if len(ids) > mailManageMaxMessageIDs {
-		return nil, fmt.Errorf("--message-ids 单次最多 %d 个，当前 %d 个（请分批执行）", mailManageMaxMessageIDs, len(ids))
+	seen := make(map[string]bool, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
 	}
-	return ids, nil
+	return out, nil
+}
+
+// mailManageSystemLabels 系统标签（大小写不敏感输入 → 服务端要求的大写 ID）。
+var mailManageSystemLabels = map[string]string{
+	"UNREAD":               "UNREAD",
+	"IMPORTANT":            "IMPORTANT",
+	"OTHER":                "OTHER",
+	"FLAGGED":              "FLAGGED",
+	"READ_RECEIPT_REQUEST": "READ_RECEIPT_REQUEST",
+}
+
+// mailManageSystemFolders 可作为移动目标的系统文件夹（TRASH 不允许，删除请用 message-trash）。
+var mailManageSystemFolders = map[string]string{
+	"INBOX":    "INBOX",
+	"SENT":     "SENT",
+	"SPAM":     "SPAM",
+	"ARCHIVE":  "ARCHIVED",
+	"ARCHIVED": "ARCHIVED",
+}
+
+// normalizeMailManageLabels 系统标签规范化为大写，自定义标签 ID 原样；去重，单次最多 20 个。
+func normalizeMailManageLabels(raw, flagName string) ([]string, error) {
+	out := []string{} // 与旧版输出保持一致：未指定时 JSON 为 []，而不是 null
+	seen := map[string]bool{}
+	for _, id := range splitAndTrim(raw) {
+		if sys, ok := mailManageSystemLabels[strings.ToUpper(id)]; ok {
+			id = sys
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	if len(out) > 20 {
+		return nil, clierr.Usagef("%s 单次最多 20 个标签（当前 %d）", flagName, len(out))
+	}
+	return out, nil
+}
+
+// normalizeMailManageFolder 系统文件夹规范化（inbox/archive → INBOX/ARCHIVED），拒绝 TRASH。
+// 拒绝时指向邮件删除命令（message-modify → message-trash）。
+func normalizeMailManageFolder(raw string) (string, error) {
+	return normalizeMailFolderFor(raw, "删除邮件请用 `feishu-cli mail message-trash`")
+}
+
+// normalizeMailThreadFolder 同 normalizeMailManageFolder，拒绝 TRASH 时指向线程删除命令 thread-trash。
+func normalizeMailThreadFolder(raw string) (string, error) {
+	return normalizeMailFolderFor(raw, "删除线程请用 `feishu-cli mail thread-trash --thread-ids ...`")
+}
+
+func normalizeMailFolderFor(raw, trashHint string) (string, error) {
+	folder := strings.TrimSpace(raw)
+	if folder == "" {
+		return "", nil
+	}
+	if strings.EqualFold(folder, "TRASH") {
+		return "", clierr.Usagef("--folder-id 不支持 TRASH；%s", trashHint)
+	}
+	if sys, ok := mailManageSystemFolders[strings.ToUpper(folder)]; ok {
+		return sys, nil
+	}
+	return folder, nil
+}
+
+// chunkMailIDs 按 size 切分 ID 列表。
+func chunkMailIDs(ids []string, size int) [][]string {
+	var out [][]string
+	for start := 0; start < len(ids); start += size {
+		end := start + size
+		if end > len(ids) {
+			end = len(ids)
+		}
+		out = append(out, ids[start:end])
+	}
+	return out
+}
+
+// mailManageFailure 失败批次中的单封邮件。
+type mailManageFailure struct {
+	MessageID string `json:"message_id"`
+	Reason    string `json:"reason"`
+}
+
+// runMailManageBatches 按 20 封一批顺序执行 op，汇总成功/失败的 ID；返回最后一次成功响应。
+func runMailManageBatches(ids []string, op func(batch []string) (json.RawMessage, error)) (success []string, failed []mailManageFailure, last json.RawMessage) {
+	failed = []mailManageFailure{}
+	for _, batch := range chunkMailIDs(ids, mailManageMaxMessageIDs) {
+		data, err := op(batch)
+		if err != nil {
+			for _, id := range batch {
+				failed = append(failed, mailManageFailure{MessageID: id, Reason: err.Error()})
+			}
+			continue
+		}
+		success = append(success, batch...)
+		last = data
+	}
+	if success == nil {
+		success = []string{}
+	}
+	return success, failed, last
+}
+
+// mailManageBatchError 存在失败批次时返回错误（摘要已输出），保证脚本能感知部分失败。
+func mailManageBatchError(action string, success []string, failed []mailManageFailure) error {
+	if len(failed) == 0 {
+		return nil
+	}
+	if len(success) == 0 {
+		return fmt.Errorf("%s失败（全部 %d 封）: %s", action, len(failed), failed[0].Reason)
+	}
+	return fmt.Errorf("%s部分失败：成功 %d 封，失败 %d 封（失败原因: %s）", action, len(success), len(failed), failed[0].Reason)
 }
 
 // ==================== mail message-modify ====================
@@ -35,12 +156,14 @@ var mailMessageModifyCmd = &cobra.Command{
 对一批 message_id 一次性应用标签与文件夹变更，标签操作可逆（再执行一次反向操作即可还原）。
 
 必填:
-  --message-ids   邮件 message_id，逗号分隔，单次最多 20 个
+  --message-ids   邮件 message_id，逗号分隔（去重；超过 20 封自动按 20 封一批顺序执行）
 
 至少指定一项操作:
-  --add-label-ids      要添加的标签 ID，逗号分隔（系统标签如 FLAGGED/IMPORTANT/UNREAD 需大写）
-  --remove-label-ids   要移除的标签 ID，逗号分隔
-  --folder-id          目标文件夹 ID，把邮件移入该文件夹（系统文件夹如 INBOX/ARCHIVED；不支持 TRASH，删除请用 mail message-trash）
+  --add-label-ids      要添加的标签 ID，逗号分隔（系统标签 FLAGGED/IMPORTANT/UNREAD/OTHER 大小写不敏感，自动转大写）
+  --remove-label-ids   要移除的标签 ID，逗号分隔（同一标签不能同时添加和移除）
+  --folder-id          目标文件夹 ID，把邮件移入该文件夹（系统文件夹 inbox/archive 等自动规范化；不支持 TRASH，删除请用 mail message-trash）
+
+部分批次失败时输出成功/失败明细（JSON: success_message_ids / failed_message_ids）并以非 0 退出。
 
 可选:
   --mailbox            邮箱地址（默认 me，即当前登录用户）
@@ -72,10 +195,27 @@ var mailMessageModifyCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		addLabels := splitAndTrim(addLabelsRaw)
-		removeLabels := splitAndTrim(removeLabelsRaw)
+		addLabels, err := normalizeMailManageLabels(addLabelsRaw, "--add-label-ids")
+		if err != nil {
+			return err
+		}
+		removeLabels, err := normalizeMailManageLabels(removeLabelsRaw, "--remove-label-ids")
+		if err != nil {
+			return err
+		}
+		for _, a := range addLabels {
+			for _, r := range removeLabels {
+				if a == r {
+					return clierr.Usagef("标签 %s 不能同时添加和移除", a)
+				}
+			}
+		}
+		folderID, err = normalizeMailManageFolder(folderID)
+		if err != nil {
+			return err
+		}
 		if len(addLabels) == 0 && len(removeLabels) == 0 && folderID == "" {
-			return fmt.Errorf("至少指定一项操作：--add-label-ids / --remove-label-ids / --folder-id")
+			return clierr.Usagef("至少指定一项操作：--add-label-ids / --remove-label-ids / --folder-id")
 		}
 
 		token, err := requireUserToken(cmd, "mail message-modify")
@@ -83,22 +223,30 @@ var mailMessageModifyCmd = &cobra.Command{
 			return err
 		}
 
-		data, err := client.BatchModifyMailMessages(mailbox, messageIDs, addLabels, removeLabels, folderID, userIDType, token)
-		if err != nil {
-			return fmt.Errorf("批量修改邮件失败: %w", err)
-		}
+		success, failed, data := runMailManageBatches(messageIDs, func(batch []string) (json.RawMessage, error) {
+			return client.BatchModifyMailMessages(mailbox, batch, addLabels, removeLabels, folderID, userIDType, token)
+		})
 
 		if output == "json" {
 			result := map[string]any{
-				"message_ids":      messageIDs,
-				"add_label_ids":    addLabels,
-				"remove_label_ids": removeLabels,
-				"folder_id":        folderID,
-				"data":             json.RawMessage(data),
+				"message_ids":         messageIDs,
+				"add_label_ids":       addLabels,
+				"remove_label_ids":    removeLabels,
+				"folder_id":           folderID,
+				"data":                data,
+				"success_message_ids": success,
+				"failed_message_ids":  failed,
 			}
-			return printJSON(result)
+			if err := printJSON(result); err != nil {
+				return err
+			}
+			return mailManageBatchError("批量修改邮件", success, failed)
 		}
-		fmt.Printf("已修改 %d 封邮件\n", len(messageIDs))
+		fmt.Printf("已修改 %d 封邮件", len(success))
+		if len(failed) > 0 {
+			fmt.Printf("，失败 %d 封", len(failed))
+		}
+		fmt.Println()
 		if len(addLabels) > 0 {
 			fmt.Printf("  添加标签: %v\n", addLabels)
 		}
@@ -108,7 +256,7 @@ var mailMessageModifyCmd = &cobra.Command{
 		if folderID != "" {
 			fmt.Printf("  移动到文件夹: %s\n", folderID)
 		}
-		return nil
+		return mailManageBatchError("批量修改邮件", success, failed)
 	},
 }
 
@@ -212,7 +360,7 @@ var mailMessageTrashCmd = &cobra.Command{
 	Long: `批量把邮件移入废纸篓（软删除，可在飞书邮箱废纸篓内恢复）。
 
 必填:
-  --message-ids   邮件 message_id，逗号分隔，单次最多 20 个
+  --message-ids   邮件 message_id，逗号分隔（去重；超过 20 封自动分批）
 
 可选:
   --mailbox       邮箱地址（默认 me，即当前登录用户）
@@ -243,9 +391,8 @@ var mailMessageTrashCmd = &cobra.Command{
 
 		if !skipConfirm {
 			prompt := fmt.Sprintf("将把 %d 封邮件移入废纸篓，确认?", len(messageIDs))
-			if !confirmAction(prompt) {
-				fmt.Println("已取消")
-				return nil
+			if err := confirmDangerousAction(cmd, prompt); err != nil {
+				return err
 			}
 		}
 
@@ -254,28 +401,36 @@ var mailMessageTrashCmd = &cobra.Command{
 			return err
 		}
 
-		data, err := client.BatchTrashMailMessages(mailbox, messageIDs, token)
-		if err != nil {
-			return fmt.Errorf("批量软删除邮件失败: %w", err)
-		}
+		success, failed, data := runMailManageBatches(messageIDs, func(batch []string) (json.RawMessage, error) {
+			return client.BatchTrashMailMessages(mailbox, batch, token)
+		})
 
 		if output == "json" {
 			result := map[string]any{
-				"message_ids": messageIDs,
-				"trashed":     true,
-				"data":        json.RawMessage(data),
+				"message_ids":         messageIDs,
+				"trashed":             len(failed) == 0,
+				"data":                data,
+				"success_message_ids": success,
+				"failed_message_ids":  failed,
 			}
-			return printJSON(result)
+			if err := printJSON(result); err != nil {
+				return err
+			}
+			return mailManageBatchError("批量软删除邮件", success, failed)
 		}
-		fmt.Printf("已将 %d 封邮件移入废纸篓\n", len(messageIDs))
-		return nil
+		fmt.Printf("已将 %d 封邮件移入废纸篓", len(success))
+		if len(failed) > 0 {
+			fmt.Printf("，失败 %d 封", len(failed))
+		}
+		fmt.Println()
+		return mailManageBatchError("批量软删除邮件", success, failed)
 	},
 }
 
 func init() {
 	mailCmd.AddCommand(mailMessageModifyCmd)
 	mailMessageModifyCmd.Flags().String("mailbox", "me", "邮箱地址（默认 me）")
-	mailMessageModifyCmd.Flags().String("message-ids", "", "邮件 message_id，逗号分隔，最多 20 个（必填）")
+	mailMessageModifyCmd.Flags().String("message-ids", "", "邮件 message_id，逗号分隔，超过 20 个自动分批（必填）")
 	mailMessageModifyCmd.Flags().String("add-label-ids", "", "要添加的标签 ID，逗号分隔")
 	mailMessageModifyCmd.Flags().String("remove-label-ids", "", "要移除的标签 ID，逗号分隔")
 	mailMessageModifyCmd.Flags().String("folder-id", "", "目标文件夹 ID，把邮件移入该文件夹")
@@ -294,7 +449,7 @@ func init() {
 
 	mailCmd.AddCommand(mailMessageTrashCmd)
 	mailMessageTrashCmd.Flags().String("mailbox", "me", "邮箱地址（默认 me）")
-	mailMessageTrashCmd.Flags().String("message-ids", "", "邮件 message_id，逗号分隔，最多 20 个（必填）")
+	mailMessageTrashCmd.Flags().String("message-ids", "", "邮件 message_id，逗号分隔，超过 20 个自动分批（必填）")
 	mailMessageTrashCmd.Flags().Bool("yes", false, "跳过二次确认")
 	mailMessageTrashCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailMessageTrashCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")

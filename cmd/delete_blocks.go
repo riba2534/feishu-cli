@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -9,12 +10,13 @@ import (
 )
 
 var deleteBlocksCmd = &cobra.Command{
-	Use:   "delete <document_id> <block_id>",
+	Use:   "delete <document_id|url> <block_id>",
 	Short: "删除父块下的子块",
 	Long: `删除飞书文档中父块下的子块。
 
 删除基于索引范围。可以指定起始和结束索引，
-或使用 --all 删除所有子块。
+或使用 --all 删除所有子块。文档可传 ID 或 URL（/docx/、/wiki/，wiki 自动解析为底层文档）；
+删除文档根下的块时 <block_id> 传文档 ID（URL 解析后的 ID）。
 
 示例:
   feishu-cli doc delete DOC_ID PARENT_BLOCK_ID --start 0 --end 3
@@ -25,13 +27,20 @@ var deleteBlocksCmd = &cobra.Command{
 			return err
 		}
 
-		documentID := args[0]
 		blockID := args[1]
 		startIndex, _ := cmd.Flags().GetInt("start")
 		endIndex, _ := cmd.Flags().GetInt("end")
 		deleteAll, _ := cmd.Flags().GetBool("all")
 		force, _ := cmd.Flags().GetBool("force")
 		userAccessToken := resolveOptionalUserToken(cmd)
+		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(blockID) == strings.TrimSpace(args[0]) {
+			blockID = documentID // <block_id> 与文档参数相同（如同一个 URL）时表示文档根块
+		}
 
 		// 建立一致性 revision 快照：先取得当前正整数版本号，无法取得时不可假装受保护
 		docRev, err := client.GetDocumentRevision(documentID, userAccessToken)
@@ -70,9 +79,8 @@ var deleteBlocksCmd = &cobra.Command{
 		// 危险操作确认
 		if !force {
 			prompt := fmt.Sprintf("确定要删除块 %s 下索引 %d 到 %d 的子块吗？此操作不可恢复", blockID, startIndex, endIndex)
-			if !confirmAction(prompt) {
-				fmt.Println("操作已取消")
-				return nil
+			if err := confirmDangerousAction(cmd, prompt); err != nil {
+				return err
 			}
 		}
 

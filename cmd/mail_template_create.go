@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/mail"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -113,6 +114,11 @@ func toMailTemplateAddrs(addrs []string) []client.MailTemplateAddr {
 	for _, raw := range addrs {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
+			continue
+		}
+		// 优先按 RFC 5322 解析（parseEmailList 输出的是规范编码形式，显示名可能带引号或 RFC 2047 编码）
+		if a, err := mail.ParseAddress(raw); err == nil {
+			out = append(out, client.MailTemplateAddr{MailAddress: a.Address, Name: a.Name})
 			continue
 		}
 		// "Name <email>" 拆 name / address

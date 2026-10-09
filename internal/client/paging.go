@@ -1,6 +1,10 @@
 package client
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/riba2534/feishu-cli/internal/clierr"
+)
 
 // ResolvePageSize 把 CLI 的 page-size 归一到 API 合法范围。
 // n==0 表示未指定，使用 def；越界必须报错，禁止静默截断。
@@ -19,17 +23,17 @@ func ResolvePageSize(n, def, min, max int) (int, error) {
 // SearchPageLimitMax 是 search messages / chat search --page-all 的官方页数上限。
 const SearchPageLimitMax = 40
 
-// ResolvePageLimit 归一 --page-limit。负数和超过 max 报错；
+// ResolvePageLimit 归一 --page-limit。负数和超过 max 报用法错误（退出码 2）；
 // --page-all 且 n==0 时采用官方上限 max（不是无限翻页）。
 func ResolvePageLimit(n, max int, pageAll bool) (int, error) {
 	if n < 0 {
-		return 0, fmt.Errorf("--page-limit 不能为负数")
+		return 0, clierr.Usagef("--page-limit 不能为负数，得到 %d", n)
 	}
 	if max <= 0 {
 		max = SearchPageLimitMax
 	}
 	if n > max {
-		return 0, fmt.Errorf("--page-limit 最大为 %d，得到 %d", max, n)
+		return 0, clierr.Usagef("--page-limit 最大为 %d，得到 %d", max, n)
 	}
 	if pageAll && n == 0 {
 		return max, nil

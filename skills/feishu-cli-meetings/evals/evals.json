@@ -5,16 +5,16 @@
       "id": 1,
       "workflows": ["vc"],
       "prompt": "搜索我上周参加的会议并下载妙记逐字稿，说明身份和 scope 前置。",
-      "expected_output": "vc search/minutes 使用 User Token，并先 auth check。",
-      "expectations": ["说明 vc search 和 minutes 使用 User Token", "业务命令前给出 auth check"],
+      "expected_output": "vc search 与 minutes 命令默认 User 身份（可 --as bot 但需应用开通 scope 且通常无权读用户妙记），业务命令前先 auth check；逐字稿按纪要类型或 minute_token 读取。",
+      "expectations": ["说明 vc search 和 minutes 默认使用 User Token", "业务命令前给出 auth check"],
       "files": []
     },
     {
       "id": 2,
       "workflows": ["vc"],
       "prompt": "让会议机器人加入会议。环境里有 FEISHU_USER_ACCESS_TOKEN，但我没有传 flag，它会用谁的身份？",
-      "expected_output": "join/leave 只认显式 flag；未传时使用 Bot，不读取环境变量。",
-      "expectations": ["说明 join/leave 只认显式 --user-access-token", "未传 flag 时选择 Bot 并忽略环境变量"],
+      "expected_output": "join/leave 仅支持 Bot 身份：未传 flag 时使用 Bot，不读取环境变量；显式传 --user-access-token 会报用法错误。",
+      "expectations": ["说明 join/leave 仅支持 Bot 身份（传 --user-access-token 会报错）", "未传 flag 时选择 Bot 并忽略环境变量"],
       "files": []
     },
     {
@@ -23,6 +23,30 @@
       "prompt": "查询 meeting bot 的会议事件。我已经登录，但 meeting_id 来自机器人入会，该用什么身份？",
       "expected_output": "使用 --as bot，即使已登录也不要静默切到 User；身份必须与 meeting_id 来源一致。",
       "expectations": ["要求显式 --as bot|user|auto", "说明身份必须与 meeting_id 来源一致", "已登录时仍能强制 Bot"],
+      "files": []
+    },
+    {
+      "id": 4,
+      "workflows": ["vc"],
+      "prompt": "帮我把会议 6911188411932033028 的逐字稿导出成 Markdown 文件。",
+      "expected_output": "先用 vc notes --meeting-ids 或 vc note detail 查纪要类型：normal 用 doc export <verbatim_doc> 导出，unified 用 vc note transcript <note_id> --output；没有纪要但有 minute_token 时用 minutes get --transcript。",
+      "expectations": ["先查询 note_display_type 再选择读取方式", "普通纪要使用 doc export 导出 verbatim 文档而不是 vc note transcript"],
+      "files": []
+    },
+    {
+      "id": 5,
+      "workflows": ["vc"],
+      "prompt": "会议号 123456789 正在开，帮我看看会上的事件，顺便用 vc notes --meeting-ids 拿一下 AI 摘要。",
+      "expected_output": "9 位会议号不能直接传给 meeting-events，先 vc meeting list-active 取 meeting_id 再用同一身份查事件；会议进行中通常还没有录制和妙记，vc notes --meeting-ids --with-artifacts 会在 hint 说明未获取；会后拿到 minute_token 再用 minutes get --summary 只取摘要。",
+      "expectations": ["不把 9 位会议号当作 meeting_id 传给 meeting-events", "指出 AI 摘要要在会后按 minute_token 获取（minutes get --summary）"],
+      "files": []
+    },
+    {
+      "id": 6,
+      "workflows": ["vc"],
+      "prompt": "我现在正在开会，帮我拿到这场会议的 meeting_id，然后查一下会中事件。",
+      "expected_output": "vc meeting list-active（默认 User）取 meeting_id，多个会议时让用户选；再 vc bot meeting-events --meeting-id <id> --as user 保持同一身份。",
+      "expectations": ["使用 vc meeting list-active 获取 meeting_id，默认 User 身份", "meeting-events 使用 --meeting-id 且 --as user，与 list-active 身份一致", "同时在多个会议中时先让用户选定 meeting_id，不把 9 位会议号当 meeting_id"],
       "files": []
     }
   ]

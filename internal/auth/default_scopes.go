@@ -3,6 +3,7 @@ package auth
 import (
 	"sort"
 	"strings"
+	"unicode"
 )
 
 var defaultLoginScopes = []string{
@@ -10,7 +11,10 @@ var defaultLoginScopes = []string{
 	"auth:user.id:read",
 }
 
-// NormalizeScopeList 规范化 scope 列表：按空白切分、去重多余空格、重新用单空格拼接。
+// NormalizeScopeList 规范化 scope 列表：按逗号与任意空白切分、去重，再用单空格拼接。
+//
+// OAuth 2.0（RFC 6749 §3.3）要求 scope 以空格分隔；服务端把 "a,b" 当成一个非法 scope 拒绝
+// （invalid or malformed scopes）。用户习惯写逗号分隔，这里统一转成线上格式。
 func NormalizeScopeList(scope string) string {
 	return strings.Join(UniqueScopeList(scope), " ")
 }
@@ -29,11 +33,18 @@ func DefaultLoginScopeList() []string {
 	return append([]string(nil), defaultLoginScopes...)
 }
 
-// UniqueScopeList splits a scope string into a de-duplicated ordered slice.
+// SplitScopes 按逗号与任意空白（空格、制表符、换行）切分 scope 字符串，丢弃空项，不去重。
+func SplitScopes(scope string) []string {
+	return strings.FieldsFunc(scope, func(r rune) bool {
+		return r == ',' || r == '，' || unicode.IsSpace(r)
+	})
+}
+
+// UniqueScopeList 把 scope 字符串（逗号或空白分隔，可混用）切成去重、保序的切片。
 func UniqueScopeList(scope string) []string {
 	seen := make(map[string]struct{}, 64)
 	parts := make([]string, 0, 64)
-	for _, item := range strings.Fields(scope) {
+	for _, item := range SplitScopes(scope) {
 		if _, ok := seen[item]; ok {
 			continue
 		}

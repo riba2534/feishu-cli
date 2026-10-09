@@ -85,11 +85,16 @@ def run_contracts(binary: Path) -> list[dict]:
                 assert not requests, f"本地验证/dry-run 不应发请求: {requests}"
 
             def content_update_rejects_uploads():
-                proc = run(["doc", "content-update", "doccn_fixture", "--mode", "append", "--markdown", "测试", "--upload-images"], 1)
-                assert "不支持 --upload-images" in proc.stderr, proc.stderr
+                # 本地图片自动上传：引用的文件不存在时在任何网络请求前以用法错误退出
+                proc = run(["doc", "content-update", "doccn_fixture", "--mode", "append", "--markdown-file", str(DOC_FIXTURES / "local-image.md"), "--upload-images"], 2)
+                assert "本地图片不存在" in proc.stderr and "--upload-images 可省略" in proc.stderr, proc.stderr
                 no_requests()
-                proc = run(["doc", "content-update", "doccn_fixture", "--mode", "append", "--markdown-file", str(DOC_FIXTURES / "local-image.md")], 1)
-                assert "本地" in proc.stderr, proc.stderr
+                # 文本级替换不能插入本地图片
+                local = directory / "with-local.md"
+                (directory / "a.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+                local.write_text("![图](a.png)", encoding="utf-8")
+                proc = run(["doc", "content-update", "doccn_fixture", "--mode", "replace_all", "--selection-with-ellipsis", "旧", "--markdown-file", str(local)], 2)
+                assert "文本级替换无法插入图片" in proc.stderr, proc.stderr
                 no_requests()
 
             def content_update_remote_image_payload():

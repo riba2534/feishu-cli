@@ -33,11 +33,12 @@
       "workflows": [
         "auth"
       ],
-      "prompt": "我要跑 bitable 定时任务，不想依赖个人登录；同时告诉我 vc bot 入会读取哪些 User Token 来源。",
-      "expected_output": "bitable 使用 --as bot；vc bot join/leave 只接受显式 flag，不自动读环境或 token.json。",
+      "prompt": "我要跑 bitable 定时任务，不想依赖个人登录；同时告诉我 vc bot 入会/离会会用哪种身份、会不会读取 User Token。",
+      "expected_output": "bitable 使用 --as bot；vc bot meeting-join/leave 仅支持 Bot 身份，不读取 token.json 或环境变量中的 User Token，显式传 --user-access-token 会报用法错误。",
       "expectations": [
         "Bitable 定时任务使用 --as bot",
-        "说明 vc bot join/leave 只认显式 --user-access-token"
+        "说明 vc bot meeting-join/leave 仅支持 Bot，不读取 token.json 或 FEISHU_USER_ACCESS_TOKEN",
+        "说明显式传 --user-access-token 会报用法错误（退出码 2），而不是切换为用户身份"
       ],
       "files": []
     },
@@ -110,6 +111,49 @@
         "以 schema 中接口真实身份能力决定命令",
         "明确 auth check 不验证 Bot 权限",
         "不因出现 approval 而拒绝通用 schema/API 工作流"
+      ],
+      "files": []
+    },
+    {
+      "id": 9,
+      "workflows": [
+        "directory"
+      ],
+      "prompt": "帮我找名字里带“告警”、并且在 oc_xxx 群里的机器人，拿到 open_id 后我要 @ 它。",
+      "expected_output": "user search-bot --query \"告警\" --chat-ids oc_xxx -o json，只支持 User Token（scope search:bot），从 bots[].open_id 取值。",
+      "expectations": [
+        "使用 user search-bot --query \"告警\" --chat-ids oc_xxx",
+        "说明 search-bot 只支持 User Token（search:bot），不能用 Bot 身份",
+        "从 bots[].open_id 取机器人 open_id"
+      ],
+      "files": []
+    },
+    {
+      "id": 10,
+      "workflows": [
+        "auth"
+      ],
+      "prompt": "调接口报了 99991672，我想确认 search:docs:read 和 okr:okr.period:readonly 到底是应用没开通还是我没授权。",
+      "expected_output": "auth scopes --scope \"search:docs:read okr:okr.period:readonly\" -o json，按 checks[].diagnosis 区分 app_not_enabled/tenant_only 与 user_not_granted。",
+      "expectations": [
+        "使用 auth scopes --scope 同时诊断两个 scope（-o json）",
+        "app_not_enabled/tenant_only 指向开放平台开通并发布，user_not_granted 用 auth login --scope 补授",
+        "说明 99991672 重新登录修不好",
+        "不以 auth scopes 的退出码判断成败（诊断恒为 0）"
+      ],
+      "files": []
+    },
+    {
+      "id": 11,
+      "workflows": [
+        "auth"
+      ],
+      "prompt": "把 feishu-cli 升级到最新版，再把配套技能同步到 ~/.claude/skills，最后确认技能和二进制没有漂移；我本地改过的技能文件不要被直接覆盖。",
+      "expected_output": "update --check/--dry-run 后 update；skills install --dry-run 再 skills install（有本地修改冲突时不擅自 --force）；最后 doctor --only skills。",
+      "expectations": [
+        "升级前先 update --check 或 update --dry-run，再运行 feishu-cli update",
+        "同步技能先 skills install --dry-run 再 skills install，遇本地修改冲突不擅自加 --force",
+        "最后用 doctor --only skills 检查漂移"
       ],
       "files": []
     }

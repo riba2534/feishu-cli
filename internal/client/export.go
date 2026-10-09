@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	larkdrive "github.com/larksuite/oapi-sdk-go/v3/service/drive/v1"
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 // CreateExportTask 创建导出任务，返回任务 ticket
@@ -48,8 +48,9 @@ func CreateExportTaskEx(docToken, docType, fileExtension, subId string, onlySche
 	if err != nil {
 		return "", fmt.Errorf("创建导出任务失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("创建导出任务失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	// 业务错误常随 HTTP 400 下发：先解析飞书信封里的 code，再看 HTTP 状态
+	if err := CheckAPIResponse("创建导出任务", resp); err != nil {
+		return "", err
 	}
 
 	var apiResp struct {
@@ -113,31 +114,22 @@ func GetExportTask(ticket, docToken, userAccessToken string) (int, string, error
 	return jobStatus, fileToken, nil
 }
 
-// DownloadExportFile 下载导出任务生成的文件
+// DownloadExportFile 下载导出任务生成的文件。
+// 流式下载（不把整个文件读进内存）+ 分片重试 + 空闲超时 + 原子写；业务错误（含 HTTP 200 + JSON）不落盘。
 func DownloadExportFile(fileToken, outputPath, userAccessToken string) error {
 	if err := validatePath(outputPath); err != nil {
 		return err
 	}
-
-	client, err := GetClient()
+	bearer, err := driveDownloadBearer(userAccessToken)
 	if err != nil {
 		return err
 	}
-
-	req := larkdrive.NewDownloadExportTaskReqBuilder().
-		FileToken(fileToken).
-		Build()
-
-	resp, err := client.Drive.ExportTask.Download(ContextWithTimeout(downloadTimeout), req, UserTokenOption(userAccessToken)...)
-	if err != nil {
-		return fmt.Errorf("下载导出文件失败: %w", err)
-	}
-
-	if !resp.Success() {
-		return fmt.Errorf("下载导出文件失败: code=%d, msg=%s", resp.Code, resp.Msg)
-	}
-
-	return saveToFile(resp.File, outputPath)
+	_, _, err = downloadStreamToFile(downloadStreamSpec{
+		Action: "下载导出文件",
+		URL:    buildOpenAPIURL("/open-apis/drive/v1/export_tasks/file/" + url.PathEscape(fileToken) + "/download"),
+		Bearer: bearer,
+	}, outputPath, 0)
+	return err
 }
 
 // WaitExportTask 轮询等待导出任务完成，返回导出文件的 fileToken
@@ -275,8 +267,8 @@ func WaitImportTask(ticket string, maxRetries int, userAccessToken string) (stri
 
 // ==================== 扩展：有界轮询 + Markdown 快捷路径 + Resume 模式 ====================
 
-// Drive 导出 / 导入 轮询参数
-const (
+// Drive 导出 / 导入 轮询参数（变量便于测试缩短间隔）
+var (
 	DriveExportMaxAttempts  = 10
 	DriveExportPollInterval = 5 * time.Second
 	DriveImportMaxAttempts  = 30
@@ -405,8 +397,8 @@ func FetchDocMetaURL(docToken, docType, userAccessToken string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("查询文档 URL 失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("查询文档 URL 失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("查询文档 URL", resp); err != nil {
+		return "", err
 	}
 	var apiResp struct {
 		Code int    `json:"code"`
@@ -448,8 +440,8 @@ func FetchDocMetaTitle(docToken, docType, userAccessToken string) (string, error
 	if err != nil {
 		return "", fmt.Errorf("查询文档元数据失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("查询文档元数据失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("查询文档元数据", resp); err != nil {
+		return "", err
 	}
 
 	var apiResp struct {
@@ -490,8 +482,8 @@ func FetchDocxMarkdownContent(docToken, userAccessToken string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("获取文档 Markdown 内容失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("获取文档 Markdown 内容失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("获取文档 Markdown 内容", resp); err != nil {
+		return "", err
 	}
 
 	var apiResp struct {
@@ -534,14 +526,22 @@ func parseDocsAIMarkdownContent(data json.RawMessage) (string, error) {
 // - err != nil 表示终态失败
 func WaitDriveExportWithBound(ticket, docToken, userAccessToken string) (*DriveExportStatus, bool, error) {
 	var last *DriveExportStatus
+	var lastErr error
 	for attempt := 1; attempt <= DriveExportMaxAttempts; attempt++ {
 		if attempt > 1 {
-			time.Sleep(DriveExportPollInterval)
+			if err := pollSleep(DriveExportPollInterval); err != nil {
+				return last, false, err
+			}
 		}
 
 		status, err := GetDriveExportStatus(ticket, docToken, userAccessToken)
 		if err != nil {
-			return last, false, err
+			// 限流立即停止（继续轮询只会加剧限流）；其他查询错误视为瞬时，继续轮询
+			if IsRateLimitError(err) {
+				return last, false, &DrivePollError{Err: err, RateLimited: true}
+			}
+			lastErr = err
+			continue
 		}
 		last = status
 
@@ -555,6 +555,9 @@ func WaitDriveExportWithBound(ticket, docToken, userAccessToken string) (*DriveE
 			}
 			return status, false, fmt.Errorf("导出任务失败: %s (ticket=%s)", msg, ticket)
 		}
+	}
+	if last == nil && lastErr != nil {
+		return nil, false, &DrivePollError{Err: lastErr, AllFailed: true}
 	}
 	return last, true, nil
 }
@@ -622,14 +625,21 @@ func GetDriveImportStatus(ticket, userAccessToken string) (*DriveImportStatus, e
 // WaitDriveImportWithBound 有界轮询导入任务
 func WaitDriveImportWithBound(ticket, userAccessToken string) (*DriveImportStatus, bool, error) {
 	var last *DriveImportStatus
+	var lastErr error
 	for attempt := 1; attempt <= DriveImportMaxAttempts; attempt++ {
 		if attempt > 1 {
-			time.Sleep(DriveImportPollInterval)
+			if err := pollSleep(DriveImportPollInterval); err != nil {
+				return last, false, err
+			}
 		}
 
 		status, err := GetDriveImportStatus(ticket, userAccessToken)
 		if err != nil {
-			return last, false, err
+			if IsRateLimitError(err) {
+				return last, false, &DrivePollError{Err: err, RateLimited: true}
+			}
+			lastErr = err
+			continue
 		}
 		last = status
 
@@ -644,15 +654,72 @@ func WaitDriveImportWithBound(ticket, userAccessToken string) (*DriveImportStatu
 			return status, false, fmt.Errorf("导入任务失败: %s (ticket=%s)", msg, ticket)
 		}
 	}
+	if last == nil && lastErr != nil {
+		return nil, false, &DrivePollError{Err: lastErr, AllFailed: true}
+	}
 	return last, true, nil
 }
 
 // ==================== 通用异步任务（file move 用） ====================
 
-// DriveTaskCheckStatus 通用异步任务状态
+// DriveTaskCheckStatus 通用异步任务状态（/drive/v1/files/task_check，文件夹移动/删除共用）
 type DriveTaskCheckStatus struct {
 	TaskID string `json:"task_id"`
-	Status string `json:"status"` // success / failed / pending 等
+	Status string `json:"status"` // success / failed / fail / process 等
+}
+
+// Ready 任务成功完成。
+func (s *DriveTaskCheckStatus) Ready() bool {
+	return s != nil && strings.EqualFold(strings.TrimSpace(s.Status), "success")
+}
+
+// Failed 任务失败。task_check 被多个异步流程复用：有的后端返回 "failed"，删除任务返回更短的 "fail"，两者都是失败终态。
+func (s *DriveTaskCheckStatus) Failed() bool {
+	if s == nil {
+		return false
+	}
+	st := strings.TrimSpace(s.Status)
+	return strings.EqualFold(st, "failed") || strings.EqualFold(st, "fail")
+}
+
+// Pending 任务尚未结束。
+func (s *DriveTaskCheckStatus) Pending() bool {
+	return s != nil && !s.Ready() && !s.Failed()
+}
+
+// DrivePollError 表示异步任务已创建、但轮询未能拿到终态：
+//   - RateLimited：查询被限流，已立即停止轮询（继续只会加剧限流）；
+//   - AllFailed：轮询窗口内每次查询都失败（瞬时错误已忽略重试）。
+//
+// 调用方应提示用户稍后用 drive task-result 续查，而不是重新创建任务。
+type DrivePollError struct {
+	Err         error
+	RateLimited bool
+	AllFailed   bool
+}
+
+func (e *DrivePollError) Error() string {
+	switch {
+	case e.RateLimited:
+		return fmt.Sprintf("查询异步任务状态被限流，已停止轮询（任务已创建，请稍后续查）: %v", e.Err)
+	case e.AllFailed:
+		return fmt.Sprintf("异步任务已创建，但每次状态查询都失败: %v", e.Err)
+	}
+	return e.Err.Error()
+}
+
+func (e *DrivePollError) Unwrap() error { return e.Err }
+
+// pollSleep 在两次轮询之间等待；Ctrl-C 时立即返回。
+func pollSleep(d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-runctx.Root().Done():
+		return fmt.Errorf("轮询已取消: %w", runctx.Root().Err())
+	case <-timer.C:
+		return nil
+	}
 }
 
 func driveTaskCheckPath(taskID string) string {
@@ -675,46 +742,59 @@ func GetDriveTaskCheck(taskID, userAccessToken string) (*DriveTaskCheckStatus, e
 	if err != nil {
 		return nil, fmt.Errorf("查询任务状态失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询任务状态失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("查询任务状态", resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
 		Data struct {
 			Status string `json:"status"`
+			Result *struct {
+				Status string `json:"status"`
+			} `json:"result"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("解析任务状态失败: %w", err)
 	}
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("查询任务状态失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	status := apiResp.Data.Status
+	if status == "" && apiResp.Data.Result != nil {
+		status = apiResp.Data.Result.Status
 	}
-	return &DriveTaskCheckStatus{TaskID: taskID, Status: apiResp.Data.Status}, nil
+	return &DriveTaskCheckStatus{TaskID: taskID, Status: status}, nil
 }
 
-// WaitDriveTaskCheckWithBound 有界轮询通用任务（用于 folder move 等）
+// WaitDriveTaskCheckWithBound 有界轮询通用任务（用于 folder move/delete 等）。
+// 瞬时查询错误忽略并继续轮询；限流立即停止；成功/失败（failed 或 fail）为终态。
 func WaitDriveTaskCheckWithBound(taskID, userAccessToken string) (*DriveTaskCheckStatus, bool, error) {
 	var last *DriveTaskCheckStatus
+	var lastErr error
 	for attempt := 1; attempt <= DriveMoveMaxAttempts; attempt++ {
 		if attempt > 1 {
-			time.Sleep(DriveMovePollInterval)
+			if err := pollSleep(DriveMovePollInterval); err != nil {
+				return last, false, err
+			}
 		}
 
 		status, err := GetDriveTaskCheck(taskID, userAccessToken)
 		if err != nil {
-			return last, false, err
+			if IsRateLimitError(err) {
+				return last, false, &DrivePollError{Err: err, RateLimited: true}
+			}
+			lastErr = err
+			continue
 		}
 		last = status
 
-		switch status.Status {
-		case "success":
+		if status.Ready() {
 			return status, false, nil
-		case "failed":
-			return status, false, fmt.Errorf("任务失败 (task_id=%s)", taskID)
 		}
+		if status.Failed() {
+			return status, false, fmt.Errorf("任务失败 (task_id=%s, status=%s)", taskID, status.Status)
+		}
+	}
+	if last == nil && lastErr != nil {
+		return nil, false, &DrivePollError{Err: lastErr, AllFailed: true}
 	}
 	return last, true, nil
 }

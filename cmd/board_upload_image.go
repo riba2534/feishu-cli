@@ -7,6 +7,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -39,6 +40,10 @@ var boardUploadImageCmd = &cobra.Command{
 		zIndex, _ := cmd.Flags().GetInt("z-index")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		output, _ := cmd.Flags().GetString("output")
+		// 本地图片在读取像素（dry-run 也会读）与任何网络请求之前校验：敏感目录、不存在、是目录均为用法错误
+		if _, err := safefile.StatInputFile(imgPath); err != nil {
+			return err
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		// 读图片实际像素（只读文件头，见 decodeImagePixelSize；解析失败返回 0）

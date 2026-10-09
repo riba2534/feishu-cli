@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/spf13/viper"
 )
@@ -181,11 +183,12 @@ func Validate() error {
 		return fmt.Errorf("配置未初始化")
 	}
 	cfgPath := activeConfigPathForError()
+	// 缺少 App 凭证与鉴权失败同类（退出码 3）：都需要补配置 / 授权后才能继续
 	if cfg.AppID == "" {
-		return fmt.Errorf("缺少 app_id，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_ID=xxx\n  3. 配置文件: %s", cfgPath)
+		return clierr.Authf("缺少 app_id，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_ID=xxx\n  3. 配置文件: %s", cfgPath)
 	}
 	if cfg.AppSecret == "" {
-		return fmt.Errorf("缺少 app_secret，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_SECRET=xxx\n  3. 配置文件: %s", cfgPath)
+		return clierr.Authf("缺少 app_secret，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_SECRET=xxx\n  3. 配置文件: %s", cfgPath)
 	}
 	if err := CheckBaseURL(cfg.BaseURL); err != nil {
 		return err
@@ -208,6 +211,18 @@ func activeConfigPathForError() string {
 // CreateDefaultConfig creates a default configuration file in the active profile
 // directory (legacy ~/.feishu-cli/ when profile system not initialized).
 func CreateDefaultConfig() error {
+	return CreateDefaultConfigWith(DefaultConfigOptions{})
+}
+
+// DefaultConfigOptions 是 config init 写入模板时预填的字段；空值保留模板默认。
+type DefaultConfigOptions struct {
+	AppID     string
+	AppSecret string
+	BaseURL   string
+}
+
+// CreateDefaultConfigWith 创建默认配置文件，并预填 app_id / app_secret / base_url。
+func CreateDefaultConfigWith(opts DefaultConfigOptions) error {
 	configDir, err := profile.ActiveDir()
 	if err != nil {
 		return fmt.Errorf("获取配置目录失败: %w", err)
@@ -222,6 +237,10 @@ func CreateDefaultConfig() error {
 		return fmt.Errorf("配置文件已存在: %s", configFile)
 	}
 
+	baseURL := opts.BaseURL
+	if baseURL == "" {
+		baseURL = OfficialFeishuOpen
+	}
 	content := `# 飞书 CLI 配置文件
 # 从飞书开放平台获取应用凭证: https://open.feishu.cn/app
 #
@@ -231,9 +250,9 @@ func CreateDefaultConfig() error {
 #   export FEISHU_APP_ID=your_app_id
 #   export FEISHU_APP_SECRET=your_app_secret
 
-app_id: ""
-app_secret: ""
-base_url: "https://open.feishu.cn"
+app_id: ` + strconv.Quote(opts.AppID) + `
+app_secret: ` + strconv.Quote(opts.AppSecret) + `
+base_url: ` + strconv.Quote(baseURL) + `
 # base_url 默认只允许官方 HTTPS（open.feishu.cn / open.larksuite.com）。
 # loopback HTTP 仅用于本机开发/测试。自定义远端 host 需 allow_custom_base_url: true
 #（或 FEISHU_ALLOW_CUSTOM_BASE_URL=1）；非 loopback HTTP 另需 allow_insecure_http: true。

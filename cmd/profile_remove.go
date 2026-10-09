@@ -1,11 +1,9 @@
 package cmd
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/spf13/cobra"
@@ -32,15 +30,11 @@ var profileRemoveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
-		// 二次确认（除非 --force 或非交互）
+		// 二次确认（除非 --force / --yes 或非交互；非交互直接执行是既有行为，保持兼容）。
+		// 交互式拒绝返回"已取消"错误（非 0 退出），提示写 stderr 不污染 --json 输出。
 		if !profileRemoveForce && isTerminal(os.Stdin) {
-			fmt.Fprintf(cmd.OutOrStdout(), "确认删除 profile %q？该操作不可恢复 [y/N]: ", name)
-			r := bufio.NewReader(os.Stdin)
-			answer, _ := r.ReadString('\n')
-			answer = strings.ToLower(strings.TrimSpace(answer))
-			if answer != "y" && answer != "yes" {
-				fmt.Fprintln(cmd.OutOrStdout(), "已取消")
-				return nil
+			if err := confirmDangerousAction(cmd, fmt.Sprintf("确认删除 profile %q？该操作不可恢复", name)); err != nil {
+				return err
 			}
 		}
 

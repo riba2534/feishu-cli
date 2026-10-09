@@ -34,6 +34,10 @@ var passwordCreateCmd = &cobra.Command{
 	Short: "创建文档密码",
 	Long: `为文档创建分享密码。
 
+前提：分享密码只对「互联网公开」的链接生效，需先把链接设为互联网公开，例如：
+  feishu-cli perm public-update DOC_TOKEN --external-access=true --link-share-entity anyone_readable
+未公开时服务端返回 1063002。
+
 参数:
   doc_token     文档 Token
   --doc-type    文档类型（默认: docx）
@@ -50,9 +54,13 @@ var passwordCreateCmd = &cobra.Command{
 		docToken := args[0]
 		docType, _ := cmd.Flags().GetString("doc-type")
 
-		password, err := client.CreatePublicPassword(docToken, docType)
+		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {
 			return err
+		}
+		password, err := client.CreatePublicPassword(docToken, docType, userToken)
+		if err != nil {
+			return wrapPasswordError(err, userToken, docToken, docType)
 		}
 
 		fmt.Printf("文档密码创建成功！\n")
@@ -83,9 +91,13 @@ var passwordUpdateCmd = &cobra.Command{
 		docToken := args[0]
 		docType, _ := cmd.Flags().GetString("doc-type")
 
-		password, err := client.UpdatePublicPassword(docToken, docType)
+		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {
 			return err
+		}
+		password, err := client.UpdatePublicPassword(docToken, docType, userToken)
+		if err != nil {
+			return wrapPasswordError(err, userToken, docToken, docType)
 		}
 
 		fmt.Printf("文档密码刷新成功！\n")
@@ -116,8 +128,12 @@ var passwordDeleteCmd = &cobra.Command{
 		docToken := args[0]
 		docType, _ := cmd.Flags().GetString("doc-type")
 
-		if err := client.DeletePublicPassword(docToken, docType); err != nil {
+		userToken, err := resolvePermIdentity(cmd)
+		if err != nil {
 			return err
+		}
+		if err := client.DeletePublicPassword(docToken, docType, userToken); err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		fmt.Printf("文档密码删除成功！\n")

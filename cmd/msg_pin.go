@@ -16,15 +16,21 @@ var msgPinCmd = &cobra.Command{
 参数:
   message_id    消息 ID（必填）
 
+身份:
+  --as bot|user|auto   默认 auto：已登录用 User Token（与旧版一致），未登录回退 Bot；
+                       User Token 已配置但不可用时直接报错，不会静默切 Bot。
+                       --as bot 用应用身份（Bot 需在群内）。
+
 示例:
-  feishu-cli msg pin om_xxx`,
+  feishu-cli msg pin om_xxx
+  feishu-cli msg pin om_xxx --as bot`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
 		}
 
-		token, err := resolveRequiredUserToken(cmd)
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}
@@ -50,6 +56,11 @@ var msgUnpinCmd = &cobra.Command{
 参数:
   message_id    消息 ID（必填）
 
+身份:
+  --as bot|user|auto   默认 auto：已登录用 User Token（与旧版一致），未登录回退 Bot；
+                       User Token 已配置但不可用时直接报错，不会静默切 Bot。
+                       --as bot 用应用身份（Bot 需在群内）。
+
 示例:
   feishu-cli msg unpin om_xxx`,
 	Args: cobra.ExactArgs(1),
@@ -58,7 +69,7 @@ var msgUnpinCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := resolveRequiredUserToken(cmd)
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}
@@ -88,6 +99,11 @@ var msgPinsCmd = &cobra.Command{
   --page-size     每页数量
   --page-token    分页标记
 
+身份:
+  --as bot|user|auto   默认 auto：已登录用 User Token（与旧版一致），未登录回退 Bot；
+                       User Token 已配置但不可用时直接报错，不会静默切 Bot。
+                       --as bot 用应用身份（Bot 需在群内）。
+
 示例:
   feishu-cli msg pins --chat-id oc_xxx
   feishu-cli msg pins --chat-id oc_xxx --page-size 20`,
@@ -96,7 +112,7 @@ var msgPinsCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := resolveRequiredUserToken(cmd)
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}
@@ -119,9 +135,11 @@ var msgPinsCmd = &cobra.Command{
 func init() {
 	msgCmd.AddCommand(msgPinCmd)
 	msgPinCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addAsFlag(msgPinCmd)
 
 	msgCmd.AddCommand(msgUnpinCmd)
 	msgUnpinCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addAsFlag(msgUnpinCmd)
 
 	msgCmd.AddCommand(msgPinsCmd)
 	msgPinsCmd.Flags().String("chat-id", "", "群 ID")
@@ -130,5 +148,6 @@ func init() {
 	msgPinsCmd.Flags().Int("page-size", 0, "每页数量")
 	msgPinsCmd.Flags().String("page-token", "", "分页标记")
 	msgPinsCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addAsFlag(msgPinsCmd)
 	mustMarkFlagRequired(msgPinsCmd, "chat-id")
 }

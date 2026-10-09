@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +42,10 @@ var tasklistCreateCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		name, _ := cmd.Flags().GetString("name")
 		output, _ := cmd.Flags().GetString("output")
@@ -116,22 +120,31 @@ var tasklistGetCmd = &cobra.Command{
 	},
 }
 
+// tasklistListMaxPageSize tasklist list 的 page_size 上限，也是默认值：
+// 实测不传 page_size 时服务端报 1470500，显式传 100 可用。
+const tasklistListMaxPageSize = 100
+
 var tasklistListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "列出任务清单",
 	Long: `列出所有任务清单。
 
+--page-size 默认 100（取值 1–100）；不传 page_size 时服务端可能报 1470500。
+
 示例:
   feishu-cli tasklist list
   feishu-cli tasklist list -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		pageSize, _ := cmd.Flags().GetInt("page-size")
+		if pageSize < 1 || pageSize > tasklistListMaxPageSize {
+			return clierr.Usagef("--page-size 取值范围为 1–%d，当前为 %d", tasklistListMaxPageSize, pageSize)
+		}
 		if err := config.Validate(); err != nil {
 			return err
 		}
 
 		token := resolveOptionalUserTokenWithFallback(cmd)
 
-		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
 
@@ -184,7 +197,10 @@ var tasklistDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		tasklistGuid := args[0]
 
@@ -215,7 +231,10 @@ var tasklistTaskAddCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		tasklistGuid := args[0]
 		taskIDsStr, _ := cmd.Flags().GetString("task-ids")
@@ -263,7 +282,10 @@ var tasklistTaskRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		tasklistGuid := args[0]
 		taskIDsStr, _ := cmd.Flags().GetString("task-ids")
@@ -374,6 +396,7 @@ func init() {
 	tasklistCreateCmd.Flags().StringP("name", "n", "", "清单名称（必填）")
 	tasklistCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistCreateCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(tasklistCreateCmd)
 	mustMarkFlagRequired(tasklistCreateCmd, "name")
 
 	tasklistCmd.AddCommand(tasklistGetCmd)
@@ -381,24 +404,27 @@ func init() {
 	tasklistGetCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 
 	tasklistCmd.AddCommand(tasklistListCmd)
-	tasklistListCmd.Flags().Int("page-size", 0, "每页数量")
+	tasklistListCmd.Flags().Int("page-size", tasklistListMaxPageSize, "每页数量（1–100，默认 100）")
 	tasklistListCmd.Flags().String("page-token", "", "分页标记")
 	tasklistListCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistListCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 
 	tasklistCmd.AddCommand(tasklistDeleteCmd)
 	tasklistDeleteCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(tasklistDeleteCmd)
 
 	tasklistCmd.AddCommand(tasklistTaskAddCmd)
 	tasklistTaskAddCmd.Flags().String("task-ids", "", "任务 GUID 列表，逗号分隔（必填）")
 	tasklistTaskAddCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistTaskAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(tasklistTaskAddCmd)
 	mustMarkFlagRequired(tasklistTaskAddCmd, "task-ids")
 
 	tasklistCmd.AddCommand(tasklistTaskRemoveCmd)
 	tasklistTaskRemoveCmd.Flags().String("task-ids", "", "任务 GUID 列表，逗号分隔（必填）")
 	tasklistTaskRemoveCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistTaskRemoveCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(tasklistTaskRemoveCmd)
 	mustMarkFlagRequired(tasklistTaskRemoveCmd, "task-ids")
 
 	tasklistCmd.AddCommand(tasklistTasksCmd)

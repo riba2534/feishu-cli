@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -30,7 +31,7 @@ var vcSearchCmd = &cobra.Command{
   --output, -o       输出格式（json）
 
 权限:
-  需要 User Access Token + vc:meeting.search:read 权限
+  默认 User 身份（--as user），可用 --as bot|auto 切换；需要 vc:meeting.search:read 权限
 
 示例:
   # 按关键词搜索
@@ -46,11 +47,6 @@ var vcSearchCmd = &cobra.Command{
   feishu-cli vc search --query "需求评审" --start 2026-03-01 -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, err := requireUserToken(cmd, "vc search")
-		if err != nil {
 			return err
 		}
 
@@ -71,29 +67,29 @@ var vcSearchCmd = &cobra.Command{
 			strings.TrimSpace(organizerRaw) == "" &&
 			strings.TrimSpace(participantRaw) == "" &&
 			strings.TrimSpace(roomRaw) == "" {
-			return fmt.Errorf("请至少指定一个过滤条件（--query / --start / --end / --organizer-ids / --participant-ids / --room-ids）")
+			return clierr.Usagef("请至少指定一个过滤条件（--query / --start / --end / --organizer-ids / --participant-ids / --room-ids）")
 		}
 
 		if l := len([]rune(query)); l > 50 {
-			return fmt.Errorf("--query 长度不能超过 50 字符（当前 %d）", l)
+			return clierr.Usagef("--query 长度不能超过 50 字符（当前 %d）", l)
 		}
 
 		// 时间解析
 		startRFC, err := parseVCTime(startStr, false)
 		if err != nil {
-			return fmt.Errorf("解析 --start 失败: %w", err)
+			return clierr.Usagef("解析 --start 失败: %v", err)
 		}
 		endRFC, err := parseVCTime(endStr, true)
 		if err != nil {
-			return fmt.Errorf("解析 --end 失败: %w", err)
+			return clierr.Usagef("解析 --end 失败: %v", err)
 		}
 		if startRFC != "" && endRFC != "" && startRFC > endRFC {
-			return fmt.Errorf("--start 不能晚于 --end")
+			return clierr.Usagef("--start 不能晚于 --end")
 		}
 
 		// page-size 范围
 		if pageSize < 0 || pageSize > 30 {
-			return fmt.Errorf("--page-size 取值范围 1-30（当前 %d）", pageSize)
+			return clierr.Usagef("--page-size 取值范围 1-30（当前 %d）", pageSize)
 		}
 		if pageSize == 0 {
 			pageSize = 15
@@ -108,6 +104,12 @@ var vcSearchCmd = &cobra.Command{
 			return err
 		}
 		roomIDs, err := parseCSVIDs(roomRaw, "room-ids")
+		if err != nil {
+			return err
+		}
+
+		// 参数校验通过后再解析身份：用法错误（exit 2）不应被"未登录"（exit 3）遮住
+		token, err := resolveVCReadIdentity(cmd)
 		if err != nil {
 			return err
 		}
@@ -128,7 +130,7 @@ var vcSearchCmd = &cobra.Command{
 			return err
 		}
 
-		// JSON 输出：原样透传 data
+		// JSON 输出：原样透传 data（含服务端 <h></h> 高亮标签）
 		if output == "json" {
 			return printJSON(json.RawMessage(data))
 		}
@@ -159,13 +161,14 @@ var vcSearchCmd = &cobra.Command{
 
 		fmt.Printf("会议列表（共 %d 条）:\n\n", len(parsed.Items))
 		for i, it := range parsed.Items {
-			title := strings.TrimSpace(it.DisplayInfo)
+			// 文本输出去掉服务端命中高亮标签 <h>...</h>
+			title := strings.TrimSpace(stripSearchHighlight(it.DisplayInfo))
 			if title == "" {
 				title = "(无标题)"
 			}
 			fmt.Printf("[%d] %s\n", i+1, title)
 			fmt.Printf("    会议 ID:  %s\n", it.ID)
-			if meta := strings.TrimSpace(it.MetaData.Description); meta != "" {
+			if meta := strings.TrimSpace(stripSearchHighlight(it.MetaData.Description)); meta != "" {
 				fmt.Printf("    时间/备注: %s\n", meta)
 			}
 			fmt.Println()
@@ -189,4 +192,5 @@ func init() {
 	vcSearchCmd.Flags().String("page-token", "", "分页标记")
 	vcSearchCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	vcSearchCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addVCReadAsFlag(vcSearchCmd)
 }

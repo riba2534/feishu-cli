@@ -173,7 +173,7 @@ AI 的颜色决策路径：**判断组件状态 → 查此表 → 输出样式�
 
 AI 先判断两个元素之间的关系，再选间距语义：
 
-```
+```text
 「这个元素和上一个元素是什么关系？」
 
  ├─ 与卡片边缘贴齐（图片、页尾）     → flush (0px)
@@ -220,7 +220,7 @@ AI 先判断两个元素之间的关系，再选间距语义：
 
 ### 3.2 决策路径
 
-```
+```text
 「这段文字是什么角色？」
 
  ├─ 整张卡片的主标题        → 封面标题 (heading + 粗体 + indigo)
@@ -264,7 +264,7 @@ AI 先判断两个元素之间的关系，再选间距语义：
 
 ### 4.2 决策路径
 
-```
+```text
 「这个容器是什么形态？」
 
  ├─ 成对/成组信息展示        → 信息列 (column + grey-50)
@@ -377,7 +377,6 @@ AI 先判断两个元素之间的关系，再选间距语义：
   "schema": "2.0",
   "config": {
     "update_multi": true,
-    "compact_width": false,
     "enable_forward": true,
     "streaming_mode": false,
     "summary": { "content": "TODO_SUMMARY" },
@@ -434,7 +433,7 @@ AI 先判断两个元素之间的关系，再选间距语义：
 
 ## 8. Quality Gates
 
-输出前对照以下门禁检查。schema 合法性由 `../../../scripts/lint_card.py` 保证，内容真实性见 `../../content-quality.md`。
+输出前对照以下门禁检查。常见 schema 错误由 `../../../scripts/lint_card.py` 离线检查（保守检查，不等同飞书服务端完整校验）；下列门禁是主题规则，linter 只覆盖其中 `img_key`/`alt`/URL 等通用字段，其余需要人工逐项核对。内容真实性见 `../../content-quality.md`。
 
 ### error（必须通过）
 

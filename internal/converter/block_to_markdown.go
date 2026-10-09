@@ -12,6 +12,7 @@ import (
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // 最大递归深度，防止栈溢出
@@ -120,7 +121,7 @@ func NewBlockToMarkdown(blocks []*larkdocx.Block, options ConvertOptions) *Block
 			}
 		case BlockTypeAddOns, BlockTypeSyncSource, BlockTypeSyncReference,
 			BlockTypeAgenda, BlockTypeAgendaItem, BlockTypeAgendaItemContent,
-			BlockTypeLinkPreview:
+			BlockTypeLinkPreview, BlockTypeView:
 			// 容器块：子块由父块递归展开
 			if block.Children != nil {
 				for _, childID := range block.Children {
@@ -268,6 +269,11 @@ func isListBlockType(bt BlockType) bool {
 	return bt == BlockTypeBullet || bt == BlockTypeOrdered || bt == BlockTypeTodo
 }
 
+// passesListIndent 判断块作为列表项子块时是否自行处理缩进：列表块，以及把缩进透传给子块的同步块容器。
+func passesListIndent(bt BlockType) bool {
+	return isListBlockType(bt) || bt == BlockTypeSyncSource || bt == BlockTypeSyncReference
+}
+
 // Convert converts all blocks to Markdown
 func (c *BlockToMarkdown) Convert() (string, error) {
 	var sb strings.Builder
@@ -349,6 +355,17 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 	case BlockTypeGridColumn:
 		// GridColumn 块由 Grid 块处理，跳过独立处理
 		return "", nil
+	case BlockTypeView:
+		// 视图块（type=33）是文件/附件块的透明容器（media-insert 插入附件时服务端自动包一层），
+		// 只展开子块；此前输出"不支持的块类型"注释，子块又在顶层重复导出一次。
+		var sb strings.Builder
+		for _, childID := range block.Children {
+			if childBlock := c.blockMap[childID]; childBlock != nil {
+				text, _ := c.convertBlockWithDepth(childBlock, indent, depth+1)
+				sb.WriteString(text)
+			}
+		}
+		return sb.String(), nil
 	case BlockTypeAddOns:
 		// 优先解析小组件内置内容（例如文本绘图的 Mermaid 源码）
 		if block.AddOns != nil {
@@ -843,18 +860,37 @@ func (c *BlockToMarkdown) convertBullet(block *larkdocx.Block, indent, depth int
 	prefix := strings.Repeat(" ", indent)
 	result := fmt.Sprintf("%s- %s\n", prefix, text)
 
-	// 递归处理嵌套子列表
-	if block.Children != nil {
-		for _, childID := range block.Children {
-			childBlock := c.blockMap[childID]
-			if childBlock != nil {
-				// CommonMark 要求子块缩进到父列表正文起始列；"- " 宽 2 列。
-				childMd, _ := c.convertBlockWithDepth(childBlock, indent+2, depth+1)
-				result += childMd
-			}
+	// 递归处理子块（嵌套列表、段落、代码块等）
+	for _, childID := range block.Children {
+		if childBlock := c.blockMap[childID]; childBlock != nil {
+			// CommonMark 要求子块缩进到父列表正文起始列；"- " 宽 2 列。
+			result += c.listChildMarkdown(childBlock, indent+2, depth)
 		}
 	}
 	return result, nil
+}
+
+// listChildMarkdown 渲染列表项的子块。嵌套列表沿用累计缩进；其它子块（段落、代码块、引用、图片等）
+// 按 CommonMark 缩进到父列表正文列，并在前面空一行——否则再导入时段落会被惰性续行并入列表项正文、
+// 代码块/引用会跳出列表成为顶层块（列表项多段落往返丢结构的根因之一）。
+func (c *BlockToMarkdown) listChildMarkdown(child *larkdocx.Block, childIndent, depth int) string {
+	if child.BlockType != nil && passesListIndent(BlockType(*child.BlockType)) {
+		md, _ := c.convertBlockWithDepth(child, childIndent, depth+1)
+		return md
+	}
+	md, _ := c.convertBlockWithDepth(child, 0, depth+1)
+	md = strings.TrimRight(md, "\n")
+	if strings.TrimSpace(md) == "" {
+		return ""
+	}
+	pad := strings.Repeat(" ", childIndent)
+	lines := strings.Split(md, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = pad + line
+		}
+	}
+	return "\n" + strings.Join(lines, "\n") + "\n"
 }
 
 func (c *BlockToMarkdown) convertOrdered(block *larkdocx.Block, indent, depth int) (string, error) {
@@ -873,15 +909,11 @@ func (c *BlockToMarkdown) convertOrdered(block *larkdocx.Block, indent, depth in
 	}
 	result := fmt.Sprintf("%s%s. %s\n", prefix, seq, text)
 
-	// 递归处理嵌套子列表
-	if block.Children != nil {
-		for _, childID := range block.Children {
-			childBlock := c.blockMap[childID]
-			if childBlock != nil {
-				// 有序 marker 宽度随编号变化："1. "=3，"10. "=4。
-				childMd, _ := c.convertBlockWithDepth(childBlock, indent+len(seq)+2, depth+1)
-				result += childMd
-			}
+	// 递归处理子块（嵌套列表、段落、代码块等）
+	for _, childID := range block.Children {
+		if childBlock := c.blockMap[childID]; childBlock != nil {
+			// 有序 marker 宽度随编号变化："1. "=3，"10. "=4。
+			result += c.listChildMarkdown(childBlock, indent+len(seq)+2, depth)
 		}
 	}
 	return result, nil
@@ -941,15 +973,11 @@ func (c *BlockToMarkdown) convertTodoWithDepth(block *larkdocx.Block, indent, de
 	prefix := strings.Repeat(" ", indent)
 	result := fmt.Sprintf("%s- %s %s\n", prefix, checkbox, text)
 
-	// 递归处理嵌套子项
-	if block.Children != nil {
-		for _, childID := range block.Children {
-			childBlock := c.blockMap[childID]
-			if childBlock != nil {
-				// Todo 仍是 bullet list item，父 marker "- " 宽 2 列；[ ] 属于正文。
-				childMd, _ := c.convertBlockWithDepth(childBlock, indent+2, depth+1)
-				result += childMd
-			}
+	// 递归处理子块（嵌套列表、段落、代码块等）
+	for _, childID := range block.Children {
+		if childBlock := c.blockMap[childID]; childBlock != nil {
+			// Todo 仍是 bullet list item，父 marker "- " 宽 2 列；[ ] 属于正文。
+			result += c.listChildMarkdown(childBlock, indent+2, depth)
 		}
 	}
 	return result, nil
@@ -989,7 +1017,7 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 		c.imageCount++
 		filename := fmt.Sprintf("image_%d.png", c.imageCount)
 
-		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
+		if err := safefile.MkdirAll(c.options.AssetsDir, 0755); err != nil {
 			return "", fmt.Errorf("创建资源目录失败: %w", err)
 		}
 
@@ -1004,7 +1032,7 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 		tmpURL, urlErr := c.services.getMediaTempURL(token, dlOpts)
 		if urlErr == nil {
 			if dlErr := c.services.downloadFromURL(tmpURL, localPath); dlErr == nil {
-				return fmt.Sprintf("![%s](%s)\n", alt, localPath), nil
+				return fmt.Sprintf("![%s](%s)\n", alt, c.assetLink(localPath)), nil
 			} else if c.options.Debug {
 				fmt.Fprintf(os.Stderr, "[Debug] 图片下载失败 (URL方式): %v\n", dlErr)
 			}
@@ -1014,7 +1042,7 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 
 		// 方式二：SDK 直接下载
 		if sdkErr := c.services.downloadMedia(token, localPath, dlOpts); sdkErr == nil {
-			return fmt.Sprintf("![%s](%s)\n", alt, localPath), nil
+			return fmt.Sprintf("![%s](%s)\n", alt, c.assetLink(localPath)), nil
 		} else if c.options.Debug {
 			fmt.Fprintf(os.Stderr, "[Debug] 图片SDK下载失败: %v\n", sdkErr)
 		}
@@ -1025,6 +1053,34 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 
 	// 不下载时输出 <image> 标签，包含完整属性（可 roundtrip）
 	return c.formatImageTag(block.Image), nil
+}
+
+// assetPath 返回写入 Markdown 的本地资源路径。
+// AssetsLinkBase 非空（doc export -o 写文件）时改写为相对 Markdown 文件所在目录的路径，
+// 使「导出 → 原地 doc import」按 Markdown 目录解析相对路径时能找到资源；为空时保持原路径（相对当前工作目录）。
+func (c *BlockToMarkdown) assetPath(localPath string) string {
+	p := localPath
+	if base := c.options.AssetsLinkBase; base != "" {
+		absBase, errBase := filepath.Abs(base)
+		absPath, errPath := filepath.Abs(localPath)
+		if errBase == nil && errPath == nil {
+			if rel, err := filepath.Rel(absBase, absPath); err == nil {
+				p = rel
+			} else {
+				p = absPath
+			}
+		}
+	}
+	return filepath.ToSlash(p)
+}
+
+// assetLink 返回用于 Markdown 链接目标（![](...)）的资源路径：含空白或括号时用 <...> 包裹，保证仍是合法的 CommonMark 链接目标。
+func (c *BlockToMarkdown) assetLink(localPath string) string {
+	link := c.assetPath(localPath)
+	if strings.ContainsAny(link, " \t()<>") {
+		link = "<" + link + ">"
+	}
+	return link
 }
 
 // formatImageTag 将 Image 块格式化为 <image .../> HTML 标签
@@ -1194,20 +1250,7 @@ func (c *BlockToMarkdown) convertCalloutWithDepth(block *larkdocx.Block, depth i
 	// Determine callout type based on background color or emoji
 	calloutType := "NOTE"
 	if block.Callout.BackgroundColor != nil {
-		switch *block.Callout.BackgroundColor {
-		case 2: // Red
-			calloutType = "WARNING"
-		case 3: // Orange
-			calloutType = "CAUTION"
-		case 4: // Yellow
-			calloutType = "TIP"
-		case 5: // Green
-			calloutType = "SUCCESS"
-		case 6: // Blue
-			calloutType = "NOTE"
-		case 7: // Purple
-			calloutType = "IMPORTANT"
-		}
+		calloutType = CalloutTypeForColor(*block.Callout.BackgroundColor)
 	}
 
 	var sb strings.Builder
@@ -1273,7 +1316,7 @@ func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (s
 	attrs := []string{"controls"}
 
 	if token != "" && c.options.DownloadImages {
-		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
+		if err := safefile.MkdirAll(c.options.AssetsDir, 0755); err != nil {
 			return "", fmt.Errorf("创建资源目录失败: %w", err)
 		}
 
@@ -1281,7 +1324,7 @@ func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (s
 		dlOpts := client.DownloadMediaOptions{UserAccessToken: c.options.UserAccessToken, DocToken: c.options.DocumentID}
 		if tmpURL, err := c.services.getMediaTempURL(token, dlOpts); err == nil {
 			if dlErr := c.services.downloadFromURL(tmpURL, localPath); dlErr == nil {
-				attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", localPath)), name, viewType)
+				attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", c.assetPath(localPath))), name, viewType)
 				return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
 			} else if c.options.Debug {
 				fmt.Fprintf(os.Stderr, "[Debug] 视频下载失败 (URL方式): %v\n", dlErr)
@@ -1290,7 +1333,7 @@ func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (s
 			fmt.Fprintf(os.Stderr, "[Debug] 获取视频临时URL失败: %v\n", err)
 		}
 		if err := c.services.downloadMedia(token, localPath, dlOpts); err == nil {
-			attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", localPath)), name, viewType)
+			attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", c.assetPath(localPath))), name, viewType)
 			return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
 		} else if c.options.Debug {
 			fmt.Fprintf(os.Stderr, "[Debug] 视频SDK下载失败: %v\n", err)
@@ -1318,7 +1361,8 @@ func appendVideoMetadata(attrs []string, name string, viewType *int) []string {
 
 func (c *BlockToMarkdown) nextVideoAssetPath(name string) string {
 	c.videoCount++
-	filename := name
+	// 文件名来自文档内容（任何协作者都能改），去掉路径分隔符，防止经 "../" 写出资源目录
+	filename := sanitizeAssetFilename(name)
 	if filename == "" {
 		filename = fmt.Sprintf("video_%d.mp4", c.videoCount)
 	}
@@ -1326,6 +1370,21 @@ func (c *BlockToMarkdown) nextVideoAssetPath(name string) string {
 		filename += ".mp4"
 	}
 	return filepath.Join(c.options.AssetsDir, c.reserveUniqueVideoFilename(filename))
+}
+
+// sanitizeAssetFilename 把远端文件名收敛为资源目录内的单段文件名：路径分隔符替换为 "_"，
+// "." / ".." 视为无名（调用方回退默认名）。
+func sanitizeAssetFilename(name string) string {
+	name = strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' || r == 0 {
+			return '_'
+		}
+		return r
+	}, strings.TrimSpace(name))
+	if name == "." || name == ".." {
+		return ""
+	}
+	return name
 }
 
 func (c *BlockToMarkdown) reserveUniqueVideoFilename(filename string) string {
@@ -1513,14 +1572,14 @@ func (c *BlockToMarkdown) convertBoard(block *larkdocx.Block) (string, error) {
 		// 不带扩展名，由 GetBoardImage 按服务端实际图片格式补齐
 		filename := fmt.Sprintf("board_%d", c.imageCount)
 
-		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
+		if err := safefile.MkdirAll(c.options.AssetsDir, 0755); err != nil {
 			return "", fmt.Errorf("创建资源目录失败: %w", err)
 		}
 
 		localPath := filepath.Join(c.options.AssetsDir, filename)
 
 		if savedPath, err := c.services.getBoardImage(token, localPath, c.options.UserAccessToken); err == nil {
-			return fmt.Sprintf("![画板](%s)\n", savedPath), nil
+			return fmt.Sprintf("![画板](%s)\n", c.assetLink(savedPath)), nil
 		} else if c.options.Debug {
 			fmt.Fprintf(os.Stderr, "[Debug] 画板下载失败: %v\n", err)
 		}

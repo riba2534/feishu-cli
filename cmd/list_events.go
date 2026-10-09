@@ -91,8 +91,7 @@ var listEventsCmd = &cobra.Command{
 			for i, event := range events {
 				fmt.Printf("[%d] %s\n", i+1, event.Summary)
 				fmt.Printf("    日程 ID:   %s\n", event.EventID)
-				fmt.Printf("    开始时间:  %s\n", event.StartTime)
-				fmt.Printf("    结束时间:  %s\n", event.EndTime)
+				printEventTimeLines(event, "    ")
 				if event.Location != "" {
 					fmt.Printf("    地点:      %s\n", event.Location)
 				}

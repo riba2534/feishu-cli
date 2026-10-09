@@ -35,6 +35,10 @@ var approvalTaskApproveCmd = &cobra.Command{
 			return err
 		}
 
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return approvalWriteDryRun(cmd, "approval task approve", "approve", opts)
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -99,5 +103,6 @@ func registerApprovalTaskActionFlags(cmd *cobra.Command, includeForm bool) {
 
 func init() {
 	approvalTaskCmd.AddCommand(approvalTaskApproveCmd)
+	approvalTaskApproveCmd.Flags().Bool("dry-run", false, "只预览请求，不执行（不联网、不解析身份）")
 	registerApprovalTaskActionFlags(approvalTaskApproveCmd, true)
 }

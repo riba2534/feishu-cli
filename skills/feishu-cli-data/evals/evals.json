@@ -32,6 +32,46 @@
       "expected_output": "继续使用本 Skill 的基础 Sheet 工作流，分别生成范围读取和写入命令。",
       "expectations": ["使用 sheet read shtcnxxx 0b1212!A1:C10", "写入使用 sheet write shtcnxxx 0b1212!B2 --data '[[42]]' 或等效 JSON", "不因是基础命令而拒绝当前 Skill 或改用 Bitable"],
       "files": []
+    },
+    {
+      "id": 5,
+      "workflows": ["sheet"],
+      "prompt": "用 table-put 把订单表写进 Sheet shtcnxxx 的 0b1212：订单号是 19 位数字、金额是小数、下单时间带时分秒。之后每天再往表尾追加新订单，表头不要重复。给出 JSON 和命令。",
+      "expected_output": "订单号按文本保真，金额用合法数字 dtype，时间用 datetime dtype；追加使用 --mode append。",
+      "expectations": ["订单号列声明为 string/object dtype 或以 JSON 字符串写入，不以 JSON 数字写入", "金额列 dtype 使用 float64/int64 等合法数字 dtype，不使用 \"number\"", "下单时间列 dtype 为 datetime64[ns]，值带时分秒", "每日追加使用 table-put --mode append，不重复写表头"],
+      "files": []
+    },
+    {
+      "id": 6,
+      "workflows": ["bitable"],
+      "prompt": "Bitable bascnxxx 的 tblxxx 表里表单 vewxxx：打开分享但只允许组织内的人填写；再把这个多维表格的高级权限关掉。给出命令。",
+      "expected_output": "分享开启与范围限制分两次 share update（或用 form patch 的 shared 字段），关闭高级权限使用 --is-advanced=false 或 advperm disable。",
+      "expectations": ["表单分享用 form share update 分别执行 --enabled 与 --access-scope tenant（每次一个字段），或用 form patch --shared --shared-limit tenant_editable", "开启后用 form share get 读回确认 access_scope", "关闭高级权限使用 bitable advperm disable 或 bitable update --is-advanced=false，不写成 --is-advanced false", "命令使用 --base-token，不使用 --app-token"],
+      "files": []
+    },
+    {
+      "id": 7,
+      "workflows": ["bitable"],
+      "prompt": "有两个链接：https://xxx.feishu.cn/wiki/wikcnxxx（知识库里挂的多维表格）和 https://xxx.feishu.cn/base/bascnxxx?table=blkxxx，帮我拿到 base_token 和 table_id 后列出记录。",
+      "expected_output": "两个链接都先 bitable resolve --url 解析；?table= 是选中的顶层块，只有输出 table_id 时才用于 record list --base-token --table-id。",
+      "expectations": ["对两个链接都先执行 bitable resolve --url", "说明 ?table= 不一定是数据表，不能直接当 --table-id，只有 resolve 输出 table_id 时才使用", "后续命令使用 --base-token，不使用 --app-token"],
+      "files": []
+    },
+    {
+      "id": 8,
+      "workflows": ["sheet"],
+      "prompt": "在 /sheets/shtcnxxx 的子表 0b12 里隐藏第 2–4 列、冻结前两行，并把第 10 行移到第 3 行之前。",
+      "expected_output": "sheet update-dimension --range \"B:D\" --hidden、sheet freeze --rows 2、sheet move-dimension --range \"10\" --target 3（--range 为 1 起始两端包含）。",
+      "expectations": ["隐藏列使用 sheet update-dimension --range \"B:D\" --hidden", "冻结使用 sheet freeze --rows 2（或 update-sheet --frozen-rows 2）", "移动行使用 sheet move-dimension --range \"10\" --target 3"],
+      "files": []
+    },
+    {
+      "id": 9,
+      "workflows": ["sheet"],
+      "prompt": "在子表 0b12 的 C 列前插入 2 列，再删除第 20–22 行；删除前先让我看实际会删哪几行。",
+      "expected_output": "sheet insert-cols --range \"C:D\"；sheet delete-rows --range \"20:22\" --dry-run 核对后再执行；--start/--end 写法为 0 起始且不含 end。",
+      "expectations": ["插入列使用 sheet insert-cols ... --range \"C:D\"（或 --start 2 --end 4）", "删除前先 sheet delete-rows ... --range \"20:22\" --dry-run 核对实际行号", "若改用 --start/--end，写成 --start 19 --end 22（0 起始、不含 end），不写成 --start 20"],
+      "files": []
     }
   ]
 }

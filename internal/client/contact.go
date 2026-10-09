@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 
@@ -15,12 +16,17 @@ import (
 )
 
 // UserContactIDInfo 用户联系信息（通过邮箱/手机号查询）
+//
+// 注意：OpenID / UserID / UnionID 分别是三种不同的 ID。batch_get_id 每次只按一种
+// user_id_type 返回，旧版只按 open_id 查询却把结果写进了 user_id 字段（实为 open_id）；
+// 现按类型分别查询并填入对应字段，拿不到（如应用缺 contact:user.employee_id:readonly）时留空。
 type UserContactIDInfo struct {
-	UserID string `json:"user_id,omitempty"`
-	OpenID string `json:"open_id,omitempty"`
-	Mobile string `json:"mobile,omitempty"`
-	Email  string `json:"email,omitempty"`
-	Name   string `json:"name,omitempty"`
+	UserID  string `json:"user_id,omitempty"`
+	OpenID  string `json:"open_id,omitempty"`
+	UnionID string `json:"union_id,omitempty"`
+	Mobile  string `json:"mobile,omitempty"`
+	Email   string `json:"email,omitempty"`
+	Name    string `json:"name,omitempty"`
 }
 
 // BatchGetUsersBasic 通过 open_id 批量获取用户基本资料（姓名/头像），用于补齐消息列表中
@@ -53,14 +59,14 @@ func BatchGetUsersBasic(openIDs []string, userAccessToken string) (map[string]st
 		}
 
 		reqURL := fmt.Sprintf("%s/open-apis/contact/v3/users/basic_batch?user_id_type=open_id", baseURL)
-		req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(bodyBytes))
+		req, err := http.NewRequestWithContext(Context(), http.MethodPost, reqURL, bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nameMap, fmt.Errorf("批量查询用户基本资料失败: %w", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+userAccessToken)
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-		httpResp, err := http.DefaultClient.Do(req)
+		httpResp, err := rawHTTPClient().Do(req)
 		if err != nil {
 			return nameMap, fmt.Errorf("批量查询用户基本资料失败: %w", err)
 		}
@@ -138,14 +144,14 @@ func SearchUsers(query string, pageSize int, pageToken, userAccessToken string) 
 	}
 
 	reqURL := fmt.Sprintf("%s/open-apis/search/v1/user?%s", baseURL, params.Encode())
-	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(Context(), http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("搜索用户失败: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+userAccessToken)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-	httpResp, err := http.DefaultClient.Do(req)
+	httpResp, err := rawHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("搜索用户失败: %w", err)
 	}
@@ -206,8 +212,8 @@ type DepartmentInfo struct {
 	MemberCount        int    `json:"member_count,omitempty"`
 }
 
-// BatchGetUserID 通过邮箱或手机号批量获取用户 ID
-func BatchGetUserID(emails, mobiles []string) ([]*UserContactIDInfo, error) {
+// batchGetUserIDByType 调用 batch_get_id，按指定 user_id_type 返回（item.UserId 即该类型的 ID）。
+func batchGetUserIDByType(emails, mobiles []string, userIDType string) ([]*larkcontact.UserContactInfo, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -222,7 +228,7 @@ func BatchGetUserID(emails, mobiles []string) ([]*UserContactIDInfo, error) {
 	}
 
 	req := larkcontact.NewBatchGetIdUserReqBuilder().
-		UserIdType("open_id").
+		UserIdType(userIDType).
 		Body(bodyBuilder.Build()).
 		Build()
 
@@ -234,18 +240,63 @@ func BatchGetUserID(emails, mobiles []string) ([]*UserContactIDInfo, error) {
 	if !resp.Success() {
 		return nil, fmt.Errorf("批量查询用户 ID 失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
+	if resp.Data == nil {
+		return nil, nil
+	}
+	return resp.Data.UserList, nil
+}
 
-	var result []*UserContactIDInfo
-	if resp.Data != nil && resp.Data.UserList != nil {
-		for _, item := range resp.Data.UserList {
-			result = append(result, &UserContactIDInfo{
-				UserID: StringVal(item.UserId),
-				Mobile: StringVal(item.Mobile),
-				Email:  StringVal(item.Email),
-			})
-		}
+// contactLookupKey 以邮箱（忽略大小写）或手机号作为 batch_get_id 结果的对齐键。
+func contactLookupKey(email, mobile string) string {
+	if email != "" {
+		return "e:" + strings.ToLower(strings.TrimSpace(email))
+	}
+	return "m:" + strings.TrimSpace(mobile)
+}
+
+// BatchGetUserID 通过邮箱或手机号批量获取用户 ID（App/Tenant 身份）。
+//
+// open_id 必查（失败即报错）；user_id、union_id 各再查一次，失败（多为权限不足）时
+// 对应字段留空，不影响 open_id 结果。
+func BatchGetUserID(emails, mobiles []string) ([]*UserContactIDInfo, error) {
+	openList, err := batchGetUserIDByType(emails, mobiles, "open_id")
+	if err != nil {
+		return nil, err
 	}
 
+	var result []*UserContactIDInfo
+	index := map[string]*UserContactIDInfo{}
+	for _, item := range openList {
+		info := &UserContactIDInfo{
+			OpenID: StringVal(item.UserId),
+			Mobile: StringVal(item.Mobile),
+			Email:  StringVal(item.Email),
+		}
+		result = append(result, info)
+		index[contactLookupKey(info.Email, info.Mobile)] = info
+	}
+	if len(result) == 0 {
+		return result, nil
+	}
+
+	for _, idType := range []string{"user_id", "union_id"} {
+		list, err := batchGetUserIDByType(emails, mobiles, idType)
+		if err != nil {
+			continue // best-effort：缺少对应权限时留空
+		}
+		for _, item := range list {
+			info := index[contactLookupKey(StringVal(item.Email), StringVal(item.Mobile))]
+			if info == nil {
+				continue
+			}
+			switch idType {
+			case "user_id":
+				info.UserID = StringVal(item.UserId)
+			case "union_id":
+				info.UnionID = StringVal(item.UserId)
+			}
+		}
+	}
 	return result, nil
 }
 

@@ -30,26 +30,26 @@ var updateWikiNodeCmd = &cobra.Command{
 			return err
 		}
 
-		nodeToken, err := extractWikiToken(args[0])
+		nodeToken, err := extractWikiLookupToken(args[0])
 		if err != nil {
 			return err
 		}
 		title, _ := cmd.Flags().GetString("title")
 
-		// 先获取节点信息以获取 space_id
+		// 先通过 node_by_token 获取 space_id 与真实 node_token（输入可能是文档 obj_token）
 		token := resolveOptionalUserToken(cmd)
-		node, err := client.GetWikiNode(nodeToken, token)
+		node, err := client.ResolveWikiNode(nodeToken, token)
 		if err != nil {
 			return fmt.Errorf("获取节点信息失败: %w", err)
 		}
 
-		err = client.UpdateWikiNode(node.SpaceID, nodeToken, title, token)
+		err = client.UpdateWikiNode(node.SpaceID, node.NodeToken, title, token)
 		if err != nil {
 			return err
 		}
 
 		fmt.Printf("知识库节点标题更新成功！\n")
-		fmt.Printf("  节点 Token: %s\n", nodeToken)
+		fmt.Printf("  节点 Token: %s\n", node.NodeToken)
 		fmt.Printf("  新标题:     %s\n", title)
 
 		return nil

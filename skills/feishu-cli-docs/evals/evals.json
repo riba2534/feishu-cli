@@ -52,9 +52,9 @@
     {
       "id": 7,
       "workflows": ["write"],
-      "prompt": "local-image.md 含本地图片。直接运行 content-update --upload-images 能把它追加到现有文档吗？解释实际限制并给出合适的可选方案，暂不执行。",
-      "expected_output": "明确当前 content-update 会拒绝该 flag 和本地资源；按编辑意图选择网络 URL、doc add 或单素材插入。",
-      "expectations": ["明确 --upload-images 会被 content-update 拒绝，而不是承诺能上传", "说明直接删除 flag 仍不能使用本地图片路径", "给出网络 URL、doc add --upload-images 或 doc media-insert 等适配方案；不把 import 新建文档当作原地替换"],
+      "prompt": "local-image.md 含本地图片。直接运行 content-update --upload-images 能把它追加到现有文档吗？解释实际行为与前提条件，暂不执行。",
+      "expected_output": "说明 content-update 会自动上传本地图片（--upload-images 可省略），相对路径基于 --markdown-file 所在目录，需确保图片文件存在；给出 append 命令。",
+      "expectations": ["说明 content-update 的 append 会自动上传并绑定本地图片，--upload-images 不是必需的", "指出相对路径按 Markdown 文件所在目录解析，图片缺失时命令在发请求前报错", "使用 doc content-update <doc> --mode append --markdown-file 指向该文件；不把 import 新建文档当作原地替换"],
       "files": ["evals/fixtures/local-image.md"]
     },
     {
@@ -85,8 +85,16 @@
       "id": 11,
       "workflows": ["markdown"],
       "prompt": "markdown overwrite 未传 --name，读到的远端标题为空。CLI 会用 file_token.md 接着上传吗？同一个 token 的 25MB Markdown 想更新，能否用 drive upload --file-token？",
-      "expected_output": "空远端名拒绝上传；markdown overwrite 支持大于20MB分片，而 drive upload 覆盖限制20MB。",
-      "expectations": ["说明读取不到现有文件名时非零退出且不会自动重命名上传", "指向确认原名后显式 --name 或修复元数据读取", "25MB 覆盖应使用 markdown overwrite，不推荐超过上限的 drive upload --file-token"],
+      "expected_output": "空远端名拒绝上传；两者都能保留 token 并对大于20MB的文件分片覆盖，但 .md 仍应使用 markdown overwrite：drive upload 未传 --name 会把远端改名为本地文件名，且默认要求 User Token。",
+      "expectations": ["说明读取不到现有文件名时非零退出且不会自动重命名上传", "指向确认原名后显式 --name 或修复元数据读取", "25MB 的 .md 覆盖推荐 markdown overwrite（>20MB 自动分片且保留远端原名）；如提到 drive upload --file-token，说明它同样支持分片，但未传 --name 会改用本地文件名并默认需要 User Token"],
+      "files": []
+    },
+    {
+      "id": 12,
+      "workflows": ["write"],
+      "prompt": "文档 doxcnxxx 被误改了，列出历史版本，回滚到昨天 15:00 之前最后那一版，并确认回滚真正完成；我在非交互环境执行。",
+      "expected_output": "doc history list doxcnxxx --page-all -o json 按 edit_time 定位 history_version_id；用户确认后 doc history revert --history-version-id <id> --yes；status=done 才算成功，running 时用 revert-status --task-id 继续查。",
+      "expectations": ["先用 doc history list 取 history_version_id，不把 revision_id 传给 revert", "revert 先 --dry-run 或向用户确认，非交互环境确认后才加 --yes（不带时退出码 10）", "以 status=done 判定成功，running 时用 doc history revert-status --task-id 查询，partial_failed/failed 非零退出", "说明 revert 默认 Bot 身份，Bot 无编辑权限时显式传本人 --user-access-token"],
       "files": []
     }
   ]

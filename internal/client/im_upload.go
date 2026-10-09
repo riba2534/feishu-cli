@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 const (
@@ -45,6 +46,10 @@ func UploadIMFile(filePath string, fileName string) (string, error) {
 // UploadIMFileWithOptions 上传 IM 文件，并允许调用方指定 file_type 与音视频时长。
 // fileType 为空时按文件扩展名推断；durationMs <= 0 时不提交 duration。
 func UploadIMFileWithOptions(filePath string, fileName string, fileType string, durationMs int) (string, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return "", err
+	}
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -111,6 +116,10 @@ func UploadIMFileWithOptions(filePath string, fileName string, fileType string, 
 // and returns the image_key that can be used directly in msg send --msg-type image.
 // imageType can be "message" (default) for sending as message image, or "avatar" for avatar images.
 func UploadIMImage(filePath string, imageType string) (string, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return "", err
+	}
 	client, err := GetClient()
 	if err != nil {
 		return "", err

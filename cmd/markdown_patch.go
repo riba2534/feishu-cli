@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -27,6 +28,7 @@ var markdownPatchCmd = &cobra.Command{
 
 可选:
   --regex       将 --pattern 解释为 RE2
+  --name        覆盖时使用的文件名（必须 .md 结尾；缺省读取远端现有名，读不到时拒绝写回，与 overwrite 一致）
   --as          bot|user|auto（默认 auto）
   --dry-run     只打印将要发出的请求
 
@@ -45,20 +47,27 @@ var markdownPatchCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 		contentSet := cmd.Flags().Changed("content")
 		content, _ := cmd.Flags().GetString("content")
+		name, _ := cmd.Flags().GetString("name")
 
 		fileToken = strings.TrimSpace(fileToken)
 		if fileToken == "" {
-			return fmt.Errorf("--file-token 必填")
+			return clierr.Usagef("--file-token 必填")
 		}
 		if !cmd.Flags().Changed("pattern") || pattern == "" {
-			return fmt.Errorf("--pattern 必填且不能为空")
+			return clierr.Usagef("--pattern 必填且不能为空")
 		}
 		if !contentSet {
-			return fmt.Errorf("--content 必填")
+			return clierr.Usagef("--content 必填")
 		}
 		if useRegex {
 			if _, err := regexp.Compile(pattern); err != nil {
-				return fmt.Errorf("无效的 --pattern 正则: %w", err)
+				return clierr.Usagef("无效的 --pattern 正则: %w", err)
+			}
+		}
+		fileName := strings.TrimSpace(name)
+		if cmd.Flags().Changed("name") {
+			if err := validateMarkdownFileName(fileName, "--name"); err != nil {
+				return err
 			}
 		}
 
@@ -72,32 +81,34 @@ var markdownPatchCmd = &cobra.Command{
 
 		if dryRun {
 			sizeThreshold := formatByteSize(20 * 1024 * 1024)
-			return printDryRunPlan(cmd, "Download the current Markdown file, apply the replacement locally, and overwrite only when matches are found", map[string]any{
-				"mode": mode,
-			}, []dryRunStep{
-				{
-					Method: "GET",
-					URL:    markdownPreviewDownloadPath(fileToken),
-					Desc:   "Download the current Markdown source file preview artifact",
-					Params: markdownPreviewParams(""),
-				},
-				{
+			planName := fileName
+			steps := []dryRunStep{{
+				Method: "GET",
+				URL:    markdownPreviewDownloadPath(fileToken),
+				Desc:   "Download the current Markdown source file preview artifact",
+				Params: markdownPreviewParams(""),
+			}}
+			if planName == "" {
+				planName = "<existing_remote_name>"
+				steps = append(steps, dryRunStep{
 					Method: "POST",
 					URL:    "/open-apis/drive/v1/metas/batch_query",
-					Desc:   "Read current file metadata to preserve the existing file name before overwrite",
+					Desc:   "Read current file metadata to preserve the existing file name before overwrite (fail-closed when unavailable; pass --name)",
 					Body: map[string]any{
 						"request_docs": []map[string]any{{
 							"doc_token": fileToken,
 							"doc_type":  "file",
 						}},
 					},
-				},
-				{
+				})
+			}
+			steps = append(steps,
+				dryRunStep{
 					Method: "POST",
 					URL:    "/open-apis/drive/v1/files/upload_all",
 					Desc:   "If patched Markdown is at most " + sizeThreshold + ", overwrite with upload_all",
 					Body: map[string]any{
-						"file_name":   "<existing_remote_name_or_" + fileToken + ".md>",
+						"file_name":   planName,
 						"parent_type": "explorer",
 						"parent_node": "",
 						"size":        "<updated_size_bytes>",
@@ -105,19 +116,22 @@ var markdownPatchCmd = &cobra.Command{
 						"file_token":  fileToken,
 					},
 				},
-				{
+				dryRunStep{
 					Method: "POST",
 					URL:    "/open-apis/drive/v1/files/upload_prepare",
 					Desc:   "If patched Markdown exceeds " + sizeThreshold + ", initialize multipart overwrite",
 					Body: map[string]any{
-						"file_name":   "<existing_remote_name_or_" + fileToken + ".md>",
+						"file_name":   planName,
 						"parent_type": "explorer",
 						"parent_node": "",
 						"size":        "<updated_size_bytes>",
 						"file_token":  fileToken,
 					},
 				},
-			})
+			)
+			return printDryRunPlan(cmd, "Download the current Markdown file, apply the replacement locally, and overwrite only when matches are found", map[string]any{
+				"mode": mode,
+			}, steps)
 		}
 
 		token, err := resolveIdentityToken(cmd)
@@ -154,15 +168,20 @@ var markdownPatchCmd = &cobra.Command{
 
 		patchedPayload := []byte(patched)
 		if len(patchedPayload) == 0 {
-			return fmt.Errorf("Markdown 内容为空，不支持把 .md 覆盖为空文件")
+			return clierr.Usagef("Markdown 内容为空，不支持把 .md 覆盖为空文件")
 		}
 
-		fileName, err := client.FetchMarkdownFileName(fileToken, token)
-		if err != nil {
-			return err
-		}
-		if strings.TrimSpace(fileName) == "" {
-			fileName = fileToken + ".md"
+		if fileName == "" {
+			remoteName, err := client.FetchMarkdownFileName(fileToken, token)
+			if err != nil {
+				return err
+			}
+			fileName = strings.TrimSpace(remoteName)
+			if fileName == "" {
+				// 与 overwrite 一致：不能退化成 fileToken+".md" 静默重命名远端文件，取不到原名就 fail-closed
+				return fmt.Errorf("无法读取 file_token=%s 的现有文件名，拒绝以 %s.md 静默重命名远端文件；请显式指定 --name <原文件名.md>",
+					fileToken, fileToken)
+			}
 		}
 
 		result, err := client.UploadMarkdownContent(client.MarkdownUploadSpec{
@@ -197,7 +216,7 @@ func applyMarkdownPatch(original, pattern, replacement string, useRegex bool) (s
 	}
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		return "", 0, fmt.Errorf("无效的 --pattern 正则: %w", err)
+		return "", 0, clierr.Usagef("无效的 --pattern 正则: %w", err)
 	}
 	return re.ReplaceAllString(original, replacement), len(re.FindAllStringIndex(original, -1)), nil
 }
@@ -208,6 +227,7 @@ func init() {
 	markdownPatchCmd.Flags().String("pattern", "", "查找文本或 RE2 正则（必填）")
 	markdownPatchCmd.Flags().String("content", "", "替换内容（必填，允许空字符串）")
 	markdownPatchCmd.Flags().Bool("regex", false, "将 --pattern 解释为 RE2 正则")
+	markdownPatchCmd.Flags().String("name", "", "覆盖时使用的文件名（必须 .md 结尾；缺省读取远端现有名）")
 	markdownPatchCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求")
 	markdownPatchCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	markdownPatchCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")

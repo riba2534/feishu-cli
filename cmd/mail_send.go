@@ -18,7 +18,8 @@ var mailSendCmd = &cobra.Command{
   1. 默认: 构造 EML 并保存为草稿，返回 draft_id
   2. --confirm-send: 保存草稿后立即发送，返回 message_id
 
-⚠️ 首期限制: 暂不支持普通附件；CID 内联图片走 --inline-images-auto-scan 自动扫描上传。
+附件: --attach 添加本地文件（可重复或逗号分隔；整封邮件编码后 ≤25MB，可执行/脚本类扩展名被拒绝）；
+CID 内联图片走 --inline-images-auto-scan 自动扫描。
 
 必填:
   --to        收件人（逗号分隔多个地址，支持 "Name <email>" 或 "email"）
@@ -33,7 +34,8 @@ var mailSendCmd = &cobra.Command{
   --confirm-send                 保存草稿后立即发送
   --html                         强制视为 HTML（即使不含 HTML 标签）
   --plain-text                   强制视为纯文本
-  --inline-images-auto-scan      扫描 HTML 中 <img src="本地路径"> → 上传到飞书云盘 → 改写为 cid: 引用
+  --inline-images-auto-scan      扫描 HTML 中 <img src="本地路径"> → 改写为 cid: 引用并作为内联图片嵌入 EML
+  --attach                       附件路径（可重复传入或逗号分隔）
 
 权限:
   - User Access Token
@@ -81,6 +83,10 @@ var mailSendCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		attachments, err := loadMailAttachmentsFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 
 		token, err := requireUserToken(cmd, "mail send")
 		if err != nil {
@@ -112,13 +118,14 @@ var mailSendCmd = &cobra.Command{
 			BCC:      bcc,
 			Subject:  subject,
 		}
+		input.Attachments = attachments
 		if isHTML {
 			input.BodyHTML = body
 		} else {
 			input.BodyText = body
 		}
 
-		// --inline-images-auto-scan: 扫 <img src="local-path"> → drive 上传 → 改写为 cid:xxx
+		// --inline-images-auto-scan: 扫 <img src="local-path"> → 读盘作为 multipart/related 内联 part → 改写为 cid:xxx（不上传云盘）
 		// 仅在 HTML body 下生效；纯文本下跳过
 		if autoScanInline && input.BodyHTML != "" {
 			rewritten, parts, scanErr := scanAndUploadInlineImages(input.BodyHTML, mailbox, token)
@@ -200,8 +207,9 @@ func init() {
 	mailSendCmd.Flags().Bool("confirm-send", false, "保存草稿后立即发送")
 	mailSendCmd.Flags().Bool("html", false, "强制视为 HTML body")
 	mailSendCmd.Flags().Bool("plain-text", false, "强制视为纯文本")
-	mailSendCmd.Flags().Bool("inline-images-auto-scan", false, "扫描 HTML body 中 <img src=\"local-path\"> 自动上传飞书云盘并改写为 cid: 引用")
+	mailSendCmd.Flags().Bool("inline-images-auto-scan", false, "扫描 HTML body 中 <img src=\"本地路径\">，改写为 cid: 引用并作为内联图片直接嵌入邮件（不上传云盘；路径须在当前目录或 home 下，单张 ≤10MB）")
 	mailSendCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailSendCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addMailAttachFlag(mailSendCmd)
 	mustMarkFlagRequired(mailSendCmd, "to", "subject", "body")
 }

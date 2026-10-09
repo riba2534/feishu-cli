@@ -15,7 +15,7 @@ import (
 var sheetCellRE = regexp.MustCompile(`^[A-Za-z]+[1-9][0-9]*$`)
 
 var sheetImageWriteBatchCmd = &cobra.Command{
-	Use:     "write-batch <spreadsheet_token> <sheet_id>",
+	Use:     "write-batch <spreadsheet_token|url> <sheet_id>",
 	Aliases: []string{"batch-write"},
 	Short:   "批量下载并写入原生单元格图片",
 	Long: `从 JSON manifest 批量写入原生图片单元格，并通过 V3 read-rich 回读验证。
@@ -52,14 +52,17 @@ BMP/TIFF/WebP 自动转 PNG，原文件不变；HEIC/BPG 原样提交，结果�
 			return err
 		}
 
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
 		opts := client.BatchWriteSheetImageOptions{
 			Workers:         workers,
 			MaxBytes:        maxBytes,
 			AllowPrivateNet: allowPrivate,
 		}
 
-		result, runErr := client.BatchWriteSheetImages(cmd.Context(), args[0], args[1], items, opts, token)
+		result, runErr := client.BatchWriteSheetImages(cmd.Context(), target.Token, args[1], items, opts, target.UAT)
 		if output == "json" {
 			if err := printJSON(result); err != nil {
 				return err
@@ -91,7 +94,7 @@ func readSheetImageBatchManifest(manifestStr, sheetID string, in io.Reader) ([]c
 		}
 	} else if _, statErr := os.Stat(text); statErr == nil {
 		// 优先：若路径在磁盘上真实存在，直接读取文件（兼容带 [ 前缀的文件路径）
-		raw, err = os.ReadFile(text)
+		raw, err = readLocalInputFile(text)
 		if err != nil {
 			return nil, fmt.Errorf("读取 manifest 文件失败: %w", err)
 		}

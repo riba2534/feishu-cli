@@ -154,6 +154,21 @@
         "沿用已确认接收者，不默认user@example.com"
       ],
       "files": []
+    },
+    {
+      "id": 12,
+      "workflows": [
+        "msg"
+      ],
+      "prompt": "Bot 刚发到 oc_xxx 的 post 通知 om_xxx 里有错别字，直接改原消息，不要撤回重发；原消息的附件区要保留。先预览请求。",
+      "expected_output": "使用 msg edit om_xxx --markdown ... --dry-run，只能以 Bot 身份编辑本应用发出的消息；只改正文时 post 附件区保留，不撤回重发。",
+      "expectations": [
+        "命令使用 msg edit om_xxx 并带 --dry-run",
+        "说明 msg edit 只能用 Bot 身份、只能编辑本应用 Bot 发出的 text/post 消息，不传 User Token",
+        "不传 --set-attachments/--clear-attachments，并说明只改正文时附件区保留",
+        "不使用 msg delete 撤回后重发"
+      ],
+      "files": []
     }
   ]
 }

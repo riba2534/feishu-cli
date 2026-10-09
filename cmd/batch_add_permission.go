@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -27,6 +26,7 @@ var batchAddPermissionCmd = &cobra.Command{
     {"member_type": "email", "member_id": "user2@example.com", "perm": "view"},
     {"member_type": "openid", "member_id": "ou_xxxxx", "perm": "full_access"}
   ]
+  知识库（--doc-type wiki）成员可额外带 "perm_type": "container"|"single_page"。
 
 权限级别:
   view          查看权限
@@ -50,7 +50,7 @@ var batchAddPermissionCmd = &cobra.Command{
 		membersFile, _ := cmd.Flags().GetString("members-file")
 		notification, _ := cmd.Flags().GetBool("notification")
 
-		data, err := os.ReadFile(membersFile)
+		data, err := readLocalInputFile(membersFile)
 		if err != nil {
 			return fmt.Errorf("读取成员列表文件失败: %w", err)
 		}
@@ -75,10 +75,19 @@ var batchAddPermissionCmd = &cobra.Command{
 			if m.Perm == "" {
 				return fmt.Errorf("第 %d 个成员的 perm 不能为空", i+1)
 			}
+			permType, err := validatePermType(m.PermType, docType)
+			if err != nil {
+				return fmt.Errorf("第 %d 个成员: %w", i+1, err)
+			}
+			m.PermType = permType
 		}
 
-		if err := client.BatchAddPermission(docToken, docType, members, notification); err != nil {
+		userToken, err := resolvePermIdentity(cmd)
+		if err != nil {
 			return err
+		}
+		if err := client.BatchAddPermission(docToken, docType, members, notification, userToken); err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		fmt.Printf("批量添加权限成功！\n")

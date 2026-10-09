@@ -63,8 +63,12 @@ var updatePermissionCmd = &cobra.Command{
 
 		memberType = normalizePermMemberType(memberType)
 
-		if err := client.UpdatePermission(docToken, docType, memberID, memberType, perm); err != nil {
+		userToken, err := resolvePermIdentity(cmd)
+		if err != nil {
 			return err
+		}
+		if err := client.UpdatePermission(docToken, docType, memberID, memberType, perm, userToken); err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		fmt.Printf("权限更新成功！\n")

@@ -1,6 +1,8 @@
 package event
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -140,6 +142,28 @@ func TestValidateOutputDir(t *testing.T) {
 		if err := ValidateOutputDir(dir); err == nil {
 			t.Errorf("ValidateOutputDir(%q) expected error", dir)
 		}
+	}
+}
+
+// 相对路径同样可能落进敏感目录（cwd 为家目录时的 .ssh），按 safefile 拒绝名单拒绝。
+func TestValidateOutputDirRejectsSensitiveRelative(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	wd, _ := os.Getwd()
+	if err := os.Chdir(home); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(wd) }()
+	for _, dir := range []string{".ssh", ".ssh/events", "./.feishu-cli/events"} {
+		if err := ValidateOutputDir(dir); err == nil || !strings.Contains(err.Error(), "敏感目录") {
+			t.Errorf("ValidateOutputDir(%q) 应拒绝敏感目录，得到 %v", dir, err)
+		}
+	}
+	if err := ValidateOutputDir("events"); err != nil {
+		t.Errorf("普通相对目录应放行: %v", err)
 	}
 }
 

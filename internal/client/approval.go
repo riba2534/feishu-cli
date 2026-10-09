@@ -303,10 +303,11 @@ func doApprovalUserGet(apiPath string, pathParams, query map[string]string, user
 	if err != nil {
 		return nil, fmt.Errorf("%s失败: %w", action, err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s失败: HTTP %d, body: %s", action, resp.StatusCode, string(resp.RawBody))
+	// 先按业务信封解析再看 HTTP 状态：审批业务错误常随 HTTP 400 下发；
+	// HTTP 200 仍可能带业务错误码，Raw / --output raw-json 必须先检查再吐原始 body。
+	if err := CheckAPIResponse(action, resp); err != nil {
+		return nil, err
 	}
-	// HTTP 200 仍可能带业务错误码；Raw / --output raw-json 必须先检查再吐原始 body。
 	if _, err := parseGenericApprovalData(resp.RawBody, action); err != nil {
 		return nil, err
 	}
@@ -680,8 +681,8 @@ func doApprovalPost(apiPath string, body map[string]any, userIDType, userAccessT
 	if err != nil {
 		return nil, fmt.Errorf("%s失败: %w", action, err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s失败: HTTP %d, body: %s", action, resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse(action, resp); err != nil {
+		return nil, err
 	}
 	return parseGenericApprovalData(resp.RawBody, action)
 }

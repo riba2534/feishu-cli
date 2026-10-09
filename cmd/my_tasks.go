@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -11,7 +12,10 @@ import (
 var myTasksCmd = &cobra.Command{
 	Use:   "my",
 	Short: "查看我的任务",
-	Long: `查看分配给当前用户的任务列表。
+	Long: `查看分配给当前用户的任务列表（GET /task/v2/tasks?type=my_tasks）。
+
+默认同时返回已完成和未完成的任务（与官方一致）；只看未完成用 --uncompleted，只看已完成用 --completed，
+两者不能同时使用。
 
 此命令需要 User Access Token（用户授权），会通过完整优先级链自动解析：
   1. --user-access-token 参数
@@ -27,8 +31,11 @@ var myTasksCmd = &cobra.Command{
   --output, -o      输出格式（json）
 
 示例:
-  # 查看我的未完成任务
+  # 查看我的全部任务（含已完成）
   feishu-cli task my
+
+  # 只看未完成的任务
+  feishu-cli task my --uncompleted
 
   # 查看我的已完成任务
   feishu-cli task my --completed
@@ -39,6 +46,12 @@ var myTasksCmd = &cobra.Command{
   # JSON 格式输出
   feishu-cli task my --output json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		completedFlag, _ := cmd.Flags().GetBool("completed")
+		uncompletedFlag, _ := cmd.Flags().GetBool("uncompleted")
+		if completedFlag && uncompletedFlag {
+			return clierr.Usagef("--completed 与 --uncompleted 不能同时使用（都不传则返回全部任务）")
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -50,8 +63,6 @@ var myTasksCmd = &cobra.Command{
 
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
-		completedFlag, _ := cmd.Flags().GetBool("completed")
-		uncompletedFlag, _ := cmd.Flags().GetBool("uncompleted")
 
 		var completed *bool
 		if completedFlag {
@@ -87,11 +98,8 @@ var myTasksCmd = &cobra.Command{
 				fmt.Printf("[%d] %s %s\n", i+1, status, task.Summary)
 				fmt.Printf("    ID: %s\n", task.Guid)
 				if task.Description != "" {
-					desc := task.Description
-					if len(desc) > 50 {
-						desc = desc[:50] + "..."
-					}
-					fmt.Printf("    描述: %s\n", desc)
+					// 按 rune 截断：按字节切中文会切出半个字符（乱码）
+					fmt.Printf("    描述: %s\n", truncateRunes(task.Description, 50))
 				}
 				if task.DueTime != "" {
 					fmt.Printf("    截止: %s\n", task.DueTime)

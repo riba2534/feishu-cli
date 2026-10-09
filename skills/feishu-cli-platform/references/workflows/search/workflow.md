@@ -1,293 +1,148 @@
-# 飞书搜索
+# 飞书全局搜索
 
-搜索飞书云文档、消息和应用。`search docs` / `search apps` **必须使用 User Access Token**。`search messages` 走 current IM 端点，使用 `--as bot|user|auto`。
+搜索飞书云文档、消息和应用（`search docs` / `drive search` / `search messages` / `search apps`）。业务域内的查询
+（审批、会议、邮箱、任务等）不走这里；按文件夹/知识库/创建者精筛文档用本文的 `drive search`。
 
-> **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
+| 命令 | 身份 | scope |
+|---|---|---|
+| `search docs` | 必须 User | `search:docs:read` |
+| `drive search` | 必须 User | `search:docs:read` |
+| `search apps` | 必须 User | `search:app`（不在 `--recommend` 推荐集内，需 `--scope "search:app"` 显式申请） |
+| `search messages` | `--as bot\|user\|auto`，默认 auto | `search:message` |
+
+参数映射、文档类型与 JSON 输出格式见 `references/commands.md`；身份规则见 [身份选择](../auth/references/identity.md)。
 
 ## 执行流程
 
-先选择本次身份：`search docs/apps` 必须 User；`search messages --as bot` 不依赖个人登录，确认应用已开通 scope 后直接搜索。以下登录预检仅适用于本地 User Token；完整规则见 [身份选择](../auth/references/identity.md)。
+1. **选身份**：`search docs/apps` 与 `drive search` 必须 User；`search messages --as bot` 不依赖个人登录，确认应用已开通
+   `search:message`（`auth scopes --scope "search:message" -o json` 的 `tenant_enabled`）后直接搜索；
+   auto 在已配置 User 但刷新失败时直接报错，不会静默切 Bot。
+2. **预检本地 User Token**（仅 User 路径）：
 
-### 1. 预检 scope（推荐 AI Agent 使用）
+   ```bash
+   feishu-cli auth check --scope "search:docs:read search:message"
+   ```
 
-```bash
-feishu-cli auth check --scope "search:docs:read"
-# 或同时检查多个（含搜索应用）
-feishu-cli auth check --scope "search:docs:read search:message search:app"
-```
-
-根据返回结果判断：
-- `ok=true` → 直接执行搜索（步骤 3）
-- `error=not_logged_in` 或 `error=token_expired` → 登录（步骤 2）
-- `missing=[...]` 非空 → 先在飞书开放平台为应用开通缺失的 scope（见步骤 2），然后重新登录
-
-### 2. 登录获取 Token（如需要）
-
-**本项目使用 Device Flow（RFC 8628）授权**，无需任何 redirect URL 配置。AI Agent 推荐用后台阻塞模式：
-
-```bash
-# 后台启动（Claude Code 的 run_in_background=true）
-feishu-cli auth login --scope "search:docs:read search:message" --json
-```
-
-首行 stdout 输出 `{"event":"device_authorization","verification_uri_complete":"...","user_code":"...","expires_in":240,...}`（授权链接有效期以服务端返回的 `expires_in` 为准，CLI 兜底 240s）。将 `verification_uri_complete` 展示给用户，等用户在浏览器完成授权后后台进程自动退出，第二行 stdout 输出 `{"event":"authorization_complete",...}`。
-
-如果 `auth check` 返回 `missing=[...]`，说明应用还没开通所需权限。**feishu-cli 不做权限申请自动化**——引导用户自己去飞书开放平台：
-
-1. 打开飞书开放平台 → 你的应用 → 权限管理页面
-2. 搜索并开通缺失的 scope（例如 `search:docs:read`、`search:message`），或复制 README 的完整 JSON 一次性导入
-3. 等待 tenant 管理员审批（如果需要）
-4. 审批通过后再执行 `feishu-cli auth login --scope "search:docs:read search:message" --json`
-
-> 详细的 AI Agent 授权约定见 `feishu-cli-platform` 技能。
-
-### 3. 执行搜索
-
-本地 User 模式自动从当前 profile 读取 Token；显式 `--as bot` 的消息搜索保持 Bot 身份。
-
----
+   - `ok=true` → 直接搜索。
+   - `error=not_logged_in` / `token_expired` → 按 auth 工作流的两步模式登录，如
+     `feishu-cli auth login --domain search --recommend --no-wait --json`。
+   - `missing` 非空 → 先 `feishu-cli auth scopes --scope "<缺失的>" -o json` 区分：`app_not_enabled` /
+     `tenant_only` 需应用管理员在开放平台开通并发布；`user_not_granted` 直接 `auth login --scope "<缺失的>"` 补授。
+3. **执行搜索**：本地 User 模式自动从当前 profile 读取 Token（含自动刷新）。
 
 ## 搜索云文档
 
-搜索当前用户有权访问的飞书云文档和 Wiki。**scope: `search:docs:read`**
-
 ```bash
-feishu-cli search docs "关键词" [选项]
+feishu-cli search docs "关键词" [--docs-types docx,wiki] [--count 20] [--page-token <page_token>] [--owner-ids ou_xxx] [--chat-ids oc_xxx] [-o json]
 ```
 
-### 选项
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--docs-types` | string | 全部 | 文档类型过滤（逗号分隔，小写） |
-| `--count` | int | 20 | 返回数量（0-50） |
-| `--offset` | int | 0 | 偏移量（offset + count < 200） |
-| `--owner-ids` | string | — | 文件所有者 Open ID（逗号分隔） |
-| `--chat-ids` | string | — | 文件所在群 ID（逗号分隔） |
-| `-o json` | string | — | JSON 格式输出 |
-
-### 文档类型（小写）
-
-| 类型 | 说明 | 类型 | 说明 |
-|------|------|------|------|
-| `doc` | 旧版文档 | `docx` | 新版文档 |
-| `sheet` | 电子表格 | `slides` | 幻灯片 |
-| `bitable` | 多维表格 | `mindnote` | 思维笔记 |
-| `file` | 文件 | `wiki` | 知识库文档 |
-| `shortcut` | 快捷方式 | | |
-
-### 示例
+- 底层是 Search v2，默认同时搜云盘与知识库。`--count` 1–20（默认 20，超过 20 按 20 处理并在 stderr 提示）；
+  翻页用上一页输出的 `--page-token`。`--offset` 已废弃，传大于 0 的值报用法错误（退出码 2）。
+- `--docs-types` 用小写：`doc` `docx` `sheet` `slides` `bitable` `mindnote` `file` `wiki` `shortcut` `folder` `catalog`；
+  `--owner-ids` 映射为 v2 的 `creator_ids` 过滤，`--chat-ids` 映射为 `chat_ids`。
+- JSON 保留 `Total` / `HasMore` / `ResUnits`（`DocsToken`/`DocsType`/`Title`/`OwnerID`/`URL`）并新增 `PageToken`；
+  `DocsType` 为小写类型名，`Title` 已去掉 `<h>` 高亮标记。
+- 结果的 `URL` 按配置品牌拼成 `https://www.feishu.cn/...`（Lark 为 `https://www.larksuite.com/...`），打开后由服务端重定向到租户域名。
+- 后续操作必须看 `DocsType`，不能把所有 `DocsToken` 都交给 `doc` 命令：docx 走 doc，sheet 走 sheet，
+  wiki 先按节点类型解析，bitable/file/slides 分别走对应命令。
 
 ```bash
-# 基础搜索
-feishu-cli search docs "产品需求"
-
-# 只搜索新版文档和 Wiki
 feishu-cli search docs "技术方案" --docs-types docx,wiki
-
-# 搜索电子表格
-feishu-cli search docs "数据报表" --docs-types sheet
-
-# 分页获取更多
-feishu-cli search docs "季度报告" --count 50
-
-# 分页查询：获取第一页（20 条）
-feishu-cli search docs "季度报告" --count 20 --offset 0
-# 分页查询：获取第二页
-feishu-cli search docs "季度报告" --count 20 --offset 20
-
-# JSON 格式输出（适合程序解析）
-feishu-cli search docs "产品需求" -o json
+feishu-cli search docs "季度报告" --count 10 -o json
+feishu-cli search docs "季度报告" --count 10 --page-token "<上一页 PageToken>"
 ```
 
-### v1 vs v2：何时用 `drive search`？
+### `search docs` 与 `drive search`
 
-`search docs`（v1，本节）走 `/open-apis/suite/docs-api/search/object`，filter 简单（owner_ids / chat_ids / docs_types）。
-**`drive search`**（v2，详见 `feishu-cli-storage` 技能 §9）走 `/open-apis/search/v2/doc_wiki/search`，支持更精细的扁平 filter：
+两者底层与官方 CLI 一致，都使用 Search v2（`POST /open-apis/search/v2/doc_wiki/search`），都必须 User Token（没有 `--as`）、
+需要 `search:docs:read`；区别在 CLI 暴露的过滤参数：`search docs` 面向关键词粗筛（类型、所有者、所在群），
+`drive search` 提供文件夹（`--folder-tokens`）、知识空间（`--space-ids`）、创建者/分享者、仅标题/仅评论与排序等扁平 filter，
+按位置或维度精筛时用它。
 
-- `--folder-tokens` 限定云盘文件夹（与 `--space-ids` 互斥）
-- `--space-ids` 限定知识库 space
-- `--creator-ids` / `--sharer-ids` 多人扇出
-- `--only-title` / `--only-comment` 维度限定
-- `--sort` 排序（edit_time / open_time / create_time / default）
-
-两者都需要 `search:docs:read`，按需选择：粗筛用 v1，精筛用 v2。
-
-### JSON 输出格式
-
-```json
-{
-  "Total": 35367,
-  "HasMore": true,
-  "ResUnits": [
-    {
-      "DocsToken": "doc_token_xxx",
-      "DocsType": "docx",
-      "Title": "产品需求文档 - Q2",
-      "OwnerID": "ou_xxx",
-      "URL": "https://feishu.cn/docx/doc_token_xxx"
-    }
-  ]
-}
+```bash
+feishu-cli drive search --query "季度报告" --doc-types DOCX,SHEET --sort edit_time
+feishu-cli drive search --query "API 设计" --folder-tokens fldxxx,fldyyy     # 限定云盘文件夹
+feishu-cli drive search --query "RFC" --space-ids 7012345678901234567       # 限定知识空间
+feishu-cli drive search --query "项目周会" --only-title
+feishu-cli drive search --query "复盘" --creator-ids ou_xxx,ou_yyy
+feishu-cli drive search --query "决策" --chat-ids oc_xxx --sharer-ids ou_xxx
+feishu-cli drive search --query "阻塞" --only-comment
+feishu-cli drive search --query "项目" --page-size 20 -o json
+feishu-cli drive search --query "项目" --page-token "<上一页 page_token>"
 ```
 
-后续操作必须同时看 `DocsType`，不能把所有 `DocsToken` 都交给 `doc get/export`：docx 走 doc，
-sheet 走 sheet，wiki 先按 node 类型解析，bitable/file/slides 分别走对应命令。
-
----
+- `--doc-types` 取值大写：`DOC` / `DOCX` / `SHEET` / `BITABLE` / `MINDNOTE` / `FILE` / `WIKI` / `FOLDER` / `CATALOG` / `SLIDES` / `SHORTCUT`。
+- `--folder-tokens` 与 `--space-ids` 互斥；`--sort`：default / edit_time / edit_time_asc / open_time / create_time；
+  `--page-size` 1-20（默认 15）；`--query` 可空（纯按 filter 浏览）。
+- 标题里的 `<h>...</h>` 高亮标记 CLI 自动剥离；JSON 顶层带 `total`、`has_more`、`page_token`、`items`。
 
 ## 搜索消息
 
-搜索飞书消息记录。走 **`POST /open-apis/im/v1/messages/search`**（不再使用 `/search/v2/message`）。**scope: `search:message`**。端点支持 User 与 Bot：`--as bot|user|auto`（默认 auto；已配置 User 但刷新失败 fail-closed）。query 可省略，仅靠 filter 搜索。
-
-CLI 仍接受旧 flag 写法，会映射到 current filter：`--start-time`/`--end-time` → `filter.time_range`；`--chat-type group_chat|p2p_chat` → `group|p2p`；`--message-type media` → `include_attachment_types: ["video"]`。
+走 `POST /open-apis/im/v1/messages/search`。query 可省略，仅靠过滤条件搜索。
 
 ```bash
-feishu-cli search messages "关键词" [选项]
+feishu-cli search messages ["关键词"] [过滤条件] [--enrich] [--page-all --page-limit N] [--format json|pretty|table|ndjson|csv] [--jq '<expr>']
 ```
 
-### 选项
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `--chat-ids` | string | 限定群聊范围（逗号分隔）→ `filter.chat_ids` |
-| `--from-ids` | string | 限定发送者 ID（逗号分隔）→ `filter.from_ids` |
-| `--at-chatter-ids` | string | 限定被@的用户 ID（逗号分隔）→ `filter.at_chatter_ids` |
-| `--message-type` | string | `file`/`image`/`media`（`media` 映射为 `video`）→ `include_attachment_types` |
-| `--chat-type` | string | `group_chat`/`p2p_chat`（也接受 `group`/`p2p`） |
-| `--from-type` | string | 发送者类型：`bot`/`user` → `from_types` |
-| `--start-time` | string | 起始时间（RFC3339 或 Unix 秒）→ `filter.time_range.start_time` |
-| `--end-time` | string | 结束时间（RFC3339 或 Unix 秒）→ `filter.time_range.end_time` |
-| `--page-size` | int | 每页数量（默认 20） |
-| `--page-token` | string | 分页 token（上一页返回） |
-| `--page-all` | bool | 自动翻页（最多 40 页） |
-| `--page-limit` | int | 1–40；`--page-all` 时 `0` 等于 40（不是无限）；负数发网前失败 |
-| `--enrich` | bool | 补全内容/发送者/群名/时间（opt-in，额外 API 调用） |
-| `--card-content-type` | string | interactive 卡片富化格式：`user`（默认，提取 `card_texts`）/ `raw`（平台内部完整 cardDSL）/ `rendered`（OAPI 渲染版/降级版）。**仅在 `--enrich` 时生效**，非 enrich 路径忽略 |
-| `--format` | string | 结构化输出：`json`/`pretty`/`table`/`ndjson`/`csv` |
-| `--jq` | string | 用 jq 表达式过滤结构化输出（非法语法在身份解析/发网前失败） |
-| `-o json` | string | JSON 格式输出（等价 `--format json`） |
-
-> **`--page-all` 上限 40 页**：`--page-limit` 范围 1–40；`0` 在 `--page-all` 时等于 40（不是无限）。负数会在发网前失败。空/重复游标也会停止以免死循环。
-
-> **默认 vs `--enrich`**：默认仅返回消息 ID（`-o json` 输出 `{MessageIDs,HasMore,PageToken}`），与历史行为一致、向后兼容。加 `--enrich` 才会多发 `GET /im/v1/messages/mget`（每批最多 50）等 API 补全内容/发送者/群名/时间，`-o json` 此时返回富化后的数组。
-
-### 示例
+- **默认只返回消息 ID**：人类可读列表，`-o json` / `--format json` 为 `{MessageIDs, HasMore, PageToken}`（有服务端提示时多一个 `notice`）。
+  拿 ID 后用 `feishu-cli msg get <message_id>` 或 `msg mget` 看详情。
+- **`--enrich`** 额外调用 `GET /im/v1/messages/mget`（每批最多 50）等接口补全内容、发送者、群名和时间，
+  JSON 变为对象数组。`--card-content-type user|raw|rendered` 只在 `--enrich` 时生效。
+- **过滤条件**：`--chat-ids`、`--from-ids`、`--at-chatter-ids`（逗号分隔）；`--chat-type group_chat|p2p_chat`
+  （也接受 `group`/`p2p`）；`--from-type` / `--exclude-from-type bot|user`；`--is-at-me`；
+  `--message-type file|image|media|video|link`（`media` 映射为 `video`）；`--start-time` / `--end-time` 接受
+  RFC3339、`YYYY-MM-DD` 或 Unix 秒。
+- **分页**：`--page-size` 1–50（默认 20，越界报错）；`--page-all` 最多 40 页，`--page-limit` 1–40，
+  `0` 在 `--page-all` 时等于 40（不是无限），负数发网前失败；空/重复游标也会停止。
+- **服务端 notice**：如查询词超过 50 字被截断时，CLI 把提示写到 stderr（`[提示] 服务端提示: ...`），
+  非 enrich 的 JSON 额外带 `notice` 字段。看到截断提示应缩短查询词。`msg search-chats` 同样处理。
+- 非法 `--format` / `--jq` 在身份解析和发网前失败。
 
 ```bash
-# 搜索消息（默认返回消息 ID）
-feishu-cli search messages "上线"
-
-# 富化：补全内容/发送者/群名/时间
-feishu-cli search messages "上线" --enrich
+# 富化后表格输出
 feishu-cli search messages "上线" --enrich --format table
 
-# 富化 + 控制卡片消息格式（仅 --enrich 生效）
-feishu-cli search messages "告警" --enrich --card-content-type raw
-
-# 富化 + 自动翻页（最多 5 页，防失控）
-feishu-cli search messages "项目" --enrich --page-all --page-limit 5 --format csv
-
-# 搜索私聊消息（search-chats 无法搜到 p2p 会话，用此方式替代）
+# 私聊消息（msg search-chats 搜不到 p2p 会话，用这个替代）
 feishu-cli search messages "你好" --chat-type p2p_chat
 
-# 搜索群聊中的文件消息
-feishu-cli search messages "周报" --chat-type group_chat --message-type file
+# 群聊里的文件消息，限定时间范围
+feishu-cli search messages "周报" --chat-type group_chat --message-type file --start-time 2026-01-01 --end-time 2026-01-31
 
-# 搜索机器人消息
-feishu-cli search messages "告警" --from-type bot
+# 指定群 + 自动翻页（最多 5 页）+ CSV
+feishu-cli search messages "项目" --chat-ids oc_xxx --enrich --page-all --page-limit 5 --format csv
 
-# 限定时间范围
-feishu-cli search messages "项目" --start-time 1704067200 --end-time 1704153600
-
-# 限定特定群
-feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
+# 应用身份搜索（无人值守）
+feishu-cli search messages "告警" --from-type bot --as bot
 ```
-
-> **提示**：搜索群聊 API（`search-chats`）**无法搜到 p2p 私聊会话**。要查找私聊内容，使用 `search messages --chat-type p2p_chat`。
-
-### JSON 输出格式
-
-默认（无 `--enrich`）：
-
-```json
-{
-  "MessageIDs": ["om_xxx", "om_yyy"],
-  "PageToken": "ea9dcb2f...",
-  "HasMore": true
-}
-```
-
-返回的 `MessageIDs` 可用 `feishu-cli msg get <message_id>` 获取消息详情。
-
-加 `--enrich` 时返回富化后的数组：
-
-```json
-[
-  {
-    "message_id": "om_xxx",
-    "msg_type": "text",
-    "chat_id": "oc_xxx",
-    "chat_name": "项目群",
-    "sender_id": "ou_xxx",
-    "sender_name": "张三",
-    "create_time": "1704067200000",
-    "time": "2024-01-01 08:00:00",
-    "text": "今天上线"
-  }
-]
-```
-
----
 
 ## 搜索应用
 
-搜索飞书应用。**scope: `search:app`**（飞书官方注册表名，可在飞书开放平台 → 应用 → 权限管理搜索开通；该 scope `recommend=false`，默认不会被 `auth login --recommend` 自动包含，需要 `auth login --scope "search:app"` 显式申请。若飞书侧已重命名，以 `feishu-cli auth check --scope "search:app"` 报错信息为准。）
-
 ```bash
-feishu-cli search apps "关键词" [选项]
+feishu-cli search apps "关键词" [--page-size 20] [--page-token <token>] [--user-id-type open_id] [-o json]
 ```
 
-### 选项
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `--page-size` | int | 每页数量（默认 20） |
-| `--page-token` | string | 分页 token |
-| `-o json` | string | JSON 格式输出 |
-
-### 示例
-
-```bash
-feishu-cli search apps "审批"
-feishu-cli search apps "OKR" --page-size 50
-```
-
----
+`search:app` 不在 `auth login --recommend` 的推荐集内；需要时先 `auth scopes --scope "search:app"` 确认应用已开通，
+再 `auth login --scope "search:app"` 显式申请。
 
 ## 常见问题
 
 | 问题 | 原因 | 解决 |
 |------|------|------|
-| "缺少 User Access Token" | 从未登录 | 执行两步式登录流程 |
-| "User Access Token 已过期" | access + refresh token 都过期 | 重新登录 |
-| 99991679 权限错误提到搜索应用 | 登录 scope 未包含 `search:app`，或飞书开放平台未开通该权限 | `feishu-cli auth login --scope "search:app"`；如仍报错，去飞书开放平台权限管理页搜索 `search:app` 并开通（必要时联系 tenant 管理员审批） |
-| 99991679 权限错误提到 `search:docs:read` | 登录时未包含 `search:docs:read` scope | 重新登录，scope 加上 `search:docs:read` |
-| 搜索结果为空 | 关键词不匹配或无权限文档 | 尝试更宽泛的关键词，或检查文档权限 |
-| offset + count 超过 200 | 飞书 API 限制 | 最多翻到第 200 条结果 |
-
-**完整的认证流程和 Token 管理请参考 `feishu-cli-platform` 技能。**
-
----
+| 缺少 User Access Token（退出码 3） | 从未登录 | 按 auth 工作流两步模式登录 |
+| User Token 已过期 | access + refresh token 都失效 | 重新登录 |
+| 99991679 提到 `search:app` / `search:docs:read`（退出码 3） | 用户未授权该 scope，或应用未开通（服务端对未开通的 user scope 也可能报 99991679） | `auth scopes --scope "<scope>"` 确认应用侧；`app_not_enabled` 先在开放平台开通，`user_not_granted` 执行 `auth login --scope "<scope>"` |
+| 99991672 | 应用未开通 scope | 按 stderr 的开放平台链接开通并发布，重新登录修不好 |
+| 搜索结果为空 | 关键词不匹配、无权限，或 `--as bot` 时应用看不到对应会话 | 换更宽泛的关键词，确认身份与可见范围 |
+| `search docs --offset` 报用法错误（退出码 2） | v2 端点只能按游标翻页 | 去掉 `--offset`，用上一页输出的 `--page-token` |
 
 ## 与其他技能的分工
 
 | 场景 | 使用技能 |
 |------|---------|
-| 按关键词搜索文档/应用 | **feishu-cli-platform**（本技能） |
-| 按关键词搜索消息（含高级筛选） | **feishu-cli-platform**（本技能） |
-| 浏览群聊历史消息、搜索群聊列表 | feishu-cli-messaging |
-| Reaction/Pin/删除/获取消息详情 | feishu-cli-messaging |
-| 群聊信息管理、成员管理 | feishu-cli-messaging |
+| 按关键词搜索文档/应用/消息（含高级过滤），按文件夹、知识库精筛云文档（`drive search`） | **feishu-cli-platform**（本工作流） |
+| 云盘文件上传下载、目录浏览（`file list`） | feishu-cli-storage |
+| 浏览群聊历史消息、搜索群聊列表（`msg search-chats`） | feishu-cli-messaging |
+| Reaction/Pin/删除/获取消息详情、群成员管理 | feishu-cli-messaging |
 
-搜索消息与浏览聊天记录的区别：搜索（`search messages`）用关键词跨会话检索，返回消息 ID 列表；浏览（`msg history`）获取指定会话的连续消息流。如果用户的意图是"找到包含某关键词的消息"用搜索，"看看某个群最近在聊什么"用浏览。
+搜索（`search messages`）用关键词跨会话检索，返回消息 ID 列表；浏览（`msg history`）获取指定会话的连续消息流。
+用户的意图是"找到包含某关键词的消息"用搜索，"看看某个群最近在聊什么"用浏览。

@@ -18,12 +18,12 @@ var minutesApplyPermissionCmd = &cobra.Command{
 当你对某个妙记没有访问权限（例如 minutes get 返回 2091005 无权限）时，用本命令发起权限申请。
 
 参数:
-  --minute-token  妙记 Token（必填）
+  --minute-token  妙记 Token 或妙记链接（https://xxx.feishu.cn/minutes/<token>），必填
   --perm          申请的权限类型：view（查看）/ edit（编辑），必填
   --output, -o    输出格式（json）
 
 权限:
-  需要 User Access Token + minutes:permission:apply 权限
+  默认 User 身份（--as user），可用 --as bot|auto 切换；需要 minutes:permission:apply 权限
 
 示例:
   # 申请查看权限
@@ -36,19 +36,21 @@ var minutesApplyPermissionCmd = &cobra.Command{
 			return err
 		}
 
-		token, err := requireUserToken(cmd, "minutes apply-permission")
-		if err != nil {
-			return err
-		}
-
-		minuteToken, _ := cmd.Flags().GetString("minute-token")
+		rawMinute, _ := cmd.Flags().GetString("minute-token")
 		perm, _ := cmd.Flags().GetString("perm")
 		output, _ := cmd.Flags().GetString("output")
 
-		if err := ensureMinuteToken(minuteToken); err != nil {
+		minuteToken, err := normalizeMinuteTokenInput(rawMinute)
+		if err != nil {
 			return err
 		}
 		if err := validateEnum(perm, "权限类型", []string{"view", "edit"}); err != nil {
+			return err
+		}
+
+		// 本地参数校验通过后再解析身份，用法错误（exit 2）不被"未登录"（exit 3）遮住
+		token, err := resolveVCReadIdentity(cmd)
+		if err != nil {
 			return err
 		}
 
@@ -74,9 +76,10 @@ var minutesApplyPermissionCmd = &cobra.Command{
 
 func init() {
 	minutesCmd.AddCommand(minutesApplyPermissionCmd)
-	minutesApplyPermissionCmd.Flags().String("minute-token", "", "妙记 Token（必填）")
+	minutesApplyPermissionCmd.Flags().String("minute-token", "", "妙记 Token 或妙记链接（必填）")
 	minutesApplyPermissionCmd.Flags().String("perm", "", "申请的权限类型：view / edit（必填）")
 	minutesApplyPermissionCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	minutesApplyPermissionCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addVCReadAsFlag(minutesApplyPermissionCmd)
 	mustMarkFlagRequired(minutesApplyPermissionCmd, "minute-token", "perm")
 }

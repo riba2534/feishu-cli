@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -16,8 +18,9 @@ import (
 // 端点 ground truth（已实测印证）：
 //
 // upload（3 步编排）:
-//   [1] GET  /open-apis/base/v3/bases/{bt}/tables/{tid}/fields/{fid}        校验是附件字段（本实现略过，仅做核心 2 步）
+//   [1] GET  /open-apis/base/v3/bases/{bt}/tables/{tid}/fields/{fid}        校验是附件字段
 //   [2] POST /open-apis/drive/v1/medias/upload_all                          parent_type=bitable_file, parent_node={bt}
+//        （>20MB：medias/upload_prepare → upload_part → upload_finish）
 //   [3] POST /open-apis/base/v3/bases/{bt}/tables/{tid}/append_attachments  body {"attachments":{rec:{fld:[{file_token}]}}}
 //
 // download（2 步编排，lark base +record-download-attachment --dry-run 印证）:
@@ -74,9 +77,11 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 	Short: "上传本地文件并追加到记录的附件单元格",
 	Long: `上传一个或多个本地文件，把返回的 file_token 追加到记录的附件字段单元格。
 
-编排（2 步核心）:
-  [1] POST /open-apis/drive/v1/medias/upload_all  上传到 Base（parent_type=bitable_file）
-  [2] POST /open-apis/base/v3/bases/{bt}/tables/{tid}/append_attachments  追加 file_token 到单元格
+编排（3 步）:
+  [1] GET  /open-apis/base/v3/bases/{bt}/tables/{tid}/fields/{fid}  校验目标字段是附件字段
+  [2] POST /open-apis/drive/v1/medias/upload_all  上传到 Base（parent_type=bitable_file）；
+      >20MB 的文件自动走 upload_prepare / upload_part / upload_finish 分片上传（单文件上限 2GB）
+  [3] POST /open-apis/base/v3/bases/{bt}/tables/{tid}/append_attachments  追加 file_token 到单元格
 
 必填:
   --base-token   多维表格 base_token
@@ -92,6 +97,13 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
+		files, _ := cmd.Flags().GetStringArray("file")
+		// 敏感目录在任何网络请求（含 wiki 链接解析）之前拒绝；存在性等检查见下方本地预检（dry-run 不要求文件存在）
+		for _, fp := range files {
+			if err := safefile.ValidateInputPath(fp); err != nil {
+				return fmt.Errorf("--file 无效: %w", err)
+			}
+		}
 		baseToken, err := resolveBaseToken(cmd)
 		if err != nil {
 			return err
@@ -99,7 +111,6 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 		tableID, _ := cmd.Flags().GetString("table-id")
 		recordID, _ := cmd.Flags().GetString("record-id")
 		fieldID, _ := cmd.Flags().GetString("field-id")
-		files, _ := cmd.Flags().GetStringArray("file")
 		if tableID == "" || recordID == "" || fieldID == "" {
 			return fmt.Errorf("--table-id / --record-id / --field-id 必填")
 		}
@@ -114,31 +125,62 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 		// 不在 records 子路径下。
 		appendPath := client.BaseV3Path("bases", baseToken, "tables", tableID, "append_attachments")
 
+		fieldPath := client.BaseV3Path("bases", baseToken, "tables", tableID, "fields", fieldID)
+
 		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
 			steps := []map[string]any{
 				{
-					"desc":   "[1] 上传本地文件到 Base 作为附件媒体（multipart/form-data）",
+					"desc":   "[1] 读取目标字段，确认是附件字段",
+					"method": "GET",
+					"url":    fieldPath,
+				},
+			}
+			if anyFileNeedsMultipart(files) {
+				steps = append(steps, map[string]any{
+					"desc":   "[2] >20MB 的文件分片上传：upload_prepare → upload_part（逐片）→ upload_finish；其余文件 upload_all",
 					"method": "POST",
-					"url":    "/open-apis/drive/v1/medias/upload_all",
+					"url":    "/open-apis/drive/v1/medias/upload_prepare",
 					"body": map[string]any{
-						"parent_type": "bitable_file",
+						"parent_type": client.BitableAttachmentParentType,
 						"parent_node": baseToken,
 						"files":       files,
 					},
-				},
-				{
-					"desc":   "[2] 把上传得到的 file_token 追加到附件单元格",
+				})
+			} else {
+				steps = append(steps, map[string]any{
+					"desc":   "[2] 上传本地文件到 Base 作为附件媒体（multipart/form-data）",
 					"method": "POST",
-					"url":    appendPath,
-					"body":   bitableAttachmentCellBody(recordID, fieldID, []string{"<uploaded_file_token>"}),
-				},
+					"url":    "/open-apis/drive/v1/medias/upload_all",
+					"body": map[string]any{
+						"parent_type": client.BitableAttachmentParentType,
+						"parent_node": baseToken,
+						"files":       files,
+					},
+				})
 			}
+			steps = append(steps, map[string]any{
+				"desc":   "[3] 把上传得到的 file_token 追加到附件单元格",
+				"method": "POST",
+				"url":    appendPath,
+				"body":   bitableAttachmentCellBody(recordID, fieldID, []string{"<uploaded_file_token>"}),
+			})
 			return renderAttachmentDryRun(
 				cmd,
-				"2 步编排：上传本地文件到 Base → 追加 file_token 到附件单元格",
+				"3 步编排：校验附件字段 → 上传本地文件到 Base（>20MB 自动分片）→ 追加 file_token 到附件单元格",
 				steps,
 				map[string]any{"base_token": baseToken, "table_id": tableID, "record_id": recordID, "field_id": fieldID},
 			)
+		}
+
+		// 本地预检：文件存在、不是目录、不超过 2GB（先于任何写操作）
+		for _, fp := range files {
+			stat, serr := safefile.StatInputFile(fp)
+			if serr != nil {
+				return fmt.Errorf("--file 无效: %w", serr)
+			}
+			if stat.Size() > client.BitableAttachmentMaxFileSize {
+				return clierr.Usagef("文件 %s 超过多维表格附件上限 2GB", fp)
+			}
 		}
 
 		token, err := resolveIdentityToken(cmd)
@@ -146,25 +188,32 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 			return err
 		}
 
-		// [1] 逐个上传，收集 file_token
+		// [1] 校验目标字段是附件字段：非附件字段上传后 append 会失败，且已上传的素材成为孤儿
+		field, err := client.BaseV3Call("GET", fieldPath, nil, nil, token)
+		if err != nil {
+			return fmt.Errorf("读取字段 %s 失败: %w", fieldID, err)
+		}
+		if t := bitableStr(field, "type"); t != "attachment" {
+			return clierr.Usagef("字段 %s（%s）的类型是 %q，不是附件字段；请用 field list 找到 type=attachment 的字段", fieldID, bitableStr(field, "name"), t)
+		}
+		// --field-id 允许传字段名：后续 append 统一用真实字段 ID
+		if id := bitableStr(field, "id", "field_id"); id != "" {
+			fieldID = id
+		}
+
+		// [2] 逐个上传，收集 file_token（>20MB 自动走分片上传）
 		var fileTokens []string
 		for _, fp := range files {
-			stat, serr := os.Stat(fp)
-			if serr != nil {
-				return fmt.Errorf("读取文件失败 %s: %w", fp, serr)
-			}
-			if stat.IsDir() {
-				return fmt.Errorf("--file 必须指向文件，不是目录: %s", fp)
-			}
+			stat, _ := os.Stat(fp)
 			fmt.Fprintf(os.Stderr, "上传: %s (%d bytes)\n", filepath.Base(fp), stat.Size())
-			ft, _, uerr := client.UploadMedia(fp, "bitable_file", baseToken, filepath.Base(fp), token)
+			ft, uerr := client.UploadBitableAttachment(fp, baseToken, token)
 			if uerr != nil {
 				return fmt.Errorf("上传 %s 失败: %w", fp, uerr)
 			}
 			fileTokens = append(fileTokens, ft)
 		}
 
-		// [2] 追加到单元格
+		// [3] 追加到单元格
 		body := bitableAttachmentCellBody(recordID, fieldID, fileTokens)
 		data, err := client.BaseV3Call("POST", appendPath, nil, body, token)
 		if err != nil {
@@ -172,6 +221,16 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 		}
 		return renderBitableResult(cmd, data)
 	},
+}
+
+// anyFileNeedsMultipart 判断待上传文件里是否有超过 20MB（需分片上传）的。
+func anyFileNeedsMultipart(files []string) bool {
+	for _, fp := range files {
+		if st, err := os.Stat(fp); err == nil && client.DriveNeedsMultipart(st.Size()) {
+			return true
+		}
+	}
+	return false
 }
 
 var bitableRecordDownloadAttachmentCmd = &cobra.Command{
@@ -200,6 +259,13 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
+		outputPath, _ := cmd.Flags().GetString("output")
+		// 输出路径在任何网络请求（含 wiki 链接解析、token 刷新）之前校验，敏感目录直接拒绝
+		if outputPath != "" {
+			if err := validateOutputPath(outputPath, ""); err != nil {
+				return err
+			}
+		}
 		baseToken, err := resolveBaseToken(cmd)
 		if err != nil {
 			return err
@@ -207,7 +273,6 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 		tableID, _ := cmd.Flags().GetString("table-id")
 		recordID, _ := cmd.Flags().GetString("record-id")
 		fileTokens, _ := cmd.Flags().GetStringArray("file-token")
-		outputPath, _ := cmd.Flags().GetString("output")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
 		if tableID == "" || recordID == "" {
 			return fmt.Errorf("--table-id / --record-id 必填")

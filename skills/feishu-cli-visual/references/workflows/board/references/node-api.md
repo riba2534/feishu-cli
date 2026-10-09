@@ -8,12 +8,11 @@
 |------|------|------|
 | 创建节点 | POST `/open-apis/board/v1/whiteboards/{id}/nodes` | 批量创建，上限 3000 |
 | 获取节点 | GET `/open-apis/board/v1/whiteboards/{id}/nodes` | 获取全部节点 |
-| 删除节点 | DELETE `/open-apis/board/v1/whiteboards/{id}/nodes/{node_id}` | 单个删除 |
-| 批量删除 | DELETE `/open-apis/board/v1/whiteboards/{id}/nodes/batch_delete` | 批量删除 |
+| 删除节点 | DELETE `/open-apis/board/v1/whiteboards/{id}/nodes/batch_delete` | 没有单节点删除端点；删一个节点也走 batch_delete，请求体 `{"ids": [...]}` |
 | 修改节点 | -- | **无 PATCH**；用 create+delete，或 `board update --overwrite`（服务端 `overwrite: true` 原子覆盖） |
 
 - 频率限制：50 req/s
-- 请求体格式：`{"nodes": [...]}`
+- 请求体格式：创建为 `{"nodes": [...]}`，批量删除为 `{"ids": [...]}`
 
 ## CLI 命令
 
@@ -29,11 +28,11 @@ feishu-cli board create-notes <whiteboard_id> nodes.json -o json
 feishu-cli board create-notes <whiteboard_id> '<json_array>' --source-type content -o json
 ```
 
-返回：`{"node_ids": ["o1:1", "o1:2", ...]}`
+返回：`{"count": 2, "node_ids": ["o1:1", "o1:2"], "whiteboard_id": "..."}`；带 `--client-token` 重放时返回首次创建的同一组 ID。
 
 ### board import
 
-导入 Mermaid/PlantUML 图表（服务端渲染）。
+导入 Mermaid/PlantUML/SVG（服务端解析为 section 分组 + 原生节点；SVG 直接拆成原生节点）。
 
 ```bash
 # Mermaid 内容导入
@@ -48,11 +47,14 @@ feishu-cli board import <whiteboard_id> diagram.puml --syntax plantuml
 
 # 指定图表类型
 feishu-cli board import <whiteboard_id> diagram.mmd --syntax mermaid --diagram-type flowchart
+
+# SVG 拆成原生节点
+feishu-cli board import <whiteboard_id> drawing.svg --syntax svg -o json
 ```
 
 ### board nodes
 
-获取画板所有节点（JSON）。
+获取画板所有节点（原样输出接口响应，节点在 `.data.nodes`；空画板为 `{"code":0,"data":{}}`）。
 
 ```bash
 feishu-cli board nodes <whiteboard_id>
@@ -206,18 +208,13 @@ feishu-cli board create-notes <whiteboard_id> connectors.json -o json
 feishu-cli board image <whiteboard_id> output
 ```
 
-### 复制/修改画板（Redraw 模式）
+### 复制/修改画板
 
-画板 API 不支持 PATCH，修改已有画板需要 redraw：
+画板 API 不支持 PATCH：
 
-```bash
-# 步骤 1: 导出原始节点
-feishu-cli board nodes <original_whiteboard_id> > original.json
-
-# 步骤 2: 清洗节点数据（移除只读字段）
-# 步骤 3: 分离形状和连接线
-# 步骤 4: 新画板中先创建形状 → 映射旧 ID → 再创建连接线
-```
+- 整板复制用 `board clone <src> <dst>`：自动清洗只读字段、先建形状再建连线并重映射连线 ID（先 `--dry-run` 看节点数）
+- 整板改写用 `board update <id> nodes.json --overwrite --snapshot old.json`（先把旧节点备份到本地再原子覆盖）
+- 手工 redraw 时按下表清洗字段，新画板中先创建形状 → 映射旧 ID → 再创建连接线
 
 ### 需要清洗的字段（GET -> POST）
 
@@ -236,22 +233,15 @@ feishu-cli board nodes <original_whiteboard_id> > original.json
 
 ## Mermaid 导入参数
 
-| 类型 | 声明 | diagram-type |
-|------|------|-------------|
-| 流程图 | `flowchart TD` | 6 |
-| 时序图 | `sequenceDiagram` | 2 |
-| 类图 | `classDiagram` | 4 |
-| 状态图 | `stateDiagram-v2` | 0 (auto) |
-| ER 图 | `erDiagram` | 5 |
-| 甘特图 | `gantt` | 0 (auto) |
-| 饼图 | `pie` | 0 (auto) |
-| 思维导图 | `mindmap` | 1 |
+CLI 的 `--diagram-type` 取字符串（`auto` / `mindmap` / `sequence` / `activity` / `class` / `er` / `flowchart` / `state` / `component`），
+默认 `auto` 按 Mermaid 首行声明识别即可。支持的声明：`flowchart TD`、`sequenceDiagram`、`classDiagram`、`stateDiagram-v2`、
+`erDiagram`、`gantt`、`pie`、`mindmap`。
 
-**Mermaid 限制**：
-- 禁止花括号 `{text}`（被识别为菱形节点）
-- 禁止 `par...and...end`（飞书不支持）
-- 参与者建议 <= 8（过多渲染失败）
-- 复杂图表失败时降级为代码块
+**Mermaid 注意**：
+- 普通标签不要写字面花括号 `{text}`（会被识别为菱形节点）
+- par、≥10 participant、多层 alt 早期会失败，2026-10 复测已可渲染；仍报 Parse error 时改 `--engine local`
+- 时序图参与者建议 ≤ 8，主要是为了可读性
+- `board import` 失败直接报错；降级为代码块只发生在 `doc import`
 
 ## 错误码
 
@@ -261,6 +251,7 @@ feishu-cli board nodes <original_whiteboard_id> > original.json
 | 2890002 | invalid arg | 包含未公开字段或格式不对 | 逐步删减字段定位问题，只用安全字段白名单 |
 | 2890003 | record missing | whiteboard_id 不存在 | 确认 ID 来自 doc add-board 返回值 |
 | 2890006 | rate limited | 超过 50 req/s | 降低请求频率，批量操作间隔 3s |
+| 2890007 | whiteboard is not ready yet（HTTP 500） | `--overwrite` 刚执行完立即读画板（实测） | 等 1–2 秒重试 |
 
 ### 2890002 排障指引
 

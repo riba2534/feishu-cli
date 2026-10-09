@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -27,6 +29,8 @@ var markdownCreateCmd = &cobra.Command{
   --wiki-token     目标 wiki 节点
   --dry-run        只打印将要发出的请求
   --user-access-token  覆盖登录态
+
+以 Bot 身份创建时，自动给当前 CLI 登录用户授予文件 full_access（JSON 输出 permission_grant）。
 
 示例:
   feishu-cli markdown create --name plan.md --content "# Plan"
@@ -54,46 +58,46 @@ var markdownCreateCmd = &cobra.Command{
 			return err
 		}
 		if contentChanged && fileChanged {
-			return fmt.Errorf("--content 与 --content-file/--file 不能同时使用")
+			return clierr.Usagef("--content 与 --content-file/--file 不能同时使用")
 		}
 		if !contentChanged && !fileChanged {
-			return fmt.Errorf("请提供 --content 或 --content-file")
+			return clierr.Usagef("请提供 --content 或 --content-file")
 		}
 		folderToken = strings.TrimSpace(folderToken)
 		wikiToken = strings.TrimSpace(wikiToken)
 		if cmd.Flags().Changed("folder-token") && folderToken == "" {
-			return fmt.Errorf("--folder-token 不能为空；省略该 flag 以上传到 Drive 根目录")
+			return clierr.Usagef("--folder-token 不能为空；省略该 flag 以上传到 Drive 根目录")
 		}
 		if cmd.Flags().Changed("wiki-token") && wikiToken == "" {
-			return fmt.Errorf("--wiki-token 不能为空")
+			return clierr.Usagef("--wiki-token 不能为空")
 		}
 		if folderToken != "" && wikiToken != "" {
-			return fmt.Errorf("--folder-token 与 --wiki-token 互斥")
-		}
-
-		fileName, err := markdownCreateSpecName(name, contentFile)
-		if err != nil {
-			return err
+			return clierr.Usagef("--folder-token 与 --wiki-token 互斥")
 		}
 
 		var size int64
 		if contentChanged {
 			size = int64(len(content))
 		} else {
-			stat, err := os.Stat(contentFile)
+			// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求；先于按文件名推断 --name）
+			stat, err := safefile.StatInputFile(contentFile)
 			if err != nil {
-				return fmt.Errorf("读取本地文件失败: %w", err)
-			}
-			if stat.IsDir() {
-				return fmt.Errorf("--content-file 必须指向文件，不是目录")
-			}
-			if err := validateMarkdownFileName(fileName, "--name"); err != nil {
-				return err
+				return fmt.Errorf("--content-file 无效: %w", err)
 			}
 			size = stat.Size()
 		}
+
+		fileName, err := markdownCreateSpecName(name, contentFile)
+		if err != nil {
+			return err
+		}
+		if !contentChanged {
+			if err := validateMarkdownFileName(fileName, "--name"); err != nil {
+				return err
+			}
+		}
 		if size == 0 {
-			return fmt.Errorf("Markdown 内容为空，不支持创建空 .md 文件")
+			return clierr.Usagef("Markdown 内容为空，不支持创建空 .md 文件")
 		}
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
@@ -156,6 +160,10 @@ var markdownCreateCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "warning: 创建后查询 URL 失败: %v\n", metaErr)
 		}
 
+		// --as bot（或 auto 未登录）创建时，自动给当前 CLI 登录用户授予文件 full_access
+		grant := autoGrantCurrentUser(token, result.FileToken, client.ResourceTypeFile)
+		withPermissionGrant(out, grant)
+
 		if output == "json" {
 			return printJSON(out)
 		}
@@ -166,6 +174,7 @@ var markdownCreateCmd = &cobra.Command{
 		if u, ok := out["url"].(string); ok && u != "" {
 			fmt.Printf("  url:        %s\n", u)
 		}
+		printPermissionGrantText(os.Stdout, grant)
 		return nil
 	},
 }

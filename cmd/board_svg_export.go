@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -34,6 +34,16 @@ var boardSVGExportCmd = &cobra.Command{
 		whiteboardID := args[0]
 		outputPath, _ := cmd.Flags().GetString("output-path")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
+		if outputPath != "" {
+			// 输出路径在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
+			if err := validateOutputPath(outputPath, ""); err != nil {
+				return err
+			}
+			// 已存在且未 --overwrite 同样在请求之前拒绝（写入前还会再检查一次）
+			if err := ensureBoardExportWritable(outputPath, overwrite); err != nil {
+				return err
+			}
+		}
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		result, err := client.ExportWhiteboardSVG(whiteboardID, userAccessToken)
@@ -45,12 +55,10 @@ var boardSVGExportCmd = &cobra.Command{
 			fmt.Print(result.SVG)
 			return nil
 		}
-		if !overwrite {
-			if _, err := os.Stat(outputPath); err == nil {
-				return fmt.Errorf("输出文件 %s 已存在，加 --overwrite 覆盖", outputPath)
-			}
+		if err := ensureBoardExportWritable(outputPath, overwrite); err != nil {
+			return err
 		}
-		if err := os.WriteFile(outputPath, []byte(result.SVG), 0644); err != nil {
+		if err := safefile.AtomicWriteFile(outputPath, []byte(result.SVG), 0o644); err != nil {
 			return fmt.Errorf("写文件失败: %w", err)
 		}
 		fmt.Printf("画板 %s 已导出为 SVG → %s（%d 字节）\n", whiteboardID, outputPath, len(result.SVG))

@@ -17,65 +17,6 @@ var driveInspectTypes = []string{
 	"doc", "docx", "sheet", "bitable", "wiki", "file", "folder", "mindnote", "slides",
 }
 
-// driveInspectURLMarkers 文档 URL 路径片段 → type 映射（与 apply-permission 复用同一套）
-// 加上 /folder/ 这种 drive-only 的标记
-var driveInspectURLMarkers = []struct {
-	Marker string
-	Type   string
-}{
-	{"/wiki/", "wiki"},
-	{"/docx/", "docx"},
-	{"/sheets/", "sheet"},
-	{"/base/", "bitable"},
-	{"/bitable/", "bitable"},
-	{"/file/", "file"},
-	{"/folder/", "folder"},
-	{"/mindnote/", "mindnote"},
-	{"/slides/", "slides"},
-	{"/doc/", "doc"},
-}
-
-// parseDriveURL 从 URL 抽 (type, token)；非 URL 时返回 (explicitType, raw)
-func parseDriveURL(raw, explicitType string) (docType, token string, err error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", "", fmt.Errorf("--url 不能为空")
-	}
-
-	if strings.Contains(raw, "://") {
-		for _, m := range driveInspectURLMarkers {
-			if idx := strings.Index(raw, m.Marker); idx >= 0 {
-				rest := raw[idx+len(m.Marker):]
-				for _, sep := range []string{"?", "#", "/"} {
-					if i := strings.Index(rest, sep); i >= 0 {
-						rest = rest[:i]
-					}
-				}
-				if rest != "" {
-					token = rest
-					docType = m.Type
-					break
-				}
-			}
-		}
-		if token == "" {
-			return "", "", fmt.Errorf("无法从 URL 推断 token: %q\n支持的 URL: /docx/、/sheets/、/base/、/file/、/folder/、/wiki/、/doc/、/mindnote/、/slides/", raw)
-		}
-		if explicitType != "" {
-			docType = explicitType
-		}
-	} else {
-		// 裸 token 必须传 --type
-		if explicitType == "" {
-			return "", "", fmt.Errorf("--type 必填（当 --url 是裸 token 时）。可选: %s",
-				strings.Join(driveInspectTypes, ", "))
-		}
-		token = raw
-		docType = explicitType
-	}
-	return docType, token, nil
-}
-
 // driveAPICall 内部 helper：用当前 token 发 raw API 调用
 func driveAPICall(method, path string, query map[string]string, body any, userToken string) ([]byte, int, error) {
 	cli, err := client.GetClient()
@@ -105,42 +46,6 @@ func driveAPICall(method, path string, query map[string]string, body any, userTo
 		return nil, 0, err
 	}
 	return resp.RawBody, resp.StatusCode, nil
-}
-
-// inspectFetchWikiNode 调 wiki/v2/spaces/get_node 拆出 obj_type/obj_token
-func inspectFetchWikiNode(token, userToken string) (objType, objToken, spaceID, nodeToken string, err error) {
-	body, status, err := driveAPICall(http.MethodGet,
-		"/open-apis/wiki/v2/spaces/get_node",
-		map[string]string{"token": token},
-		nil, userToken)
-	if err != nil {
-		return "", "", "", "", fmt.Errorf("wiki get_node 失败: %w", err)
-	}
-	if status < 200 || status >= 300 {
-		return "", "", "", "", fmt.Errorf("wiki get_node HTTP %d: %s", status, string(body))
-	}
-	var resp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-		Data struct {
-			Node struct {
-				ObjType   string `json:"obj_type"`
-				ObjToken  string `json:"obj_token"`
-				SpaceID   string `json:"space_id"`
-				NodeToken string `json:"node_token"`
-			} `json:"node"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return "", "", "", "", fmt.Errorf("解析 wiki get_node 响应失败: %w", err)
-	}
-	if resp.Code != 0 {
-		return "", "", "", "", fmt.Errorf("wiki get_node code=%d msg=%s", resp.Code, resp.Msg)
-	}
-	if resp.Data.Node.ObjToken == "" {
-		return "", "", "", "", fmt.Errorf("wiki get_node 返回 obj_token 为空")
-	}
-	return resp.Data.Node.ObjType, resp.Data.Node.ObjToken, resp.Data.Node.SpaceID, resp.Data.Node.NodeToken, nil
 }
 
 // inspectFetchTitle 调 drive/v1/metas/batch_query 拿 title
@@ -196,16 +101,18 @@ func inspectFetchTitle(docToken, docType, userToken string) (title string, err e
 var driveInspectCmd = &cobra.Command{
 	Use:   "inspect",
 	Short: "解析文档 URL → 输出 type/title/token/canonical URL（自动展开 wiki 节点）",
-	Long: `给定文档 URL 或裸 token + type，统一输出 type / title / token / canonical URL。
+	Long: `给定文档 URL 或裸 token，统一输出 type / title / token / canonical URL。
 
 特别功能：
-  - URL 中带 /wiki/ 时，自动调 wiki get_node 拆出底层文档的 obj_type/obj_token
+  - URL 只按路径前缀推断类型（?from=/wiki/... 等查询参数不会劫持解析）；--type 与 URL 冲突时报错
+  - URL 中带 /wiki/ 时，自动调 wiki node_by_token 拆出底层文档的 obj_type/obj_token
+  - 裸 token 未传 --type 时，自动调 drive query_by_token 识别类型（wiki 节点同样自动展开）
   - 自动检测无权限、不存在等异常
   - 默认 auto Token（User 优先，回退 Bot）
 
 参数:
   --url           文档 URL 或裸 token（必填）
-  --type          文档类型（裸 token 必填；URL 自动推断）
+  --type          文档类型（可选；URL 自动推断，裸 token 省略时通过 query_by_token 自动识别）
                   可选: doc / docx / sheet / bitable / wiki / file / folder / mindnote / slides
   --output, -o    输出格式 (json)
 
@@ -216,7 +123,8 @@ var driveInspectCmd = &cobra.Command{
   # 解析 wiki URL（自动展开到底层文档）
   feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx"
 
-  # 裸 token + type
+  # 裸 token（自动识别类型）/ 裸 token + type
+  feishu-cli drive inspect --url doxcnxxx
   feishu-cli drive inspect --url doxcnxxx --type docx
 
   # JSON 输出
@@ -230,39 +138,62 @@ var driveInspectCmd = &cobra.Command{
 		explicitType, _ := cmd.Flags().GetString("type")
 		output, _ := cmd.Flags().GetString("output")
 
-		docType, docToken, err := parseDriveURL(rawURL, explicitType)
+		// 统一解析：只按 URL 路径前缀推断类型；--type 与 URL 冲突时报错（wiki URL + 非 wiki 类型视为对底层类型的断言）
+		opts := resourceArgOptions{
+			ArgName:        "--url",
+			ExplicitType:   explicitType,
+			Allowed:        driveInspectTypes,
+			ResolveWiki:    true,
+			DetectBareType: true, // 裸 token 未传 --type 时用 query_by_token 自动识别
+		}
+		res, err := parseResourceArg(rawURL, opts)
 		if err != nil {
 			return err
 		}
 
 		// auto token：User 优先，回退 Bot
 		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		opts.UserAccessToken = userToken
 
-		result := map[string]any{
-			"input_url": rawURL,
-			"type":      docType,
-			"token":     docToken,
+		// Step 0: 裸 token 未指定 --type 时，通过 query_by_token 识别真实类型（wiki 节点自动识别）
+		if res.InputType == "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "未指定 --type，通过 query_by_token 识别类型: %s ...\n", res.InputToken)
+			if err := detectResourceType(res, opts); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), "识别为 %s\n", res.InputType)
 		}
 
-		// Step 1: 如果是 wiki，先展开
-		if docType == "wiki" {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Wiki 节点展开中: %s ...\n", docToken)
-			objType, objToken, spaceID, nodeToken, err := inspectFetchWikiNode(docToken, userToken)
-			if err != nil {
+		result := map[string]any{
+			"input_url": strings.TrimSpace(rawURL),
+			"type":      res.InputType,
+			"token":     res.InputToken,
+		}
+		if res.DetectedBy != "" {
+			result["detected_by"] = res.DetectedBy
+			if res.TokenStatus != 0 {
+				result["token_status"] = res.TokenStatus
+				fmt.Fprintf(cmd.ErrOrStderr(), "⚠️ 该节点状态异常（status=%d：1=在回收站，2=已删除）\n", res.TokenStatus)
+			}
+		}
+
+		// Step 1: 如果是 wiki，先通过 node_by_token 展开
+		if res.InputType == client.ResourceTypeWiki {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Wiki 节点展开中: %s ...\n", res.InputToken)
+			if err := resolveWikiInResource(res, opts); err != nil {
 				return err
 			}
 			result["wiki_node"] = map[string]string{
-				"space_id":   spaceID,
-				"node_token": nodeToken,
-				"obj_type":   objType,
-				"obj_token":  objToken,
+				"space_id":   res.WikiNode.SpaceID,
+				"node_token": res.WikiNode.NodeToken,
+				"obj_type":   res.Type,
+				"obj_token":  res.Token,
 			}
-			docType = objType
-			docToken = objToken
-			result["type"] = docType
-			result["token"] = docToken
-			fmt.Fprintf(cmd.ErrOrStderr(), "Wiki 已展开为 %s: %s\n", docType, docToken)
+			result["type"] = res.Type
+			result["token"] = res.Token
+			fmt.Fprintf(cmd.ErrOrStderr(), "Wiki 已展开为 %s: %s\n", res.Type, res.Token)
 		}
+		docType, docToken := res.Type, res.Token
 
 		// Step 2: 查 title（除了 folder 类型，folder 没 title API）
 		if docType != "folder" {
@@ -276,6 +207,12 @@ var driveInspectCmd = &cobra.Command{
 			}
 		}
 
+		// 按当前品牌生成标准访问链接（www.feishu.cn / www.larksuite.com，由服务端重定向到租户域名）
+		canonicalURL := client.BuildResourceURL(docType, docToken)
+		if canonicalURL != "" {
+			result["url"] = canonicalURL
+		}
+
 		if output == "json" {
 			return printJSON(result)
 		}
@@ -286,6 +223,9 @@ var driveInspectCmd = &cobra.Command{
 			fmt.Printf("Title: %s\n", title)
 		}
 		fmt.Printf("Token: %s\n", docToken)
+		if canonicalURL != "" {
+			fmt.Printf("URL:   %s\n", canonicalURL)
+		}
 		if wn, ok := result["wiki_node"].(map[string]string); ok {
 			fmt.Printf("Wiki:  space_id=%s, node_token=%s\n", wn["space_id"], wn["node_token"])
 		}
@@ -296,7 +236,7 @@ var driveInspectCmd = &cobra.Command{
 func init() {
 	driveCmd.AddCommand(driveInspectCmd)
 	driveInspectCmd.Flags().String("url", "", "文档 URL 或裸 token（必填）")
-	driveInspectCmd.Flags().String("type", "", "文档类型（裸 token 必填；URL 可自动推断）")
+	driveInspectCmd.Flags().String("type", "", "文档类型（可选；URL 按路径推断，裸 token 省略时自动识别）")
 	driveInspectCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	driveInspectCmd.Flags().String("user-access-token", "", "User Access Token（auto 时可选）")
 	mustMarkFlagRequired(driveInspectCmd, "url")

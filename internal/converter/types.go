@@ -2,6 +2,7 @@ package converter
 
 import (
 	"fmt"
+	"strings"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 )
@@ -106,6 +107,9 @@ type SyncBlockProvider func(sourceDocumentID, sourceBlockID, userAccessToken str
 type ConvertOptions struct {
 	DownloadImages bool
 	AssetsDir      string
+	// AssetsLinkBase 非空时，导出 Markdown 中下载资源（图片/视频/画板）的引用路径改写为相对该目录
+	// （doc export -o 时为输出文件所在目录），保证导出后原地 doc import 能按 Markdown 目录找到资源。
+	AssetsLinkBase string
 	UploadImages   bool
 	// EmbedTableImages 为 true 时，Markdown 表格单元格内的图片在转换期被收集到 TableData.CellImages，
 	// 由导入层在表格填充后真正嵌入为单元格内的 Image 子块（issue #164）。为 false 时（如 doc content-update），
@@ -135,12 +139,73 @@ type ConvertOptions struct {
 
 // ConvertResult contains converted blocks and table data
 type ConvertResult struct {
-	BlockNodes   []*BlockNode // 支持嵌套层级的块树
-	TableDatas   []*TableData // Table data in order of appearance, used for filling content
-	ImageStats   ImageStats   // 图片处理统计
-	ImageSources []string     // 每个 Image Block 对应的图片来源路径，与 BlockNodes 中的 Image Block 按序对应
-	VideoStats   VideoStats   // 视频处理统计
-	VideoSources []string     // 每个 Video(File) Block 对应的视频来源路径，与 BlockNodes 中的视频块按序对应
+	BlockNodes []*BlockNode // 支持嵌套层级的块树
+	TableDatas []*TableData // Table data in order of appearance, used for filling content（仅顶层表格）
+	// TableDataByBlock 以表格块指针为键的填充数据，覆盖嵌套在分栏列等容器内的表格（TableDatas 只含顶层表格）。
+	TableDataByBlock map[*larkdocx.Block]*TableData
+	ImageStats       ImageStats // 图片处理统计
+	ImageSources     []string   // 每个本地/网络图片 Image Block 的来源路径（按出现顺序；token 复用的图片不在此列，见 MediaRefs）
+	VideoStats       VideoStats // 视频处理统计
+	VideoSources     []string   // 每个本地视频 File Block 的来源路径（按出现顺序；token 复用的视频不在此列，见 MediaRefs）
+	FileStats        VideoStats // 附件（非视频 <file token>）统计，字段含义同 VideoStats
+	// MediaRefs 记录「建块后才能补齐内容」的块（以块指针为键，与 BlockNodes 中的 Block 同一指针）：
+	// 图片、附件/视频、带 token 的画板。导入层建块后按此描述上传素材 / 复用 token / 复制画板。
+	MediaRefs map[*larkdocx.Block]*MediaRef
+	// Degradations 记录转换期已确定无法原样导入、已降级为占位文本的内容（如带 token 的 <sheet>/<bitable>），
+	// 导入层应计入 failures，避免静默丢失。
+	Degradations []Degradation
+}
+
+// MediaKind 标识建块后需要补齐内容的资源类型。
+type MediaKind string
+
+const (
+	// MediaKindImage 图片：建空 Image 块 → 上传素材到该块 → replace_image。
+	MediaKindImage MediaKind = "image"
+	// MediaKindFile 附件/视频：建空 File 块（服务端外包一层 View 块）→ 上传素材到 File 块 → replace_file。
+	MediaKindFile MediaKind = "file"
+	// MediaKindWhiteboard 带 token 的画板：建空 Board 块 → 复制源画板节点。
+	MediaKindWhiteboard MediaKind = "whiteboard"
+)
+
+// FeishuMediaScheme 是飞书素材 token 引用前缀（feishu://media/<token>），导入时按 token 复用素材。
+const FeishuMediaScheme = "feishu://media/"
+
+// MediaRef 描述一个块在建块后才能补齐的资源。
+//
+// 服务端约束（2026-10 实测）：docx 建块接口拒绝带 token 的 Image/File/Board/Sheet/Bitable（1770001 invalid param），
+// File 块只能以 {"token":""} 建空块（带 name 同样 1770001）；跨文档素材 token 直接 replace_image 报
+// 1770013 relation mismatch——素材必须「上传到该块」。因此导入层统一先建空块，再按本描述补齐。
+type MediaRef struct {
+	Kind   MediaKind
+	Source string // 本地路径或 http(s) URL；为空时复用 Token
+	Token  string // 复用的已有素材 token（图片/附件/视频）或源画板 token
+	Name   string // 附件/视频文件名（建块时不能带 name，上传素材时用作文件名）
+	Video  bool   // 附件是否为视频（统计口径）
+	Width  int    // 图片显示宽度（<image width>），0 表示按原图像素
+	Height int    // 图片显示高度（<image height>）
+	Align  int    // 图片对齐（1 左 2 中 3 右），0 表示默认
+}
+
+// UploadSource 返回素材上传来源：本地路径/URL，或 feishu://media/<token>（下载后重新上传）。
+func (r *MediaRef) UploadSource() string {
+	if r == nil {
+		return ""
+	}
+	if r.Source != "" {
+		return r.Source
+	}
+	if r.Token != "" {
+		return FeishuMediaScheme + r.Token
+	}
+	return ""
+}
+
+// Degradation 记录转换期已降级为占位文本的内容。
+type Degradation struct {
+	Kind   string // sheet / bitable / file
+	Source string // 原始引用（token、文件名等）
+	Reason string
 }
 
 // ImageStats 记录图片处理统计
@@ -268,4 +333,58 @@ var fontBgColorMap = map[int]string{
 	12: "#bfdbfe", // DarkBlue
 	13: "#e9d5ff", // DarkPurple
 	14: "#e5e7eb", // DarkGray
+}
+
+// Callout 背景色枚举（飞书 docx CalloutBackgroundColor，经 docs_ai 写入与读取实测校准）：
+// 1 浅红、2 浅橙、3 浅黄、4 浅绿、5 浅蓝、6 浅紫、7 中灰；8-14 为对应的深色（红/橙/黄/绿/蓝/紫/灰）。
+//
+// 历史实现把映射整体错了一位（WARNING=2、NOTE=6、IMPORTANT=7），导致导入的 NOTE 显示为浅紫、
+// WARNING 显示为浅橙、IMPORTANT 显示为灰色。
+const (
+	CalloutBgLightRed    = 1
+	CalloutBgLightOrange = 2
+	CalloutBgLightYellow = 3
+	CalloutBgLightGreen  = 4
+	CalloutBgLightBlue   = 5
+	CalloutBgLightPurple = 6
+	CalloutBgMediumGray  = 7
+)
+
+// CalloutColorForType 把 GitHub 风格高亮块类型映射为背景色枚举；未知类型按 NOTE（蓝）处理。
+func CalloutColorForType(calloutType string) int {
+	switch strings.ToUpper(strings.TrimSpace(calloutType)) {
+	case "WARNING":
+		return CalloutBgLightRed
+	case "CAUTION":
+		return CalloutBgLightOrange
+	case "TIP":
+		return CalloutBgLightYellow
+	case "SUCCESS":
+		return CalloutBgLightGreen
+	case "IMPORTANT":
+		return CalloutBgLightPurple
+	default: // NOTE / INFO / 其它
+		return CalloutBgLightBlue
+	}
+}
+
+// CalloutTypeForColor 把背景色枚举映射回 GitHub 风格类型（深色按同色相处理）；
+// 灰色没有对应类型，按 IMPORTANT 输出以兼容旧版导入的 IMPORTANT（历史上被写成 7）。
+func CalloutTypeForColor(color int) string {
+	switch color {
+	case 1, 8:
+		return "WARNING"
+	case 2, 9:
+		return "CAUTION"
+	case 3, 10:
+		return "TIP"
+	case 4, 11:
+		return "SUCCESS"
+	case 6, 13:
+		return "IMPORTANT"
+	case 7, 14:
+		return "IMPORTANT"
+	default: // 5 / 12 / 未知
+		return "NOTE"
+	}
 }

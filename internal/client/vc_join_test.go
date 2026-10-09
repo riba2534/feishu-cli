@@ -40,3 +40,22 @@ func TestBuildVCBotJoinBody(t *testing.T) {
 		}
 	})
 }
+
+// TestBuildVCBotJoinBodyCallIDAndStart 对齐官方 vc_meeting_join.go：call_id 顶层透传，
+// --action start 对应 action=2；默认（加入）不发送 action。
+func TestBuildVCBotJoinBodyCallIDAndStart(t *testing.T) {
+	body := BuildVCBotJoinBody(VCBotJoinReq{MeetingNo: "123456789", CallID: "call-1", Start: true})
+	if body["call_id"] != "call-1" {
+		t.Errorf("call_id = %v", body["call_id"])
+	}
+	if body["action"] != 2 {
+		t.Errorf("action = %v(%T), want 2", body["action"], body["action"])
+	}
+	plain := BuildVCBotJoinBody(VCBotJoinReq{MeetingNo: "123456789"})
+	if _, has := plain["action"]; has {
+		t.Errorf("默认加入不应发送 action")
+	}
+	if _, has := plain["call_id"]; has {
+		t.Errorf("未传 call_id 不应发送")
+	}
+}

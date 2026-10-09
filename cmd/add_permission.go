@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -19,6 +21,8 @@ var addPermissionCmd = &cobra.Command{
   --member-id     成员标识（必填）
   --perm          权限级别（必填）
   --notification  发送通知给成员
+  --perm-type     知识库权限范围（仅 --doc-type wiki）：container=当前页面及子页面，single_page=仅当前页面；
+                  不传时不下发，由服务端按默认（container）处理
 
 权限级别:
   view          查看权限
@@ -49,7 +53,15 @@ var addPermissionCmd = &cobra.Command{
     --member-type email \
     --member-id user@example.com \
     --perm full_access \
-    --notification`,
+    --notification
+
+  # 知识库节点：仅授予当前页面（不含子页面）的查看权限
+  feishu-cli perm add WIKI_NODE_TOKEN --doc-type wiki \
+    --member-type openid --member-id ou_xxx --perm view --perm-type single_page
+
+  # 以当前登录用户身份为个人文档添加协作者
+  feishu-cli perm add DOC_TOKEN --as user \
+    --member-type email --member-id user@example.com --perm view`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -63,16 +75,27 @@ var addPermissionCmd = &cobra.Command{
 		perm, _ := cmd.Flags().GetString("perm")
 		notification, _ := cmd.Flags().GetBool("notification")
 
+		permType, _ := cmd.Flags().GetString("perm-type")
+
 		memberType = normalizePermMemberType(memberType)
+		permType, err := validatePermType(permType, docType)
+		if err != nil {
+			return err
+		}
 
 		member := client.PermissionMember{
 			MemberType: memberType,
 			MemberID:   memberID,
 			Perm:       perm,
+			PermType:   permType,
 		}
 
-		if err := client.AddPermission(docToken, docType, member, notification); err != nil {
+		userToken, err := resolvePermIdentity(cmd)
+		if err != nil {
 			return err
+		}
+		if err := client.AddPermission(docToken, docType, member, notification, userToken); err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		fmt.Printf("权限添加成功！\n")
@@ -83,6 +106,22 @@ var addPermissionCmd = &cobra.Command{
 	},
 }
 
+// validatePermType 校验 perm_type：仅知识库（wiki）文档有效，取值 container / single_page。
+func validatePermType(permType, docType string) (string, error) {
+	permType = strings.TrimSpace(permType)
+	if permType == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(docType) != "wiki" {
+		return "", clierr.Usagef("--perm-type / perm_type 仅在文档类型为 wiki 时有效，当前 --doc-type=%q", docType)
+	}
+	switch permType {
+	case "container", "single_page":
+		return permType, nil
+	}
+	return "", clierr.Usagef("perm_type 只能是 container 或 single_page，得到 %q", permType)
+}
+
 func init() {
 	permCmd.AddCommand(addPermissionCmd)
 	addPermissionCmd.Flags().String("doc-type", "docx", "文档类型（docx/sheet/bitable 等）")
@@ -90,5 +129,6 @@ func init() {
 	addPermissionCmd.Flags().String("member-id", "", "成员标识")
 	addPermissionCmd.Flags().String("perm", "", "权限级别（view/edit/full_access）")
 	addPermissionCmd.Flags().Bool("notification", false, "发送通知给成员")
+	addPermissionCmd.Flags().String("perm-type", "", "知识库权限范围（仅 --doc-type wiki）：container / single_page")
 	mustMarkFlagRequired(addPermissionCmd, "member-type", "member-id", "perm")
 }

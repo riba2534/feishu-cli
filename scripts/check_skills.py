@@ -133,6 +133,53 @@ def starts_with(path: tuple[str, ...], prefix: tuple[str, ...]) -> bool:
     return path[: len(prefix)] == prefix
 
 
+Owner = tuple[str, str, tuple[str, ...]]
+
+
+def resolve_owner(command: tuple[str, ...], owners: list[Owner]) -> tuple[set[tuple[str, str]], int]:
+    """按最长前缀匹配返回命令的归属工作流集合与命中前缀长度；未命中返回 (空集, 0)。"""
+    matches = [owner for owner in owners if starts_with(command, owner[2])]
+    if not matches:
+        return set(), 0
+    longest = max(len(match[2]) for match in matches)
+    winners = {(skill, workflow) for skill, workflow, prefix in matches if len(prefix) == longest}
+    return winners, longest
+
+
+def check_explicit_group_prefixes(commands: list[tuple[str, ...]], owners: list[Owner]) -> list[str]:
+    """命令组的子命令分布在多个工作流时，组内每个子命令都必须由比组路径更长的显式前缀覆盖。
+
+    例如 msg 组的子命令分属 msg/chat 两个工作流，则每个 msg 子命令都要有 ["msg", "<子命令>"]
+    这样长度 ≥2 的前缀，不能只靠 ["msg"] 兜底——否则以后新增的子命令会被兜底前缀悄悄归走。
+    组路径本身（如 msg）可以只靠兜底前缀；嵌套命令组同理（如 a b 组要求长度 ≥3）。
+    """
+    resolved = {command: resolve_owner(command, owners) for command in commands}
+    groups = {command[:length] for command in commands for length in range(1, len(command))}
+    violations: dict[tuple[str, ...], tuple[tuple[str, ...], set[tuple[str, str]], int]] = {}
+    for group in sorted(groups, key=lambda item: (len(item), item)):
+        members = [command for command in commands if len(command) > len(group) and starts_with(command, group)]
+        workflows = set()
+        for command in members:
+            winners, _ = resolved[command]
+            if len(winners) == 1:
+                workflows |= winners
+        if len(workflows) < 2:
+            continue
+        for command in members:
+            winners, length = resolved[command]
+            if winners and length <= len(group):
+                # 同一命令在多层分裂组中违规时，报告要求最严格（最深）的那一层
+                violations[command] = (group, workflows, length)
+    errors = []
+    for command, (group, workflows, length) in sorted(violations.items()):
+        errors.append(
+            f"命令组 {' '.join(group)} 的子命令分布在多个工作流 {sorted('/'.join(item) for item in workflows)}，"
+            f"{' '.join(command)} 只靠长度 {length} 的兜底前缀归属；"
+            f"请在 manifest owners 中为它声明长度 ≥{len(group) + 1} 的显式前缀"
+        )
+    return errors
+
+
 def load_frontmatters(paths: list[Path]) -> dict:
     """复用已有 Go YAML 依赖；不要求开发者安装 PyYAML。"""
     proc = subprocess.run(
@@ -417,7 +464,7 @@ def main() -> int:
     for name in sorted(expected):
         check_frontmatter(SKILLS / name, errors, metadata[str(SKILLS / name / "SKILL.md")])
 
-    owners: list[tuple[str, str, tuple[str, ...]]] = []
+    owners: list[Owner] = []
     owned_workflows: set[tuple[str, str]] = set()
     for owner in manifest["owners"]:
         workflow_key = (owner["skill"], owner["workflow"])
@@ -473,19 +520,20 @@ def main() -> int:
     example_errors, example_counts = check_examples(skill_markdown_files(), catalog, ROOT)
     errors.extend(example_errors)
     covered = 0
+    owned_leaves: list[tuple[str, ...]] = []
     for leaf in leaves:
         if any(starts_with(leaf, prefix) for prefix in excluded):
             continue
-        matches = [owner for owner in owners if starts_with(leaf, owner[2])]
-        if not matches:
+        owned_leaves.append(leaf)
+        winners, _ = resolve_owner(leaf, owners)
+        if not winners:
             fail(f"命令没有归属: {' '.join(leaf)}", errors)
             continue
-        longest = max(len(match[2]) for match in matches)
-        winners = {(skill, workflow) for skill, workflow, prefix in matches if len(prefix) == longest}
         if len(winners) != 1:
             fail(f"命令存在多个同优先级归属: {' '.join(leaf)} -> {sorted(winners)}", errors)
             continue
         covered += 1
+    errors.extend(check_explicit_group_prefixes(owned_leaves, owners))
 
     check_links_and_toc(errors)
     check_source_skill_paths(errors)
@@ -499,7 +547,7 @@ def main() -> int:
     print(
         f"Skill 结构检查通过: {len(expected)} 个顶层 Skill（真实 YAML 解析），{len(declared_workflows)} 个工作流均有评测，"
         f"29 个 legacy Skill 迁移映射完整，9 组触发评测各含 8 正例/8 近邻负例，"
-        f"{covered} 个可执行业务命令全部唯一归属。"
+        f"{covered} 个可执行业务命令全部唯一归属，跨工作流命令组均用显式前缀。"
     )
     print(f"Skill 命令示例契约通过: {example_counts['checked']} 条长参数检查，{example_counts['skipped']} 条模板跳过（{example_counts['skip_reasons']}）。")
     print("以上是结构/静态契约检查，不代表模型触发率或线上业务成功率；行为回归由 make check-skills 后续步骤单独执行。")

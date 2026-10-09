@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -17,66 +18,25 @@ var permApplyTypes = []string{
 	"doc", "sheet", "file", "wiki", "bitable", "docx", "mindnote", "slides",
 }
 
-// permApplyURLMarkers 文档 URL 路径片段 → API 接受的 type 值映射
-// URL 类型识别标记
-var permApplyURLMarkers = []struct {
-	Marker string
-	Type   string
-}{
-	{"/wiki/", "wiki"},
-	{"/docx/", "docx"},
-	{"/sheets/", "sheet"},
-	{"/base/", "bitable"},
-	{"/bitable/", "bitable"},
-	{"/file/", "file"},
-	{"/mindnote/", "mindnote"},
-	{"/slides/", "slides"},
-	{"/doc/", "doc"},
-}
-
-// resolvePermApplyTarget 从 --token（可以是 token 或完整 URL）+ 可选 --type 推断 (token, type)
-// 显式 --type 优先于 URL 推断
+// resolvePermApplyTarget 从 --token（可以是 token 或完整 URL）+ 可选 --type 推断 (token, type)。
+// 只按 URL 路径前缀推断类型（query 中的 /wiki/ 等字样不会劫持解析）；
+// --type 与 URL 推断的类型冲突时报错，不再静默以 --type 覆盖。wiki 是申请接口的合法 type，不做解包。
 func resolvePermApplyTarget(raw, explicitType string) (token, docType string, err error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
+	if strings.TrimSpace(raw) == "" {
 		return "", "", fmt.Errorf("--token 必填（可以是文档 token 或完整 URL）")
 	}
-
-	if strings.Contains(raw, "://") {
-		// 完整 URL → 抽 token + 推断 type
-		for _, m := range permApplyURLMarkers {
-			if idx := strings.Index(raw, m.Marker); idx >= 0 {
-				rest := raw[idx+len(m.Marker):]
-				// 截掉 ? # / 后的内容
-				for _, sep := range []string{"?", "#", "/"} {
-					if i := strings.Index(rest, sep); i >= 0 {
-						rest = rest[:i]
-					}
-				}
-				if rest != "" {
-					token = rest
-					if explicitType == "" {
-						docType = m.Type
-					}
-					break
-				}
-			}
-		}
-		if token == "" {
-			return "", "", fmt.Errorf("无法从 URL 推断 token: %q\n支持的 URL 模式: /docx/、/sheets/、/base/、/bitable/、/file/、/wiki/、/doc/、/mindnote/、/slides/\n如果 URL 格式不常见，请用 --token 直接传 token + --type 指定类型", raw)
-		}
-	} else {
-		token = raw
+	if !client.LooksLikeURL(raw) && strings.TrimSpace(explicitType) == "" {
+		return "", "", fmt.Errorf("--type 必填（当 --token 是裸 token 时）。可选值: %s", strings.Join(permApplyTypes, ", "))
 	}
-
-	if explicitType != "" {
-		docType = explicitType
+	res, err := parseResourceArg(raw, resourceArgOptions{
+		ArgName:      "--token",
+		ExplicitType: explicitType,
+		Allowed:      permApplyTypes,
+	})
+	if err != nil {
+		return "", "", err
 	}
-	if docType == "" {
-		return "", "", fmt.Errorf("--type 必填（当 --token 是裸 token 时）。可选值: %s",
-			strings.Join(permApplyTypes, ", "))
-	}
-	return token, docType, nil
+	return res.Token, res.Type, nil
 }
 
 var drivePermApplyCmd = &cobra.Command{
@@ -92,7 +52,7 @@ var drivePermApplyCmd = &cobra.Command{
 参数:
   --token      文档 token 或完整 URL（必填）
                支持 URL: /docx/、/sheets/、/base/、/bitable/、/file/、/wiki/、/doc/、/mindnote/、/slides/
-  --type       文档类型（URL 推断不出来时必填）
+  --type       文档类型（裸 token 时必填；传 URL 时按路径推断，与 --type 冲突会报错）
                可选: doc / sheet / file / wiki / bitable / docx / mindnote / slides
   --perm       申请权限（必填）: view / edit
   --remark     申请说明（可选，会显示在发给所有者的审批卡片上）
@@ -140,7 +100,7 @@ var drivePermApplyCmd = &cobra.Command{
 			body["remark"] = remark
 		}
 
-		apiPath := fmt.Sprintf("/open-apis/drive/v1/permissions/%s/members/apply", realToken)
+		apiPath := fmt.Sprintf("/open-apis/drive/v1/permissions/%s/members/apply", url.PathEscape(realToken))
 
 		if dryRun {
 			return printJSON(map[string]any{
@@ -175,14 +135,34 @@ var drivePermApplyCmd = &cobra.Command{
 			return fmt.Errorf("申请权限失败: %w", err)
 		}
 
-		// 直接打印响应（含 code/msg/data）
-		fmt.Println(string(resp.RawBody))
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return fmt.Errorf("HTTP %d", resp.StatusCode)
+		// 先解析业务信封再看 HTTP 状态：飞书业务错误常随 HTTP 400 下发，
+		// HTTP 200 + code!=0 也必须判失败（过去会打印响应后 exit 0）。
+		if err := client.CheckAPIResponse("申请权限", resp); err != nil {
+			return decoratePermApplyError(err)
 		}
+
+		// 成功：直接打印响应（含 code/msg/data）
+		fmt.Println(string(resp.RawBody))
 		return nil
 	},
+}
+
+// decoratePermApplyError 为申请权限的典型业务码追加中文指引（对齐官方 permApplyErrorGuidance），保留原错误链。
+func decoratePermApplyError(err error) error {
+	if guidance := permApplyErrorGuidance(err); guidance != "" {
+		return fmt.Errorf("%w\n提示：%s", err, guidance)
+	}
+	return err
+}
+
+func permApplyErrorGuidance(err error) string {
+	switch {
+	case client.HasAPICode(err, 1063006):
+		return "已达到申请次数上限：同一用户对同一文档每天最多申请 5 次，请等次日额度重置后再试"
+	case client.HasAPICode(err, 1063007):
+		return "该文档不接受权限申请（可能已关闭申请入口或申请的权限不适用），请核对目标文档与申请的权限，或直接联系文档所有者"
+	}
+	return ""
 }
 
 func init() {

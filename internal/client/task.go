@@ -7,6 +7,7 @@ import (
 	"time"
 
 	larktask "github.com/larksuite/oapi-sdk-go/v3/service/task/v2"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // TaskInfo represents simplified task information
@@ -19,6 +20,36 @@ type TaskInfo struct {
 	CreatedAt   string `json:"created_at,omitempty"`
 	Creator     string `json:"creator,omitempty"`
 	OriginHref  string `json:"origin_href,omitempty"`
+	// AlreadyCompleted 仅 task complete 使用：任务此前已完成，本次未改写完成时间
+	AlreadyCompleted bool `json:"already_completed,omitempty"`
+
+	// 以下为详情字段（task get 等返回完整任务时填充）
+	DueIsAllDay    bool                `json:"due_is_all_day,omitempty"` // 截止到某一天（DueTime 为 YYYY-MM-DD）
+	Reminders      []TaskReminderInfo  `json:"reminders,omitempty"`      // 提醒（含 ID，task reminder remove 需要）
+	Members        []TaskMemberInfo    `json:"members,omitempty"`
+	ParentTaskGuid string              `json:"parent_task_guid,omitempty"`
+	URL            string              `json:"url,omitempty"`
+	Status         string              `json:"status,omitempty"`
+	Tasklists      []TaskTasklistBrief `json:"tasklists,omitempty"`
+}
+
+// TaskReminderInfo 任务提醒
+type TaskReminderInfo struct {
+	ID                 string `json:"id"`
+	RelativeFireMinute int    `json:"relative_fire_minute"` // 截止前 N 分钟提醒，0=截止时
+}
+
+// TaskMemberInfo 任务成员
+type TaskMemberInfo struct {
+	ID   string `json:"id"`
+	Type string `json:"type,omitempty"`
+	Role string `json:"role,omitempty"`
+}
+
+// TaskTasklistBrief 任务所属清单
+type TaskTasklistBrief struct {
+	TasklistGuid string `json:"tasklist_guid"`
+	SectionGuid  string `json:"section_guid,omitempty"`
 }
 
 // CreateTaskOptions represents options for creating a task
@@ -281,8 +312,19 @@ func DeleteTask(taskGuid string, userAccessToken string) error {
 	return nil
 }
 
-// CompleteTask marks a task as completed
+// CompleteTask marks a task as completed.
+//
+// 幂等：先读取任务，已完成则直接返回（AlreadyCompleted=true），不再 PATCH——
+// 否则每次调用都会把完成时间改写为"现在"（对齐官方 task_complete 先读后写）。
 func CompleteTask(taskGuid string, userAccessToken string) (*TaskInfo, error) {
+	current, err := GetTask(taskGuid, userAccessToken)
+	if err != nil {
+		return nil, err
+	}
+	if current != nil && current.CompletedAt != "" {
+		current.AlreadyCompleted = true
+		return current, nil
+	}
 	return UpdateTask(taskGuid, UpdateTaskOptions{
 		Completed: true,
 	}, userAccessToken)
@@ -1059,6 +1101,10 @@ const taskAttachmentMaxSize = 50 << 20
 // UploadTaskAttachment 给指定 task_guid（或其他 resource_type）上传一个本地文件作为附件。
 // 走 SDK 原生 Attachment.Upload，避免手写 multipart。
 func UploadTaskAttachment(resourceType, resourceID, filePath, userAccessToken string) (*TaskAttachmentInfo, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return nil, err
+	}
 	if resourceType == "" {
 		resourceType = "task"
 	}
@@ -1137,9 +1183,33 @@ func taskToInfo(task *larktask.Task) *TaskInfo {
 
 	if task.Due != nil {
 		if ts, err := strconv.ParseInt(StringVal(task.Due.Timestamp), 10, 64); err == nil && ts > 0 {
-			info.DueTime = time.UnixMilli(ts).Format("2006-01-02 15:04:05")
+			if BoolVal(task.Due.IsAllDay) {
+				// 全天截止：服务端用 UTC 零点表示日期，按 UTC 取日期，避免西半球时区显示成前一天
+				info.DueTime = time.UnixMilli(ts).UTC().Format("2006-01-02")
+				info.DueIsAllDay = true
+			} else {
+				info.DueTime = time.UnixMilli(ts).Format("2006-01-02 15:04:05")
+			}
 		}
 	}
+	for _, r := range task.Reminders {
+		if r != nil && StringVal(r.Id) != "" {
+			info.Reminders = append(info.Reminders, TaskReminderInfo{ID: StringVal(r.Id), RelativeFireMinute: IntVal(r.RelativeFireMinute)})
+		}
+	}
+	for _, m := range task.Members {
+		if m != nil && StringVal(m.Id) != "" {
+			info.Members = append(info.Members, TaskMemberInfo{ID: StringVal(m.Id), Type: StringVal(m.Type), Role: StringVal(m.Role)})
+		}
+	}
+	for _, tl := range task.Tasklists {
+		if tl != nil && StringVal(tl.TasklistGuid) != "" {
+			info.Tasklists = append(info.Tasklists, TaskTasklistBrief{TasklistGuid: StringVal(tl.TasklistGuid), SectionGuid: StringVal(tl.SectionGuid)})
+		}
+	}
+	info.ParentTaskGuid = StringVal(task.ParentTaskGuid)
+	info.URL = StringVal(task.Url)
+	info.Status = StringVal(task.Status)
 
 	// completed_at 为 "0" 表示未完成（reopen 任务时即写回 "0"），不应格式化为 1970 日期
 	if completedAt := StringVal(task.CompletedAt); completedAt != "" && completedAt != "0" {

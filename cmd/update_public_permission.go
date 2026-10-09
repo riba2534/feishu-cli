@@ -88,9 +88,13 @@ var updatePublicPermissionCmd = &cobra.Command{
 			return fmt.Errorf("请至少指定一个要更新的权限字段")
 		}
 
-		result, err := client.UpdatePublicPermissionV2(docToken, docType, update)
+		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {
 			return err
+		}
+		result, err := client.UpdatePublicPermissionV2(docToken, docType, update, userToken)
+		if err != nil {
+			return wrapPermError(err, userToken)
 		}
 
 		fmt.Printf("公共权限更新成功！\n")

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
 )
@@ -35,7 +36,7 @@ func buildAuthorizationCompleteEvent(token *auth.TokenStore, summary *loginScope
 	refreshPresent := token.RefreshToken != ""
 	event := map[string]any{
 		"event":                 "authorization_complete",
-		"expires_at":            token.ExpiresAt.Format("2006-01-02T15:04:05+08:00"),
+		"expires_at":            token.ExpiresAt.Format(time.RFC3339),
 		"scope":                 token.Scope,
 		"requested_scopes":      emptyIfNil(summary.Requested),
 		"granted_scopes":        emptyIfNil(summary.Granted),
@@ -43,10 +44,13 @@ func buildAuthorizationCompleteEvent(token *auth.TokenStore, summary *loginScope
 		"refresh_token_present": refreshPresent,
 	}
 	if !token.RefreshExpiresAt.IsZero() {
-		event["refresh_expires_at"] = token.RefreshExpiresAt.Format("2006-01-02T15:04:05+08:00")
+		event["refresh_expires_at"] = token.RefreshExpiresAt.Format(time.RFC3339)
 	}
 	if len(summary.Requested) > 0 {
 		event["requested_scope"] = strings.Join(summary.Requested, " ")
+	}
+	if token.StatusMessage != "" {
+		event["status_message"] = token.StatusMessage
 	}
 	warnings := []string{}
 	hints := []string{}
@@ -83,6 +87,9 @@ func printTokenSuccess(token *auth.TokenStore, summary *loginScopeSummary) {
 	}
 	if summary != nil && len(summary.Requested) > 0 {
 		fmt.Fprintf(os.Stderr, "  请求范围: %s\n", strings.Join(summary.Requested, " "))
+	}
+	if token.StatusMessage != "" {
+		fmt.Fprintf(os.Stderr, "  服务端提示: %s\n", token.StatusMessage)
 	}
 	if summary != nil && len(summary.Missing) > 0 {
 		fmt.Fprintf(os.Stderr, "  未授予:   %s\n", strings.Join(summary.Missing, " "))

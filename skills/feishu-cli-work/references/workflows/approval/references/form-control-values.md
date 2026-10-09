@@ -22,14 +22,14 @@
 | 多行文本 | `textarea` | `string` |
 | 日期 | `date` | RFC3339 `string`（如 `2019-10-01T08:12:01+08:00`） |
 | 日期区间 | `dateInterval` | `{start, end, interval}`（均 RFC3339） |
-| 单选 | `radio` / `radioV2` | `[option_value]`（string 数组） |
-| 多选 | `checkbox` / `checkboxV2` | `[option_value, ...]` |
+| 单选 | `radio` / `radioV2` | `option_value`（string，如 `"option_1"`，不是数组） |
+| 多选 | `checkbox` / `checkboxV2` | `[option_value, ...]`（string 数组） |
 | 数字 | `number` | `float`（如 `1234.5678`） |
 | 金额 | `amount` | `float` + 同级 `currency`（如 `"USD"`） |
-| 联系人 | `contact` | `value=[user_id]` + `open_ids=[open_id]` |
+| 联系人 | `contact` | `open_ids=[open_id]`（官方推荐只传 open_ids；也可同时传 `value=[user_id]`） |
 | 关联审批/文档 | `document` | `{token, type}`（type: docx/sheet/bitable...） |
-| 附件 | `attachmentV2` | `[file_code]`（上传文件返回的 code） |
-| 图片 | `image` | `[file_token]`（上传素材返回的 token） |
+| 附件 | `attachmentV2` | `[file_code]`（审批文件 code，需用户提供） |
+| 图片 | `image` | `[file_code]`（审批文件 code，需用户提供） |
 | 明细/字段列表 | `fieldList` | `[[{id,type,value}, ...], ...]`（二维数组，每组一行） |
 | 部门 | `department` | `[{open_id:"od-xxx"}]`（对象数组） |
 
@@ -52,7 +52,7 @@
 ### 单选 / 多选（option value 从审批定义 form 拿）
 
 ```json
-[{"id":"widget1","type":"radioV2","value":["option_1"]},
+[{"id":"widget1","type":"radioV2","value":"option_1"},
  {"id":"widget2","type":"checkboxV2","value":["option_1","option_2"]}]
 ```
 
@@ -66,16 +66,16 @@
 ### 联系人 / 部门
 
 ```json
-[{"id":"widget1","type":"contact","value":["f8ca557e"],"open_ids":["ou_12345"]},
+[{"id":"widget1","type":"contact","open_ids":["ou_xxx"]},
  {"id":"widget2","type":"department","value":[{"open_id":"od-xxx"}]}]
 ```
 
-### 附件 / 图片 / 文档（file code / token 从上传接口拿）
+### 附件 / 图片 / 文档（file code 由用户提供，文档 token 可从链接提取）
 
 ```json
 [{"id":"widget1","type":"attachmentV2","value":["D93653C3-2609-4EE0-8041-61DC1D84F0B5"]},
- {"id":"widget2","type":"image","value":["img_v3_xxx"]},
- {"id":"widget3","type":"document","value":{"token":"TLLKdcpDro9ijQxA33ycNMabcef","type":"docx"}}]
+ {"id":"widget2","type":"image","value":["<file_code>"]},
+ {"id":"widget3","type":"document","value":{"token":"<docx_token>","type":"docx"}}]
 ```
 
 ### 明细 fieldList（二维数组，每组是一个明细行的控件集合）
@@ -93,9 +93,12 @@
 
 - **option value（单选/多选）**：从审批定义 `form` 中控件的 `option.value` 拿；关联外部选项时用 `options.id`
 - **currency（金额）**：从审批定义金额控件的 `value` 拿可设置的货币种类
-- **file code（附件 attachmentV2）**：上传文件接口返回（`feishu-cli media upload`）
-- **file token（图片 image）**：上传素材接口返回（`feishu-cli media upload`）
-- **open_id / user_id（联系人/部门）**：`feishu-cli user read` 或 contact API
+- **file code（附件 attachmentV2 / 图片 image）**：本 CLI 未封装审批文件上传，需用户直接提供 file code；
+  不要用 `feishu-cli media upload`（它上传的是文档素材）。拿不到 file code 时告诉用户该控件无法仅靠 CLI 提单
+- **open_id（联系人）**：用户给姓名/邮箱/手机号时，先用 `feishu-cli user search --email user@example.com`
+  （或 `--mobile` / `--query`，见 feishu-cli-platform 的 directory 工作流）换成 `ou_` open_id
+- **部门 open_department_id（`od-` 开头）**：优先让用户直接提供；有多个候选部门时让用户选，不要猜
+- **文档 token**：从飞书文档链接中提取（`/docx/<token>`）
 
 ## API 不支持的控件
 

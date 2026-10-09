@@ -3,17 +3,20 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
 // record 子命令组
 var bitableRecordCmd = &cobra.Command{
 	Use:   "record",
-	Short: "记录管理（list/get/search/upsert/batch-create/batch-update/batch-get/delete/history-list/share-link/*-attachment）",
+	Short: "记录管理（list/get/search/upsert/batch-create/batch-update/batch-get/delete/batch-delete/history-list/share-link/*-attachment）",
 }
 
 func bitableRecordPath(baseToken, tableID string, extra ...string) string {
@@ -24,9 +27,17 @@ func bitableRecordPath(baseToken, tableID string, extra ...string) string {
 
 var bitableRecordListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "列出记录（支持 --filter-json/--sort-json 结构化过滤排序，无需关键词）",
+	Short: "列出记录（默认每页 100 条，--page-all 自动翻页；支持 --filter-json/--sort-json 结构化过滤排序）",
 	Long: `GET /records，列出数据表记录。与 search 不同，list 不要求 keyword，
 适合纯结构化条件筛选（按状态/数值/日期/空值过滤）。
+
+分页（服务端按 offset/limit 分页，limit 范围 1-2000）:
+  --limit       每页条数，默认 100（服务端在不传 limit 时只返回 20 条）
+  --offset      起始偏移
+  --page-all    自动按 offset 翻页取完全部记录（未指定 --limit 时每页 500 条，最多 1000 页）；
+                合并为同一矩阵结构输出，has_more=false。分页期间表数据被改动（rev 变化）时
+                stderr 告警并输出 rev_changed=true；表结构被改动时报错退出
+  单页模式下 has_more=true 时，输出 next_offset 字段并在 stderr 提示续翻方式
 
 filter DSL（--filter-json，实测验证）:
   {"logic":"and|or","conditions":[[字段名或ID, operator, 值], ...]}
@@ -34,8 +45,10 @@ filter DSL（--filter-json，实测验证）:
   值按字段类型: 文本→字符串（intersects 做包含匹配）；数字→数字；
     单选/多选→选项名数组（单选也必须写数组，如 ["P0"]）；复选框→true/false；
     人员/群/关联→对象数组 [{"id":"ou_xxx"}]；
-    日期→"ExactDate(2026-01-01)" 或 "Today"/"Yesterday"/"Tomorrow"；
+    日期→"ExactDate(2026-01-01)" 或 "Today"/"Yesterday"/"Tomorrow"
+      （日期字段只支持 == > < empty non_empty，不支持 >= / <=）；
     empty/non_empty 可省略值写二元组 [字段, "empty"]
+sort（--sort-json）: [{"field":"字段名或ID","desc":true}]，数组顺序即优先级，最多 10 条
 
 示例:
   # 状态为 Doing 且分数 >= 70
@@ -46,6 +59,9 @@ filter DSL（--filter-json，实测验证）:
   feishu-cli bitable record list --base-token <bt> --table-id <tid> \
     --sort-json '[{"field":"分数","desc":true}]'
 
+  # 取全部记录（自动翻页）
+  feishu-cli bitable record list --base-token <bt> --table-id <tid> --page-all
+
   # 字段投影：只返回指定字段（大表控制输出体积，可重复，最多 100 个）
   feishu-cli bitable record list --base-token <bt> --table-id <tid> \
     --field-id 名称 --field-id 状态`,
@@ -54,8 +70,22 @@ filter DSL（--filter-json，实测验证）:
 		viewID, _ := cmd.Flags().GetString("view-id")
 		offset, _ := cmd.Flags().GetInt("offset")
 		limit, _ := cmd.Flags().GetInt("limit")
+		pageAll, _ := cmd.Flags().GetBool("page-all")
 		filterJSON, _ := cmd.Flags().GetString("filter-json")
 		sortJSON, _ := cmd.Flags().GetString("sort-json")
+		if offset < 0 {
+			return clierr.Usagef("--offset 不能为负数，当前 %d", offset)
+		}
+		if limit < 0 || limit > recordListMaxLimit {
+			return clierr.Usagef("--limit 范围 1-%d，当前 %d", recordListMaxLimit, limit)
+		}
+		if limit == 0 || (pageAll && !cmd.Flags().Changed("limit")) {
+			// 0 视为未指定；--page-all 未显式指定 --limit 时用更大的页减少请求数
+			limit = recordListDefaultLimit
+			if pageAll {
+				limit = recordListPageAllDefaultLimit
+			}
+		}
 		selectFields, err := recordSelectFields(cmd, 100)
 		if err != nil {
 			return err
@@ -68,12 +98,6 @@ filter DSL（--filter-json，实测验证）:
 		if len(selectFields) > 0 {
 			params["field_id"] = selectFields
 		}
-		if offset > 0 {
-			params["offset"] = offset
-		}
-		if limit > 0 {
-			params["limit"] = limit
-		}
 		// filter/sort 在 GET 端点作为 JSON 串 query 参数下发（服务端解析字符串）
 		if filterJSON != "" {
 			if err := validateCompactJSON(filterJSON, "--filter-json"); err != nil {
@@ -82,15 +106,47 @@ filter DSL（--filter-json，实测验证）:
 			params["filter"] = filterJSON
 		}
 		if sortJSON != "" {
-			if err := validateCompactJSON(sortJSON, "--sort-json"); err != nil {
+			if err := validateRecordSortJSON(sortJSON, "--sort-json"); err != nil {
 				return err
 			}
 			params["sort"] = sortJSON
 		}
-		return runBaseV3Simple(cmd, "GET", func(baseToken string) string {
-			return bitableRecordPath(baseToken, tableID)
-		}, params)
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, err := resolveIdentityToken(cmd)
+		if err != nil {
+			return err
+		}
+		baseToken, err := resolveBaseToken(cmd)
+		if err != nil {
+			return err
+		}
+		path := bitableRecordPath(baseToken, tableID)
+		fetch := func(p map[string]any) (map[string]any, error) {
+			return client.BaseV3Call("GET", path, p, nil, token)
+		}
+		data, err := fetchRecordList(fetch, params, recordListOptions{Offset: offset, Limit: limit, PageAll: pageAll}, os.Stderr)
+		if err != nil {
+			return err
+		}
+		return printJSON(data)
 	},
+}
+
+// maxRecordSortItems 排序条件上限（官方技能与服务端均限制最多 10 条）。
+const maxRecordSortItems = 10
+
+// validateRecordSortJSON 校验 --sort-json：合法 JSON，且为数组时最多 10 条。
+func validateRecordSortJSON(s, flagName string) error {
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return clierr.Usagef("解析 %s 失败（需为合法 JSON）: %v", flagName, err)
+	}
+	if arr, ok := v.([]any); ok && len(arr) > maxRecordSortItems {
+		return clierr.Usagef("%s 最多 %d 条排序条件，当前 %d 条", flagName, maxRecordSortItems, len(arr))
+	}
+	return nil
 }
 
 // recordSelectFields 读取 --field-id 投影 flag（可重复，值为字段名或字段 ID）并做数量上限校验。
@@ -327,6 +383,9 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 		body["filter"] = f
 	}
 	if raw := strings.TrimSpace(sortJSON); raw != "" {
+		if err := validateRecordSortJSON(raw, "--sort-json"); err != nil {
+			return nil, err
+		}
 		var s any
 		if err := json.Unmarshal([]byte(raw), &s); err != nil {
 			return nil, fmt.Errorf("解析 --sort-json 失败: %w", err)
@@ -404,9 +463,13 @@ var bitableRecordDeleteCmd = &cobra.Command{
 	},
 }
 
+// maxRecordBatchDelete 单次 batch_delete 的 record_id 上限（实测 201 条报
+// 800010701 "Array must contain at most 200 element(s)"，与官方 record_ops.go 一致）。
+const maxRecordBatchDelete = 200
+
 var bitableRecordBatchDeleteCmd = &cobra.Command{
 	Use:   "batch-delete",
-	Short: "批量删除记录（POST batch_delete，单次最多 500 条）",
+	Short: "批量删除记录（POST batch_delete，每批 ≤200 条，超出自动分批串行执行）",
 	Long: `批量删除多条记录，对应 base/v3 的 records/batch_delete 接口。
 
 参数（任选其一）:
@@ -418,8 +481,10 @@ var bitableRecordBatchDeleteCmd = &cobra.Command{
   --base-token   多维表格 token（必填）
 
 注意:
-  - 单次最多 500 条；超过会报 400
-  - 与 record delete 单条接口的区别：batch-delete 走 POST batch_delete，对大量删除场景效率更高（少一次握手）`,
+  - 服务端单次最多 200 条；超过 200 条时自动按 200 条一批**串行**提交
+    （同一张表并发写会触发 1254291 写冲突）。某批失败即停止，错误里注明已删除的批次与条数
+  - 服务端不校验 record_id 是否存在（不存在的 ID 也会原样回显），需要确认时读回记录
+  - 输出 {"record_id_list":[...]}；分多批时为各批合并结果并附加 batch_count`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		recordIDsCSV, _ := cmd.Flags().GetString("record-ids")
@@ -429,15 +494,70 @@ var bitableRecordBatchDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if len(ids) > 500 {
-			return fmt.Errorf("单次最多 500 条，当前传入 %d 条", len(ids))
+		if err := config.Validate(); err != nil {
+			return err
 		}
-
-		body := map[string]any{"record_id_list": ids}
-		return runBaseV3WithBody(cmd, "POST", func(baseToken string) string {
-			return bitableRecordPath(baseToken, tableID, "batch_delete")
-		}, body)
+		token, err := resolveIdentityToken(cmd)
+		if err != nil {
+			return err
+		}
+		baseToken, err := resolveBaseToken(cmd)
+		if err != nil {
+			return err
+		}
+		path := bitableRecordPath(baseToken, tableID, "batch_delete")
+		call := func(chunk []string) (map[string]any, error) {
+			return client.BaseV3Call("POST", path, nil, map[string]any{"record_id_list": chunk}, token)
+		}
+		data, err := runRecordBatchDelete(ids, maxRecordBatchDelete, call, os.Stderr)
+		if err != nil {
+			return err
+		}
+		return printJSON(data)
 	},
+}
+
+// runRecordBatchDelete 按 chunkSize 分批串行调用 batch_delete，合并各批返回的 record_id_list。
+// 串行而非并发：同一张表并发写会触发 1254291。某批失败时立即停止（不再提交后续批次），
+// 错误中注明已成功删除的批次与条数，便于用户只重试剩余部分。
+func runRecordBatchDelete(ids []string, chunkSize int, call func([]string) (map[string]any, error), progress io.Writer) (map[string]any, error) {
+	if chunkSize <= 0 {
+		chunkSize = maxRecordBatchDelete
+	}
+	batchCount := (len(ids) + chunkSize - 1) / chunkSize
+	deleted := make([]any, 0, len(ids))
+	var last map[string]any
+	for i := 0; i < batchCount; i++ {
+		start := i * chunkSize
+		end := start + chunkSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunk := ids[start:end]
+		if batchCount > 1 && progress != nil {
+			fmt.Fprintf(progress, "批量删除: 第 %d/%d 批（%d 条）\n", i+1, batchCount, len(chunk))
+		}
+		data, err := call(chunk)
+		if err != nil {
+			if i == 0 {
+				return nil, err
+			}
+			return nil, fmt.Errorf("第 %d/%d 批删除失败（前 %d 批共 %d 条已删除，剩余 %d 条未提交）: %w",
+				i+1, batchCount, i, start, len(ids)-start, err)
+		}
+		last = data
+		if got, ok := data["record_id_list"].([]any); ok {
+			deleted = append(deleted, got...)
+		} else {
+			for _, id := range chunk {
+				deleted = append(deleted, id)
+			}
+		}
+	}
+	if batchCount <= 1 && last != nil {
+		return last, nil
+	}
+	return map[string]any{"record_id_list": deleted, "batch_count": batchCount}, nil
 }
 
 // loadBatchDeleteRecordIDs 解析 --record-ids（逗号分隔）或 --from-file（每行一个）。
@@ -448,7 +568,7 @@ func loadBatchDeleteRecordIDs(csv, fromFile string) ([]string, error) {
 		ids = append(ids, splitAndTrim(csv)...)
 	}
 	if fromFile != "" {
-		data, err := os.ReadFile(fromFile)
+		data, err := readLocalInputFile(fromFile)
 		if err != nil {
 			return nil, fmt.Errorf("读取 --from-file 失败: %w", err)
 		}
@@ -559,10 +679,11 @@ func init() {
 
 	// list 额外参数
 	bitableRecordListCmd.Flags().String("view-id", "", "视图 ID 过滤")
-	bitableRecordListCmd.Flags().Int("offset", 0, "offset")
-	bitableRecordListCmd.Flags().Int("limit", 0, "limit")
+	bitableRecordListCmd.Flags().Int("offset", 0, "起始偏移（续翻时取上一页输出的 next_offset）")
+	bitableRecordListCmd.Flags().Int("limit", recordListDefaultLimit, "每页条数（1-2000，默认 100；--page-all 未指定时每页 500）")
+	bitableRecordListCmd.Flags().Bool("page-all", false, "自动按 offset 翻页取完全部记录（最多 1000 页）")
 	bitableRecordListCmd.Flags().String("filter-json", "", `结构化过滤 JSON（tuple DSL，见 --help）`)
-	bitableRecordListCmd.Flags().String("sort-json", "", `排序 JSON 数组，如 [{"field":"分数","desc":true}]`)
+	bitableRecordListCmd.Flags().String("sort-json", "", `排序 JSON 数组（最多 10 条），如 [{"field":"分数","desc":true}]`)
 	bitableRecordListCmd.Flags().StringArray("field-id", nil, "仅返回指定字段（字段名或字段 ID，可重复，最多 100 个）")
 
 	// get 需要 record-id
@@ -602,7 +723,7 @@ func init() {
 	bitableRecordSearchCmd.Flags().StringArray("search-field", nil, "搜索字段名/ID（可重复；便捷模式必填）")
 	bitableRecordSearchCmd.Flags().StringArray("field-id", nil, "仅返回指定字段（投影，可重复，最多 50 个）")
 	bitableRecordSearchCmd.Flags().String("filter-json", "", "结构化过滤条件 JSON（logic/conditions，需配合 --keyword/--search-field），见命令 Long 示例")
-	bitableRecordSearchCmd.Flags().String("sort-json", "", "排序 JSON 数组（field/desc），见命令 Long 示例")
+	bitableRecordSearchCmd.Flags().String("sort-json", "", "排序 JSON 数组（field/desc，最多 10 条），见命令 Long 示例")
 	bitableRecordSearchCmd.Flags().String("view-id", "", "限定视图 ID")
 	bitableRecordSearchCmd.Flags().Int("offset", 0, "分页 offset")
 	bitableRecordSearchCmd.Flags().Int("limit", 10, "分页大小（1-200，默认 10）")

@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -36,6 +35,8 @@ type SearchMessagesResult struct {
 	MessageIDs []string // 消息 ID 列表
 	PageToken  string   // 分页 token
 	HasMore    bool     // 是否有更多
+	// Notice 服务端提示（如查询词超过 50 字被截断），非空时调用方应透出给用户。
+	Notice string `json:"notice,omitempty"`
 }
 
 const (
@@ -231,8 +232,8 @@ func SearchMessages(opts SearchMessagesOptions, userAccessToken string) (*Search
 	if err != nil {
 		return nil, fmt.Errorf("搜索消息失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("搜索消息失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse("搜索消息", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -243,6 +244,7 @@ func SearchMessages(opts SearchMessagesOptions, userAccessToken string) (*Search
 			PageToken     string `json:"page_token"`
 			NextPageToken string `json:"next_page_token"`
 			HasMore       bool   `json:"has_more"`
+			Notice        string `json:"notice"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
@@ -266,6 +268,7 @@ func SearchMessages(opts SearchMessagesOptions, userAccessToken string) (*Search
 		MessageIDs: ids,
 		PageToken:  pageToken,
 		HasMore:    apiResp.Data.HasMore,
+		Notice:     apiResp.Data.Notice,
 	}, nil
 }
 
@@ -327,30 +330,37 @@ func SearchApps(opts SearchAppsOptions, userAccessToken string) (*SearchAppsResu
 	return result, nil
 }
 
-// SearchDocWikiOptions 搜索文档和 Wiki 的选项
+// SearchDocWikiOptions search docs 的选项。
+//
+// search docs 已从旧端点 POST /open-apis/suite/docs-api/search/object 迁移到
+// POST /open-apis/search/v2/doc_wiki/search（对齐官方 docs +search），与 drive search 共用同一端点：
+//   - 旧 count → page_size（v2 上限 20）；旧 offset 无法映射，改用 page_token 翻页
+//   - 旧 owner_ids → v2 filter.creator_ids（服务端按 owner 语义匹配）
+//   - 旧 chat_ids → filter.chat_ids；旧 docs_types → filter.doc_types（大写枚举）
 type SearchDocWikiOptions struct {
-	Query    string   // 搜索关键词
-	Count    int      // 返回数量（0-50）
-	Offset   int      // 偏移量（offset + count < 200）
-	OwnerIDs []string // 文件所有者 Open ID 列表
-	ChatIDs  []string // 文件所在群 ID 列表
-	DocTypes []string // 文档类型（doc/docx/sheet/slides/bitable/mindnote/file/wiki/shortcut）
+	Query     string   // 搜索关键词
+	PageSize  int      // 每页数量（1-20；<=0 用默认 15）
+	PageToken string   // 分页标记（上一页响应的 page_token）
+	OwnerIDs  []string // 文件所有者 Open ID 列表（→ filter.creator_ids）
+	ChatIDs   []string // 文件所在群 ID 列表（→ filter.chat_ids）
+	DocTypes  []string // 文档类型（→ filter.doc_types，发送前转大写）
 }
 
-// SearchDocWikiResult 搜索文档和 Wiki 的结果
+// SearchDocWikiResult 搜索文档和 Wiki 的结果（字段名保持与旧端点时期一致，新增 PageToken）
 type SearchDocWikiResult struct {
-	Total    int               // 总结果数
-	HasMore  bool              // 是否有更多
-	ResUnits []*DocWikiResUnit // 搜索结果列表
+	Total     int               // 总结果数
+	HasMore   bool              // 是否有更多
+	PageToken string            // 下一页分页标记（v2 新增）
+	ResUnits  []*DocWikiResUnit // 搜索结果列表
 }
 
 // DocWikiResUnit 文档搜索结果单元
 type DocWikiResUnit struct {
-	DocsToken string // 文档 Token
-	DocsType  string // 文档类型
-	Title     string // 标题
-	OwnerID   string // 所有者 ID
-	URL       string // 文档 URL（根据类型和 Token 拼接）
+	DocsToken string // 文档 Token（v2 result_meta.token）
+	DocsType  string // 文档类型（小写，v2 result_meta.doc_types / entity_type）
+	Title     string // 标题（已去除 <h> 高亮标记）
+	OwnerID   string // 所有者 ID（v2 result_meta.owner_id）
+	URL       string // 文档 URL（优先 v2 result_meta.url，缺失时按类型和 Token 拼接）
 }
 
 // docsTypeURLPath 文档类型到 URL 路径的映射
@@ -366,103 +376,86 @@ var docsTypeURLPath = map[string]string{
 	"shortcut": "docx",
 }
 
-// buildDocsURL 根据文档类型和 Token 拼接飞书文档 URL
+// buildDocsURL 根据文档类型和 Token 拼接文档 URL（按当前品牌选择 www.feishu.cn / www.larksuite.com）
 func buildDocsURL(docsType, docsToken string) string {
 	path, ok := docsTypeURLPath[docsType]
 	if !ok {
 		path = docsType
 	}
-	return fmt.Sprintf("https://feishu.cn/%s/%s", path, docsToken)
+	return fmt.Sprintf("%s/%s/%s", ResourceURLBase(), path, docsToken)
 }
 
-// SearchDocWiki 搜索云文档
-// 使用 /open-apis/suite/docs-api/search/object 端点
-// 注意：此 API 需要 User Access Token
+// SearchDocWiki 搜索云文档（v2 doc_wiki/search，需要 User Access Token + search:docs:read）。
+// 复用 drive search 的 v2 请求构造，把 v2 res_units 转为与旧端点兼容的 DocWikiResUnit。
 func SearchDocWiki(opts SearchDocWikiOptions, userAccessToken string) (*SearchDocWikiResult, error) {
-	client, err := GetClient()
+	docTypes := make([]string, 0, len(opts.DocTypes))
+	for _, t := range opts.DocTypes {
+		docTypes = append(docTypes, strings.ToUpper(strings.TrimSpace(t)))
+	}
+	raw, err := docWikiSearchV2("搜索文档", DriveSearchOptions{
+		Query:      opts.Query,
+		PageToken:  opts.PageToken,
+		PageSize:   opts.PageSize,
+		CreatorIDs: opts.OwnerIDs,
+		ChatIDs:    opts.ChatIDs,
+		DocTypes:   docTypes,
+	}, userAccessToken)
 	if err != nil {
 		return nil, err
 	}
 
-	// 构建请求体
-	body := map[string]any{
-		"search_key": opts.Query,
-	}
-	if opts.Count > 0 {
-		body["count"] = opts.Count
-	}
-	if opts.Offset > 0 {
-		body["offset"] = opts.Offset
-	}
-	if len(opts.OwnerIDs) > 0 {
-		body["owner_ids"] = opts.OwnerIDs
-	}
-	if len(opts.ChatIDs) > 0 {
-		body["chat_ids"] = opts.ChatIDs
-	}
-	if len(opts.DocTypes) > 0 {
-		body["docs_types"] = opts.DocTypes
-	}
-
-	apiPath := "/open-apis/suite/docs-api/search/object"
-
-	resp, err := client.Post(Context(), apiPath, body,
-		larkcore.AccessTokenTypeUser,
-		UserTokenOption(userAccessToken)...)
-	if err != nil {
-		return nil, fmt.Errorf("搜索文档失败: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("搜索文档失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
-	}
-
-	// 解析响应
-	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-		Data struct {
-			DocsEntities []struct {
-				DocsToken string `json:"docs_token"`
-				DocsType  string `json:"docs_type"`
-				Title     string `json:"title"`
-				OwnerID   string `json:"owner_id"`
-			} `json:"docs_entities"`
-			HasMore bool `json:"has_more"`
-			Total   int  `json:"total"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("解析搜索响应失败: %w", err)
-	}
-
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("搜索文档失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
-	}
-
 	result := &SearchDocWikiResult{
-		Total:    apiResp.Data.Total,
-		HasMore:  apiResp.Data.HasMore,
-		ResUnits: make([]*DocWikiResUnit, 0, len(apiResp.Data.DocsEntities)),
+		Total:     raw.Total,
+		HasMore:   raw.HasMore,
+		PageToken: raw.PageToken,
+		ResUnits:  make([]*DocWikiResUnit, 0, len(raw.Items)),
 	}
-
-	for _, entity := range apiResp.Data.DocsEntities {
-		result.ResUnits = append(result.ResUnits, &DocWikiResUnit{
-			DocsToken: entity.DocsToken,
-			DocsType:  entity.DocsType,
-			Title:     entity.Title,
-			OwnerID:   entity.OwnerID,
-			URL:       buildDocsURL(entity.DocsType, entity.DocsToken),
-		})
+	for _, item := range raw.Items {
+		result.ResUnits = append(result.ResUnits, docWikiResUnitFromV2(item))
 	}
-
 	return result, nil
 }
 
-// DriveSearchOptions 是 search/v2/doc_wiki/search v2 端点的扁平 filter 选项。
-// 与 v1 端点（/suite/docs-api/search/object）共存：v2 提供更丰富的过滤维度
-// （folder-tokens、space-ids、creator-ids、only-title、time windows）。
+// docWikiResUnitFromV2 把 v2 res_units 单项转为旧输出结构
+func docWikiResUnitFromV2(item map[string]interface{}) *DocWikiResUnit {
+	meta, _ := item["result_meta"].(map[string]interface{})
+	token := searchStr(meta["token"])
+	docType := strings.ToLower(searchStr(meta["doc_types"]))
+	if docType == "" {
+		docType = strings.ToLower(searchStr(item["entity_type"]))
+	}
+	title := searchStr(item["title_highlighted"])
+	if title == "" {
+		title = searchStr(item["title"])
+	}
+	title = strings.NewReplacer("<h>", "", "</h>", "").Replace(title)
+	url := searchStr(meta["url"])
+	if url == "" && token != "" && docType != "" {
+		url = buildDocsURL(docType, token)
+	}
+	return &DocWikiResUnit{
+		DocsToken: token,
+		DocsType:  docType,
+		Title:     title,
+		OwnerID:   searchStr(meta["owner_id"]),
+		URL:       url,
+	}
+}
+
+// searchStr 把 JSON 解码出的任意标量转为字符串（nil → ""）
+func searchStr(v interface{}) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	default:
+		return fmt.Sprint(t)
+	}
+}
+
+// DriveSearchOptions 是 search/v2/doc_wiki/search v2 端点的扁平 filter 选项
+// （drive search 与 search docs 共用；search docs 已不再使用旧 /suite/docs-api/search/object）。
 type DriveSearchOptions struct {
 	Query        string   // 关键字（可空，纯按 filter 浏览）
 	PageToken    string   // 分页 token
@@ -495,6 +488,11 @@ type DriveSearchResult struct {
 //   - --space-ids 只对 wiki_filter 加 space_ids（限定知识库 space）
 //   - sort_type 必须全大写枚举（DEFAULT 写成 DEFAULT_TYPE）
 func DriveSearchV2(opts DriveSearchOptions, userAccessToken string) (*DriveSearchResult, error) {
+	return docWikiSearchV2("drive 搜索", opts, userAccessToken)
+}
+
+// docWikiSearchV2 是 drive search 与 search docs 共用的 v2 doc_wiki/search 调用；action 用于错误前缀。
+func docWikiSearchV2(action string, opts DriveSearchOptions, userAccessToken string) (*DriveSearchResult, error) {
 	c, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -568,10 +566,10 @@ func DriveSearchV2(opts DriveSearchOptions, userAccessToken string) (*DriveSearc
 	resp, err := c.Post(Context(), "/open-apis/search/v2/doc_wiki/search", body,
 		larkcore.AccessTokenTypeUser, UserTokenOption(userAccessToken)...)
 	if err != nil {
-		return nil, fmt.Errorf("drive 搜索失败: %w", err)
+		return nil, fmt.Errorf("%s失败: %w", action, err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("drive 搜索失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := ParseAPIResponse(action, resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	var parsed struct {
@@ -585,10 +583,10 @@ func DriveSearchV2(opts DriveSearchOptions, userAccessToken string) (*DriveSearc
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &parsed); err != nil {
-		return nil, fmt.Errorf("drive 搜索响应解析失败: %w", err)
+		return nil, fmt.Errorf("%s响应解析失败: %w", action, err)
 	}
 	if parsed.Code != 0 {
-		return nil, fmt.Errorf("drive 搜索失败: code=%d, msg=%s", parsed.Code, parsed.Msg)
+		return nil, fmt.Errorf("%s失败: code=%d, msg=%s", action, parsed.Code, parsed.Msg)
 	}
 	return &DriveSearchResult{
 		Total:     parsed.Data.Total,

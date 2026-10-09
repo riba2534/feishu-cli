@@ -5,6 +5,10 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/spf13/cobra"
 )
 
 // vcBatchLimit VC / Minutes 命令批量入参上限
@@ -65,12 +69,54 @@ var minuteTokenPattern = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 // ensureMinuteToken 校验 minute_token 基础格式
 func ensureMinuteToken(token string) error {
 	if len(token) < 5 {
-		return fmt.Errorf("minute_token 长度过短: %q", token)
+		return clierr.Usagef("minute_token 长度过短: %q", token)
 	}
 	if !minuteTokenPattern.MatchString(token) {
-		return fmt.Errorf("minute_token 含非法字符: %q", token)
+		return clierr.Usagef("minute_token 含非法字符: %q", token)
 	}
 	return nil
+}
+
+// normalizeMinuteTokenInput 接受 minute_token 或妙记链接
+// （https://*.feishu.cn|larksuite.com|larkoffice.com/minutes/<token>），返回校验后的 minute_token。
+// 非法输入均为用法错误（exit 2）。
+func normalizeMinuteTokenInput(raw string) (string, error) {
+	input := strings.TrimSpace(raw)
+	token := input
+	if client.LooksLikeURL(input) {
+		t, err := client.ParseMinuteURL(input)
+		if err != nil {
+			return "", clierr.Usagef("无法从妙记链接提取 minute_token: %v", err)
+		}
+		token = t
+	}
+	if err := ensureMinuteToken(token); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// parseMinuteTokenList 解析逗号分隔的 minute_token / 妙记链接列表：逐个规范化为 minute_token，
+// 去重保序并校验上限（链接与裸 token 指向同一妙记时只保留一条）。
+func parseMinuteTokenList(raw, label string) ([]string, error) {
+	items, err := parseCSVIDs(raw, label)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		token, err := normalizeMinuteTokenInput(item)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[token]; ok {
+			continue
+		}
+		seen[token] = struct{}{}
+		out = append(out, token)
+	}
+	return out, nil
 }
 
 // parseCSVIDs 解析逗号分隔的 ID 列表，去重保序并校验上限
@@ -90,7 +136,7 @@ func parseCSVIDs(raw, label string) ([]string, error) {
 		out = append(out, v)
 	}
 	if len(out) > vcBatchLimit {
-		return nil, fmt.Errorf("--%s 最多 %d 条，当前 %d 条", label, vcBatchLimit, len(out))
+		return nil, clierr.Usagef("--%s 最多 %d 条，当前 %d 条", label, vcBatchLimit, len(out))
 	}
 	return out, nil
 }
@@ -133,10 +179,10 @@ func exactlyOneNonEmpty(names []string, values []string) error {
 		}
 	}
 	if picked == 0 {
-		return fmt.Errorf("请恰好指定 %s 之一", strings.Join(nameList(names), " / "))
+		return clierr.Usagef("请恰好指定 %s 之一", strings.Join(nameList(names), " / "))
 	}
 	if picked > 1 {
-		return fmt.Errorf("%s 不能同时使用，请只选其一", strings.Join(nameList(names), " / "))
+		return clierr.Usagef("%s 不能同时使用，请只选其一", strings.Join(nameList(names), " / "))
 	}
 	return nil
 }
@@ -195,4 +241,18 @@ func formatVCTime(ts string) string {
 		return parsed.In(time.Local).Format("2006-01-02 15:04:05")
 	}
 	return ts
+}
+
+// vcReadAsFlagHelp 会议 / 纪要 / 妙记读命令的 --as 帮助。默认 user 保持历史行为（这些命令原先只收 User Token）。
+const vcReadAsFlagHelp = "身份: user(默认，User Token) | bot(App Token，需应用开通对应权限) | auto(User 优先；未配置回退 Bot；已配置但解析/刷新失败 fail-closed)"
+
+// addVCReadAsFlag 给会议 / 纪要 / 妙记读命令注册 --as，默认 user（不改变既有默认身份）。
+func addVCReadAsFlag(cmd *cobra.Command) {
+	cmd.Flags().String("as", "user", vcReadAsFlagHelp)
+}
+
+// resolveVCReadIdentity 按 --as 解析会议 / 纪要 / 妙记读命令的身份；空串表示 Bot（App Token）。
+// 复用 resolveIdentityToken：auto = User 优先、未配置回退 Bot、已配置但不可用 fail-closed。
+func resolveVCReadIdentity(cmd *cobra.Command) (string, error) {
+	return resolveIdentityToken(cmd)
 }

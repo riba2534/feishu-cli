@@ -1,30 +1,50 @@
 ---
 name: feishu-cli-meetings
 description: >-
-  查询飞书历史视频会议、纪要、AI 摘要、逐字稿和录制，按 minute token 读取或下载妙记，操作会议机器人入会/离会及查询会议事件。创建日程、找共同空闲时间和预订会议室使用 feishu-cli-work。
-compatibility: Requires feishu-cli v1.41.0+ and network access for Feishu API calls.
+  飞书视频会议与妙记：按时间、参会人或关键词检索历史会议，查询进行中的会议，获取会议纪要、智能纪要、AI 摘要/待办/章节与逐字稿，查询录制并下载妙记音视频和逐字稿，搜索妙记与申请妙记权限，操作会议机器人入会/离会并查询会议事件。用户提到会议纪要、妙记、minute token、逐字稿、录制、会议机器人或 meeting_id 时使用。不用于：创建日程、找共同空闲时间和预订会议室（feishu-cli-work）；未封装接口的 schema/raw API（feishu-cli-platform）。
+compatibility: Requires feishu-cli v1.42.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Read Write
 ---
 
 # 飞书会议与妙记
 
-读取 `references/workflows/vc/workflow.md` 后执行。
+本 Skill 只有一个工作流 `references/workflows/vc/workflow.md`，按下表定位到其中的章节后执行。
 将该工作流中的 `references/`、`scripts/`、`templates/`、`examples/` 相对路径按 `workflow.md`
 所在目录解析；执行脚本时使用解析后的实际路径，不要依赖当前 shell 目录。
 
-## 身份边界
+## 路由
 
-- `vc search/notes/recording/detail`、`vc note detail/transcript` 和 minutes 命令必须使用 User Token。
-- `vc bot meeting-join/meeting-leave` 默认 Bot 身份，而且只在显式 flag 时切换 User Token。
-- `vc bot meeting-events` 支持 `--as bot|user|auto`（默认 auto），建议按来源显式选身份，须与
-  `meeting_id` 来源一致：`--as user` 预检 `vc:meeting.meetingevent:read`；`--as bot`
-  确认应用已开通 `vc:meeting.bot.join:write` 且机器人须在会中，不能用 User `auth check` 替代。`--as auto` 刷新/token 文件错误
-  fail-closed，禁止静默切 Bot；`--dry-run` 只静态探测身份，不联网不写 token。
+| 意图 | 命令 | 工作流章节 |
+|---|---|---|
+| 按主题/时间/参会人搜历史会议，会议号换 meeting_id，一次拿 note_id 与 minute_token | `vc search`、`vc detail`、`vc recording` | 命令：搜索与定位会议 |
+| 会议纪要、纪要文档、逐字稿（普通纪要读 verbatim 文档，统一纪要导出统一逐字稿） | `vc notes`、`vc note detail/transcript`、`doc export` | 决策规则、命令：纪要与逐字稿 |
+| 妙记搜索、AI 摘要/待办/章节/关键词、妙记逐字稿、下载音视频、申请妙记权限 | `minutes search/get/download/apply-permission` | 命令：妙记 |
+| 正在开的会议、会中事件 | `vc meeting list-active`、`vc bot meeting-events` | 命令：进行中的会议与会中事件 |
+| 会议机器人入会/离会 | `vc bot meeting-join/meeting-leave` | 命令：会议机器人入会/离会 |
+| 日历日程直达纪要与妙记 | `calendar agenda` → `vc notes --calendar-event-ids` | 典型工作流 B |
 
-下载媒体时保留服务端文件名；无法解析扩展名时再按 Content-Type 推导。
+## 执行规则
 
-搜索会议并下载妙记逐字稿时至少预检：
+1. 身份：`vc search/detail/recording/notes`、`vc note detail`、`vc meeting list-active` 与 minutes 命令默认 User，
+   可 `--as bot|auto`（Bot 需应用开通 scope，且通常无权读取用户的会议和妙记）；`vc note transcript` 只支持 User；
+   `meeting-join/leave` 只支持 Bot（传 `--user-access-token` 报错 exit 2）；`meeting-events` 的 `--as` 必须与
+   `meeting_id` 来源一致。取得 ID 时用的身份要沿用到后续命令，命令不支持时说明限制，不要擅自换身份。
+2. 标识不能混用：9 位数字是会议号，只能给 `vc detail <会议号>`、`vc search --query` 和 `meeting-join --meeting-number`；
+   `meeting-events` / `meeting-leave` 要长数字 `meeting_id`。
+3. 读逐字稿先看纪要类型：`normal` 用 `doc export <verbatim_doc>`，`unified` 用 `vc note transcript <note_id>`，
+   只有妙记时用 `minutes get <minute_token> --transcript`（写文件）。
+4. `vc notes --with-artifacts/--download-transcript` 三条路径都生效：`--meeting-ids` / `--calendar-event-ids` 先经录制解析
+   `minute_token`，会议没有录制时写入 `hint` 并在 stderr 说明；
+   只要摘要、待办等时用 `minutes get --summary --todo ...`，不要拉整份产物。
+5. `vc notes` 任一条目失败（含已请求的产物或逐字稿）以退出码 1 结束、已取数据照常输出；`minutes get` 产物失败时输出
+   `artifacts_error` 并非零退出；`vc recording`、`minutes download` 部分失败仍为 0、全部失败才非 0——都要逐项检查 `ok` / `error`。
+6. `minutes apply-permission` 会通知妙记所有者，机器人入会/离会对参会人可见：执行前征得用户同意，验证参数用 `--dry-run`。
+7. 会议结束后不要再用 `meeting-events`，改读 `vc detail` / `vc notes` 的会后产物；会中事件先 `vc meeting list-active` 拿 `meeting_id`。
+
+User 路径业务命令前预检，例如搜索会议并读取妙记逐字稿（`auth check` 只检查 User Token；Bot 路径需确认应用侧已开通 scope，不能用它替代）：
 
 ```bash
-feishu-cli auth check --scope "vc:meeting.search:read vc:note:read minutes:minutes:readonly minutes:minutes.transcript:export"
+feishu-cli auth check --scope "vc:meeting.search:read vc:note:read minutes:minutes:readonly minutes:minutes.artifacts:read"
 ```
+
+删除、覆盖类命令返回退出码 10 时，向用户确认目标与影响后追加全局 `--yes` 重跑，不要自行添加。身份或 scope 报错（如 99991663/99991668/99991672/99991679）读取 `../feishu-cli-platform/references/workflows/auth/references/identity.md`；判断成败、编写脚本或处理确认门禁读取 `../feishu-cli-platform/references/workflows/auth/references/agent-contract.md`。

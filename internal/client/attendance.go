@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -153,8 +152,9 @@ func QueryAttendanceUserTasks(
 	if err != nil {
 		return nil, fmt.Errorf("查询考勤打卡记录失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询考勤打卡记录 HTTP 状态异常 %d: %s", resp.StatusCode, string(resp.RawBody))
+	// 先解析业务码：考勤业务错误（含缺 scope）随 HTTP 400 下发
+	if err := CheckAPIResponse("查询考勤打卡记录", resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -285,8 +285,9 @@ func QueryAttendanceUserStats(
 	if err != nil {
 		return nil, fmt.Errorf("查询考勤统计失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询考勤统计 HTTP 状态异常 %d: %s", resp.StatusCode, string(resp.RawBody))
+	// 先解析业务码：考勤业务错误（含缺 scope）随 HTTP 400 下发
+	if err := CheckAPIResponse("查询考勤统计", resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {

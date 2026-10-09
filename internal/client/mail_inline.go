@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // MailInlineImageRef 描述 body 中一个本地图片引用的扫描结果
@@ -172,6 +174,10 @@ func LoadInlineImageBytes(ref *MailInlineImageRef) error {
 	if err := assertPathInSafeRoots(resolved); err != nil {
 		return err
 	}
+	// home 子树包含 ~/.ssh、~/.feishu-cli 等凭证目录：解析符号链接后按敏感目录拒绝名单再校验
+	if err := safefile.ValidateInputPath(resolved); err != nil {
+		return err
+	}
 	// 安全 #2：拒绝非常规文件（设备文件 / FIFO / socket）和过大文件。
 	info, err := os.Lstat(resolved)
 	if err != nil {
@@ -214,30 +220,23 @@ func validateInlineImagePath(p string) error {
 	return nil
 }
 
-// assertPathInSafeRoots 要求 abs 必须落在当前工作目录或 user home 子树内。
+// assertPathInSafeRoots 要求 abs（调用方已 EvalSymlinks）必须落在当前工作目录或 user home 子树内。
+// 安全根同样解析符号链接后再比较：home / cwd 本身是软链接时（如 /home/u → /data00/home/u），
+// 只解析图片一侧会让 filepath.Rel 算出 ".." 前缀，把 home 下的合法图片误判为越界。
 // 在没有任一根可解析时（罕见）放行，避免误伤；但 `..` 已在前一步拦截。
 func assertPathInSafeRoots(abs string) error {
 	roots := make([]string, 0, 2)
 	if cwd, err := os.Getwd(); err == nil && cwd != "" {
-		if r, err2 := filepath.Abs(cwd); err2 == nil {
-			roots = append(roots, r)
-		}
+		roots = append(roots, cwd)
 	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		if r, err2 := filepath.Abs(home); err2 == nil {
-			roots = append(roots, r)
-		}
+		roots = append(roots, home)
 	}
 	if len(roots) == 0 {
 		return nil
 	}
 	for _, r := range roots {
-		// 用 filepath.Rel 兼容跨平台分隔符；rel 不含 ".." 即在子树内
-		rel, err := filepath.Rel(r, abs)
-		if err != nil {
-			continue
-		}
-		if rel == "." || (!strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)) {
+		if ok, err := safefile.IsWithinResolved(abs, r); err == nil && ok {
 			return nil
 		}
 	}

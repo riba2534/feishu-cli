@@ -13,19 +13,19 @@ import (
 // callout 类型对应的背景色
 // 飞书 Callout 背景色值: 1-灰色, 2-红色, 3-橙色, 4-黄色, 5-绿色, 6-蓝色, 7-紫色
 var calloutTypeConfig = map[string]int{
-	"info":    6, // 蓝色
-	"warning": 4, // 黄色
-	"error":   2, // 红色
-	"success": 5, // 绿色
+	"info":    converter.CalloutBgLightBlue,   // 蓝色（5）
+	"warning": converter.CalloutBgLightYellow, // 黄色（3）
+	"error":   converter.CalloutBgLightRed,    // 红色（1）
+	"success": converter.CalloutBgLightGreen,  // 绿色（4）
 }
 
 var addCalloutCmd = &cobra.Command{
-	Use:   "add-callout <document_id> <content>",
+	Use:   "add-callout <document_id|url> <content>",
 	Short: "添加高亮块",
 	Long: `向飞书文档添加高亮块（Callout）。
 
 参数:
-  <document_id>    文档 ID（必填）
+  <document_id>    文档 ID 或 URL（必填；/wiki/ URL 自动解析为底层文档）
   <content>        高亮块内容（必填）
   --parent-id      父块 ID，空表示根级别，默认空
   --index          插入位置索引，-1 表示末尾，默认 -1
@@ -57,7 +57,6 @@ var addCalloutCmd = &cobra.Command{
 			return err
 		}
 
-		documentID := args[0]
 		content := args[1]
 		parentID, _ := cmd.Flags().GetString("parent-id")
 		index, _ := cmd.Flags().GetInt("index")
@@ -65,6 +64,11 @@ var addCalloutCmd = &cobra.Command{
 		icon, _ := cmd.Flags().GetString("icon")
 		output, _ := cmd.Flags().GetString("output")
 		userAccessToken := resolveOptionalUserToken(cmd)
+		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
+		}
 
 		// 获取 callout 类型配置
 		bgColor, ok := calloutTypeConfig[calloutType]

@@ -15,15 +15,15 @@ var sheetImageCmd = &cobra.Command{
 }
 
 var sheetImageAddCmd = &cobra.Command{
-	Use:   "add <spreadsheet_token> <sheet_id>",
+	Use:   "add <spreadsheet_token|url> <sheet_id>",
 	Short: "添加浮动图片",
-	Long: `在工作表中添加浮动图片。
+	Long: `在工作表中添加浮动图片。--token 为 sheet image media-upload 返回的 file_token；
+--range 为锚点单元格（如 A1:A1，不带前缀时自动补上 <sheet_id>）。
 
 示例:
   feishu-cli sheet image add shtcnxxxxxx 0b12 --token img_xxx --range "A1:A1" --width 200 --height 150`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		sheetID := args[1]
 		imageToken, _ := cmd.Flags().GetString("token")
 		rangeStr, _ := cmd.Flags().GetString("range")
@@ -42,7 +42,15 @@ var sheetImageAddCmd = &cobra.Command{
 			OffsetY:         offsetY,
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
+		// 锚点范围不带子表前缀时补上 <sheet_id>（接口要求带前缀，否则 1310211 Wrong Sheet Id）
+		if image.Range, err = target.qualifyRange(rangeStr, sheetID, ""); err != nil {
+			return err
+		}
 
 		result, err := client.CreateFloatImage(client.Context(), spreadsheetToken, sheetID, image, userAccessToken)
 		if err != nil {
@@ -64,16 +72,19 @@ var sheetImageAddCmd = &cobra.Command{
 }
 
 var sheetImageListCmd = &cobra.Command{
-	Use:   "list <spreadsheet_token> <sheet_id>",
+	Use:   "list <spreadsheet_token|url> <sheet_id>",
 	Short: "列出浮动图片",
 	Long:  "列出工作表中的所有浮动图片",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		sheetID := args[1]
 		output, _ := cmd.Flags().GetString("output")
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
 
 		images, err := client.QueryFloatImages(client.Context(), spreadsheetToken, sheetID, userAccessToken)
 		if err != nil {
@@ -101,19 +112,21 @@ var sheetImageListCmd = &cobra.Command{
 }
 
 var sheetImageDeleteCmd = &cobra.Command{
-	Use:   "delete <spreadsheet_token> <sheet_id> <float_image_id>",
+	Use:   "delete <spreadsheet_token|url> <sheet_id> <float_image_id>",
 	Short: "删除浮动图片",
 	Long:  "删除工作表中的浮动图片",
 	Args:  cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		sheetID := args[1]
 		floatImageID := args[2]
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
-
-		err := client.DeleteFloatImage(client.Context(), spreadsheetToken, sheetID, floatImageID, userAccessToken)
+		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
+
+		if err := client.DeleteFloatImage(client.Context(), spreadsheetToken, sheetID, floatImageID, userAccessToken); err != nil {
 			return err
 		}
 

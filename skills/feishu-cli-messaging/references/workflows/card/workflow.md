@@ -143,43 +143,45 @@ header → 首屏结论 → 关键证据 → 必要详情 → 真实行动 → �
 ### 步骤六：离线校验
 
 先将 JSON 写到临时文件，例如 `/tmp/alert-card.json`。
-以下命令以仓库根目录为工作目录；Skill 安装到其它位置时，用本文件已解析出的实际目录替换
-`skills/feishu-cli-messaging/references/workflows/card` 前缀。
+以下 `scripts/` 路径相对本工作流目录（`workflow.md` 所在目录）解析；执行时换成解析后的实际路径。
 
 草稿允许明确占位符：
 
 ```bash
-python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+python3 scripts/lint_card.py \
   --allow-placeholders /tmp/alert-card.json
 ```
 
 准备发送时必须使用严格的发送候选检查：
 
 ```bash
-python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+python3 scripts/lint_card.py \
   --strict /tmp/alert-card.json
 ```
 
 需要机器可读报告：
 
 ```bash
-python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+python3 scripts/lint_card.py \
   --strict --json /tmp/alert-card.json
 ```
 
 发送候选包含任意本地图片时（Markdown、`img.img_key` 或 `img_combination`）：
 
 ```bash
-python3 skills/feishu-cli-messaging/references/workflows/card/scripts/lint_card.py \
+python3 scripts/lint_card.py \
   --strict --upload-images /tmp/alert-card.json
 ```
 
 该脚本是项目的保守离线检查器，不冒充飞书服务端完整 Schema。它会检查 JSON 2.0 根结构、
-30 KB / 200 组件等常见限制、V1 残留、非法嵌套、重复 `element_id`、占位符、人员字段、
-表单提交、图表字段、无动作按钮、深色/饱和折叠标题条和本地图片上传提示；对 `audio`、
+30 KB / 200 组件 / 5 个 table / 5 层嵌套等常见限制、V1 残留、非法嵌套、重复 `element_id`、
+占位符与示例 ID/`example.com`、无效 URL、人员字段、表单提交、图表字段、无动作按钮、
+深色/饱和折叠标题条和本地图片上传提示；对 `audio`、
 `video`、`avatar`、静态/人员/图片选择器及日期时间选择器额外检查高置信度必填字段、枚举、
 默认值引用与格式。它还会确认声明的本地素材真实存在。
-警告也必须人工处理；只有确知可接受时才保留。
+它不检查 hex 颜色、`disabled` 等主题规则，也无法判断 `img_v2_...`、`ou_...` 这类
+key 是否真实存在。`--strict` 会把警告也当作失败；草稿模式下的警告也必须人工处理，
+只有确知可接受时才保留。
 
 ### 步骤七：内容与视觉验收
 
@@ -206,10 +208,11 @@ feishu-cli msg send \
   --receive-id-type chat_id \
   --receive-id oc_xxx \
   --msg-type interactive \
-  --content-file /tmp/alert-card.json
+  --content-file /tmp/alert-card.json \
+  --idempotency-key "alert-card-001"
 ```
 
-卡片中含本地图片路径时追加：
+卡片中含本地图片路径时追加 `--upload-images`（lint 时也传同名参数）：
 
 ```bash
 feishu-cli msg send \
@@ -217,12 +220,16 @@ feishu-cli msg send \
   --receive-id oc_xxx \
   --msg-type interactive \
   --content-file /tmp/alert-card.json \
-  --upload-images
+  --upload-images \
+  --idempotency-key "alert-card-001"
 ```
 
-图片逐张上传；任一文件缺失、格式非法或上传失败都会中止，不会把本地路径继续发送给飞书。
-修复素材后使用同一幂等键重试。
-成功标志以 CLI 返回的消息 ID 为准。
+本地图片路径以 `--content-file` 所在目录为基准解析。需要先核对请求体时加 `--dry-run`：
+只打印请求、不发送，也不上传本地图片（stderr 会提示图片未替换）。
+
+实际发送时图片逐张上传；任一文件缺失、格式非法或上传失败都会中止，不会把本地路径继续
+发送给飞书。修复素材后使用同一 `--idempotency-key` 重试，避免重复发出可见消息。
+成功标志以 CLI 返回的消息 ID 为准（`-o json` 输出 `message_id`、`chat_id`、`create_time`）。
 
 ## 4. V2 禁区
 
@@ -239,7 +246,7 @@ feishu-cli msg send \
 | form 内再放 form / table / chart | 重组为根级组件 |
 | `person.user_id_type` | 删除；只传 `person.user_id` |
 | `person_list.persons[].user_id` | 改为 `persons[].id` |
-| hex 颜色 | 官方颜色枚举或组件允许的 `rgba(...)` |
+| 组件颜色字段写 hex | 官方颜色枚举或 `config.style.color` 中的 `rgba(...)` token；`chart_spec` 内的 VChart 配色例外 |
 | 图片 URL 写入 `img_key` | 上传后使用真实 `img_key` |
 
 ## 5. 资源索引

@@ -34,6 +34,7 @@ description: feishu-cli-messaging card workflow 的仪表盘主题参考。用�
 python3 scripts/style_assets.py starter dashboard-monitoring \
   --title "支付链路监控" \
   --summary "过去 30 分钟错误率回落" \
+  --detail "16:05 起重试风暴已止住，继续观察 30 分钟" \
   --meta "2026-07-29 16:00–16:30 · UTC+8 · 全量请求" \
   --metric "成功率=99.97%" \
   --metric "P95=182 ms" \
@@ -43,7 +44,7 @@ python3 scripts/style_assets.py starter dashboard-monitoring \
 ## 图表规则
 
 趋势、对比、占比、排行优先使用 Card JSON 2.0 `chart` 或 `table`，不要用 Markdown/ASCII
-伪图。复杂卡片生成后运行 `python3 scripts/lint_card.py --strict <card.json>`。
+伪图。复杂卡片生成后运行 `python3 scripts/lint_card.py --strict <card.json>`；起稿未传的 `--summary`、`--detail` 等会留下 `TODO_*` 占位符，`--strict` 会拒绝。
 
 - 图表主题尽量避免深黑色，尤其不要使用纯黑或接近纯黑作为图表大面积背景；飞书 dark mode 下容易和页面背景混淆。
 - 监控态势、经营看板、酷炫暗色风可以用深灰蓝、靛蓝、紫蓝、墨绿、暖灰等“有色暗底”，并保留轴线、网格线、图例、数据色和容器背景之间的明度差。

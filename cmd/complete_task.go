@@ -13,6 +13,9 @@ var completeTaskCmd = &cobra.Command{
 	Short: "完成任务",
 	Long: `将指定的任务标记为已完成。
 
+幂等：先读取任务，已完成的任务直接返回（JSON 带 already_completed=true），不会改写原完成时间。
+身份 --as 默认 auto（已登录用本人身份；此前版本默认 Bot，Bot 不是任务成员时读写会失败）。
+
 参数:
   task_id       任务 ID（必填）
   --output, -o  输出格式（json）
@@ -29,9 +32,15 @@ var completeTaskCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 
 		task, err := client.CompleteTask(taskGuid, token)
 		if err != nil {
@@ -44,7 +53,11 @@ var completeTaskCmd = &cobra.Command{
 				return err
 			}
 		} else {
-			fmt.Printf("任务已完成！\n")
+			if task.AlreadyCompleted {
+				fmt.Printf("任务此前已完成，未重复修改（完成时间保持不变）\n")
+			} else {
+				fmt.Printf("任务已完成！\n")
+			}
 			fmt.Printf("  任务 ID: %s\n", task.Guid)
 			fmt.Printf("  标题: %s\n", task.Summary)
 			if task.CompletedAt != "" {
@@ -60,4 +73,5 @@ func init() {
 	taskCmd.AddCommand(completeTaskCmd)
 	completeTaskCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	completeTaskCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(completeTaskCmd)
 }

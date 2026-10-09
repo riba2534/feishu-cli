@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -150,5 +152,116 @@ func TestDriveTaskResultAsBotSupport(t *testing.T) {
 
 	if !strings.HasPrefix(gotAuth, "Bearer t-") {
 		t.Fatalf("Authorization = %q, 期望以 Tenant Token (Bearer t-...) 发起请求代表 Bot 身份，绝不使用 User Token", gotAuth)
+	}
+}
+
+// runTaskResultJSON 执行 drive task-result -o json 并返回解析后的输出。
+func runTaskResultJSON(t *testing.T, scenario, taskID string) (map[string]any, error) {
+	t.Helper()
+	resetDriveCmdFlags(t, driveTaskResultCmd)
+	_ = driveTaskResultCmd.Flags().Set("scenario", scenario)
+	_ = driveTaskResultCmd.Flags().Set("task-id", taskID)
+	_ = driveTaskResultCmd.Flags().Set("user-access-token", "u-test-user")
+	_ = driveTaskResultCmd.Flags().Set("output", "json")
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	runErr := driveTaskResultCmd.RunE(driveTaskResultCmd, nil)
+	w.Close()
+	os.Stdout = oldStdout
+	raw, _ := io.ReadAll(r)
+	if runErr != nil {
+		return nil, runErr
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("解析输出失败: %v\n%s", err, raw)
+	}
+	return out, nil
+}
+
+// P0：task_check 删除任务返回 "fail" 时必须视为失败（旧实现只认 "failed"，删除失败一直显示进行中）。
+func TestDriveTaskResultTaskCheckFailIsTerminal(t *testing.T) {
+	for _, st := range []string{"fail", "failed", "success", "process"} {
+		st := st
+		t.Run(st, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"code":0,"data":{"status":%q}}`, st)
+			}))
+			defer server.Close()
+			initDriveTaskResultTestConfig(t, server.URL)
+			out, err := runTaskResultJSON(t, "task_check", "task-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantFailed := st == "fail" || st == "failed"
+			if out["failed"] != wantFailed || out["ready"] != (st == "success") || out["pending"] != (st == "process") {
+				t.Fatalf("status=%s → %+v", st, out)
+			}
+		})
+	}
+}
+
+// P1：task-result 支持 wiki_move / wiki_move_to_drive / wiki_delete_space（wiki move-to-drive、delete-space 超时提示的续查命令可用）。
+func TestDriveTaskResultWikiScenarios(t *testing.T) {
+	cases := []struct {
+		scenario string
+		taskType string
+		body     string
+		check    func(map[string]any) bool
+	}{
+		{"wiki_move", "move", `{"code":0,"data":{"task":{"task_id":"t1","move_result":[{"status":0,"status_msg":"success","node":{"node_token":"wikNew","space_id":"sp"}}]}}}`,
+			func(o map[string]any) bool { return o["ready"] == true && o["wiki_token"] == "wikNew" }},
+		{"wiki_move", "move", `{"code":0,"data":{"task":{"task_id":"t1","move_result":[{"status":0},{"status":-1,"status_msg":"no perm"}]}}}`,
+			func(o map[string]any) bool { return o["failed"] == true && o["status_msg"] == "no perm" }},
+		{"wiki_move_to_drive", "move_wiki_to_docs", `{"code":0,"data":{"task":{"task_id":"t1","move_wiki_to_docs_result":{"status":0,"obj_token":"boxObj","obj_type":"docx","url":"https://example.feishu.cn/docx/boxObj"}}}}`,
+			func(o map[string]any) bool { return o["ready"] == true && o["obj_token"] == "boxObj" }},
+		{"wiki_move_to_drive", "move_wiki_to_docs", `{"code":0,"data":{"task":{"task_id":"t1","move_wiki_to_docs_result":{"status":1}}}}`,
+			func(o map[string]any) bool { return o["pending"] == true }},
+		{"wiki_delete_space", "delete_space", `{"code":0,"data":{"task":{"task_id":"t1","delete_space_result":{"status":"failure","status_msg":"denied"}}}}`,
+			func(o map[string]any) bool { return o["failed"] == true && o["status"] == "failure" }},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.scenario, func(t *testing.T) {
+			var gotType string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path != "/open-apis/wiki/v2/tasks/t1" {
+					http.Error(w, "unexpected "+r.URL.Path, http.StatusNotFound)
+					return
+				}
+				gotType = r.URL.Query().Get("task_type")
+				_, _ = io.WriteString(w, c.body)
+			}))
+			defer server.Close()
+			initDriveTaskResultTestConfig(t, server.URL)
+			out, err := runTaskResultJSON(t, c.scenario, "t1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotType != c.taskType {
+				t.Fatalf("task_type = %q, want %q", gotType, c.taskType)
+			}
+			if !c.check(out) {
+				t.Fatalf("输出不符: %+v", out)
+			}
+		})
+	}
+}
+
+// 业务码随 HTTP 400 下发时保留业务码（不再是 "HTTP 400, body: ..."）。
+func TestDriveTaskResultTaskCheckHTTP400BusinessCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"code":1061002,"msg":"params error"}`)
+	}))
+	defer server.Close()
+	initDriveTaskResultTestConfig(t, server.URL)
+	_, err := runTaskResultJSON(t, "task_check", "t1")
+	if err == nil || !strings.Contains(err.Error(), "code=1061002") || strings.Contains(err.Error(), "HTTP 400, body") {
+		t.Fatalf("err = %v", err)
 	}
 }

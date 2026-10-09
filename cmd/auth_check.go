@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -28,16 +29,21 @@ var authCheckCmd = &cobra.Command{
   error       失败原因（not_logged_in / token_expired，仅在未登录或过期时出现）
   suggestion  修复建议（仅在 ok=false 时出现）
 
+--scope 可用空格或逗号分隔（可混用），重复项自动去重；suggestion 中的
+auth login 命令统一输出空格分隔（OAuth 线上格式，服务端拒绝 "a,b" 形式）。
+
 示例:
   feishu-cli auth check --scope "search:docs:read"
-  feishu-cli auth check --scope "search:docs:read im:message:readonly"`,
+  feishu-cli auth check --scope "search:docs:read im:message:readonly"
+  feishu-cli auth check --scope "search:docs:read,im:message:readonly"`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		scopeFlag, _ := cmd.Flags().GetString("scope")
-		required := strings.Fields(scopeFlag)
+		// 逗号与空白都视为分隔符：服务端只认空格分隔，"a,b" 会被当成一个不存在的 scope
+		required := auth.UniqueScopeList(scopeFlag)
 		if len(required) == 0 {
-			return fmt.Errorf("必须通过 --scope 指定至少一个 scope（空格分隔）")
+			return clierr.Usagef("必须通过 --scope 指定至少一个 scope（空格或逗号分隔）")
 		}
 
 		result, ok := performAuthCheck(required)
@@ -45,7 +51,8 @@ var authCheckCmd = &cobra.Command{
 			return err
 		}
 		if !ok {
-			return errCheckFailed
+			// 缺 scope / 未登录 / token 过期：鉴权类失败（退出码 3），结果已在 stdout
+			return clierr.Auth(errCheckFailed)
 		}
 		return nil
 	},
@@ -87,6 +94,6 @@ func errorResult(errCode string, required []string) map[string]any {
 
 func init() {
 	authCmd.AddCommand(authCheckCmd)
-	authCheckCmd.Flags().String("scope", "", "待检查的 scope（空格分隔，如 \"search:docs:read im:message:readonly\"）")
+	authCheckCmd.Flags().String("scope", "", "待检查的 scope（空格或逗号分隔，如 \"search:docs:read im:message:readonly\"）")
 	mustMarkFlagRequired(authCheckCmd, "scope")
 }

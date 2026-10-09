@@ -1,10 +1,8 @@
-# 飞书 OpenAPI 裸调技能
+# 飞书 OpenAPI 透传（api）
 
-`feishu-cli api` 直接调用任意飞书 OpenAPI 接口，覆盖尚未封装成专用命令的接口，是单工具栈下的兜底能力。
-
-> **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
-
----
+`feishu-cli api` 直接调用任意飞书 OpenAPI 端点，覆盖尚未封装成专用命令的接口，复用本地 Token
+（含自动刷新）与错误诊断。高频场景优先用专用命令（参数校验、分页、输出更完善）；不知道 path 时先走
+schema 工作流查 path / 参数 / 身份 / scope。
 
 ## 用法
 
@@ -12,49 +10,67 @@
 feishu-cli api <METHOD> <path> [flags]
 ```
 
-- `METHOD`：`GET` | `POST` | `PUT` | `DELETE` | `PATCH`（大小写不敏感）
-- `path`：API 路径，如 `/open-apis/im/v1/messages`（前导斜杠可省略）。完整 URL 必须是 `https`，且只支持
-  `open.feishu.cn`、`open.larksuite.com`、`open.larkoffice.com` 三类 OpenAPI host；`http://` 或租户文档 URL
-  （如 `https://tenant.feishu.cn/...`）会被拒绝，必须手动提取 `/open-apis/...`。
+- `METHOD`：`GET` | `POST` | `PUT` | `DELETE` | `PATCH`（大小写不敏感，其他方法报用法错误）。
+- `path`：`/open-apis/...` 短路径，前导斜杠和 `/open-apis/` 前缀都可省略。完整 URL 只接受 `https` 且 host 为
+  `open.feishu.cn` / `open.larksuite.com` / `open.larkoffice.com`；`http://` 或租户文档 URL（如
+  `https://xxx.feishu.cn/...`）直接报用法错误，必须手动提取 `/open-apis/...`。
+- URL 内嵌的 query 会拆进请求参数，同名参数以 `--params` 为准；fragment（`#` 之后）先于 query 被丢弃，
+  `?a=1#frag?b=2` 只会留下 `a=1`。
 
-URL 中可以内嵌 query。fragment（`#` 之后）会被丢弃且**不会**进入 query。完整 URL 只接受官方
-OpenAPI host：`open.feishu.cn` / `open.larksuite.com` / `open.larkoffice.com`；租户文档 URL
-必须先抽出 `/open-apis/...` 短 path。
+## 身份
 
-### Flags
+| `--as` | 行为 |
+|---|---|
+| `auto`（默认） | 已配置 User Token 时用 User；从未配置时回退 Tenant（Bot）；已配置但解析/刷新失败直接报错，不静默切 Bot |
+| `user` | 强制 User Token，缺失时报错（需先 `auth login`） |
+| `bot` | 强制 Tenant Token，不读取任何 User Token |
 
-| Flag | 说明 |
-|------|------|
-| `--params '<json>'` | query 参数（**单个** JSON 对象），如 `'{"page_size":10}'`；尾部有多余内容（如 `'{"a":1} {"b":2}'`）会报错而非静默只取前半 |
-| `--data '<json>'` / `--data-file <file>` | 请求体：`--data` 传 JSON 字符串，或 `--data-file` 从文件读（`-` 表示 stdin）；二者互斥 |
-| `--as auto\|user\|bot` | 身份：auto（未配置 User 时回退 Tenant；已配置但不可用时失败，默认）/ user（强制 User Token，需先 `auth login`）/ bot（强制 Tenant/应用 Token） |
-| `--user-access-token` | 显式 User Token，仅 auto/user 路径解析；`--as bot` 强制应用身份，不用 User Token |
-| `--dry-run` | 只打印将发送的请求（method/path/query/body/identity），不实际调用 |
-| `-o <file>` | 写原始响应体到文件（binary-safe，适合下载类接口） |
-| `--raw` | 原样输出响应 body，不做 pretty JSON |
-| `--include-headers` | 在 stderr 打印响应状态码和响应头 |
-| `--timeout <seconds>` | 单次请求超时，默认 30 秒 |
-| `--format json\|pretty\|table\|ndjson\|csv` | 响应渲染格式（指定后走内置渲染，覆盖默认 pretty；仅适用于 JSON 响应） |
-| `--jq '<expr>'` | 用内置 gojq 过滤响应（无需外部 jq；仅适用于 JSON 响应） |
-| `--page-all` | 自动翻页：识别 `data.has_more`（容忍 bool/数字/字符串写法）+ `page_token`/`next_page_token`（前者为空自动回落后者）；两者皆空或重复 cursor 停止并报错 |
-| `--page-limit` | 配合 `--page-all` 的最大页数（默认 10，`0`=不限） |
-| `--page-delay` | 翻页间隔毫秒（默认 200） |
+`--user-access-token` 只在 auto/user 路径生效。身份要与 schema 的 `Identity` 一致：只支持 `tenant (bot)` 的接口用
+`--as bot`，只支持 `user` 的接口用 `--as user`。User 身份预检用 `auth check --scope`，Bot 身份看 `auth scopes`
+的 `tenant_enabled` 与实际返回（见 [身份选择](../auth/references/identity.md)）。
 
-> **`-o` 二进制下载 与 `--format/--jq` 互斥**：默认 / `--raw` / 纯 `-o` 走原样写文件路径（binary-safe）；一旦带上 `--format` 或 `--jq`，响应会先按 JSON 解析再渲染，二进制响应会 decode 失败并报错「响应不是合法 JSON，无法用 --format/--jq 渲染（去掉这两个 flag 可用 --raw 原样输出）」。下载媒体/文件时只用 `-o`，不要叠加 `--format/--jq`。
+## 关键约束
 
-> 大整数精度：响应用 `UseNumber` 解析，飞书 19 位 `message_id`/`chat_id` 等不会被降级丢精度。
+完整 flag 见 `feishu-cli api --help`，这里只列容易出错的点：
 
----
+- `--params` 必须是**单个** JSON 对象（值会转成字符串）；尾部多余内容（如 `'{"a":1} {"b":2}'`）报错而非静默只取前半。
+- `--data` 与 `--data-file`（`-` 表示 stdin）互斥，内容必须是合法 JSON，否则发网前报用法错误。
+  数字按原始字面量发送，19 位 ID 等大整数不会经 float64 舍入。
+- `--data-file` 拒绝读取 `~/.ssh`、`~/.aws`、`~/.feishu-cli`、`/etc` 等敏感目录；`-o` 拒绝写入敏感目录，
+  也拒绝含 `..` 段的相对路径（越出当前目录）。均为用法错误（退出码 2）。
+- `--dry-run` 不发请求、不刷新 token，只打印 `method`、`path`、`query`、`body`、`supported_tokens`、
+  `will_use_user_tok`、`page_all`、`page_limit`；成功不代表服务端会接受。
+- 响应 JSON 用 `UseNumber` 解析，`message_id` / `chat_id` 等大整数不丢精度。
+- `-o <file>` 原样写响应体（binary-safe、原子写入）。下载媒体/文件时只用 `-o`，不要叠加 `--format/--jq`：
+  带上它们后响应会先按 JSON 解析，二进制响应会报"响应不是合法 JSON，无法用 --format/--jq 渲染"。
+- `--page-all` 只识别 `data.has_more`（容忍 bool/数字/字符串）+ `page_token`/`next_page_token`；
+  `has_more=true` 但游标为空或重复时停止并报错。`--page-limit` 默认 10，`0` 表示不限；`--page-delay` 默认 200ms。
+  `-o` 与 `--page-all` 同用时必须带 `--format` 或 `--jq`，否则报用法错误。
+- `--timeout` 为单次请求秒数，默认 30。`--include-headers` 把状态码和响应头写 stderr。
 
-## 三步调研法（不知道 path 时）
+## 输出与错误
 
-```bash
-feishu-cli schema <service>                 # 1. 列出该 service 的 resource.method
-feishu-cli schema <service>.<resource>.<method>   # 2. 查 path / 参数 / scope
-feishu-cli api <METHOD> <path> ...          # 3. 裸调
-```
+- 成功：默认 pretty JSON；`--raw` 原样输出；`--format json|pretty|table|ndjson|csv` 与 `--jq` 用内置渲染。
+- **业务错误不进 stdout**：响应 `code != 0`（即使随 HTTP 400 下发）或 HTTP 非 2xx 时 stdout 为空，
+  `--jq/--format/-o` 不处理错误体；stderr 输出 `飞书业务错误: code=..., msg=...`，并附 `log_id`、所需 scope、
+  字段校验（`field_violations`）与修复建议。需要原始错误体调试时加 `--raw`（原样写 stdout / `-o`，退出码仍非 0）。
+- 退出码：`0` 成功，`1` 业务错误（含资源不存在、资源级无权限），`2` 用法错误，`3` 鉴权/权限（token 无效、
+  99991672 应用未开通 scope、99991679/99991676 用户未授权、App 凭证错误），`4` 网络错误（可重试）。
 
----
+常见错误码的提示：
+
+| 错误码 | 含义与处理 |
+|---|---|
+| 99991672 | 应用未开通 scope：重新登录修不好，按提示的开放平台链接开通并发布；User 调用时开通后还需 `auth login --scope` |
+| 99991679 / 99991676 | User Token 未授权该 scope：先 `auth scopes --scope` 确认应用侧已开通，再 `auth login --scope "<scope>"` |
+| 99991668 | msg 含 `not support` 时接口不收 User Token，改 `--as bot`；否则 User Token 无效，重新登录 |
+| 99991661 / 99991663 / 99991677 | Token 缺失、无效或过期；按实际身份排查（见 auth 工作流排错表） |
+| 99991400 / 230020 | 限流，降低频率后重试 |
+| 230001 | 请求参数无效，对照 `feishu-cli schema` 检查参数名、取值与格式 |
+| 230002 / 232011 | Bot 或用户不在该群 |
+| 232006 | chat_id 无效 |
+| 232025 | App 未启用机器人能力 |
+| 232033 | 外部群权限不足：需开启「对外共享能力」的 App 且其 Bot 已入群（见 feishu-cli-messaging 的 chat 工作流） |
 
 ## 示例
 
@@ -62,16 +78,16 @@ feishu-cli api <METHOD> <path> ...          # 3. 裸调
 # GET + query + jq 过滤
 feishu-cli api GET /open-apis/wiki/v2/spaces --params '{"page_size":10}' --jq '.data.items[].name'
 
-# POST 发消息（先 dry-run 预览）
+# POST 发消息（先 dry-run 预览，用户确认后去掉 --dry-run）
 feishu-cli api POST /open-apis/im/v1/messages \
   --params '{"receive_id_type":"chat_id"}' \
   --data '{"receive_id":"oc_xxx","msg_type":"text","content":"{\"text\":\"hi\"}"}' --dry-run
 
 # 请求体从文件读
-feishu-cli api POST /open-apis/bitable/v1/apps/xxx/tables --data-file body.json
+feishu-cli api POST /open-apis/bitable/v1/apps/xxx/tables --data-file body.json --dry-run
 
 # 下载二进制到文件
-feishu-cli api GET /open-apis/drive/v1/medias/<token>/download -o /tmp/file.bin
+feishu-cli api GET /open-apis/drive/v1/medias/<token>/download -o file.bin
 
 # 强制用户身份（访问用户私有资源）
 feishu-cli api GET /open-apis/calendar/v4/calendars --as user
@@ -83,8 +99,4 @@ feishu-cli api GET /open-apis/wiki/v2/spaces --jq '.data.items' --format table
 feishu-cli api GET /open-apis/im/v1/chats --page-all --page-limit 10 --as user
 ```
 
----
-
-## 何时用专用命令而非 api
-
-`api` 是兜底。高频场景优先用封装好的专用命令（错误处理/参数校验/便捷 flag 更完善）：消息→`msg`、文档→`doc`、多维表格→`bitable`、表格→`sheet`、日历→`calendar` 等。仅当某接口没有对应专用命令时用 `api` 裸调。
+官方文档站未收录、但官方开源工程在调用的接口，调研方法见 `references/embedded-api-discovery.md`。

@@ -42,7 +42,14 @@ var sheetFilterViewCreateCmd = &cobra.Command{
 
 		rangeStr = unescapeSheetRange(rangeStr)
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
+		if rangeStr, err = target.qualifyRange(rangeStr, sheetID, ""); err != nil {
+			return err
+		}
 
 		fv, err := client.CreateFilterView(client.Context(), spreadsheetToken, sheetID, rangeStr, name, filterViewID, userAccessToken)
 		if err != nil {
@@ -104,7 +111,11 @@ var sheetFilterViewListCmd = &cobra.Command{
 			return fmt.Errorf("--token、--sheet-id 均为必填项")
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
 
 		items, err := client.ListFilterViews(client.Context(), spreadsheetToken, sheetID, userAccessToken)
 		if err != nil {
@@ -145,7 +156,11 @@ var sheetFilterViewDeleteCmd = &cobra.Command{
 			return fmt.Errorf("--token、--sheet-id、--filter-view-id 均为必填项")
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
+		if err != nil {
+			return err
+		}
+		spreadsheetToken, userAccessToken := target.Token, target.UAT
 
 		if err := client.DeleteFilterView(client.Context(), spreadsheetToken, sheetID, filterViewID, userAccessToken); err != nil {
 			return err

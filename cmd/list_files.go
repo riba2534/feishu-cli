@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -16,12 +17,27 @@ var listFilesCmd = &cobra.Command{
 参数:
   folder_token    文件夹 Token（不指定则列出根目录）
 
+分页:
+  默认只取一页（--page-size，默认 50，最大 200）；还有更多时 stderr 提示 has_more 与续翻用的 page_token。
+  --page-token    从上一次提示的 page_token 继续
+  --page-all      自动翻页拉取全部（重复游标防护，--page-limit 页数上限，默认 50，0 = 不限）
+  -o json 仍输出文件数组（形状不变），续翻信息只写 stderr。
+
+身份:
+  --as bot|user|auto   不传时保持旧行为（User 优先，不可用时告警回退 Bot）
+
 示例:
   # 列出根目录
   feishu-cli file list
 
   # 列出指定文件夹
   feishu-cli file list fldcnXXXXXXXXX
+
+  # 拉取全部
+  feishu-cli file list fldcnXXXXXXXXX --page-all -o json
+
+  # 以 Bot 身份列出
+  feishu-cli file list fldcnXXXXXXXXX --as bot
 
   # JSON 格式输出
   feishu-cli file list --output json`,
@@ -38,12 +54,32 @@ var listFilesCmd = &cobra.Command{
 
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
-
-		files, _, _, err := client.ListFiles(folderToken, pageSize, "", userAccessToken)
+		pageOpts, err := readListPageOptions(cmd)
 		if err != nil {
 			return err
 		}
+		if pageSize < 0 || pageSize > 200 {
+			return clierr.Usagef("--page-size 必须在 1-200 之间，得到 %d", pageSize)
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		userAccessToken, err := resolveIdentityWithLegacyDefault(cmd, legacyUserWithBotFallback)
+		if err != nil {
+			return err
+		}
+
+		page, err := collectListPages(pageOpts, func(pageToken string) ([]*client.DriveFile, string, bool, error) {
+			return client.ListFiles(folderToken, pageSize, pageToken, userAccessToken)
+		})
+		if err != nil {
+			return err
+		}
+		files := page.Items
+		if files == nil {
+			files = []*client.DriveFile{}
+		}
+		defer printListPageHint(cmd.ErrOrStderr(), page)
 
 		if output == "json" {
 			if err := printJSON(files); err != nil {
@@ -98,7 +134,9 @@ func getFileTypeIcon(fileType string) string {
 
 func init() {
 	fileCmd.AddCommand(listFilesCmd)
-	listFilesCmd.Flags().Int("page-size", 50, "每页数量")
+	listFilesCmd.Flags().Int("page-size", 50, "每页数量（1-200）")
+	addListPageFlags(listFilesCmd)
+	addLegacyAsFlag(listFilesCmd, "保持旧行为（User 优先，不可用时告警回退 Bot）")
 	listFilesCmd.Flags().String("user-access-token", "", "User Access Token（可选，使用用户身份访问文件）")
 	listFilesCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 }

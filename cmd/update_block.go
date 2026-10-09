@@ -3,19 +3,19 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
 var updateBlockCmd = &cobra.Command{
-	Use:   "update <document_id> <block_id>",
+	Use:   "update <document_id|url> <block_id>",
 	Short: "更新文档中的块",
 	Long: `更新飞书文档中已有的块内容。
 
-内容应为 JSON 格式的更新请求体。
+内容应为 JSON 格式的更新请求体。文档可传 ID 或 URL（/docx/、/wiki/，wiki 自动解析为底层文档）。
 
 示例:
   feishu-cli doc update DOC_ID BLOCK_ID --content '{"update_text_elements":{"elements":[{"text_run":{"content":"已更新"}}]}}'
@@ -26,16 +26,13 @@ var updateBlockCmd = &cobra.Command{
 			return err
 		}
 
-		documentID := args[0]
 		blockID := args[1]
 		contentStr, _ := cmd.Flags().GetString("content")
 		contentFile, _ := cmd.Flags().GetString("content-file")
-		userAccessToken := resolveOptionalUserToken(cmd)
-
-		// Get content from file or flag
+		// Get content from file or flag（本地文件在任何网络请求之前读取，敏感目录/不存在为用法错误）
 		var contentJSON string
 		if contentFile != "" {
-			data, err := os.ReadFile(contentFile)
+			data, err := readLocalInputFile(contentFile)
 			if err != nil {
 				return fmt.Errorf("读取内容文件失败: %w", err)
 			}
@@ -43,7 +40,14 @@ var updateBlockCmd = &cobra.Command{
 		} else if contentStr != "" {
 			contentJSON = contentStr
 		} else {
-			return fmt.Errorf("必须指定 --content 或 --content-file")
+			return clierr.Usagef("必须指定 --content 或 --content-file")
+		}
+
+		userAccessToken := resolveOptionalUserToken(cmd)
+		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
 		}
 
 		// Parse content JSON

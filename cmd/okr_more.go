@@ -7,6 +7,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +21,8 @@ var okrCycleDetailCmd = &cobra.Command{
   <cycle_id>      周期 ID（okr cycle list 可查）
   --output, -o    输出格式：json
 
-权限要求: okr:okr:readonly（bot 身份需应用后台开通；user 身份需登录时带该 scope）
+权限要求: okr:okr.content:readonly（实测只接受该 scope，okr:okr:readonly 不生效；
+  bot 身份需应用后台开通，user 身份需登录时授予同名 scope）
 
 示例:
   feishu-cli okr cycle detail 7123456789012345678
@@ -67,7 +69,7 @@ var okrProgressGetCmd = &cobra.Command{
   --user-id-type   用户 ID 类型：open_id（默认）/ union_id / user_id
   --output, -o     输出格式：json
 
-权限要求: okr:okr:readonly 或 okr:okr.progress:readonly
+权限要求: okr:okr.progress:readonly（User/Bot 均可；user 缺 scope 时服务端报 99991679）
 
 示例:
   feishu-cli okr progress get 7123456789012345678 -o json`,
@@ -139,6 +141,13 @@ var okrProgressUpdateCmd = &cobra.Command{
 			return err
 		}
 		opts.ProgressRate = rate
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return printDryRunPlan(cmd, "okr progress update 预览（未执行）", nil, []dryRunStep{{
+				Method: "PUT", URL: "/open-apis/okr/v1/progress_records/" + args[0],
+				Params: map[string]any{"user_id_type": userIDType},
+				Body:   okrProgressPreviewBody(contentJSON, rate, nil),
+			}})
+		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
@@ -172,14 +181,16 @@ var okrProgressDeleteCmd = &cobra.Command{
   feishu-cli okr progress delete 7123456789012345678 --yes`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return printDryRunPlan(cmd, "okr progress delete 预览（未执行）", nil, []dryRunStep{{
+				Method: "DELETE", URL: "/open-apis/okr/v1/progress_records/" + args[0],
+			}})
+		}
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		if yes, _ := cmd.Flags().GetBool("yes"); !yes {
-			if !confirmAction(fmt.Sprintf("确认删除进展记录 %s？此操作不可恢复", args[0])) {
-				fmt.Println("已取消")
-				return nil
-			}
+		if err := confirmDangerousAction(cmd, fmt.Sprintf("确认删除进展记录 %s？此操作不可恢复", args[0])); err != nil {
+			return err
 		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
@@ -220,6 +231,10 @@ var okrUploadImageCmd = &cobra.Command{
 		targetID, targetType, err := pickOKRTarget(flagString(cmd, "objective-id"), flagString(cmd, "key-result-id"))
 		if err != nil {
 			return err
+		}
+		// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
+		if _, err := safefile.StatInputFile(filePath); err != nil {
+			return fmt.Errorf("--file 无效: %w", err)
 		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
@@ -305,6 +320,8 @@ func init() {
 	okrProgressUpdateCmd.Flags().StringP("output", "o", "", "输出格式：json")
 
 	okrProgressDeleteCmd.Flags().Bool("yes", false, "跳过确认直接删除")
+	okrProgressDeleteCmd.Flags().Bool("dry-run", false, "只预览请求，不执行")
+	okrProgressUpdateCmd.Flags().Bool("dry-run", false, "只预览请求，不执行")
 
 	okrCmd.AddCommand(okrUploadImageCmd)
 	okrUploadImageCmd.Flags().String("file", "", "本地图片路径")

@@ -29,7 +29,10 @@ var listWikiSpacesCmd = &cobra.Command{
   feishu-cli wiki spaces --output json
 
   # 指定每页数量
-  feishu-cli wiki spaces --page-size 20`,
+  feishu-cli wiki spaces --page-size 20
+
+  # 自动翻页拉取全部（默认只取一页；has_more 时 stderr 会提示 page_token）
+  feishu-cli wiki spaces --page-all -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
@@ -37,14 +40,24 @@ var listWikiSpacesCmd = &cobra.Command{
 
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		output, _ := cmd.Flags().GetString("output")
-
-		spaces, _, _, err := client.ListWikiSpaces(pageSize, "", resolveOptionalUserTokenWithFallback(cmd))
+		pageOpts, err := readListPageOptions(cmd)
 		if err != nil {
 			return err
 		}
 
+		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		res, err := collectListPages(pageOpts, func(pageToken string) ([]*client.WikiSpace, string, bool, error) {
+			return client.ListWikiSpaces(pageSize, pageToken, userToken)
+		})
+		if err != nil {
+			return err
+		}
+		spaces := res.Items
+		// has_more 时把续翻 page_token 打到 stderr（stdout 保持原有 JSON 数组形状，管道安全）
+		defer printListPageHint(cmd.ErrOrStderr(), res)
+
 		if output == "json" {
-			if err := printJSON(spaces); err != nil {
+			if err := printJSON(emptyOrSlice(spaces)); err != nil {
 				return err
 			}
 		} else {
@@ -77,6 +90,7 @@ var listWikiSpacesCmd = &cobra.Command{
 func init() {
 	wikiCmd.AddCommand(listWikiSpacesCmd)
 	listWikiSpacesCmd.Flags().Int("page-size", 50, "每页数量")
+	addListPageFlags(listWikiSpacesCmd)
 	listWikiSpacesCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	listWikiSpacesCmd.Flags().String("user-access-token", "", "User Access Token（可选；默认优先使用 auth login 登录态，失败时回退 App Token）")
 }

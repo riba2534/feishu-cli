@@ -14,6 +14,7 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkokr "github.com/larksuite/oapi-sdk-go/v3/service/okr/v1"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 )
 
 // --------- OKR 业务结构（输出层）---------
@@ -24,14 +25,23 @@ type OKROwner struct {
 	UserID    string `json:"user_id,omitempty"`
 }
 
-// OKRCycle OKR 周期（v1 /open-apis/okr/v1/periods 接口实体，租户级全局周期）
+// OKRCycle OKR 周期。
+//
+// 默认来自 v2 /open-apis/okr/v2/cycles（**用户周期**，ID 可直接用于 cycle detail / 建目标）；
+// --tenant 时来自 v1 /open-apis/okr/v1/periods（租户级周期，带名称，但 ID 不能用于 v2 接口）。
 type OKRCycle struct {
-	ID          string `json:"id"`
-	ZhName      string `json:"zh_name,omitempty"`
-	EnName      string `json:"en_name,omitempty"`
-	StartTime   string `json:"start_time,omitempty"`
-	EndTime     string `json:"end_time,omitempty"`
-	CycleStatus string `json:"cycle_status,omitempty"`
+	ID            string    `json:"id"`
+	ZhName        string    `json:"zh_name,omitempty"`
+	EnName        string    `json:"en_name,omitempty"`
+	StartTime     string    `json:"start_time,omitempty"`
+	EndTime       string    `json:"end_time,omitempty"`
+	CycleStatus   string    `json:"cycle_status,omitempty"`
+	TenantCycleID string    `json:"tenant_cycle_id,omitempty"` // v2：对应的租户级周期 ID
+	Owner         *OKROwner `json:"owner,omitempty"`           // v2：周期所属用户
+	Score         *float64  `json:"score,omitempty"`           // v2：周期得分
+	// 以下不输出：用于本地时间过滤与"当前周期"判断
+	startMs, endMs int64
+	statusCode     *okrCycleStatus
 }
 
 // OKRKeyResult 关键结果
@@ -282,8 +292,8 @@ func ListOKRCycles(opts ListOKRCyclesOptions, userAccessToken string) ([]*OKRCyc
 		if err != nil {
 			return nil, fmt.Errorf("查询 OKR 周期失败: %w", err)
 		}
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("查询 OKR 周期失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+		if err := CheckAPIResponse("查询 OKR 周期", resp); err != nil {
+			return nil, err
 		}
 
 		var apiResp struct {
@@ -320,6 +330,126 @@ func ListOKRCycles(opts ListOKRCyclesOptions, userAccessToken string) ([]*OKRCyc
 	}
 
 	return all, nil
+}
+
+// --------- 用户周期列表（v2 /open-apis/okr/v2/cycles，按用户，分页拉取）---------
+
+// ListOKRUserCyclesOptions 用户周期查询参数
+type ListOKRUserCyclesOptions struct {
+	UserID     string // 必填
+	UserIDType string // open_id（默认）/ union_id / user_id
+}
+
+// okrRawUserCycle 与 v2 /okr/v2/cycles 响应对齐
+type okrRawUserCycle struct {
+	ID            string          `json:"id"`
+	TenantCycleID string          `json:"tenant_cycle_id"`
+	Owner         okrRawOwner     `json:"owner"`
+	StartTime     string          `json:"start_time"`
+	EndTime       string          `json:"end_time"`
+	CycleStatus   *okrCycleStatus `json:"cycle_status,omitempty"`
+	Score         *float64        `json:"score,omitempty"`
+}
+
+func (c *okrRawUserCycle) toCycle() *OKRCycle {
+	owner := c.Owner.toOwner()
+	out := &OKRCycle{
+		ID:            c.ID,
+		StartTime:     formatOKRTimestamp(c.StartTime),
+		EndTime:       formatOKRTimestamp(c.EndTime),
+		TenantCycleID: c.TenantCycleID,
+		Owner:         &owner,
+		Score:         c.Score,
+		statusCode:    c.CycleStatus,
+	}
+	out.startMs, _ = strconv.ParseInt(c.StartTime, 10, 64)
+	out.endMs, _ = strconv.ParseInt(c.EndTime, 10, 64)
+	if c.CycleStatus != nil {
+		out.CycleStatus = c.CycleStatus.String()
+	}
+	return out
+}
+
+// ListOKRUserCycles 拉取某用户的 OKR 周期（GET /open-apis/okr/v2/cycles，自动分页）。
+//
+// 与 v1 periods 不同：这里的周期 ID 是**用户周期 ID**，可直接用于 cycle detail（v2 /cycles/{id}/objectives）
+// 和创建目标。v2 端点 User/Tenant 两种身份都支持（实测 tenant 缺 scope 报 99991672、user 缺 scope 报 99991679）。
+func ListOKRUserCycles(opts ListOKRUserCyclesOptions, userAccessToken string) ([]*OKRCycle, error) {
+	if strings.TrimSpace(opts.UserID) == "" {
+		return nil, fmt.Errorf("查询 OKR 周期需要 user_id")
+	}
+	if opts.UserIDType == "" {
+		opts.UserIDType = "open_id"
+	}
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	tokenType, reqOpts := resolveTokenOpts(userAccessToken)
+	all := make([]*OKRCycle, 0)
+	pageToken := ""
+	for page := 0; ; page++ {
+		query := larkcore.QueryParams{}
+		query.Set("user_id", opts.UserID)
+		query.Set("user_id_type", opts.UserIDType)
+		query.Set("page_size", "100")
+		if pageToken != "" {
+			query.Set("page_token", pageToken)
+		}
+		req := &larkcore.ApiReq{
+			HttpMethod:                http.MethodGet,
+			ApiPath:                   "/open-apis/okr/v2/cycles",
+			QueryParams:               query,
+			SupportedAccessTokenTypes: []larkcore.AccessTokenType{tokenType},
+		}
+		resp, err := client.Do(Context(), req, reqOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("查询 OKR 周期失败: %w", err)
+		}
+		if err := CheckAPIResponse("查询 OKR 周期", resp); err != nil {
+			return nil, err
+		}
+		var apiResp struct {
+			Data struct {
+				Items     []*okrRawUserCycle `json:"items"`
+				HasMore   bool               `json:"has_more"`
+				PageToken string             `json:"page_token"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+			return nil, fmt.Errorf("解析 OKR 周期响应失败: %w", err)
+		}
+		for _, item := range apiResp.Data.Items {
+			if item != nil {
+				all = append(all, item.toCycle())
+			}
+		}
+		if !apiResp.Data.HasMore || apiResp.Data.PageToken == "" || apiResp.Data.PageToken == pageToken || page >= 200 {
+			break
+		}
+		pageToken = apiResp.Data.PageToken
+	}
+	return all, nil
+}
+
+// OKRCycleOverlaps 周期 [start,end] 是否与 [from,to] 有交集（仅 v2 用户周期有毫秒时间）
+func OKRCycleOverlaps(c *OKRCycle, from, to time.Time) bool {
+	if c == nil || c.startMs == 0 || c.endMs == 0 {
+		return false
+	}
+	s, e := time.UnixMilli(c.startMs), time.UnixMilli(c.endMs)
+	return !s.After(to) && !e.Before(from)
+}
+
+// IsCurrentOKRCycle 当前时间落在周期内且状态为 default/normal（对齐官方 current_active_cycles）
+func IsCurrentOKRCycle(c *OKRCycle, now time.Time) bool {
+	if c == nil || c.startMs == 0 || c.endMs == 0 || c.statusCode == nil {
+		return false
+	}
+	if now.Before(time.UnixMilli(c.startMs)) || now.After(time.UnixMilli(c.endMs)) {
+		return false
+	}
+	return *c.statusCode == okrCycleStatusDefault || *c.statusCode == okrCycleStatusNormal
 }
 
 // --------- 周期详情：拉目标 + 每个目标的关键结果 ---------
@@ -405,8 +535,8 @@ func listOKRCycleObjectives(client okrHTTPDoer, tokenType larkcore.AccessTokenTy
 		if err != nil {
 			return nil, fmt.Errorf("查询周期目标失败: %w", err)
 		}
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("查询周期目标失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+		if err := CheckAPIResponse("查询周期目标", resp); err != nil {
+			return nil, err
 		}
 
 		var apiResp struct {
@@ -458,8 +588,8 @@ func listOKRObjectiveKeyResults(client okrHTTPDoer, tokenType larkcore.AccessTok
 		if err != nil {
 			return nil, fmt.Errorf("查询目标关键结果失败: %w", err)
 		}
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("查询目标关键结果失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+		if err := CheckAPIResponse("查询目标关键结果", resp); err != nil {
+			return nil, err
 		}
 
 		var apiResp struct {
@@ -812,8 +942,8 @@ func ListOKRProgresses(opts ListOKRProgressesOptions, userAccessToken string) ([
 		if err != nil {
 			return nil, fmt.Errorf("查询 OKR 进展列表失败: %w", err)
 		}
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("查询 OKR 进展列表失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+		if err := CheckAPIResponse("查询 OKR 进展列表", resp); err != nil {
+			return nil, err
 		}
 
 		var apiResp struct {
@@ -886,6 +1016,10 @@ type OKRImageUploadResult struct {
 // UploadOKRImage 上传一张图片到 OKR Progress 富文本图床。
 // 通过 SDK 的 Image.Upload 走 multipart/form-data。
 func UploadOKRImage(filePath string, targetID string, targetType OKRProgressTargetType, userAccessToken string) (*OKRImageUploadResult, error) {
+	// 本地文件内容会上传到飞书：拒绝敏感目录（~/.ssh、~/.feishu-cli、/etc 等），命令层漏校验时兜底
+	if err := safefile.ValidateInputPath(filePath); err != nil {
+		return nil, err
+	}
 	client, err := GetClient()
 	if err != nil {
 		return nil, err

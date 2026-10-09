@@ -74,7 +74,7 @@ feishu-cli doc import report.md --title "技术报告" --verbose
 feishu-cli doc export <document_id> -o doc.md --download-images
 ```
 
-**支持的语法**：标题（6 级）、段落、列表（无限深度嵌套）、任务列表、代码块、引用、Callout（6 种类型）、同步块（含跨文档引用）、表格（自动拆分）、分割线、图片、链接、公式、粗体 / 斜体 / 删除线 / 下划线 / 行内代码 / 高亮。跨文档同步块无法读取时会保留带源标识的 WARNING 占位并输出诊断，不会静默导出为空。
+**支持的语法**：标题（6 级）、段落、列表（无限深度嵌套）、任务列表、代码块、引用、Callout（6 种类型）、同步块（含跨文档引用）、表格（自动拆分）、分割线、图片、链接、公式、粗体 / 斜体 / 删除线 / 下划线 / 行内代码（`<mark>` 高亮暂以下划线近似）。跨文档同步块无法读取时会保留带源标识的 WARNING 占位并输出诊断，不会静默导出为空。
 
 ### Mermaid / PlantUML 图表
 
@@ -270,18 +270,18 @@ feishu-cli doc create --title "Hello Feishu"
 feishu-cli <command> [subcommand] [flags]
 
 Commands:
-  doc       文档操作（创建、导入、导出、编辑、异步导出/导入文件）
+  doc       文档操作（创建、导入、导出、文本级/块级编辑、docs_ai 读取与创建、历史版本、异步导出/导入文件）
   wiki      知识库操作（节点增删改查、空间详情、成员管理）
-  sheet     电子表格（读写、样式、batch-set-style、V3 富文本 API、导出 XLSX/CSV、image、filter-view + condition、dropdown）
+  sheet     电子表格（读写、子表名寻址、样式、行列结构/冻结/隐藏、V3 富文本 API、table-get/put、导出 XLSX/CSV、image、filter、dropdown、--as）
   bitable   多维表格（base/v3 + bitable/v1：数据表/字段/记录/附件/视图/仪表盘/表单/角色/权限/聚合/工作流，88 命令）
   msg       消息操作（发送、转发、合并转发、回复、Pin、表情回复、书签、批量获取、资源下载）
   chat      群聊管理（创建、更新、删除、群列表、成员管理）
   mail      邮箱操作（分类/搜索、发送、草稿含发送、回复、转发、批量改 label/软删、CID 内联图片、模板、签名）
-  drive     云盘增强（分块/覆盖上传、流式下载、异步导出/导入、移动、评论、镜像 pull/push、密级标签，15 命令）
+  drive     云盘增强（分块/原地覆盖上传、流式断点续传下载、异步导出/导入、移动、重命名、版本、评论、镜像 pull/push/status、密级标签）
   markdown  Drive 原生 Markdown 文件 CRUD（.md 整体读写、版本比对，不转换 docx 块）
   vc        视频会议（多维搜索、聚合详情、智能纪要 note、会议纪要、录制查询、机器人入会/离会/事件）
   minutes   妙记操作（详情 + AI 产物、搜索、权限申请、媒体批量下载）
-  apps      妙搭（Miaoda）应用（创建、发布 HTML、修改、访问范围管理）
+  apps      妙搭（Miaoda）应用（创建、发布 HTML 并等待构建结果、发布记录、修改、访问范围管理）
   file      文件管理（列出、移动、复制、删除、上传、下载、版本管理）
   media     素材操作（上传、下载）
   perm      权限管理（添加、删除、批量添加、公开权限、密码、转移所有权）
@@ -290,21 +290,28 @@ Commands:
   tasklist  任务清单管理（CRUD、任务关联、成员管理）
   attendance 考勤操作（打卡记录查询、统计数据查询）
   okr       OKR 操作（周期列表/详情、进展记录 CRUD、进展图片上传、--as 身份）
-  slides    Slides 演示文稿（创建、媒体上传）
+  slides    Slides 演示文稿（创建带页面、加页/删页/替换、按页读取 XML、截图、媒体上传）
   user      用户操作（获取信息、搜索、部门用户列表）
   dept      部门操作（详情、子部门列表）
   board     画板操作（精排绘图、图表导入、克隆、几何质检 lint、SVG 双向、图片上传、覆盖更新）
-  comment   评论操作（列出、添加、解决/恢复、回复管理）
+  comment   评论操作（列出含正文与分页、批量获取、添加、解决/恢复、回复编辑与表情）
   approval  审批操作（定义/实例详情、已发起列表、任务查询、实例创建/撤回/抄送、任务通过/拒绝/转交；全部 User Token）
   search    搜索操作（消息、应用、文档）
   event     实时事件订阅（WebSocket 长连接、list/schema/consume/status/stop）
   schema    本地浏览飞书 OpenAPI 方法（无需 token）
   api       通用 OpenAPI 透传调用（任意 method/path，自动鉴权 + 错误码翻译，覆盖 2500+ 端点）
   profile   多 App / 多账号配置切换
-  doctor    环境健康检查（config/user_token/endpoints/proxy/deps）
+  doctor    环境健康检查（config/user_token/endpoints/proxy/deps/catalog/skills 等）
   auth      身份认证（OAuth 登录、状态、退出、scope 预检）
   config    配置管理
+  skills    内嵌 AI 技能（list/read/install，与 CLI 版本严格配套）
+  update    检查并安装最新版本（sha256 校验后原子替换）
 ```
+
+**通用约定**：
+- 全局 `--yes` 跳过删除类操作的确认；非交互环境（stdin 不是终端）执行这类操作时必须显式带上，否则以退出码 10 退出且不执行。
+- 退出码：0 成功 / 1 一般错误 / 2 用法错误 / 3 鉴权或权限 / 4 网络 / 10 需要确认 / 130 中断。
+- 接受 token 的参数大多也接受飞书链接（docx/sheets/base/slides/wiki 等，wiki 链接自动解析到底层文档）。
 
 <details>
 <summary>文档操作</summary>
@@ -336,6 +343,14 @@ feishu-cli doc add <doc_id> -c '<JSON>'
 
 # 添加内容（Markdown 格式）
 feishu-cli doc add <doc_id> README.md --content-type markdown
+
+# 原子更新（docs_ai）：纯文本选择器为文本级替换，段落其余内容与样式保留
+feishu-cli doc content-update <doc_id> --mode replace_all --selection-with-ellipsis "旧文本" --markdown "新文本"
+# 按 block id 精确更新（block id 由 doc read --engine docs_ai --with-ids 获得）
+feishu-cli doc read <doc_id> --engine docs_ai --with-ids --scope keyword --keyword "性能"
+feishu-cli doc content-update <doc_id> --mode block_replace --block-id <block_id> --markdown "新段落"
+# 历史版本
+feishu-cli doc history list <doc_id>
 
 # 添加高亮块
 feishu-cli doc add-callout <doc_id> "提示内容" --callout-type info
@@ -395,9 +410,15 @@ feishu-cli sheet table-get <token> <sheet_id> [--range A1:D50]
 feishu-cli sheet table-put <token> <sheet_id> --sheets-file table.json
 feishu-cli sheet write-rich <token> <sheet_id> --data-file data.json
 
-# 行列操作
+# 行列操作（--start 从 0 开始、--end 不含；或用 --range "3:5"/"B:D"，1 起始两端包含）
 feishu-cli sheet add-rows <token> <sheet_id> --count 5
 feishu-cli sheet add-cols <token> <sheet_id> --count 3
+feishu-cli sheet delete-rows <token> <sheet_id> --range "3:5" --dry-run
+feishu-cli sheet freeze <token> <sheet_id> --rows 1 --cols 1
+feishu-cli sheet update-dimension <token> <sheet_id> --range "B:D" --hidden
+
+# 身份：默认 User 优先、Tenant 兜底；--as bot 强制以应用身份访问应用自己的表格
+feishu-cli sheet list-sheets <token> --as bot
 
 # 样式与合并
 feishu-cli sheet style <token> "Sheet1!A1:C3" --bold --font-size 14
@@ -570,7 +591,8 @@ feishu-cli search apps "审批"
 # 搜索文档和 Wiki
 feishu-cli search docs "产品需求"
 feishu-cli search docs "季度报告" --docs-types doc,sheet
-feishu-cli search docs "技术方案" --count 10 --offset 0
+feishu-cli search docs "技术方案" --count 10
+feishu-cli search docs "技术方案" --count 10 --page-token <上一页输出的 page_token>  # 翻页（--offset 已不支持）
 
 # 也可以手动指定 Token
 feishu-cli search docs "产品需求" --user-access-token <token>
@@ -851,7 +873,7 @@ feishu-cli drive pull   --folder-token fldxxx --local-dir ./mirror --if-exists o
 feishu-cli drive push   --folder-token fldxxx --local-dir ./mirror --if-exists skip
 feishu-cli drive pull   --folder-token fldxxx --local-dir ./mirror --delete-local --yes  # 高危：双确认
 
-# 云盘 v2 搜索（扁平 filter；search docs 走 v1，drive search 走 v2）
+# 云盘 v2 搜索（与 search docs 同一 Search v2 端点，drive search 暴露更多 filter 与排序）
 feishu-cli drive search --query "季度报告" --doc-types DOC,SHEET --sort edit_time
 feishu-cli drive search --folder-tokens fldxxx --only-title
 
@@ -873,7 +895,7 @@ feishu-cli mail forward --message-id msg_xxx --to team@example.com --body "请�
 feishu-cli mail signature                                          # 列出邮箱签名
 feishu-cli mail signature --detail 7012345678901234567 -o json     # 单个签名详情
 
-# 视频会议（vc）：search/notes/recording 需 User Token；bot meeting-join/leave 默认 Bot/Tenant 身份
+# 视频会议（vc）：search/notes/recording 默认 User，可 `--as bot`；bot meeting-join/leave 默认 Bot/Tenant 身份
 feishu-cli vc search --query "周会" --start 2026-03-20 --end 2026-03-28
 feishu-cli vc detail <meeting_id|会议号>                            # 聚合会议信息 + note_id + minute_token
 feishu-cli vc note detail <note_id>                                # 智能纪要详情
@@ -886,7 +908,7 @@ feishu-cli vc bot meeting-leave --meeting-id 6911188411932033028   # 机器人�
 feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --as user --start 2026-03-01 --end 2026-03-31
 feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --as bot --dry-run  # 与 meeting_id 来源身份一致；禁止静默回落
 
-# 妙记（minutes，需 User Token）
+# 妙记（minutes，默认 User，可 `--as bot`）
 feishu-cli minutes get <minute_token> --with-artifacts
 feishu-cli minutes get <minute_token> --wait-ready                  # 轮询等待妙记转写就绪
 feishu-cli minutes search --query "周会"                            # 搜索妙记
@@ -1007,7 +1029,7 @@ feishu-cli attendance user-task query --employee-type employee_id --user-ids 284
 feishu-cli attendance user-stats query --employee-type employee_no --user-ids 10001 \
   --start 2026-03-01 --end 2026-03-31
 
-# OKR
+# OKR（cycle list 默认查询 v2 用户周期，与 cycle detail / 目标创建使用同一套 ID；--tenant 查租户周期）
 feishu-cli okr cycle list
 feishu-cli okr progress list --objective-id 7xxx
 feishu-cli okr cycle detail <cycle_id>                              # 周期下全部目标+关键结果
@@ -1016,7 +1038,10 @@ feishu-cli okr upload-image --file chart.png --objective-id 7xxx    # 进展图�
 feishu-cli okr progress create --key-result-id 7xxx --content "本周完成核心模块联调"
 
 # Slides 演示文稿
-feishu-cli slides create --title "Q2 OKR" --output json
+feishu-cli slides create --title "Q2 OKR" --slide @page1.xml --output json   # 创建时带页面，@./img.png 自动上传
+feishu-cli slides add-slide <presentation> --slide @page2.xml
+feishu-cli slides get <presentation_or_url> --slide-number 2 --output-file page2.xml
+feishu-cli slides screenshot <presentation> --slide-number 1 --output cover
 feishu-cli slides media-upload --file ./cover.png --presentation-token <xml_presentation_id>
 
 # 实时事件订阅
@@ -1072,7 +1097,7 @@ feishu-cli auth token --as user                                              # �
 | `feishu-cli-meetings` | 视频会议、妙记、录制、逐字稿和会议机器人 | "下载会议纪要" |
 
 Skill 入口使用 Agent Skills 标准 frontmatter；按需加载的工作流和脚本随目录一起分发。
-本版本技能与 `feishu-cli v1.41.0+` 配套使用；聊天导出脚本需要 Python 3.10+，
+本版本技能与 `feishu-cli v1.42.0+` 配套使用；聊天导出脚本需要 Python 3.10+，
 可视化工作流按需使用 Node.js、whiteboard-cli 或 agent-browser，具体依赖见对应入口的 `compatibility`。
 各宿主对工具授权字段的解释可能不同，不能把 `allowed-tools` 当作跨宿主的执行保证。
 
@@ -1101,13 +1126,29 @@ Skill 入口使用 Agent Skills 标准 frontmatter；按需加载的工作流和
 
 **安装方法**：
 
-```bash
-# 一键安装全部技能（推荐）
-npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
+技能随二进制内嵌，内容与当前 `feishu-cli` 版本严格配套，推荐用内置命令安装：
 
-# 或手动复制
-# 将 skills/ 目录复制到 ~/.claude/skills/
+```bash
+# 先预览，再安装到 ~/.claude/skills（--dir 或 FEISHU_CLI_SKILLS_DIR 可指定其他目录）
+feishu-cli skills install --dry-run
+feishu-cli skills install
+
+# 升级 CLI 后同步技能；doctor 会检查本地技能是否与 CLI 版本漂移
+feishu-cli update
+feishu-cli skills install
+feishu-cli doctor --only skills
+
+# 不安装也可以直接读取当前版本的技能内容
+feishu-cli skills list
+feishu-cli skills read feishu-cli-docs
 ```
+
+`skills install` 写入前会解析符号链接并打印真实路径；只覆盖上次由它写入且未被修改的文件，
+发现本地修改（或目录来自 npx/手动复制且内容不同）时不带 `--force` 拒绝写入；旧版 29 个技能目录默认只列出，
+加 `--prune-legacy` 才删除确认属于 feishu-cli 的旧目录。
+
+备选：`npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy` 拉取的是 GitHub main 分支的技能，
+可能与本地 CLI 版本不一致；或手动把 `skills/` 下 9 个领域目录复制到 `~/.claude/skills/`。
 
 ## 块类型映射
 
@@ -1630,9 +1671,14 @@ feishu-cli/
 │   ├── export_markdown.go        # 导出为 Markdown
 │   └── ...
 ├── internal/
-│   ├── client/                   # 飞书 API 封装
+│   ├── client/                   # 飞书 API 封装（含资源 URL 解析、业务错误解析、流式下载）
 │   ├── converter/                # Markdown ↔ Block 转换器
-│   └── config/                   # 配置管理
+│   ├── config/                   # 配置管理与受控 HTTP 客户端
+│   ├── auth/                     # OAuth Device Flow、Token 存储与刷新
+│   ├── clierr/ apidiag/          # 退出码分类、API 错误诊断（log_id / 缺失 scope）
+│   ├── safefile/ textutil/       # 本地路径安全与原子写、UTF-8 安全截断
+│   ├── skillbundle/ skillinstall/ # 内嵌技能的读取与安装
+│   └── selfupdate/               # feishu-cli update
 ├── skills/                       # Claude Code AI 技能文件
 ├── main.go
 ├── Makefile
@@ -1656,9 +1702,13 @@ make build-all          # 多平台构建
 # 测试
 go test ./...
 make check-skills       # 重新构建并校验 Skill 结构与命令归属
+make check-privacy      # 隐私扫描（内部邮箱、企业前缀域名、疑似真实 token）
 
 # 代码检查
 go vet ./...
+
+# 发版打包（规范命名 tar.gz + checksums.txt，输出到 dist/）
+make release-package VERSION=vX.Y.Z
 ```
 
 ## 贡献
@@ -1696,13 +1746,13 @@ go vet ./...
 <details>
 <summary><b>用 CLI 导入的文档，自己在飞书里看不到？</b></summary>
 
-`doc import` 默认以 Bot 身份建档，文档归属于应用。给自己授权：`feishu-cli perm add <doc_id> --doc-type docx --member-type email --member-id you@example.com --perm full_access`；也可配置 `owner_email` 让技能流程自动授权（见 AI 技能集成）。
+`doc import` 默认以 Bot 身份建档，文档归属于应用。已 `auth login` 时，CLI 会在 Bot 创建文档、表格、多维表格、文件夹、知识库节点、演示文稿后自动给当前登录用户授予 `full_access`（输出中的 `permission_grant` 字段给出结果）；未登录时会在 stderr 提示。也可手动授权：`feishu-cli perm add <doc_id> --doc-type docx --member-type email --member-id you@example.com --perm full_access`，或配置 `owner_email` 让技能流程转移所有权（见 AI 技能集成）。
 </details>
 
 <details>
 <summary><b>报 <code>99991672</code> / <code>99991679</code> scope 不足？</b></summary>
 
-`99991672` 是应用（tenant）权限未开通——按错误信息里的链接到开放平台一键申请，或直接导入上方[完整权限清单](#完整权限清单)；`99991679` 是用户授权缺 scope——`feishu-cli auth login --scope "<所需 scope>"` 重新授权即可。
+`99991672` 是应用（tenant）权限未开通，重新登录无法解决——按错误信息里的开放平台链接为应用开通并发布版本，或直接导入上方[完整权限清单](#完整权限清单)；`99991679` 是用户授权缺 scope——`feishu-cli auth login --scope "<所需 scope>"` 增量授权即可。两者都以退出码 3 结束，错误信息附带缺失的 scope 与 log_id。`feishu-cli auth scopes --scope "<scope>"` 可以逐项诊断是应用未开通还是用户未授权。
 </details>
 
 ## 更新日志

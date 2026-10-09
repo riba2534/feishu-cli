@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/spf13/viper"
 )
 
@@ -17,6 +18,13 @@ func initCreateWikiNodeTestConfig(t *testing.T, baseURL string) {
 	t.Helper()
 	viper.Reset()
 	t.Cleanup(viper.Reset)
+	// 隔离本机 token.json / 环境变量凭证：wiki create 以 Bot 身份执行后会尝试解析当前登录用户做自动授权
+	tempHome := t.TempDir()
+	restoreHome := profile.SetHomeFunc(func() (string, error) { return tempHome, nil })
+	t.Cleanup(restoreHome)
+	t.Setenv("FEISHU_APP_ID", "cli_test")
+	t.Setenv("FEISHU_APP_SECRET", "test_secret")
+	t.Setenv("FEISHU_PROFILE", "")
 	t.Setenv("FEISHU_USER_ACCESS_TOKEN", "")
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	content := fmt.Sprintf("app_id: cli_test\napp_secret: test_secret\nbase_url: %q\n", baseURL)

@@ -24,7 +24,7 @@ var vcRecordingCmd = &cobra.Command{
   meeting_id / minute_token / recording_url / duration
 
 权限:
-  - User Access Token
+  - 默认 User 身份（--as user），可用 --as bot|auto 切换
   - vc:record:readonly
   - 使用 --calendar-event-ids 时额外需要 calendar:calendar:read / calendar:calendar.event:read
 
@@ -33,11 +33,6 @@ var vcRecordingCmd = &cobra.Command{
   feishu-cli vc recording --calendar-event-ids <instance_id> -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, err := requireUserToken(cmd, "vc recording")
-		if err != nil {
 			return err
 		}
 
@@ -57,14 +52,20 @@ var vcRecordingCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		calendarIDs, err := parseCSVIDs(calendarRaw, "calendar-event-ids")
+		if err != nil {
+			return err
+		}
+
+		// 本地参数校验（用法错误 exit 2）通过后再解析身份，避免被"未登录"（exit 3）遮住
+		token, err := resolveVCReadIdentity(cmd)
+		if err != nil {
+			return err
+		}
 
 		// 入口 2：通过 calendar-event-ids 反查 meeting-ids
 		var sourceCalendarEvents map[string][]string // calendar_event_id → meeting_ids
 		if calendarRaw != "" {
-			calendarIDs, err := parseCSVIDs(calendarRaw, "calendar-event-ids")
-			if err != nil {
-				return err
-			}
 			cal, err := client.GetPrimaryCalendar(token)
 			if err != nil {
 				return fmt.Errorf("获取主日历失败: %w", err)
@@ -191,4 +192,5 @@ func init() {
 	vcRecordingCmd.Flags().String("calendar-event-ids", "", "日历事件实例 ID 列表，逗号分隔（最多 50 条）")
 	vcRecordingCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	vcRecordingCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addVCReadAsFlag(vcRecordingCmd)
 }

@@ -10,7 +10,9 @@
 ## 身份
 
 `doc htmlbox` 默认 **Bot（App Token）**，操作 feishu-cli 自建文档无需登录（AddOns 块 Bot 可建/读/删，与"搜索类必须 User Token"不同）。
-⚠ **同一文档读写必须用同一身份**：Bot 建的文档用 User 身份去读会 `1770032 forBidden`。改他人分享、或你在飞书里手建的文档时，全程传 `--user-access-token`（或 `FEISHU_USER_ACCESS_TOKEN`）。
+Bot 建文档（`doc create` 默认）时 CLI 会自动给当前登录用户授 `full_access`（输出 `permission_grant`），之后 User 身份也能读写（实测 htmlbox get/delete 可用）。
+若 `permission_grant` 未成功或未登录，User 读 Bot 文档会报 `1770032 forBidden`。改他人分享、或你在飞书里手建的文档时，
+全程传 `--user-access-token`（或 `FEISHU_USER_ACCESS_TOKEN`），Bot 通常没有这类文档的权限。
 
 ## update = 先建后删
 
@@ -31,12 +33,12 @@ iframe 里飞书会注入 `window.magic` 运行时，**且认 `component_type_id
 
 ⚠ `window.magic` 只在飞书文档端注入，本地 `file://` 预览没有，用前必须判存兜底。能力清单与配方见 `references/window-magic.md`。
 
-## 与画板（feishu-cli-visual）的区别
+## 与画板（board 工作流）的区别
 
-| | 妙笔BOX（本技能） | 画板 `board svg-import` |
+| | 妙笔BOX（htmlbox） | 画板（`board import --syntax svg` 等原生节点） |
 |---|---|---|
-| 渲染 | iframe 真执行 | 服务端栅格化成静态位图 |
+| 渲染 | iframe 真执行 | 原生节点静态渲染；`svg` 类型节点（含 `board svg-import`）被服务端栅格化成静态位图 |
 | 动画 | ✅ CSS/JS/SMIL 都能动 | ❌ 不会动 |
-| 可编辑 | ❌ 整体 iframe，内部元素不可单独点选 | ✅ 每个节点可在飞书里单独改色/拖动 |
+| 可编辑 | ❌ 整体 iframe，内部元素不可单独点选 | ✅ 原生节点可在飞书里单独改色/拖动（`svg-import` 的单个 svg 节点只能整体移动缩放） |
 
 **鱼与熊掌**：要"动"用妙笔BOX，要"节点可编辑"用画板，飞书没有"既可编辑又会动"的形态。

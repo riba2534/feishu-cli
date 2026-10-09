@@ -117,103 +117,6 @@ func TestSheetsAppendCells_ConvertBooleanToText(t *testing.T) {
 	}
 }
 
-// TestSheetsWriteCellsBatch_ConvertBooleanToText 验证 WriteCellsBatch 批量写入布尔值转为 "TRUE"/"FALSE" 字符串
-func TestSheetsWriteCellsBatch_ConvertBooleanToText(t *testing.T) {
-	var gotBody map[string]any
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &gotBody)
-
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"code":0,"msg":"ok","data":{"responses":[]}}`)
-	}))
-	defer srv.Close()
-	setupTestConfig(t, srv.URL)
-
-	inputBatch := []*CellRange{
-		{
-			Range: "Sheet1!A1:B1",
-			Values: [][]any{
-				{true, false},
-			},
-		},
-	}
-
-	err := WriteCellsBatch(context.Background(), "shtcn_test", inputBatch)
-	if err != nil {
-		t.Fatalf("WriteCellsBatch error: %v", err)
-	}
-
-	valueRanges, ok := gotBody["valueRanges"].([]any)
-	if !ok || len(valueRanges) != 1 {
-		t.Fatalf("valueRanges missing or wrong format: %v", gotBody)
-	}
-	vr, ok := valueRanges[0].(map[string]any)
-	if !ok {
-		t.Fatalf("valueRanges[0] format error: %v", valueRanges[0])
-	}
-	values, ok := vr["values"].([]any)
-	if !ok || len(values) != 1 {
-		t.Fatalf("values format error: %v", vr)
-	}
-	row, ok := values[0].([]any)
-	if !ok || len(row) != 2 {
-		t.Fatalf("row format error: %v", values[0])
-	}
-
-	if s, ok := row[0].(string); !ok || s != "TRUE" {
-		t.Errorf("row[0] = %v (type %T), want \"TRUE\"", row[0], row[0])
-	}
-	if s, ok := row[1].(string); !ok || s != "FALSE" {
-		t.Errorf("row[1] = %v (type %T), want \"FALSE\"", row[1], row[1])
-	}
-}
-
-// TestSheetsPrependCells_ConvertBooleanToText 验证 PrependCells 前置插入布尔值转为 "TRUE"/"FALSE" 字符串
-func TestSheetsPrependCells_ConvertBooleanToText(t *testing.T) {
-	var gotBody map[string]any
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &gotBody)
-
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"code":0,"msg":"ok","data":{"tableRange":"Sheet1!A1:B2","updates":{"updatedRange":"Sheet1!A1:B1"}}}`)
-	}))
-	defer srv.Close()
-	setupTestConfig(t, srv.URL)
-
-	inputValues := [][]any{
-		{true, false},
-	}
-
-	_, err := PrependCells(context.Background(), "shtcn_test", "Sheet1!A1:B1", inputValues)
-	if err != nil {
-		t.Fatalf("PrependCells error: %v", err)
-	}
-
-	valueRange, ok := gotBody["valueRange"].(map[string]any)
-	if !ok {
-		t.Fatalf("valueRange missing: %v", gotBody)
-	}
-	values, ok := valueRange["values"].([]any)
-	if !ok || len(values) != 1 {
-		t.Fatalf("values format error: %v", valueRange)
-	}
-	row, ok := values[0].([]any)
-	if !ok || len(row) != 2 {
-		t.Fatalf("row format error: %v", values[0])
-	}
-
-	if s, ok := row[0].(string); !ok || s != "TRUE" {
-		t.Errorf("row[0] = %v (type %T), want \"TRUE\"", row[0], row[0])
-	}
-	if s, ok := row[1].(string); !ok || s != "FALSE" {
-		t.Errorf("row[1] = %v (type %T), want \"FALSE\"", row[1], row[1])
-	}
-}
-
 // TestSheetsProtect_ParseProtectIDAndValidate 验证保护范围 create/delete 的请求契约与 protectId 解析层级。
 // 实测 sheets v2 protected_dimension / protected_range_batch_del 端点在线可用，
 // 且 protectId 位于 addProtectedDimension[i] 顶层（不在嵌套 dimension 内）。
@@ -244,11 +147,11 @@ func TestSheetsProtect_ParseProtectIDAndValidate(t *testing.T) {
 			Dimension: &Dimension{
 				SheetID:        "sht1",
 				MajorDimension: "ROWS",
-				StartIndex:     0,
+				StartIndex:     1,
 				EndIndex:       5,
 			},
 		},
-	}, "u-test-token")
+	}, "", "u-test-token")
 	if err != nil {
 		t.Fatalf("CreateProtectedRange error: %v", err)
 	}
@@ -268,7 +171,7 @@ func TestSheetsProtect_ParseProtectIDAndValidate(t *testing.T) {
 	// dimension 缺失时前置报错，不得发出无效请求
 	if _, err := CreateProtectedRange(context.Background(), "shtcn_test", []*ProtectedRange{
 		{SheetID: "sht1"},
-	}, "u-test-token"); err == nil {
+	}, "", "u-test-token"); err == nil {
 		t.Error("dimension 为 nil 时应报错")
 	}
 

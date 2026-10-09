@@ -3,7 +3,7 @@
 端到端拉取飞书群聊（含话题群）的消息记录。
 
 实战中 `feishu-cli msg history` + `msg thread-messages` 的输出存在多处不一致
-（PascalCase vs snake_case、秒/毫秒、撤回消息为字符串、post 双结构、bot app_id
+（PascalCase vs snake_case、话题时间过滤仅本地生效、撤回消息为字符串、post 双结构、bot app_id
 和 sender_names 中的 ou_xxx 不互通），这些怪癖单条命令解决不了，因此沉淀成
 这个脚本。详细字段差异见 ../references/output-quirks.md。
 
@@ -35,7 +35,8 @@
 --------------------
 1. msg history 和 msg thread-messages 的 JSON key 风格不一致（snake_case vs PascalCase），
    单条 jq 处理不了；
-2. msg history 时间用秒，msg thread-messages 时间用毫秒，循环翻页时容易写错；
+2. msg thread-messages 的时间范围只在客户端过滤当前页（服务端对话题容器忽略时间），
+   按话题展开时需要完整翻页，不能指望时间参数缩小结果；
 3. 跨企业用户 user info 会返 41050（no user authority），需要降级到 mentions 字段，
    这一层降级不放代码里很容易漏；
 4. interactive 卡片 v2 schema 的 body.elements 需要递归（含 column_set / form /

@@ -12,12 +12,16 @@ import (
 // scanAndUploadInlineImages 是 --inline-images-auto-scan 的内部实现
 // 步骤:
 //  1. 解析 HTML body 中所有 <img src="local-path">（跳过 cid:/http:/https:/data: 等已有 scheme）
-//  2. 解析当前登录用户的 open_id（drive upload 的 parent_node 要求 user open_id）
-//  3. 每张图生成 CID，读盘 → drive upload (parent_type=email) → 拿 file_token
-//  4. 回填 inlineImagePart 列表，并把 body 中 src 改写为 cid:xxx
+//  2. 每张图生成 CID，读盘（路径白名单 + 软链解析 + 10MB 上限）
+//  3. 回填 inlineImagePart 列表（由 EML builder 以 multipart/related 内联嵌入），并把 body 中 src 改写为 cid:xxx
+//
+// 内联图片直接随 EML 提交，不需要上传云盘（旧实现会额外上传到云盘，但返回的 file_token 从未被使用，
+// 白白多一次网络请求并要求 drive 权限与 open_id，已移除）。函数名保留以兼容调用方。
 //
 // 失败行为: 任何一步出错都返回 error，调用方应中止（不发送脏 body）
 func scanAndUploadInlineImages(htmlBody, mailboxID, userToken string) (string, []inlineImagePart, error) {
+	_ = mailboxID
+	_ = userToken
 	rawSrcs := client.ScanInlineImagePaths(htmlBody)
 	if len(rawSrcs) == 0 {
 		return htmlBody, nil, nil
@@ -47,21 +51,6 @@ func scanAndUploadInlineImages(htmlBody, mailboxID, userToken string) (string, [
 			Bytes:    ref.Bytes,
 			MIME:     ref.MIME,
 		})
-	}
-
-	// 解析 open_id：drive upload parent_node 必填。先完成本地图片读盘校验，
-	// 避免路径错误时还去打 /authen/v1/user_info。
-	openID, err := resolveCurrentUserOpenID(userToken)
-	if err != nil {
-		return "", nil, fmt.Errorf("--inline-images-auto-scan 需要 open_id：%w", err)
-	}
-
-	for i := range refs {
-		fileToken, upErr := client.UploadMailInlineImage(refs[i].LocalPath, refs[i].FileName, openID, userToken)
-		if upErr != nil {
-			return "", nil, fmt.Errorf("上传内嵌图片 %s 失败: %w", refs[i].RawSrc, upErr)
-		}
-		refs[i].FileToken = fileToken
 	}
 
 	rewritten := client.ReplaceInlineImageSrc(htmlBody, refs)

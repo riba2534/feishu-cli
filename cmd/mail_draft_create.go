@@ -15,7 +15,7 @@ var mailDraftCreateCmd = &cobra.Command{
 - mail send      默认行为就是创建草稿，加 --confirm-send 才发送
 - mail draft-create  仅创建，不会发送
 
-所有参数同 mail send（见帮助）。
+参数同 mail send（含 --attach 附件；不支持 --inline-images-auto-scan 与 --confirm-send）。
 
 示例:
   feishu-cli mail draft-create --to user@example.com --subject "草稿" --body "内容"`,
@@ -55,6 +55,10 @@ var mailDraftCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		attachments, err := loadMailAttachmentsFromFlags(cmd)
+		if err != nil {
+			return err
+		}
 
 		if from == "" {
 			if profile, perr := client.GetMailboxProfile(mailbox, token); perr == nil && profile != nil {
@@ -78,6 +82,7 @@ var mailDraftCreateCmd = &cobra.Command{
 			BCC:      bcc,
 			Subject:  subject,
 		}
+		input.Attachments = attachments
 		if isHTML {
 			input.BodyHTML = body
 		} else {
@@ -117,5 +122,6 @@ func init() {
 	mailDraftCreateCmd.Flags().Bool("plain-text", false, "强制视为纯文本")
 	mailDraftCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailDraftCreateCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addMailAttachFlag(mailDraftCreateCmd)
 	mustMarkFlagRequired(mailDraftCreateCmd, "to", "subject", "body")
 }

@@ -72,6 +72,7 @@ var extraDomainScopes = map[string][]string{
 		"minutes:minutes.transcript:export", // vc notes --download-transcript
 		"minutes:minutes.media:export",      // +download
 		"minutes:minute:download",           // +download
+		"minutes:permission:apply",          // minutes apply-permission
 	},
 
 	// drive shortcuts: +upload, +download, +add-comment, +export, +export-download, +import, +move, +delete, +task_result
@@ -81,6 +82,8 @@ var extraDomainScopes = map[string][]string{
 		"docs:document.content:read", "docs:document:export", "drive:drive.metadata:readonly",
 		"docs:document.media:upload", "docs:document:import",
 		"space:document:move", "space:document:delete",
+		"docs:secure_label:readonly", "docs:secure_label:write_only", // drive secure-label list / set
+		"docs:permission.member:apply", // drive apply-permission
 	},
 
 	// im shortcuts (for "chat" alias): +chat-create, +chat-messages-list, +chat-search, +chat-update,
@@ -102,6 +105,32 @@ var extraDomainScopes = map[string][]string{
 		"task:task:read", "task:task:write",
 		"task:tasklist:read", "task:tasklist:write",
 		"task:comment:write",
+		"task:attachment:write", // task upload-attachment
+	},
+
+	// okr 命令（--as user 时）：cycle list/detail、progress list/get/create/update/delete、upload-image
+	"okr": {
+		"okr:okr.period:readonly",      // cycle list（okr/v1/periods）
+		"okr:okr.content:readonly",     // cycle detail（v2 cycles/{id}/objectives、objectives/{id}/key_results）
+		"okr:okr.progress:readonly",    // progress list / get
+		"okr:okr.progress:writeonly",   // progress create / update
+		"okr:okr.progress:delete",      // progress delete
+		"okr:okr.progress.file:upload", // upload-image
+	},
+
+	// apps 命令（妙搭，仅 User Token）：list / create / update / access-scope / html-publish
+	"apps": {
+		"spark:app:read", "spark:app:write",
+	},
+
+	// markdown 命令（云盘原生 .md 文件）：create / fetch / overwrite / patch / diff
+	"markdown": {
+		"drive:drive.metadata:readonly", "drive:file:download", "drive:file:upload",
+	},
+
+	// im 命令补充（chat 别名同样生效）：msg flag list / create / cancel（必须 User Token）
+	"im": {
+		"im:feed.flag:read", "im:feed.flag:write",
 	},
 
 	// calendar shortcuts: +agenda, +create, +freebusy, +room-find, +rsvp, +suggestion
@@ -116,7 +145,8 @@ var extraDomainScopes = map[string][]string{
 	// wiki shortcuts: +node-create, +move-docs-to-wiki, +update
 	"wiki": {
 		"wiki:node:create", "wiki:node:read", "wiki:node:update", "wiki:space:read",
-		"wiki:node:move", // wiki move-docs 需要
+		"wiki:node:move",        // wiki move-docs 需要
+		"wiki:space:write_only", // wiki space update / delete-space（仅 User Token）
 	},
 
 	// mail shortcuts: +message, +messages, +thread, +triage, +watch, +reply, +reply-all, +send, +forward, +draft-create, +draft-edit
@@ -132,6 +162,8 @@ var extraDomainScopes = map[string][]string{
 		"mail:user_mailbox.mail_contact:read",
 		"mail:user_mailbox.mail_contact:write",
 		"mail:user_mailbox.folder:read", // triage --list-folders
+		"mail:user_mailbox.rule:read",   // rule-list / rule-get
+		"mail:user_mailbox.rule:write",  // rule-create / rule-update / rule-delete / rule-reorder
 	},
 
 	// sheets shortcuts: +info, +read, +write, +append, +find, +create, +export, +merge-cells, etc.
@@ -159,9 +191,15 @@ var extraDomainScopes = map[string][]string{
 		"docs:document.media:upload", "docs:document.media:download",
 	},
 
-	// slides shortcuts: +create, +media-upload
+	// slides 命令所需 scope（对齐官方 shortcuts/slides 各命令 Scopes；不依赖 meta/overlay 是否收录对应方法）:
+	//   create → create / write_only（含图片 docs:document.media:upload）
+	//   add-slide / delete-slide / replace-slide / update-slide → update / write_only
+	//   get → read；screenshot → screenshot；media-upload → docs:document.media:upload
+	// wiki URL 输入另需 wiki:node:read，属按输入追加的条件 scope，不放进域默认集合。
 	"slides": {
 		"slides:presentation:create", "slides:presentation:write_only",
+		"slides:presentation:update", "slides:presentation:read",
+		"slides:presentation:screenshot",
 		"docs:document.media:upload",
 	},
 
@@ -199,6 +237,9 @@ var domainDescriptions = map[string]struct{ Zh, En string }{
 	"doc_access": {"用户 Token 访问文档/知识库", "User Token document & wiki access"},
 	"search":     {"文档和消息搜索", "Document and message search"},
 	"event":      {"WebSocket 实时事件订阅（IM/联系人/日历/云盘/审批/VC）", "WebSocket real-time event subscription"},
+	"okr":        {"OKR 周期、目标与进展记录", "OKR cycles, objectives & progress records"},
+	"apps":       {"妙搭应用（spark）开发与发布", "Miaoda (spark) apps"},
+	"markdown":   {"云盘原生 Markdown 文件读写", "Drive-native Markdown files"},
 }
 
 // ResolveProjects expands a domain name to meta project names.
@@ -334,11 +375,45 @@ func GetDomainTitle(domain, lang string) string {
 	return domain
 }
 
+// batchExcludedScopes 是批量申请（--domain / --recommend）时一律剔除的 scope。
+//
+// im:message.send_as_user 在部分租户即使个人助手也需管理员审核，混在批量申请里会让整次授权
+// 卡在审批；需要时用显式 --scope 单独申请（与官方 lark-cli login.go batchExcludedScopes 一致）。
+var batchExcludedScopes = map[string]bool{
+	"im:message.send_as_user": true,
+}
+
+// IsBatchExcludedScope 报告 scope 是否会在批量申请时被剔除。
+func IsBatchExcludedScope(scope string) bool {
+	return batchExcludedScopes[scope]
+}
+
+// FilterBatchExcludedScopes 从按业务域推导出的 scope 列表中剔除 batchExcludedScopes，保持原顺序。
+func FilterBatchExcludedScopes(scopes []string) []string {
+	out := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		if !batchExcludedScopes[s] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // CollectDomainScopes collects scopes for the specified domains using the registry.
 // It resolves aliases/composites, collects priority-based scopes from meta_data,
 // expands auth_domain children, merges fallback scopes, and optionally filters
-// to auto-approve scopes.
+// to auto-approve scopes. 批量申请统一剔除 batchExcludedScopes（显式 --scope 不受影响）。
 func CollectDomainScopes(domains []string, recommendedOnly bool) []string {
+	return FilterBatchExcludedScopes(collectDomainScopes(domains, recommendedOnly))
+}
+
+// DomainScopeUniverse 返回业务域覆盖的全部 scope（不做推荐过滤，也不剔除 batchExcludedScopes）。
+// 供 auth login --exclude 校验：排除一个已被批量策略剔除的 scope 是合法的空操作，而不是拼写错误。
+func DomainScopeUniverse(domains []string) []string {
+	return collectDomainScopes(domains, false)
+}
+
+func collectDomainScopes(domains []string, recommendedOnly bool) []string {
 	scopeSet := make(map[string]bool)
 
 	// 1. Expand domains to meta projects and collect priority-based scopes

@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -52,13 +53,13 @@ var markdownOverwriteCmd = &cobra.Command{
 		}
 		fileToken = strings.TrimSpace(fileToken)
 		if fileToken == "" {
-			return fmt.Errorf("--file-token 必填")
+			return clierr.Usagef("--file-token 必填")
 		}
 		if contentChanged && fileChanged {
-			return fmt.Errorf("--content 与 --content-file/--file 不能同时使用")
+			return clierr.Usagef("--content 与 --content-file/--file 不能同时使用")
 		}
 		if !contentChanged && !fileChanged {
-			return fmt.Errorf("请提供 --content 或 --content-file")
+			return clierr.Usagef("请提供 --content 或 --content-file")
 		}
 
 		// 不传 --name 时一律读远端现有名（含 --content-file 场景）。
@@ -75,17 +76,15 @@ var markdownOverwriteCmd = &cobra.Command{
 		if contentChanged {
 			size = int64(len(content))
 		} else {
-			stat, err := os.Stat(contentFile)
+			// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
+			stat, err := safefile.StatInputFile(contentFile)
 			if err != nil {
-				return fmt.Errorf("读取本地文件失败: %w", err)
-			}
-			if stat.IsDir() {
-				return fmt.Errorf("--content-file 必须指向文件，不是目录")
+				return fmt.Errorf("--content-file 无效: %w", err)
 			}
 			size = stat.Size()
 		}
 		if size == 0 {
-			return fmt.Errorf("Markdown 内容为空，不支持把 .md 覆盖为空文件")
+			return clierr.Usagef("Markdown 内容为空，不支持把 .md 覆盖为空文件")
 		}
 		if err := validateIdentityAs(cmd); err != nil {
 			return err

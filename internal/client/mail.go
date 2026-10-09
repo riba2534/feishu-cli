@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 )
 
 // Mail API 基础路径
@@ -39,44 +41,27 @@ func callMailAPI(method, apiPath string, body any, userAccessToken string) (json
 	}
 	tokenType, opts := resolveTokenOpts(userAccessToken)
 
-	var rawBody []byte
-	var statusCode int
-
+	var resp *larkcore.ApiResp
 	switch method {
 	case http.MethodGet:
-		r, err := client.Get(Context(), apiPath, body, tokenType, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("mail API %s %s 失败: %w", method, apiPath, err)
-		}
-		statusCode = r.StatusCode
-		rawBody = r.RawBody
+		resp, err = client.Get(Context(), apiPath, body, tokenType, opts...)
 	case http.MethodPost:
-		r, err := client.Post(Context(), apiPath, body, tokenType, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("mail API %s %s 失败: %w", method, apiPath, err)
-		}
-		statusCode = r.StatusCode
-		rawBody = r.RawBody
+		resp, err = client.Post(Context(), apiPath, body, tokenType, opts...)
 	case http.MethodPut:
-		r, err := client.Put(Context(), apiPath, body, tokenType, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("mail API %s %s 失败: %w", method, apiPath, err)
-		}
-		statusCode = r.StatusCode
-		rawBody = r.RawBody
+		resp, err = client.Put(Context(), apiPath, body, tokenType, opts...)
 	case http.MethodDelete:
-		r, err := client.Delete(Context(), apiPath, body, tokenType, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("mail API %s %s 失败: %w", method, apiPath, err)
-		}
-		statusCode = r.StatusCode
-		rawBody = r.RawBody
+		resp, err = client.Delete(Context(), apiPath, body, tokenType, opts...)
 	default:
 		return nil, fmt.Errorf("不支持的 HTTP 方法: %s", method)
 	}
+	if err != nil {
+		return nil, fmt.Errorf("mail API %s %s 失败: %w", method, apiPath, err)
+	}
 
-	if statusCode != http.StatusOK {
-		return nil, fmt.Errorf("mail API %s %s 失败: HTTP %d, body: %s", method, apiPath, statusCode, string(rawBody))
+	// 先按飞书业务信封解析再看 HTTP 状态：邮箱的大量业务错误（如 4038 folder 非法、权限不足）随 HTTP 400 下发，
+	// 先判状态码会丢掉业务码与 log_id，按 HasAPICode 分支的提示也走不到。
+	if err := CheckAPIResponse("mail API "+method+" "+apiPathWithoutQuery(apiPath)+" ", resp); err != nil {
+		return nil, err
 	}
 
 	var apiResp struct {
@@ -84,13 +69,18 @@ func callMailAPI(method, apiPath string, body any, userAccessToken string) (json
 		Msg  string          `json:"msg"`
 		Data json.RawMessage `json:"data"`
 	}
-	if err := json.Unmarshal(rawBody, &apiResp); err != nil {
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("mail API 解析响应失败: %w", err)
 	}
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("mail API 失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
-	}
 	return apiResp.Data, nil
+}
+
+// apiPathWithoutQuery 去掉 query，避免错误信息里带上 page_token 等长参数。
+func apiPathWithoutQuery(p string) string {
+	if i := strings.IndexByte(p, '?'); i >= 0 {
+		return p[:i]
+	}
+	return p
 }
 
 // MailboxProfile mailbox profile 信息
@@ -412,8 +402,10 @@ func SendMailDraft(mailboxID, draftID, userAccessToken string) (json.RawMessage,
 	return callMailAPI(http.MethodPost, mailboxPath(mailboxID, "drafts", draftID, "send"), nil, userAccessToken)
 }
 
-// GetMailDraftRaw 获取草稿原始 EML
+// GetMailDraftRaw 获取草稿原始 EML（base64url 编码）
 // API: GET /open-apis/mail/v1/user_mailboxes/{mailbox_id}/drafts/{draft_id}?format=raw
+// 实测响应形如 {"draft":{"id":"...","message":{"message_id":"...","raw":"<base64url EML>"}}}；
+// 兼容 data.raw / data.draft.raw 等旧形态。
 func GetMailDraftRaw(mailboxID, draftID, userAccessToken string) (string, error) {
 	if mailboxID == "" {
 		mailboxID = "me"
@@ -425,15 +417,25 @@ func GetMailDraftRaw(mailboxID, draftID, userAccessToken string) (string, error)
 	}
 	var parsed struct {
 		Draft struct {
-			Raw string `json:"raw"`
+			Raw     string `json:"raw"`
+			Message struct {
+				Raw string `json:"raw"`
+			} `json:"message"`
 		} `json:"draft"`
+		Message struct {
+			Raw string `json:"raw"`
+		} `json:"message"`
 		Raw string `json:"raw"`
 	}
-	_ = json.Unmarshal(data, &parsed)
-	if parsed.Raw != "" {
-		return parsed.Raw, nil
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return "", fmt.Errorf("解析草稿响应失败: %w", err)
 	}
-	return parsed.Draft.Raw, nil
+	for _, raw := range []string{parsed.Draft.Message.Raw, parsed.Draft.Raw, parsed.Message.Raw, parsed.Raw} {
+		if raw != "" {
+			return raw, nil
+		}
+	}
+	return "", fmt.Errorf("草稿 %s 的响应中没有 raw 字段（format=raw）", draftID)
 }
 
 func extractMailDraftID(data json.RawMessage) string {
@@ -848,4 +850,70 @@ func ListMailLabels(mailboxID, userAccessToken string) (json.RawMessage, error) 
 		mailboxID = "me"
 	}
 	return callMailAPI(http.MethodGet, mailboxPath(mailboxID, "labels"), nil, userAccessToken)
+}
+
+// ResolveMailFolderID 把 --folder 输入解析为 messages 列表端点可用的 folder_id。
+// 规则（对齐官方 resolveFolderName）：系统文件夹别名/ID（inbox/收件箱/INBOX…）本地解析；
+// 其余按"精确 ID 优先、名称（大小写不敏感）其次"在文件夹列表中查找，名称重复或不存在时报错。
+// 修复：列表端点只接受 folder_id，此前直接透传 "inbox" 被服务端以 4038 拒绝。
+func ResolveMailFolderID(mailboxID, input, userAccessToken string) (string, error) {
+	value := strings.TrimSpace(input)
+	if value == "" {
+		return "", nil
+	}
+	if id, ok := resolveFolderSystemAliasOrID(value); ok {
+		return id, nil
+	}
+	raw, err := ListMailFolders(mailboxID, userAccessToken)
+	if err != nil {
+		return "", fmt.Errorf("查询文件夹列表失败: %w", err)
+	}
+	return resolveMailNamedID("文件夹", "--list-folders", value, raw, "folders")
+}
+
+// ResolveMailLabelID 把 --label 输入解析为 messages 列表端点可用的 label_id。
+// 系统标签（important/flagged/other 及其大写 ID）本地解析；其余在标签列表中按 ID / 名称查找。
+func ResolveMailLabelID(mailboxID, input, userAccessToken string) (string, error) {
+	value := strings.TrimSpace(input)
+	if value == "" {
+		return "", nil
+	}
+	if id, ok := resolveSystemLabel(value); ok {
+		return id, nil
+	}
+	if strings.EqualFold(value, "UNREAD") {
+		return "UNREAD", nil
+	}
+	raw, err := ListMailLabels(mailboxID, userAccessToken)
+	if err != nil {
+		return "", fmt.Errorf("查询标签列表失败: %w", err)
+	}
+	return resolveMailNamedID("标签", "--list-labels", value, raw, "labels")
+}
+
+func resolveMailNamedID(kind, listFlag, value string, raw json.RawMessage, altKey string) (string, error) {
+	var resp map[string][]mailNamedItem
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return "", fmt.Errorf("解析%s列表失败: %w", kind, err)
+	}
+	items := append(resp["items"], resp[altKey]...)
+	for _, it := range items {
+		if it.ID != "" && it.ID == value {
+			return it.ID, nil
+		}
+	}
+	var matches []string
+	for _, it := range items {
+		if it.ID != "" && strings.EqualFold(strings.TrimSpace(it.Name), value) {
+			matches = append(matches, it.ID)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return "", fmt.Errorf("未找到%s %q；可先用 `feishu-cli mail triage %s` 查看可用的 ID 与名称", kind, value, listFlag)
+	default:
+		return "", fmt.Errorf("%s名称 %q 对应多个 ID（%s），请改用 ID", kind, value, strings.Join(matches, ","))
+	}
 }

@@ -42,9 +42,15 @@ var updateTaskCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
-		taskGuid := args[0]
+		taskGuid, guidErr := parseTaskGUIDArg(args[0])
+		if guidErr != nil {
+			return guidErr
+		}
 
 		summary, _ := cmd.Flags().GetString("summary")
 		description, _ := cmd.Flags().GetString("description")
@@ -108,4 +114,5 @@ func init() {
 	updateTaskCmd.Flags().Bool("completed", false, "标记任务为已完成")
 	updateTaskCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	updateTaskCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	addWriteAsFlag(updateTaskCmd)
 }

@@ -62,11 +62,11 @@
         "okr"
       ],
       "prompt": "给 KR 7123456789012345678 上报 80% 的正常进展“完成 8/10 任务”，并关联周报 https://www.feishu.cn/docx/doxcnxxx。说明身份要求和 progress-status 的约束。",
-      "expected_output": "使用 Tenant Token 创建 KR 进展，percent 与 status 配套，并显式提供 source URL。",
+      "expected_output": "默认 --as bot（Tenant Token，无需 auth login）创建 KR 进展，percent 与 status 配套，并显式提供 source URL；可先 --dry-run 预览。",
       "expectations": [
         "命令使用 okr progress create --key-result-id 7123456789012345678",
         "命令包含 --content、--progress-percent 80、--progress-status normal 和 --source-url",
-        "明确 OKR 使用 Tenant Token 且不需要 auth login",
+        "明确 OKR 命令组默认 --as bot（Tenant Token），不需要 auth login",
         "明确 --progress-status 必须与 --progress-percent 一起使用"
       ],
       "files": []
@@ -95,6 +95,64 @@
         "使用calendar attendee add <calendar_id> <event_id> --user-ids",
         "不使用不存在的--calendar-id或--event-id",
         "不执行真实写操作"
+      ],
+      "files": []
+    },
+    {
+      "id": 8,
+      "workflows": [
+        "approval"
+      ],
+      "prompt": "审批实例 ic_xxx 里我的待办 task_xxx 要退回发起节点让对方补附件；同一实例里卡在别人那的 task_yyy 顺便催办一下。先预览，再等我确认。",
+      "expected_output": "approval task rollback --instance-code ic_xxx --task-id task_xxx --node-ids START --dry-run；approval task remind --instance-code ic_xxx --task-ids task_yyy --dry-run；确认后加 --yes，全部用 User Token。",
+      "expectations": [
+        "退回使用 approval task rollback --instance-code ic_xxx --task-id task_xxx --node-ids START",
+        "催办使用 approval task remind，任务参数是 --task-ids",
+        "先 --dry-run，用户确认后执行，非交互环境需 --yes（否则退出码 10）",
+        "说明审批命令必须 User Token，不使用 --as bot"
+      ],
+      "files": []
+    },
+    {
+      "id": 9,
+      "workflows": [
+        "approval"
+      ],
+      "prompt": "审批任务 task_xxx（实例 ic_xxx）我审完之后，还要让 ou_aaa 和 ou_bbb 按顺序依次再审，先给我请求预览。",
+      "expected_output": "approval task add-sign --instance-code ic_xxx --task-id task_xxx --type after --user-ids ou_aaa,ou_bbb --approval-method sequential --dry-run。",
+      "expectations": [
+        "使用 approval task add-sign 且 --type after（后加签）",
+        "多人加签显式指定 --approval-method sequential，并按 --user-ids 顺序",
+        "先 --dry-run，确认后再执行（非交互需 --yes）"
+      ],
+      "files": []
+    },
+    {
+      "id": 10,
+      "workflows": [
+        "calendar"
+      ],
+      "prompt": "主日历上的每周例会 evt_xxx（重复日程）先生成分享链接发到群里，然后把组织者转给 ou_xxx。我在非交互环境跑，先预览转让。",
+      "expected_output": "calendar event-share evt_xxx 取 share_link（不用 app_link）；calendar event-transfer evt_xxx --to-user-id ou_xxx --transfer-series --dry-run，用户确认后加 --yes。",
+      "expectations": [
+        "分享用 calendar event-share（或 get-event --share-link）返回的 share_link，不用 app_link",
+        "转让用 calendar event-transfer evt_xxx --to-user-id ou_xxx，重复日程必须带 --transfer-series",
+        "转让不可撤销：先 --dry-run，获得用户同意后才加 --yes",
+        "calendar_id 省略即 primary，不使用不存在的 --calendar-id/--event-id"
+      ],
+      "files": []
+    },
+    {
+      "id": 11,
+      "workflows": [
+        "task"
+      ],
+      "prompt": "列出任务清单 tasklist_guid 下的所有分组，再看其中“进行中”分组里还没完成的任务。",
+      "expected_output": "task section list --resource-type tasklist --resource-id <tasklist_guid> -o json，再 task section tasks <section_guid> --uncompleted。",
+      "expectations": [
+        "使用 task section list --resource-type tasklist --resource-id <tasklist_guid>",
+        "使用 task section tasks <section_guid> --uncompleted，不同时传 --completed",
+        "说明 my_tasks 的分组需要 User Token，清单分组 User 优先、可回退 Bot"
       ],
       "files": []
     }

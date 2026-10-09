@@ -20,17 +20,17 @@ func TestNormalizeURL(t *testing.T) {
 		{
 			name:     "feishu://doc/ 转换为 https://",
 			input:    "feishu://doc/ABC123",
-			expected: "https://feishu.cn/docx/ABC123",
+			expected: "https://www.feishu.cn/docx/ABC123",
 		},
 		{
 			name:     "feishu://wiki/ 转换为 https://",
 			input:    "feishu://wiki/NODE456",
-			expected: "https://feishu.cn/wiki/NODE456",
+			expected: "https://www.feishu.cn/wiki/NODE456",
 		},
 		{
 			name:     "通用 feishu:// 协议转换",
 			input:    "feishu://board/token",
-			expected: "https://feishu.cn/board/token",
+			expected: "https://www.feishu.cn/board/token",
 		},
 		{
 			name:     "URL 解码 https%3A%2F%2F",
@@ -418,7 +418,7 @@ func TestCreateLinkElement(t *testing.T) {
 			text:     "文档",
 			rawURL:   "feishu://doc/ABC123",
 			hasLink:  true,
-			finalURL: "https://feishu.cn/docx/ABC123",
+			finalURL: "https://www.feishu.cn/docx/ABC123",
 		},
 		{
 			name:    "锚点 #section 无 Link",
@@ -801,8 +801,8 @@ func TestMarkdownToBlockCallout(t *testing.T) {
 				if nodes[0].Block.Callout == nil {
 					t.Error("expected Callout block")
 				}
-				if *nodes[0].Block.Callout.BackgroundColor != 2 {
-					t.Errorf("WARNING color should be 2, got %d", *nodes[0].Block.Callout.BackgroundColor)
+				if *nodes[0].Block.Callout.BackgroundColor != CalloutBgLightRed {
+					t.Errorf("WARNING color should be 1 (浅红), got %d", *nodes[0].Block.Callout.BackgroundColor)
 				}
 			},
 		},
@@ -1096,9 +1096,13 @@ func TestMarkdownToBlockVideo(t *testing.T) {
 				if len(result.VideoSources) != 1 || result.VideoSources[0] != "./demo.mp4" {
 					t.Fatalf("unexpected video sources: %#v", result.VideoSources)
 				}
-				file := result.BlockNodes[0].Block.File
-				if file == nil || file.Name == nil || *file.Name != "original.mov" {
-					t.Fatalf("expected video data-name to become file name, got %#v", file)
+				block := result.BlockNodes[0].Block
+				file := block.File
+				if file == nil || file.Name != nil || file.Token == nil || *file.Token != "" {
+					t.Fatalf("建块请求只能带空 token、不能带 name（服务端 1770001）, got %#v", file)
+				}
+				if ref := result.MediaRefs[block]; ref == nil || ref.Name != "original.mov" || !ref.Video {
+					t.Fatalf("expected video data-name to become upload file name, got %#v", ref)
 				}
 				if file.ViewType == nil || *file.ViewType != 1 {
 					t.Fatalf("expected data-view-type=1, got %#v", file.ViewType)
@@ -1106,22 +1110,24 @@ func TestMarkdownToBlockVideo(t *testing.T) {
 			},
 		},
 		{
-			name:     "feishu media video restores file block",
+			name:     "feishu media video reuses media token",
 			markdown: "<video controls src=\"feishu://media/file_video_123\" data-name=\"demo.mp4\" data-view-type=\"1\"></video>",
 			options:  ConvertOptions{UploadImages: true},
 			checkFn: func(t *testing.T, result *ConvertResult) {
-				if result.VideoStats.Skipped != 0 || len(result.VideoSources) != 0 {
-					t.Fatalf("feishu media token should not be counted as skipped upload, stats=%#v sources=%#v", result.VideoStats, result.VideoSources)
+				if result.VideoStats.Skipped != 0 || result.VideoStats.Total != 1 || len(result.VideoSources) != 0 {
+					t.Fatalf("feishu media token should be reused (not skipped), stats=%#v sources=%#v", result.VideoStats, result.VideoSources)
 				}
-				file := result.BlockNodes[0].Block.File
+				block := result.BlockNodes[0].Block
+				file := block.File
 				if file == nil {
 					t.Fatal("expected File block")
 				}
-				if file.Token == nil || *file.Token != "file_video_123" {
-					t.Fatalf("expected token file_video_123, got %#v", file.Token)
+				if file.Token == nil || *file.Token != "" || file.Name != nil {
+					t.Fatalf("建块请求只能带空 token（带 token/name 服务端 1770001）, got %#v", file)
 				}
-				if file.Name == nil || *file.Name != "demo.mp4" {
-					t.Fatalf("expected name demo.mp4, got %#v", file.Name)
+				ref := result.MediaRefs[block]
+				if ref == nil || ref.Token != "file_video_123" || ref.Name != "demo.mp4" || !ref.Video {
+					t.Fatalf("expected media token reuse ref, got %#v", ref)
 				}
 				if file.ViewType == nil || *file.ViewType != 1 {
 					t.Fatalf("expected view type 1, got %#v", file.ViewType)

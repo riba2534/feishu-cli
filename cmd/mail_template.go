@@ -13,6 +13,9 @@ var mailTemplateCmd = &cobra.Command{
 子命令:
   create   创建邮件模板
   list     列出当前邮箱下的全部模板
+  get      查看模板详情
+  update   更新模板（未指定字段保持不变）
+  delete   删除模板（需确认）
 
 权限要求（User Access Token）:
   - mail:user_mailbox:readonly
@@ -20,7 +23,8 @@ var mailTemplateCmd = &cobra.Command{
 
 示例:
   feishu-cli mail template create --name "周报" --subject "本周进度" --body "..."
-  feishu-cli mail template list`,
+  feishu-cli mail template list
+  feishu-cli mail template get --template-id 764xxx`,
 }
 
 func init() {

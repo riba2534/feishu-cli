@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +20,7 @@ var driveExportCmd = &cobra.Command{
 
 - markdown 导出走 POST /open-apis/docs_ai/v1/documents/{token}/fetch（format=markdown）
 - 其他格式走 export_tasks 异步任务：创建 → 有界轮询（最多 10 次，每次 5s） → 下载
-- wiki URL/token 先 get_node 再导出底层文档
+- wiki URL/token 先 node_by_token 再导出底层文档
 - 超时未完成时返回 next_command
 
 类型/格式矩阵:
@@ -98,6 +100,10 @@ var driveExportCmd = &cobra.Command{
 		if outputDir == "" {
 			outputDir = "."
 		}
+		// 输出目录在任何网络请求（含 token 刷新、wiki 解析、创建导出任务）之前校验，敏感目录直接拒绝
+		if err := validateOutputPath(outputDir, ""); err != nil {
+			return fmt.Errorf("--output-dir 无效: %w", err)
+		}
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
@@ -109,7 +115,7 @@ var driveExportCmd = &cobra.Command{
 			if sourceType == "wiki" {
 				steps = append(steps, dryRunStep{
 					Method: "GET",
-					URL:    "/open-apis/wiki/v2/spaces/get_node",
+					URL:    client.WikiNodeByTokenPath,
 					Desc:   "Resolve wiki node to underlying document token",
 					Params: map[string]any{"token": sourceToken},
 				})
@@ -158,14 +164,14 @@ var driveExportCmd = &cobra.Command{
 			return err
 		}
 
-		if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		if err := safefile.MkdirAll(outputDir, 0o755); err != nil {
 			return fmt.Errorf("创建 --output-dir 失败: %w", err)
 		}
 
 		var wikiToken, wikiObjToken, wikiObjType string
 		if sourceType == "wiki" {
 			fmt.Fprintf(os.Stderr, "解析 wiki 节点: %s\n", sourceToken)
-			node, err := client.GetWikiNode(sourceToken, token)
+			node, err := client.ResolveWikiNode(sourceToken, token)
 			if err != nil {
 				return err
 			}
@@ -236,13 +242,13 @@ var driveExportCmd = &cobra.Command{
 		}
 		fmt.Fprintf(os.Stderr, "创建导出任务: %s\n", ticket)
 
+		nextCmd := fmt.Sprintf("feishu-cli drive task-result --scenario export --ticket %s --file-token %s --as %s", quotePOSIXShell(ticket), quotePOSIXShell(sourceToken), resumeIdentity(cmd))
 		status, timedOut, err := client.WaitDriveExportWithBound(ticket, sourceToken, token)
 		if err != nil {
-			return err
+			return withDrivePollResume(err, nextCmd)
 		}
 
 		if timedOut {
-			nextCmd := fmt.Sprintf("feishu-cli drive task-result --scenario export --ticket %s --file-token %s", ticket, sourceToken)
 			result := annotateWiki(map[string]any{
 				"ticket":         ticket,
 				"token":          sourceToken,
@@ -274,10 +280,10 @@ var driveExportCmd = &cobra.Command{
 		fileName = ensureExportFileExtension(sanitizeExportName(fileName, sourceToken), fileExtension)
 		savedPath := filepath.Join(outputDir, fileName)
 		if _, err := os.Stat(savedPath); err == nil && !overwrite {
-			return fmt.Errorf("文件已存在: %s（使用 --overwrite 覆盖）", savedPath)
+			return clierr.Usagef("文件已存在: %s（使用 --overwrite 覆盖）", savedPath)
 		}
 		if err := client.DownloadExportFile(status.FileToken, savedPath, token); err != nil {
-			nextCmd := fmt.Sprintf("feishu-cli drive export-download --file-token %s --output-dir %s", status.FileToken, outputDir)
+			nextCmd := driveExportDownloadRetryCommand(status.FileToken, outputDir, fileName, token)
 			return fmt.Errorf("下载导出文件失败: %w\n可重试: %s", err, nextCmd)
 		}
 
@@ -315,12 +321,14 @@ func normalizeDriveExportInput(rawURL, token, docType string) (sourceType, sourc
 		raw = rawURL
 	}
 	if strings.Contains(raw, "://") {
-		parsedType, parsedToken, parseErr := parseDriveURL(raw, "")
+		// 只按 URL 路径前缀推断类型（query 中的 /wiki/ 等字样不会劫持解析）
+		ref, parseErr := client.ParseResourceURL(raw)
 		if parseErr != nil {
-			return "", "", "", parseErr
+			return "", "", "", fmt.Errorf("--url 解析失败: %w", parseErr)
 		}
+		parsedType := ref.Type
 		sourceType = normalizeDriveExportDocType(parsedType)
-		sourceToken = parsedToken
+		sourceToken = ref.Token
 		if sourceType == "wiki" {
 			if docType == "wiki" {
 				return "wiki", sourceToken, "", nil
@@ -347,6 +355,10 @@ func normalizeDriveExportInput(rawURL, token, docType string) (sourceType, sourc
 	if rawURL != "" {
 		return "", "", "", fmt.Errorf("不支持的 --url %q，请使用飞书文档 URL", rawURL)
 	}
+	if !client.IsSafeResourceToken(strings.TrimSpace(token)) {
+		return "", "", "", fmt.Errorf("--token 不是有效的 token（只允许字母、数字、_ 和 -）: %q", token)
+	}
+	token = strings.TrimSpace(token)
 	if docType == "" {
 		return "", "", "", fmt.Errorf("裸 token 必须提供 --doc-type（允许: %s）", driveExportInputDocTypeValues)
 	}
@@ -365,6 +377,19 @@ func sanitizeExportName(title, fallback string) string {
 		name = fallback
 	}
 	return safeOutputPath(name, "")
+}
+
+// driveExportDownloadRetryCommand 构造导出文件下载失败后的重试命令。
+// 身份取本次实际使用的身份（token 非空为 user，否则 bot），不原样回显 auto：导出产物归创建任务的
+// 身份所有，auto 在重试时可能因登录态变化解析成另一身份而无权下载（与 file delete / wiki 删除的续查命令一致）。
+// 同时带上本次的文件名（export-download 默认以 file_token 命名、不带扩展名），参数按 POSIX shell 转义。
+func driveExportDownloadRetryCommand(fileToken, outputDir, fileName, token string) string {
+	identity := "bot"
+	if token != "" {
+		identity = "user"
+	}
+	return fmt.Sprintf("feishu-cli drive export-download --file-token %s --output-dir %s --file-name %s --as %s",
+		quotePOSIXShell(fileToken), quotePOSIXShell(outputDir), quotePOSIXShell(fileName), identity)
 }
 
 var driveExportDownloadCmd = &cobra.Command{
@@ -400,23 +425,29 @@ var driveExportDownloadCmd = &cobra.Command{
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
-		token, err := resolveIdentityToken(cmd)
-		if err != nil {
-			return err
-		}
 		if outputDir == "" {
 			outputDir = "."
 		}
-		if err := os.MkdirAll(outputDir, 0o755); err != nil {
-			return fmt.Errorf("创建 --output-dir 失败: %w", err)
-		}
-
 		if fileName == "" {
 			fileName = safeOutputPath(fileToken, "")
 		}
 		savedPath := filepath.Join(outputDir, fileName)
+		// 输出目录与最终文件在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
+		if err := validateOutputPath(outputDir, ""); err != nil {
+			return fmt.Errorf("--output-dir 无效: %w", err)
+		}
+		if err := validateOutputPath(savedPath, ""); err != nil {
+			return err
+		}
+		token, err := resolveIdentityToken(cmd)
+		if err != nil {
+			return err
+		}
+		if err := safefile.MkdirAll(outputDir, 0o755); err != nil {
+			return fmt.Errorf("创建 --output-dir 失败: %w", err)
+		}
 		if _, err := os.Stat(savedPath); err == nil && !overwrite {
-			return fmt.Errorf("文件已存在: %s（使用 --overwrite 覆盖）", savedPath)
+			return clierr.Usagef("文件已存在: %s（使用 --overwrite 覆盖）", savedPath)
 		}
 
 		if err := client.DownloadExportFile(fileToken, savedPath, token); err != nil {

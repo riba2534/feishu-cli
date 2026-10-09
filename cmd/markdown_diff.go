@@ -6,8 +6,10 @@ import (
 
 	"github.com/itchyny/gojq"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -66,10 +68,10 @@ var markdownDiffCmd = &cobra.Command{
 		toVersion = strings.TrimSpace(toVersion)
 
 		if fileToken == "" {
-			return fmt.Errorf("--file-token 必填")
+			return clierr.Usagef("--file-token 必填")
 		}
 		if contextLines < 0 {
-			return fmt.Errorf("--context-lines 不能为负（当前 %d）", contextLines)
+			return clierr.Usagef("--context-lines 不能为负（当前 %d）", contextLines)
 		}
 
 		mode, err := resolveMarkdownDiffMode(localFile, fromVersion, toVersion)
@@ -89,6 +91,12 @@ var markdownDiffCmd = &cobra.Command{
 		o, structured, oerr := resolveMarkdownDiffOutput(cmd)
 		if oerr != nil {
 			return oerr
+		}
+		// 本地文件敏感目录先于一切网络请求拒绝（dry-run 不要求文件存在）
+		if localFile != "" {
+			if err := safefile.ValidateInputPath(localFile); err != nil {
+				return err
+			}
 		}
 
 		if dryRun {
@@ -124,6 +132,12 @@ var markdownDiffCmd = &cobra.Command{
 				extra["local_file"] = localFile
 			}
 			return printDryRunPlan(cmd, "Download the requested Markdown content and compute a unified diff locally", extra, steps)
+		}
+		// 非 dry-run：本地文件不存在 / 是目录 / 无权限读取在下载远端内容之前报用法错误
+		if localFile != "" {
+			if _, err := safefile.StatInputFile(localFile); err != nil {
+				return err
+			}
 		}
 
 		token, err := resolveIdentityToken(cmd)
@@ -222,11 +236,11 @@ func resolveMarkdownDiffOutput(cmd *cobra.Command) (*output.Options, bool, error
 	}
 	o, err := output.NewOptions(format, jqExpr)
 	if err != nil {
-		return o, true, err
+		return o, true, clierr.Usage(err)
 	}
 	if strings.TrimSpace(jqExpr) != "" {
 		if _, jqErr := gojq.Parse(jqExpr); jqErr != nil {
-			return nil, true, fmt.Errorf("jq 表达式解析失败: %w", jqErr)
+			return nil, true, clierr.Usagef("jq 表达式解析失败: %w", jqErr)
 		}
 	}
 	return o, true, nil
@@ -239,10 +253,10 @@ func resolveMarkdownDiffMode(localFile, fromVersion, toVersion string) (string, 
 	hasTo := toVersion != ""
 
 	if hasTo && !hasFrom && !hasLocal {
-		return "", fmt.Errorf("--to-version 需要同时指定 --from-version")
+		return "", clierr.Usagef("--to-version 需要同时指定 --from-version")
 	}
 	if hasLocal && hasTo {
-		return "", fmt.Errorf("--to-version 不能与 --file 同时使用")
+		return "", clierr.Usagef("--to-version 不能与 --file 同时使用")
 	}
 	if hasLocal {
 		return "local_vs_remote", nil
@@ -250,7 +264,7 @@ func resolveMarkdownDiffMode(localFile, fromVersion, toVersion string) (string, 
 	if hasFrom {
 		return "remote_vs_remote", nil
 	}
-	return "", fmt.Errorf("请指定 --from-version（远端版本比对），或 --from-version+--to-version，或 --file（远端 vs 本地文件）")
+	return "", clierr.Usagef("请指定 --from-version（远端版本比对），或 --from-version+--to-version，或 --file（远端 vs 本地文件）")
 }
 
 // fetchMarkdownPreviewContent 走官方 preview_download?preview_type=16[&version=N]。
@@ -470,6 +484,13 @@ func init() {
 	markdownDiffCmd.Flags().Bool("dry-run", false, "只打印比对计划，不下载/不比对")
 	markdownDiffCmd.Flags().StringP("output", "o", "", "[兼容] -o json 等价 --format json；缺省输出 unified diff 文本")
 	output.AddFormatFlags(markdownDiffCmd) // --format json|pretty|table|ndjson|csv + --jq（与其它新命令一致）
+	// diff 缺省输出 unified diff 文本（只有显式 --format / --jq / -o json 才走结构化输出），
+	// 帮助里不能把 --format 的默认值显示成 json。
+	if f := markdownDiffCmd.Flags().Lookup("format"); f != nil {
+		f.DefValue = ""
+		_ = f.Value.Set("")
+		f.Usage = "结构化输出格式: json | pretty | table | ndjson | csv（缺省输出 unified diff 文本；只传 --jq 时按 json）"
+	}
 	markdownDiffCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(markdownDiffCmd, "file-token")
 }

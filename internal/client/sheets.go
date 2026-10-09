@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -25,16 +25,18 @@ type SpreadsheetInfo struct {
 
 // SheetInfo 工作表信息
 type SheetInfo struct {
-	SheetID    string          `json:"sheet_id"`
-	Title      string          `json:"title"`
-	Index      int             `json:"index"`
-	RowCount   int             `json:"row_count"`
-	ColCount   int             `json:"column_count"`
-	FrozenRows int             `json:"frozen_row_count"`
-	FrozenCols int             `json:"frozen_col_count"`
-	Hidden     bool            `json:"hidden"`
-	Merges     []*MergeRange   `json:"merges,omitempty"`
-	Properties *GridProperties `json:"grid_properties,omitempty"`
+	SheetID    string `json:"sheet_id"`
+	Title      string `json:"title"`
+	Index      int    `json:"index"`
+	RowCount   int    `json:"row_count"`
+	ColCount   int    `json:"column_count"`
+	FrozenRows int    `json:"frozen_row_count"`
+	FrozenCols int    `json:"frozen_col_count"`
+	Hidden     bool   `json:"hidden"`
+	// ResourceType 子表类型：sheet（普通工作表）/ bitable（嵌入的多维表格）等
+	ResourceType string          `json:"resource_type,omitempty"`
+	Merges       []*MergeRange   `json:"merges,omitempty"`
+	Properties   *GridProperties `json:"grid_properties,omitempty"`
 }
 
 // MergeRange 合并单元格范围
@@ -70,6 +72,9 @@ type CellStyle struct {
 	ForeColor  string      `json:"foreColor,omitempty"`  // 前景色
 	BorderType string      `json:"borderType,omitempty"` // 边框类型
 	Clean      bool        `json:"clean,omitempty"`      // 是否清除样式
+	// ResetFormatter 为 true 且 Formatter 为空时，显式下发 formatter=""，把单元格数字格式重置为常规。
+	// 用途：区域残留文本格式 "@" 时，V3 写入的数值会被存成文本（已实测），须先重置。
+	ResetFormatter bool `json:"-"`
 }
 
 // FontStyle 字体样式
@@ -137,7 +142,18 @@ type DeleteSheetRequest struct {
 
 // UpdateSheetRequest 更新工作表请求
 type UpdateSheetRequest struct {
-	Properties *SheetProperties `json:"properties"`
+	Properties *SheetPropertiesUpdate `json:"properties"`
+}
+
+// SheetPropertiesUpdate 是 v2 sheets_batch_update.updateSheet 的属性。
+// 除 SheetID 外均为指针：nil 表示不修改，可以显式写入 false / 0（取消隐藏、取消冻结、移到第一位）。
+type SheetPropertiesUpdate struct {
+	SheetID        string  `json:"sheetId"`
+	Title          *string `json:"title,omitempty"`
+	Index          *int    `json:"index,omitempty"`
+	Hidden         *bool   `json:"hidden,omitempty"`
+	FrozenRowCount *int    `json:"frozenRowCount,omitempty"`
+	FrozenColCount *int    `json:"frozenColCount,omitempty"`
 }
 
 // SheetProperties 工作表属性
@@ -158,19 +174,16 @@ type SheetDest struct {
 	Title string `json:"title,omitempty"`
 }
 
-// ProtectedRange 保护范围
+// ProtectedRange 保护范围。
+// Dimension 的 StartIndex/EndIndex 为接口口径：从 1 开始、两端包含（官方文档与实测一致）。
+// Users 为除所有者外允许编辑该范围的用户 ID，ID 类型由 CreateProtectedRange 的 userIDType 指定
+// （接口文档：请求体 users + 查询参数 user_id_type；旧的 editors 字段为 lark_id 数组，已废弃）。
 type ProtectedRange struct {
 	Dimension *Dimension `json:"dimension"`
 	ProtectID string     `json:"protectId,omitempty"`
 	LockInfo  string     `json:"lockInfo,omitempty"`
 	SheetID   string     `json:"sheetId"`
-	Editors   *Editors   `json:"editors,omitempty"`
-}
-
-// Editors 编辑者
-type Editors struct {
-	Users         []string `json:"users,omitempty"`
-	DepartmentIDs []string `json:"departmentIds,omitempty"`
+	Users     []string   `json:"users,omitempty"`
 }
 
 // FloatImage 浮动图片
@@ -263,32 +276,6 @@ func GetSpreadsheet(ctx context.Context, spreadsheetToken string, userAccessToke
 	return info, nil
 }
 
-// UpdateSpreadsheetTitle 更新表格标题 (V3 API)
-func UpdateSpreadsheetTitle(ctx context.Context, spreadsheetToken, title string) error {
-	client, err := GetClient()
-	if err != nil {
-		return err
-	}
-
-	req := larksheets.NewPatchSpreadsheetReqBuilder().
-		SpreadsheetToken(spreadsheetToken).
-		UpdateSpreadsheetProperties(larksheets.NewUpdateSpreadsheetPropertiesBuilder().
-			Title(title).
-			Build()).
-		Build()
-
-	resp, err := client.Sheets.Spreadsheet.Patch(ctx, req)
-	if err != nil {
-		return fmt.Errorf("更新表格标题失败: %w", err)
-	}
-
-	if !resp.Success() {
-		return fmt.Errorf("更新表格标题失败: code=%d, msg=%s", resp.Code, resp.Msg)
-	}
-
-	return nil
-}
-
 // QuerySheets 查询所有工作表 (V3 API)，userAccessToken 为空时使用 Tenant Token
 func QuerySheets(ctx context.Context, spreadsheetToken string, userAccessToken ...string) ([]*SheetInfo, error) {
 	client, err := GetClient()
@@ -324,6 +311,7 @@ func QuerySheets(ctx context.Context, spreadsheetToken string, userAccessToken .
 		if s.Hidden != nil {
 			info.Hidden = *s.Hidden
 		}
+		info.ResourceType = StringVal(s.ResourceType)
 		if s.GridProperties != nil {
 			if s.GridProperties.RowCount != nil {
 				info.RowCount = *s.GridProperties.RowCount
@@ -342,50 +330,6 @@ func QuerySheets(ctx context.Context, spreadsheetToken string, userAccessToken .
 	}
 
 	return sheets, nil
-}
-
-// GetSheet 获取单个工作表信息 (V3 API)
-func GetSheet(ctx context.Context, spreadsheetToken, sheetID string) (*SheetInfo, error) {
-	client, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
-	req := larksheets.NewGetSpreadsheetSheetReqBuilder().
-		SpreadsheetToken(spreadsheetToken).
-		SheetId(sheetID).
-		Build()
-
-	resp, err := client.Sheets.SpreadsheetSheet.Get(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("获取工作表信息失败: %w", err)
-	}
-
-	if !resp.Success() {
-		return nil, fmt.Errorf("获取工作表信息失败: code=%d, msg=%s", resp.Code, resp.Msg)
-	}
-
-	s := resp.Data.Sheet
-	info := &SheetInfo{
-		SheetID: *s.SheetId,
-		Title:   *s.Title,
-	}
-	if s.Index != nil {
-		info.Index = *s.Index
-	}
-	if s.Hidden != nil {
-		info.Hidden = *s.Hidden
-	}
-	if s.GridProperties != nil {
-		if s.GridProperties.RowCount != nil {
-			info.RowCount = *s.GridProperties.RowCount
-		}
-		if s.GridProperties.ColumnCount != nil {
-			info.ColCount = *s.GridProperties.ColumnCount
-		}
-	}
-
-	return info, nil
 }
 
 // FindCells 查找单元格 (V3 API)
@@ -441,8 +385,8 @@ func FindCells(ctx context.Context, spreadsheetToken, sheetID string, findStr st
 	return result, nil
 }
 
-// ReplaceCells 替换单元格内容 (V3 API)
-func ReplaceCells(ctx context.Context, spreadsheetToken, sheetID string, findStr, replacement string, matchCase, matchEntireCell bool, rangeStr string, userAccessToken ...string) (*FindReplaceResult, error) {
+// ReplaceCells 替换单元格内容 (V3 API)。searchByRegex 为 true 时 findStr 按正则匹配。
+func ReplaceCells(ctx context.Context, spreadsheetToken, sheetID string, findStr, replacement string, matchCase, matchEntireCell, searchByRegex bool, rangeStr string, userAccessToken ...string) (*FindReplaceResult, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -452,7 +396,8 @@ func ReplaceCells(ctx context.Context, spreadsheetToken, sheetID string, findStr
 
 	conditionBuilder := larksheets.NewFindConditionBuilder().
 		MatchCase(matchCase).
-		MatchEntireCell(matchEntireCell)
+		MatchEntireCell(matchEntireCell).
+		SearchByRegex(searchByRegex)
 
 	// 范围需要包含 sheetId 前缀
 	if rangeStr != "" {
@@ -496,11 +441,6 @@ func ReplaceCells(ctx context.Context, spreadsheetToken, sheetID string, findStr
 
 // ==================== V2 API (通过 HTTP 请求) ====================
 
-// v2APICall 封装 V2 API 调用（使用 Tenant Token）
-func v2APICall(client *lark.Client, ctx context.Context, method, path string, body any) ([]byte, error) {
-	return v2APICallWithToken(client, ctx, method, path, body, "")
-}
-
 // v2APICallWithToken 封装 V2 API 调用，支持 User Token（为空时回退到 Tenant Token）
 func v2APICallWithToken(client *lark.Client, ctx context.Context, method, path string, body any, userAccessToken string) ([]byte, error) {
 	tokenType, opts := resolveTokenOpts(userAccessToken)
@@ -527,8 +467,10 @@ func v2APICallWithToken(client *lark.Client, ctx context.Context, method, path s
 		return nil, err
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API 调用失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	// 先按飞书业务信封解析再看 HTTP 状态：sheets 大量业务错误（如 90215 not found sheetId、
+	// 1310213 无权限）随 HTTP 400 下发，先判状态码会丢掉业务码与 log_id。
+	if err := ParseAPIResponse("", resp.StatusCode, resp.Header, resp.RawBody); err != nil {
+		return nil, err
 	}
 
 	return resp.RawBody, nil
@@ -572,7 +514,8 @@ func ReadCells(ctx context.Context, spreadsheetToken, rangeStr string, valueRend
 		} `json:"data"`
 	}
 
-	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+	// 数字保留为 json.Number：经 float64 中转会让 19 位整数等大数丢精度，输出时也会出现 1e+21 这类科学计数法
+	if err := unmarshalUseNumber(respBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
@@ -581,52 +524,6 @@ func ReadCells(ctx context.Context, spreadsheetToken, rangeStr string, valueRend
 	}
 
 	return apiResp.Data.ValueRange, nil
-}
-
-// ReadCellsBatch 批量读取多个范围 (V2 API)
-func ReadCellsBatch(ctx context.Context, spreadsheetToken string, ranges []string, valueRenderOption, dateTimeRenderOption string) ([]*CellRange, error) {
-	client, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
-	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/values_batch_get", spreadsheetToken)
-
-	params := url.Values{}
-	for _, r := range ranges {
-		params.Add("ranges", r)
-	}
-	if valueRenderOption != "" {
-		params.Set("valueRenderOption", valueRenderOption)
-	}
-	if dateTimeRenderOption != "" {
-		params.Set("dateTimeRenderOption", dateTimeRenderOption)
-	}
-	path += "?" + params.Encode()
-
-	respBody, err := v2APICall(client, ctx, "GET", path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("批量读取单元格失败: %w", err)
-	}
-
-	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-		Data struct {
-			Revision    int          `json:"revision"`
-			ValueRanges []*CellRange `json:"valueRanges"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
-	}
-
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("批量读取单元格失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
-	}
-
-	return apiResp.Data.ValueRanges, nil
 }
 
 // convertBoolCells 把布尔单元格转成 "TRUE"/"FALSE" 字符串。
@@ -701,49 +598,6 @@ func WriteCells(ctx context.Context, spreadsheetToken, rangeStr string, values [
 	}, nil
 }
 
-// WriteCellsBatch 批量写入多个范围 (V2 API，布尔值转 "TRUE"/"FALSE"，API 不接受 JSON Boolean)
-func WriteCellsBatch(ctx context.Context, spreadsheetToken string, valueRanges []*CellRange) error {
-	client, err := GetClient()
-	if err != nil {
-		return err
-	}
-
-	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/values_batch_update", spreadsheetToken)
-
-	// 不改动调用方传入的 CellRange，按需生成布尔已转换的副本
-	converted := make([]*CellRange, len(valueRanges))
-	for i, vr := range valueRanges {
-		if vr == nil {
-			continue
-		}
-		converted[i] = &CellRange{Range: vr.Range, Values: convertBoolCells(vr.Values)}
-	}
-
-	reqBody := map[string]any{
-		"valueRanges": converted,
-	}
-
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
-	if err != nil {
-		return fmt.Errorf("批量写入单元格失败: %w", err)
-	}
-
-	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-	}
-
-	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return fmt.Errorf("解析响应失败: %w", err)
-	}
-
-	if apiResp.Code != 0 {
-		return fmt.Errorf("批量写入单元格失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
-	}
-
-	return nil
-}
-
 // AppendCells 追加数据 (V2 API，布尔值转 "TRUE"/"FALSE"，API 不接受 JSON Boolean)
 func AppendCells(ctx context.Context, spreadsheetToken, rangeStr string, values [][]any, insertDataOption string, userAccessToken ...string) (*CellRange, error) {
 	client, err := GetClient()
@@ -792,51 +646,6 @@ func AppendCells(ctx context.Context, spreadsheetToken, rangeStr string, values 
 
 	if apiResp.Code != 0 {
 		return nil, fmt.Errorf("追加数据失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
-	}
-
-	return &CellRange{
-		Range:  apiResp.Data.Updates.UpdatedRange,
-		Values: values,
-	}, nil
-}
-
-// PrependCells 前置插入数据 (V2 API)
-func PrependCells(ctx context.Context, spreadsheetToken, rangeStr string, values [][]any) (*CellRange, error) {
-	client, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
-	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/values_prepend", spreadsheetToken)
-
-	reqBody := map[string]any{
-		"valueRange": map[string]any{
-			"range":  rangeStr,
-			"values": convertBoolCells(values),
-		},
-	}
-
-	respBody, err := v2APICall(client, ctx, "POST", path, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("前置插入数据失败: %w", err)
-	}
-
-	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-		Data struct {
-			Updates struct {
-				UpdatedRange string `json:"updatedRange"`
-			} `json:"updates"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
-	}
-
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("前置插入数据失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
 	}
 
 	return &CellRange{
@@ -1015,7 +824,9 @@ func AddDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDi
 	return nil
 }
 
-// InsertDimension 插入行/列 (V2 API)
+// InsertDimension 插入行/列 (V2 API)。
+// 索引口径（实测）：startIndex 从 0 开始，endIndex 不包含——startIndex=1,endIndex=2 在第 1、2 行之间插入 1 行。
+// 注意与删除 / 更新行列接口（1 起始、两端包含）不同。
 func InsertDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDimension string, startIndex, endIndex int, inheritStyle string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
@@ -1060,7 +871,9 @@ func InsertDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 	return nil
 }
 
-// DeleteDimension 删除行/列 (V2 API)
+// DeleteDimension 删除行/列 (V2 API)。
+// startIndex/endIndex 为接口口径：从 1 开始、两端包含（实测 startIndex=2,endIndex=3 删除第 2、3 行，
+// startIndex=0 报 90202）。命令层的 0 起始 / 不含结束口径须先换算（见 cmd/sheet_dimension.go）。
 func DeleteDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDimension string, startIndex, endIndex int, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
@@ -1070,6 +883,10 @@ func DeleteDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/dimension_range", spreadsheetToken)
+
+	if startIndex < 1 || endIndex < startIndex {
+		return fmt.Errorf("删除行/列失败: 索引须从 1 开始且 endIndex ≥ startIndex（两端包含），得到 %d..%d", startIndex, endIndex)
+	}
 
 	reqBody := map[string]any{
 		"dimension": map[string]any{
@@ -1101,12 +918,20 @@ func DeleteDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 	return nil
 }
 
-// UpdateDimension 更新行/列属性（如行高、列宽、隐藏等） (V2 API)
-func UpdateDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDimension string, startIndex, endIndex int, visible *bool, fixedSize *int) error {
+// UpdateDimension 更新行/列属性（如行高、列宽、隐藏等） (V2 API)。
+// startIndex/endIndex 为接口口径：从 1 开始、两端包含（实测 startIndex=0 报 90202，endIndex<startIndex 报错）。
+func UpdateDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDimension string, startIndex, endIndex int, visible *bool, fixedSize *int, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
+	if startIndex < 1 || endIndex < startIndex {
+		return fmt.Errorf("更新行/列属性失败: 索引须从 1 开始且 endIndex ≥ startIndex（两端包含），得到 %d..%d", startIndex, endIndex)
+	}
+	if visible == nil && fixedSize == nil {
+		return fmt.Errorf("更新行/列属性失败: 至少需要指定 visible 或 fixedSize")
+	}
+	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/dimension_range", spreadsheetToken)
 
@@ -1130,7 +955,7 @@ func UpdateDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 		"dimensionProperties": dimensionProperties,
 	}
 
-	respBody, err := v2APICall(client, ctx, "PUT", path, reqBody)
+	respBody, err := v2APICallWithToken(client, ctx, "PUT", path, reqBody, uat)
 	if err != nil {
 		return fmt.Errorf("更新行/列属性失败: %w", err)
 	}
@@ -1258,6 +1083,8 @@ func SetCellStyle(ctx context.Context, spreadsheetToken, rangeStr string, style 
 	}
 	if style.Formatter != "" {
 		appendStyle["formatter"] = style.Formatter
+	} else if style.ResetFormatter {
+		appendStyle["formatter"] = ""
 	}
 	if style.BackColor != "" {
 		appendStyle["backColor"] = style.BackColor
@@ -1361,7 +1188,8 @@ func GetSpreadsheetMeta(ctx context.Context, spreadsheetToken string, extFields 
 		Data map[string]any `json:"data"`
 	}
 
-	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+	// ownerUser 等 ID 是 19 位整数，经 float64 会丢精度，统一保留为 json.Number
+	if err := unmarshalUseNumber(respBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
 
@@ -1374,11 +1202,36 @@ func GetSpreadsheetMeta(ctx context.Context, spreadsheetToken string, extFields 
 
 // ==================== 筛选相关 (V3 API) ====================
 
-// CreateFilter 创建筛选 (V3 API)
-func CreateFilter(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, conditions map[string]any, userAccessToken ...string) error {
+// SheetFilterCondition 是工作表筛选（非筛选视图）的单列条件。
+// Col 为列字母（如 "B"）；FilterType 取值 hiddenValue / number / text / color；
+// CompareType 如 less / beginsWith / between；Expected 为筛选参数。
+type SheetFilterCondition struct {
+	Col         string
+	FilterType  string
+	CompareType string
+	Expected    []string
+}
+
+func (c *SheetFilterCondition) sdkCondition() *larksheets.Condition {
+	b := larksheets.NewConditionBuilder().FilterType(c.FilterType)
+	if c.CompareType != "" {
+		b.CompareType(c.CompareType)
+	}
+	if len(c.Expected) > 0 {
+		b.Expected(c.Expected)
+	}
+	return b.Build()
+}
+
+// CreateFilter 创建筛选 (V3 API)。接口要求 range + col + condition 同时提供
+// （实测只传 range 返回 99992402 "col is required / condition is required"）。
+func CreateFilter(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, cond *SheetFilterCondition, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
+	}
+	if cond == nil || cond.Col == "" || cond.FilterType == "" {
+		return fmt.Errorf("创建筛选失败: 需要指定筛选列与筛选类型")
 	}
 
 	uat := firstString(userAccessToken)
@@ -1389,7 +1242,10 @@ func CreateFilter(ctx context.Context, spreadsheetToken, sheetID, rangeStr strin
 		fullRange = sheetID + "!" + rangeStr
 	}
 
-	filterBuilder := larksheets.NewCreateSheetFilterBuilder().Range(fullRange)
+	filterBuilder := larksheets.NewCreateSheetFilterBuilder().
+		Range(fullRange).
+		Col(cond.Col).
+		Condition(cond.sdkCondition())
 
 	req := larksheets.NewCreateSpreadsheetSheetFilterReqBuilder().
 		SpreadsheetToken(spreadsheetToken).
@@ -1406,6 +1262,33 @@ func CreateFilter(ctx context.Context, spreadsheetToken, sheetID, rangeStr strin
 		return fmt.Errorf("创建筛选失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
+	return nil
+}
+
+// UpdateFilter 更新筛选中某一列的条件 (V3 API, PUT .../filter)。
+func UpdateFilter(ctx context.Context, spreadsheetToken, sheetID string, cond *SheetFilterCondition, userAccessToken ...string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+	if cond == nil || cond.Col == "" || cond.FilterType == "" {
+		return fmt.Errorf("更新筛选失败: 需要指定筛选列与筛选类型")
+	}
+	req := larksheets.NewUpdateSpreadsheetSheetFilterReqBuilder().
+		SpreadsheetToken(spreadsheetToken).
+		SheetId(sheetID).
+		UpdateSheetFilter(larksheets.NewUpdateSheetFilterBuilder().
+			Col(cond.Col).
+			Condition(cond.sdkCondition()).
+			Build()).
+		Build()
+	resp, err := client.Sheets.SpreadsheetSheetFilter.Update(ctx, req, UserTokenOption(firstString(userAccessToken))...)
+	if err != nil {
+		return fmt.Errorf("更新筛选失败: %w", err)
+	}
+	if !resp.Success() {
+		return fmt.Errorf("更新筛选失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
 	return nil
 }
 
@@ -1605,7 +1488,9 @@ func QueryFloatImages(ctx context.Context, spreadsheetToken, sheetID string, use
 
 // CreateProtectedRange 创建保护范围 (V2 API)
 // 实测该端点在线可用（POST protected_dimension 返回 code=0 并回填 protectId）。
-func CreateProtectedRange(ctx context.Context, spreadsheetToken string, ranges []*ProtectedRange, userAccessToken ...string) ([]string, error) {
+// 索引口径：startIndex/endIndex 从 1 开始、两端包含（startIndex=0 报 90202）。
+// userIDType 为 users 的 ID 类型（open_id / union_id）；任一范围带 users 时必填，为空时默认 open_id。
+func CreateProtectedRange(ctx context.Context, spreadsheetToken string, ranges []*ProtectedRange, userIDType string, userAccessToken ...string) ([]string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -1614,6 +1499,18 @@ func CreateProtectedRange(ctx context.Context, spreadsheetToken string, ranges [
 	uat := firstString(userAccessToken)
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/protected_dimension", spreadsheetToken)
+	hasUsers := false
+	for _, r := range ranges {
+		if r != nil && len(r.Users) > 0 {
+			hasUsers = true
+		}
+	}
+	if hasUsers {
+		if userIDType == "" {
+			userIDType = "open_id"
+		}
+		path += "?user_id_type=" + url.QueryEscape(userIDType)
+	}
 
 	var addProtected []map[string]any
 	for _, r := range ranges {
@@ -1631,8 +1528,8 @@ func CreateProtectedRange(ctx context.Context, spreadsheetToken string, ranges [
 		if r.LockInfo != "" {
 			item["lockInfo"] = r.LockInfo
 		}
-		if r.Editors != nil {
-			item["editors"] = r.Editors
+		if len(r.Users) > 0 {
+			item["users"] = r.Users
 		}
 		addProtected = append(addProtected, item)
 	}
@@ -2125,15 +2022,32 @@ func ConvertToV3Element(value any) *CellElement {
 			Type: "text",
 			Text: &TextElement{Text: v},
 		}
-	case float64:
+	case json.Number:
+		// 原样保留数字字面量（大整数、高精度小数不经 float64）
 		return &CellElement{
 			Type:  "value",
-			Value: &ValueElement{Value: fmt.Sprintf("%v", v)},
+			Value: &ValueElement{Value: v.String()},
+		}
+	case float64:
+		// 'f' + -1：最短且无指数的十进制表示（1000000 不会变成 1e+06）
+		return &CellElement{
+			Type:  "value",
+			Value: &ValueElement{Value: strconv.FormatFloat(v, 'f', -1, 64)},
+		}
+	case float32:
+		return &CellElement{
+			Type:  "value",
+			Value: &ValueElement{Value: strconv.FormatFloat(float64(v), 'f', -1, 32)},
 		}
 	case int:
 		return &CellElement{
 			Type:  "value",
-			Value: &ValueElement{Value: fmt.Sprintf("%d", v)},
+			Value: &ValueElement{Value: strconv.Itoa(v)},
+		}
+	case int64:
+		return &CellElement{
+			Type:  "value",
+			Value: &ValueElement{Value: strconv.FormatInt(v, 10)},
 		}
 	case bool:
 		if v {

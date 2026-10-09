@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/profile"
@@ -20,6 +21,47 @@ type TokenStore struct {
 	RefreshExpiresAt time.Time `json:"refresh_expires_at"`
 	Scope            string    `json:"scope"`
 	AppID            string    `json:"app_id,omitempty"`
+	// RefreshFailure 记录 refresh_token 被服务端判定终态失效的信息；存在时不再发起注定失败的刷新，
+	// 直到重新 auth login（新 token 不带该字段）。
+	RefreshFailure *RefreshFailure `json:"refresh_failure,omitempty"`
+
+	// StatusMessage 是服务端在成功响应中附带的提示（如 scope 被裁剪），仅供本次进程展示，不落盘。
+	StatusMessage string `json:"-"`
+}
+
+// RefreshFailure 是 token.json 中的终态刷新失败标记。
+type RefreshFailure struct {
+	Code        int       `json:"code,omitempty"`
+	Error       string    `json:"error,omitempty"`
+	Description string    `json:"description,omitempty"`
+	At          time.Time `json:"at"`
+}
+
+// Err 把终态标记转成可执行的错误（带 code=<N>，退出码 3 与修复建议由上层统一处理）。
+func (f *RefreshFailure) Err() error {
+	if f == nil {
+		return nil
+	}
+	var parts []string
+	if f.Code != 0 {
+		parts = append(parts, fmt.Sprintf("code=%d", f.Code))
+	}
+	if f.Error != "" {
+		parts = append(parts, "error="+f.Error)
+	}
+	if f.Description != "" {
+		parts = append(parts, "msg="+f.Description)
+	}
+	when := "此前"
+	if !f.At.IsZero() {
+		when = f.At.Format(time.RFC3339)
+	}
+	detail := ""
+	if len(parts) > 0 {
+		detail = "：" + strings.Join(parts, ", ")
+	}
+	return fmt.Errorf("%s（%s 刷新时被服务端拒绝%s），不会再自动重试。请重新登录: feishu-cli auth login",
+		terminalRefreshReason(f.Code), when, detail)
 }
 
 // ErrAppMismatch 表示 token.json 已绑定的 app_id 与当前选中应用不一致。
@@ -82,7 +124,7 @@ func loadTokenFile(path string) (*TokenStore, error) {
 	}
 	var t TokenStore
 	if err := json.Unmarshal(data, &t); err != nil {
-		return nil, fmt.Errorf("解析 token 文件失败: %w", err)
+		return nil, fmt.Errorf("解析 token 文件失败: %w（%s 可能已损坏：执行 feishu-cli auth login 重新登录覆盖，或 feishu-cli auth logout 清理本地文件）", err, path)
 	}
 	return &t, nil
 }
@@ -99,6 +141,11 @@ func SaveToken(t *TokenStore) error {
 }
 
 func writeTokenUnlocked(path string, t *TokenStore) error {
+	return writeTokenFileUnlocked(path, t, true)
+}
+
+// writeTokenFileUnlocked 写 token.json；clearUserCache=false 用于只改标记、不换 token 的场景。
+func writeTokenFileUnlocked(path string, t *TokenStore, clearUserCache bool) error {
 	if t == nil {
 		return fmt.Errorf("不能写入空 token")
 	}
@@ -117,7 +164,9 @@ func writeTokenUnlocked(path string, t *TokenStore) error {
 	}
 	_ = os.Remove(path + ".bak")
 
-	clearCurrentUserCacheBestEffort()
+	if clearUserCache {
+		clearCurrentUserCacheBestEffort()
+	}
 	return nil
 }
 
@@ -217,7 +266,7 @@ func (t *TokenStore) IsAccessTokenValid() bool {
 // 当 RefreshExpiresAt 为零值时（服务端未返回过期时间），假定有效，让服务端决定。
 // 有值时预留 5 分钟缓冲，与 access_token 策略一致。
 func (t *TokenStore) IsRefreshTokenValid() bool {
-	if t.RefreshToken == "" {
+	if t.RefreshToken == "" || t.RefreshFailure != nil {
 		return false
 	}
 	if t.RefreshExpiresAt.IsZero() {

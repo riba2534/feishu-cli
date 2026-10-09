@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -63,7 +62,7 @@ var sheetImportMDCmd = &cobra.Command{
 
 type sheetImportMDDeps struct {
 	validate          func() error
-	resolveUserToken  func(*cobra.Command) string
+	resolveUserToken  func(*cobra.Command) (string, error)
 	createSpreadsheet func(context.Context, string, string, string) (*client.SpreadsheetInfo, error)
 	querySheets       func(context.Context, string, string) ([]*client.SheetInfo, error)
 	writeCells        func(context.Context, string, string, [][]any, string) (*client.CellRange, error)
@@ -72,7 +71,7 @@ type sheetImportMDDeps struct {
 func defaultSheetImportMDDeps() sheetImportMDDeps {
 	return sheetImportMDDeps{
 		validate:         config.Validate,
-		resolveUserToken: resolveOptionalUserTokenWithFallback,
+		resolveUserToken: resolveSheetUserToken,
 		createSpreadsheet: func(ctx context.Context, title, folderToken, userAccessToken string) (*client.SpreadsheetInfo, error) {
 			return client.CreateSpreadsheet(ctx, title, folderToken, userAccessToken)
 		},
@@ -95,7 +94,7 @@ func runSheetImportMD(cmd *cobra.Command, args []string, deps sheetImportMDDeps)
 		fmt.Fprintf(cmd.ErrOrStderr(), "提示: 文件扩展名不是 .md/.markdown，仍按 Markdown 解析\n")
 	}
 
-	raw, err := os.ReadFile(mdPath)
+	raw, err := readLocalInputFile(mdPath)
 	if err != nil {
 		return fmt.Errorf("读取文件失败: %w", err)
 	}
@@ -135,7 +134,10 @@ func runSheetImportMD(cmd *cobra.Command, args []string, deps sheetImportMDDeps)
 
 	sheetImportMDProgress(cmd, output, "解析到表格 #%d：%d 行 × %d 列\n", tableIndex, len(rows), len(rows[0]))
 
-	userAccessToken := deps.resolveUserToken(cmd)
+	userAccessToken, err := deps.resolveUserToken(cmd)
+	if err != nil {
+		return err
+	}
 	ctx := client.Context()
 
 	// 2. 创建空电子表格
@@ -144,6 +146,8 @@ func runSheetImportMD(cmd *cobra.Command, args []string, deps sheetImportMDDeps)
 	if err != nil {
 		return err
 	}
+	// Bot 身份创建时自动给当前登录用户授 full_access（User 身份创建时跳过）
+	grant := autoGrantCurrentUser(userAccessToken, info.SpreadsheetToken, client.ResourceTypeSheet)
 
 	// 3. 拿默认 sheet_id
 	sheets, err := deps.querySheets(ctx, info.SpreadsheetToken, userAccessToken)
@@ -187,6 +191,7 @@ func runSheetImportMD(cmd *cobra.Command, args []string, deps sheetImportMDDeps)
 			Cols:             colCount,
 			TableIndex:       tableIndex,
 			SourceFile:       mdPath,
+			PermissionGrant:  grant,
 		})
 	}
 
@@ -197,6 +202,7 @@ func runSheetImportMD(cmd *cobra.Command, args []string, deps sheetImportMDDeps)
 	fmt.Fprintf(out, "  标题: %s\n", info.Title)
 	fmt.Fprintf(out, "  URL: %s\n", info.URL)
 	fmt.Fprintf(out, "  数据: %d 行 × %d 列（来自 %s 第 %d 张表）\n", rowCount, colCount, mdPath, tableIndex)
+	printPermissionGrantText(out, grant)
 	return nil
 }
 
@@ -217,6 +223,8 @@ type sheetImportMDResult struct {
 	Cols             int    `json:"cols"`
 	TableIndex       int    `json:"table_index"`
 	SourceFile       string `json:"source_file"`
+	// PermissionGrant Bot 身份创建时为当前用户自动授权的结果（User 身份创建时省略）
+	PermissionGrant *client.PermissionGrantResult `json:"permission_grant,omitempty"`
 }
 
 const maxSheetImportMDCells = 5000

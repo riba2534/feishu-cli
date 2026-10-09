@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -18,10 +17,13 @@ type WikiNode struct {
 	ObjType         string `json:"obj_type"`
 	ParentNodeToken string `json:"parent_node_token,omitempty"`
 	NodeType        string `json:"node_type"`
+	OriginNodeToken string `json:"origin_node_token,omitempty"`
+	OriginSpaceID   string `json:"origin_space_id,omitempty"`
 	Title           string `json:"title"`
 	HasChild        bool   `json:"has_child"`
 	Creator         string `json:"creator,omitempty"`
 	Owner           string `json:"owner,omitempty"`
+	NodeCreateTime  string `json:"node_create_time,omitempty"`
 	ObjCreateTime   string `json:"obj_create_time,omitempty"`
 	ObjEditTime     string `json:"obj_edit_time,omitempty"`
 }
@@ -35,54 +37,21 @@ type WikiSpace struct {
 	Visibility  string `json:"visibility,omitempty"`
 }
 
-// GetWikiNode 获取知识库节点信息（向后兼容）。
+// GetWikiNode 获取知识库节点信息。
+//
+// Deprecated: 请直接使用 ResolveWikiNode。保留此包装是为了让尚未迁移的调用点
+// 同样走 node_by_token（旧 get_node 对 obj_token 一律报 131005）。
 func GetWikiNode(token string, userAccessToken string) (*WikiNode, error) {
-	return GetWikiNodeWithOptions(token, "", userAccessToken)
+	return ResolveWikiNode(token, userAccessToken)
 }
 
 // GetWikiNodeWithOptions 获取知识库节点信息。
-// 当 token 为 non-wiki obj_token 时必须传入 objType（如 docx/sheet 等）；
-// 当 token 为 wiki node_token 时（objType 为 "" 或 "wiki"），OpenAPI 规定省略 obj_type 参数。
+//
+// Deprecated: node_by_token 由服务端自动识别 token 类型，objType 已无需传入并被忽略；
+// 请直接使用 ResolveWikiNode。
 func GetWikiNodeWithOptions(token, objType, userAccessToken string) (*WikiNode, error) {
-	client, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
-	reqBuilder := larkwiki.NewGetNodeSpaceReqBuilder().
-		Token(token)
-	if objType != "" && objType != "wiki" {
-		reqBuilder.ObjType(objType)
-	}
-
-	resp, err := client.Wiki.Space.GetNode(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
-	if err != nil {
-		return nil, fmt.Errorf("获取节点信息失败: %w", err)
-	}
-
-	if !resp.Success() {
-		return nil, fmt.Errorf("获取节点信息失败: code=%d, msg=%s", resp.Code, resp.Msg)
-	}
-
-	node := resp.Data.Node
-	if node == nil {
-		return nil, fmt.Errorf("节点不存在")
-	}
-
-	return &WikiNode{
-		NodeToken:       token,
-		SpaceID:         StringVal(node.SpaceId),
-		ObjToken:        StringVal(node.ObjToken),
-		ObjType:         StringVal(node.ObjType),
-		ParentNodeToken: StringVal(node.ParentNodeToken),
-		NodeType:        StringVal(node.NodeType),
-		Title:           StringVal(node.Title),
-		HasChild:        BoolVal(node.HasChild),
-		Creator:         StringVal(node.Creator),
-		Owner:           StringVal(node.Owner),
-		ObjCreateTime:   StringVal(node.ObjCreateTime),
-		ObjEditTime:     StringVal(node.ObjEditTime),
-	}, nil
+	_ = objType
+	return ResolveWikiNode(token, userAccessToken)
 }
 
 // ListWikiSpaces 获取知识空间列表
@@ -338,8 +307,15 @@ func GetWikiSpace(spaceID string, userAccessToken string) (*WikiSpaceDetail, err
 	}, nil
 }
 
-// AddWikiSpaceMember 添加知识空间成员
+// AddWikiSpaceMember 添加知识空间成员（发送通知，保持历史行为）。
 func AddWikiSpaceMember(spaceID, memberType, memberID, memberRole string, userAccessToken string) error {
+	return AddWikiSpaceMemberWithOptions(spaceID, memberType, memberID, memberRole, true, userAccessToken)
+}
+
+// AddWikiSpaceMemberWithOptions 添加知识空间成员，needNotification 控制是否给新成员发送通知
+// （query 参数 need_notification；官方 +member-add 的 --need-notification）。
+// 请求体只发 member_type / member_id / member_role，与官方一致（官方不在 body 中发送 type 字段）。
+func AddWikiSpaceMemberWithOptions(spaceID, memberType, memberID, memberRole string, needNotification bool, userAccessToken string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -354,7 +330,7 @@ func AddWikiSpaceMember(spaceID, memberType, memberID, memberRole string, userAc
 	req := larkwiki.NewCreateSpaceMemberReqBuilder().
 		SpaceId(spaceID).
 		Member(member).
-		NeedNotification(true).
+		NeedNotification(needNotification).
 		Build()
 
 	resp, err := client.Wiki.SpaceMember.Create(Context(), req, UserTokenOption(userAccessToken)...)
@@ -572,8 +548,9 @@ func DeleteWikiSpace(spaceID, userAccessToken string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("删除知识空间失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("删除知识空间失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	// 业务错误常随 HTTP 400/403 下发：先解析飞书信封里的 code，再看 HTTP 状态
+	if err := CheckAPIResponse("删除知识空间", resp); err != nil {
+		return "", err
 	}
 	var parsed struct {
 		Code int    `json:"code"`
@@ -603,8 +580,8 @@ func GetWikiDeleteSpaceTask(taskID, userAccessToken string) (*WikiDeleteSpaceTas
 	if err != nil {
 		return nil, fmt.Errorf("查询 delete_space 任务失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询 delete_space 任务失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("查询 delete_space 任务", resp); err != nil {
+		return nil, err
 	}
 	var parsed struct {
 		Code int    `json:"code"`
@@ -672,8 +649,8 @@ func DeleteWikiNode(spaceID, nodeToken, objType string, includeChildren bool, us
 	if err != nil {
 		return "", fmt.Errorf("删除知识库节点失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("删除知识库节点失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("删除知识库节点", resp); err != nil {
+		return "", err
 	}
 	var parsed struct {
 		Code int    `json:"code"`
@@ -705,8 +682,8 @@ func GetWikiDeleteNodeTask(taskID, userAccessToken string) (*WikiDeleteNodeTaskS
 	if err != nil {
 		return nil, fmt.Errorf("查询 delete_node 任务失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("查询 delete_node 任务失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	if err := CheckAPIResponse("查询 delete_node 任务", resp); err != nil {
+		return nil, err
 	}
 	var parsed struct {
 		Code int    `json:"code"`

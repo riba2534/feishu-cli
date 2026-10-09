@@ -28,32 +28,6 @@ func TestNormalizeSheetExportFormat(t *testing.T) {
 	}
 }
 
-func TestExtractSpreadsheetToken(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		want    string
-		wantErr bool
-	}{
-		{name: "token", input: "sht_test", want: "sht_test"},
-		{name: "feishu url", input: "https://example.feishu.cn/sheets/sht_test?sheet=abc", want: "sht_test"},
-		{name: "larkoffice url", input: "https://example.larkoffice.com/sheets/sht_123", want: "sht_123"},
-		{name: "unsupported url", input: "https://example.feishu.cn/docx/doc_test", wantErr: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := extractSpreadsheetToken(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("extractSpreadsheetToken() error = %v, wantErr = %v", err, tt.wantErr)
-			}
-			if got != tt.want {
-				t.Fatalf("extractSpreadsheetToken() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestSheetExportFileExt(t *testing.T) {
 	if got := sheetExportFileExt("markdown"); got != "md" {
 		t.Fatalf("sheetExportFileExt(markdown) = %q, want md", got)

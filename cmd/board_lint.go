@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -128,7 +129,7 @@ var boardLintCmd = &cobra.Command{
 			"node_overlap":      overlapPairs,
 			"z_overlap_risk":    zRisk,
 			"font_size_variety": fontVariety,
-			"font_sizes":        fontSizes,
+			"font_sizes":        fontSizeCounts(fontSizes),
 			"over_capacity":     overCapacity,
 			"quality_score":     score,
 		}
@@ -189,4 +190,14 @@ func init() {
 	boardCmd.AddCommand(boardLintCmd)
 	boardLintCmd.Flags().String("user-access-token", "", "User Access Token")
 	boardLintCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
+}
+
+// fontSizeCounts 把字号统计转成字符串 key：encoding/json 不支持 float64 作为 map key，
+// 直接输出 map[float64]int 会让 -o json 在画板含任意字号节点时整体失败。
+func fontSizeCounts(sizes map[float64]int) map[string]int {
+	out := make(map[string]int, len(sizes))
+	for size, n := range sizes {
+		out[strconv.FormatFloat(size, 'f', -1, 64)] = n
+	}
+	return out
 }

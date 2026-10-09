@@ -6,7 +6,7 @@
     "legacy_skill": "feishu-cli-api"
   },
   {
-    "query": "查一下审批实例 ic_xxx 的详情，然后把待办 task_xxx 转交给 ou_target，执行前先检查需要的用户权限。",
+    "query": "查一下审批实例 ic_xxx 的详情，把待办 task_xxx 转交给 ou_target，另一条待办回退到上一节点并催办，执行前先检查需要的用户权限。",
     "expected_skill": "feishu-cli-work",
     "expected_workflow": "approval",
     "legacy_skill": "feishu-cli-approval"
@@ -24,7 +24,7 @@
     "legacy_skill": "feishu-cli-attendance"
   },
   {
-    "query": "feishu-cli 突然提示 User Token 过期，我还要补 search 域权限；请先诊断，再用 Device Flow 重新登录。",
+    "query": "feishu-cli 突然提示 User Token 过期，还报 99991679 缺 search 域权限；先用 auth scopes 分清是应用未开通还是用户未授权，再用 Device Flow 重新登录。",
     "expected_skill": "feishu-cli-platform",
     "expected_workflow": "auth",
     "legacy_skill": "feishu-cli-auth"
@@ -96,7 +96,7 @@
     "legacy_skill": "feishu-cli-import"
   },
   {
-    "query": "给 user@example.com 写一封项目周报邮件，先保存草稿让我确认，暂时不要真的发送。",
+    "query": "给 user@example.com 写一封项目周报邮件，带上 ./report.pdf 附件，先保存草稿让我确认，暂时不要真的发送。",
     "expected_skill": "feishu-cli-mail",
     "expected_workflow": "mail",
     "legacy_skill": "feishu-cli-mail"
@@ -240,14 +240,14 @@
     "legacy_skill": "feishu-cli-write"
   },
   {
-    "query": "检查当前飞书 CLI 配置是否健康，并告诉我 Token 还剩多久过期。",
+    "query": "升级 feishu-cli 到最新版，再把配套技能同步到 ~/.claude/skills，并用 doctor 确认没有漂移。",
     "expected_skill": "feishu-cli-platform",
     "expected_workflow": "auth"
   },
   {
-    "query": "只读分析这个 docx 文档的块结构，并总结所有风险项。",
+    "query": "文档 doxcnxxx 被误改，列出历史版本并回滚到昨天下午那版，确认回滚完成。",
     "expected_skill": "feishu-cli-docs",
-    "expected_workflow": "read"
+    "expected_workflow": "write"
   },
   {
     "query": "创建一份飞书文档，把本地 Markdown 追加到末尾并保留嵌套列表。",
@@ -260,12 +260,12 @@
     "expected_workflow": "markdown"
   },
   {
-    "query": "把 200MB 文件断点续传到飞书云盘，并轮询异步任务直到完成。",
+    "query": "解析这个 /wiki/ 链接底层的文件类型和 token，并把该上传文件改名。",
     "expected_skill": "feishu-cli-storage",
     "expected_workflow": "drive"
   },
   {
-    "query": "给文档增加可编辑协作者并设置分享密码，不要转移所有权。",
+    "query": "我没有这个文档的权限，向所有者发起编辑权限申请并附上理由。",
     "expected_skill": "feishu-cli-storage",
     "expected_workflow": "perm"
   },
@@ -285,17 +285,17 @@
     "expected_workflow": "card"
   },
   {
-    "query": "订阅飞书消息事件，收到三条后退出并输出 NDJSON。",
+    "query": "我刚发到 oc_xxx 的通知有错别字，直接编辑原消息，不要撤回重发。",
     "expected_skill": "feishu-cli-messaging",
-    "expected_workflow": "event"
+    "expected_workflow": "msg"
   },
   {
-    "query": "给 Sheet 的状态列设置下拉选项并创建筛选视图。",
+    "query": "隐藏 Sheet 第 2–4 列、冻结前两行，并把第 10 行移到第 3 行前。",
     "expected_skill": "feishu-cli-data",
     "expected_workflow": "sheet"
   },
   {
-    "query": "批量写入 Sheet 单元格并给表头加粗和冻结首行。",
+    "query": "批量写入 Sheet 单元格并给表头加粗。",
     "expected_skill": "feishu-cli-data",
     "expected_workflow": "sheet"
   },
@@ -310,9 +310,9 @@
     "expected_workflow": "bitable"
   },
   {
-    "query": "导出普通飞书电子表格为 CSV，并保留指定工作表。",
+    "query": "解析 /wiki/ 里挂的多维表格得到 base_token 和 table_id，再把表单分享改成组织内可填。",
     "expected_skill": "feishu-cli-data",
-    "expected_workflow": "sheet"
+    "expected_workflow": "bitable"
   },
   {
     "query": "在飞书文档嵌入可交互的 ECharts 地图，支持 hover 和点击筛选。",
@@ -320,14 +320,14 @@
     "expected_workflow": "htmlbox"
   },
   {
-    "query": "把本地 HTML 目录发布成妙搭应用并限制为组织内可见。",
+    "query": "在已有飞书 Slides 里把第 3 页替换为新 XML，删除最后一页，再截图检查。",
     "expected_skill": "feishu-cli-visual",
-    "expected_workflow": "apps"
+    "expected_workflow": "slides"
   },
   {
-    "query": "查询本月考勤统计，分别列出迟到、早退和请假。",
+    "query": "在本季度 OKR 周期新建一个目标并挂两个关键结果，再给目标留评论。",
     "expected_skill": "feishu-cli-work",
-    "expected_workflow": "attendance"
+    "expected_workflow": "okr"
   },
   {
     "query": "分诊飞书收件箱，只列未读且带附件的邮件。",
@@ -350,12 +350,12 @@
     "expected_workflow": "mail"
   },
   {
-    "query": "查看飞书邮箱签名，并按关键词分诊未读邮件，不要修改邮件状态。",
+    "query": "加一条收信规则：来自 noreply@example.com 的邮件自动已读并归档。",
     "expected_skill": "feishu-cli-mail",
     "expected_workflow": "mail"
   },
   {
-    "query": "读取指定邮件线程的全部消息正文和附件元数据。",
+    "query": "把这个邮件线程整体标记已读后移到垃圾箱。",
     "expected_skill": "feishu-cli-mail",
     "expected_workflow": "mail"
   },
@@ -375,7 +375,7 @@
     "expected_workflow": "vc"
   },
   {
-    "query": "查询会议录制信息并列出所有可下载的媒体文件。",
+    "query": "看看现在有哪些正在进行的会议，拿到 meeting_id。",
     "expected_skill": "feishu-cli-meetings",
     "expected_workflow": "vc"
   },
@@ -385,7 +385,7 @@
     "expected_workflow": "vc"
   },
   {
-    "query": "根据 minute token 获取妙记详情和 AI 产物。",
+    "query": "搜索标题含“复盘”的妙记，对没有权限的申请查看权限。",
     "expected_skill": "feishu-cli-meetings",
     "expected_workflow": "vc"
   },

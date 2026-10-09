@@ -3,6 +3,7 @@ package auth
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -146,5 +147,33 @@ func TestAccountsBaseFor(t *testing.T) {
 	}
 	if got := accountsBaseFor(""); got != "https://accounts.feishu.cn" {
 		t.Errorf("空 baseURL 应回退 feishu，实际 %q", got)
+	}
+}
+
+// 业务错误随 HTTP 400 下发时也要解析出业务码，且错误预览不得泄漏 token。
+func TestRevokeToken_ParsesBusinessCodeOn400(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":20064,"msg":"refresh token revoked"}`))
+	}))
+	defer srv.Close()
+	orig := revokeEndpointFunc
+	revokeEndpointFunc = func(string) string { return srv.URL }
+	defer func() { revokeEndpointFunc = orig }()
+
+	err := RevokeToken("aid", "sec", "", "r-x", "refresh_token")
+	if err == nil || !strings.Contains(err.Error(), "code=20064") {
+		t.Fatalf("应解析出业务码: %v", err)
+	}
+
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`upstream refresh_token=r-should-hide failed`))
+	}))
+	defer srv2.Close()
+	revokeEndpointFunc = func(string) string { return srv2.URL }
+	err = RevokeToken("aid", "sec", "", "r-x", "refresh_token")
+	if err == nil || strings.Contains(err.Error(), "r-should-hide") {
+		t.Fatalf("非 JSON 错误预览应脱敏: %v", err)
 	}
 }

@@ -1,11 +1,13 @@
 package client
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 )
@@ -195,18 +197,46 @@ func GetBlock(documentID string, blockID string, userAccessToken ...string) (*la
 	return resp.Data.Block, nil
 }
 
+// NewClientToken 生成 UUIDv4 形式的幂等 client_token。
+//
+// docx 创建块接口按 client_token 去重：同一 token 的重放返回首次创建的同一批块，
+// 不会重复插入（实测：同 token 连续两次 POST children 返回相同 block_id，文档只多一个块）。
+func NewClientToken() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand 失败极罕见；退化为时间戳，仍保证同一逻辑请求内复用同一值
+		return fmt.Sprintf("fp-%d", time.Now().UnixNano())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
 // CreateBlock creates a new block under a parent block.
 // 受单文档 3 QPS 写限制：调用 SDK 之前先过 docWriteLimiter（issue #159）。
+//
+// 本函数不带 client_token，适合单次调用；需要自动重试时请用 CreateBlockWithRetry，
+// 否则 5xx 后重放可能在服务端已成功的情况下产生重复块。
 func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, index int, userAccessToken ...string) ([]*larkdocx.Block, http.Header, error) {
+	return CreateBlockWithClientToken(documentID, blockID, children, index, "", userAccessToken...)
+}
+
+// CreateBlockWithClientToken 与 CreateBlock 相同，额外携带幂等 client_token（为空时不下发）。
+// 同一逻辑请求的所有重试必须复用同一个 token，服务端才能识别为重放。
+func CreateBlockWithClientToken(documentID string, blockID string, children []*larkdocx.Block, index int, clientToken string, userAccessToken ...string) ([]*larkdocx.Block, http.Header, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	req := larkdocx.NewCreateDocumentBlockChildrenReqBuilder().
+	builder := larkdocx.NewCreateDocumentBlockChildrenReqBuilder().
 		DocumentId(documentID).
 		BlockId(blockID).
-		DocumentRevisionId(-1).
+		DocumentRevisionId(-1)
+	if clientToken != "" {
+		builder.ClientToken(clientToken)
+	}
+	req := builder.
 		Body(larkdocx.NewCreateDocumentBlockChildrenReqBodyBuilder().
 			Children(children).
 			Index(index).
@@ -227,6 +257,15 @@ func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, 
 	}
 
 	return resp.Data.Children, headers, nil
+}
+
+// CreateBlockWithRetry 带自动重试地创建子块：整个重试周期只生成一次 client_token 并在每次重放时复用，
+// 保证"首次请求其实已在服务端成功、但客户端收到 5xx/超时"时重试不会重复插入块。
+func CreateBlockWithRetry(documentID string, blockID string, children []*larkdocx.Block, index int, cfg RetryConfig, userAccessToken string) RetryResult[[]*larkdocx.Block] {
+	clientToken := NewClientToken()
+	return DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+		return CreateBlockWithClientToken(documentID, blockID, children, index, clientToken, userAccessToken)
+	}, cfg)
 }
 
 // UpdateBlock updates an existing block.
@@ -567,6 +606,12 @@ type AddBoardResult struct {
 // AddBoard adds a board block to document and returns the whiteboard ID.
 // userAccessToken 非空时使用用户身份创建，避免需要用户权限的画板块误回退到租户身份。
 func AddBoard(documentID string, parentID string, index int, userAccessToken ...string) (*AddBoardResult, http.Header, error) {
+	return AddBoardWithClientToken(documentID, parentID, index, "", userAccessToken...)
+}
+
+// AddBoardWithClientToken 与 AddBoard 相同，额外携带幂等 client_token；
+// 在 DoWithRetry 中调用时，调用方须在重试闭包外生成 token 并在每次重放时复用。
+func AddBoardWithClientToken(documentID string, parentID string, index int, clientToken string, userAccessToken ...string) (*AddBoardResult, http.Header, error) {
 	if parentID == "" {
 		parentID = documentID
 	}
@@ -579,7 +624,7 @@ func AddBoard(documentID string, parentID string, index int, userAccessToken ...
 	}
 
 	// 创建画板块
-	createdBlocks, headers, err := CreateBlock(documentID, parentID, []*larkdocx.Block{boardBlock}, index, userAccessToken...)
+	createdBlocks, headers, err := CreateBlockWithClientToken(documentID, parentID, []*larkdocx.Block{boardBlock}, index, clientToken, userAccessToken...)
 	if err != nil {
 		return nil, headers, fmt.Errorf("创建画板块失败: %w", err)
 	}
@@ -858,10 +903,7 @@ func fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextEle
 		BlockType: &blockType,
 		Text:      &larkdocx.Text{Elements: elements},
 	}
-	result := DoVoidWithRetry(func() (http.Header, error) {
-		_, headers, err := CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, 0, userAccessToken)
-		return headers, err
-	}, retryCfg)
+	result := CreateBlockWithRetry(documentID, cellID, []*larkdocx.Block{textBlock}, 0, retryCfg, userAccessToken)
 	return result.Err
 }
 
@@ -897,10 +939,7 @@ func fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, max
 			continue
 		}
 		block := buildCellBlock(group)
-		result := DoVoidWithRetry(func() (http.Header, error) {
-			_, headers, err := CreateBlock(documentID, cellID, []*larkdocx.Block{block}, -1, userAccessToken)
-			return headers, err
-		}, retryCfg)
+		result := CreateBlockWithRetry(documentID, cellID, []*larkdocx.Block{block}, -1, retryCfg, userAccessToken)
 		if result.Err != nil {
 			return result.Err
 		}
@@ -1047,10 +1086,22 @@ func buildCellUpdateContent(elements []*larkdocx.TextElement) map[string]any {
 }
 
 // buildElementsJSON 将 TextElement 转换为 UpdateBlock API 所需的 JSON 格式
+//
+// 除 text_run 外还保留行内公式（equation）：表格单元格经 batch_update / update_text_elements 填充，
+// 此前公式元素被直接丢弃（单元格里的 $...$ 无法导入为公式）。
 func buildElementsJSON(elements []*larkdocx.TextElement) []map[string]any {
 	var result []map[string]any
 	for _, elem := range elements {
-		if elem == nil || elem.TextRun == nil || elem.TextRun.Content == nil {
+		if elem == nil {
+			continue
+		}
+		if elem.Equation != nil && elem.Equation.Content != nil {
+			result = append(result, map[string]any{
+				"equation": map[string]any{"content": *elem.Equation.Content},
+			})
+			continue
+		}
+		if elem.TextRun == nil || elem.TextRun.Content == nil {
 			continue
 		}
 
@@ -1215,8 +1266,15 @@ func UnmergeTableCells(documentID, tableBlockID string, rowIndex, columnIndex in
 }
 
 // UpdateDocContentAtomic 封装官方 PUT /open-apis/docs_ai/v1/documents/{document_id} 单操作原子更新接口。
-// 支持 command: overwrite, block_replace, block_delete, block_insert_after, append 等。
+// 支持 command: overwrite, block_replace, block_delete, block_insert_after, str_replace,
+// block_move_after, block_copy_insert_after 等。
 // 彻底避免客户端先删后写的中间窗口，并支持服务端 revision 乐观锁冲突校验。
+//
+// 返回约定：
+//   - 业务码非 0（常随 HTTP 400 下发）→ *APIError（含 log_id），先解析信封再看 HTTP 状态；
+//   - data.result 为 failed / partial_success → 同时返回 data 与 *DocsAIResultError（含 warnings、log_id），
+//     调用方必须以非零退出码结束；
+//   - 成功时 data 中额外写入 log_id（响应头 X-Tt-Logid，若有）。
 func UpdateDocContentAtomic(documentID string, body map[string]any, userAccessToken string) (map[string]any, error) {
 	c, err := GetClient()
 	if err != nil {
@@ -1233,25 +1291,15 @@ func UpdateDocContentAtomic(documentID string, body map[string]any, userAccessTo
 	if err != nil {
 		return nil, fmt.Errorf("更新文档内容失败: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("更新文档内容失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	data, logID, err := decodeDocsAIData("更新文档内容", resp.StatusCode, resp.Header, resp.RawBody)
+	if err != nil {
+		return nil, err
 	}
-	var parsed struct {
-		Code int            `json:"code"`
-		Msg  string         `json:"msg"`
-		Data map[string]any `json:"data"`
+	if logID != "" {
+		data["log_id"] = logID
 	}
-	if err := json.Unmarshal(resp.RawBody, &parsed); err != nil {
-		return nil, fmt.Errorf("解析更新文档响应失败: %w", err)
+	if err := classifyDocsAIResult("更新文档内容", data, logID); err != nil {
+		return data, err
 	}
-	if parsed.Code != 0 {
-		return nil, fmt.Errorf("更新文档内容失败: code=%d, msg=%s", parsed.Code, parsed.Msg)
-	}
-	if parsed.Data == nil || len(parsed.Data) == 0 {
-		return nil, fmt.Errorf("更新文档接口返回空数据对象")
-	}
-	if resStr, ok := parsed.Data["result"].(string); ok && strings.EqualFold(strings.TrimSpace(resStr), "failed") {
-		return nil, fmt.Errorf("更新文档操作失败: result=failed")
-	}
-	return parsed.Data, nil
+	return data, nil
 }

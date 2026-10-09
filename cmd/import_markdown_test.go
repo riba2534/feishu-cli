@@ -122,105 +122,81 @@ func TestResolveImageSourceHTTPURLWithoutPathName(t *testing.T) {
 	}
 }
 
-func TestAppendVideoTasksIncludesNestedVideosInTreeOrder(t *testing.T) {
-	topVideo := videoNode("top.mp4")
-	grid := &converter.BlockNode{
-		Block: blockWithType(converter.BlockTypeGrid),
-		Children: []*converter.BlockNode{
-			videoNode("nested-a.mp4"),
-			{
-				Block: blockWithType(converter.BlockTypeQuoteContainer),
-				Children: []*converter.BlockNode{
-					videoNode("nested-b.mp4"),
-				},
-			},
-		},
-	}
-
-	tasks := appendVideoTasks(nil,
-		[]*converter.BlockNode{topVideo, grid},
-		[]string{"top-id", "grid-id"},
-		map[int][]createdBlockNode{
-			1: {
-				{node: grid.Children[0], blockID: "nested-a-id"},
-				{node: grid.Children[1], blockID: "quote-id"},
-				{node: grid.Children[1].Children[0], blockID: "nested-b-id"},
-			},
-		},
-		[]string{"./top.mp4", "./nested-a.mp4", "./nested-b.mp4"},
-		"/tmp",
-	)
-
-	if len(tasks) != 3 {
-		t.Fatalf("len(tasks) = %d, want 3", len(tasks))
-	}
-	wantIDs := []string{"top-id", "nested-a-id", "nested-b-id"}
-	wantSources := []string{"./top.mp4", "./nested-a.mp4", "./nested-b.mp4"}
-	for i := range tasks {
-		if tasks[i].fileBlockID != wantIDs[i] || tasks[i].source != wantSources[i] {
-			t.Fatalf("task[%d] = {id:%q source:%q}, want {id:%q source:%q}",
-				i, tasks[i].fileBlockID, tasks[i].source, wantIDs[i], wantSources[i])
-		}
-	}
-}
-
-func TestAppendImageTasksIncludesNestedImagesInTreeOrder(t *testing.T) {
+// TestCollectMediaTasksFollowsMediaRefsInTreeOrder 资源补齐任务按 MediaRef（块指针）收集，
+// 覆盖顶层与嵌套节点，附件取 View 块的 children[0] 作为上传目标，画板取建块响应里的新画板 token。
+func TestCollectMediaTasksFollowsMediaRefsInTreeOrder(t *testing.T) {
 	topImage := blockNodeWithType(converter.BlockTypeImage)
-	grid := &converter.BlockNode{
-		Block: blockWithType(converter.BlockTypeGrid),
-		Children: []*converter.BlockNode{
-			blockNodeWithType(converter.BlockTypeImage),
-			{Block: blockWithType(converter.BlockTypeText)},
-		},
+	nestedImage := blockNodeWithType(converter.BlockTypeImage)
+	plainImage := blockNodeWithType(converter.BlockTypeImage) // 无 MediaRef：不应产生任务
+	video := blockNodeWithType(converter.BlockTypeFile)
+	file := blockNodeWithType(converter.BlockTypeFile)
+	board := blockNodeWithType(converter.BlockTypeBoard)
+
+	refs := map[*larkdocx.Block]*converter.MediaRef{
+		topImage.Block:    {Kind: converter.MediaKindImage, Source: "./top.png"},
+		nestedImage.Block: {Kind: converter.MediaKindImage, Token: "imgTok", Width: 120, Height: 80, Align: 2},
+		video.Block:       {Kind: converter.MediaKindFile, Source: "./demo.mp4", Name: "demo.mp4", Video: true},
+		file.Block:        {Kind: converter.MediaKindFile, Token: "fileTok", Name: "a.pdf"},
+		board.Block:       {Kind: converter.MediaKindWhiteboard, Token: "srcBoard"},
+	}
+	viewType := int(converter.BlockTypeView)
+	boardTok := "newBoard"
+	created := []createdBlockNode{
+		{node: topImage, blockID: "top-img", parentID: "doc"},
+		{node: plainImage, blockID: "plain-img", parentID: "doc"},
+		{node: nestedImage, blockID: "nested-img", parentID: "col-1"},
+		{node: video, blockID: "view-1", parentID: "doc", created: &larkdocx.Block{BlockType: &viewType, Children: []string{"file-1"}}},
+		{node: file, blockID: "view-2", parentID: "quote-1", created: &larkdocx.Block{BlockType: &viewType, Children: []string{"file-2"}}},
+		{node: board, blockID: "board-blk", parentID: "doc", created: &larkdocx.Block{Board: &larkdocx.Board{Token: &boardTok}}},
 	}
 
-	tasks := appendImageTasks(nil,
-		[]*converter.BlockNode{topImage, grid},
-		[]string{"top-id", "grid-id"},
-		map[int][]createdBlockNode{
-			1: {
-				{node: grid.Children[0], blockID: "nested-image-id"},
-				{node: grid.Children[1], blockID: "nested-text-id"},
-			},
-		},
-		[]string{"./top.png", "./nested.png"},
-		"/tmp",
-	)
+	var set mediaTaskSet
+	collectMediaTasks(&set, refs, created, "/base")
 
-	if len(tasks) != 2 {
-		t.Fatalf("len(tasks) = %d, want 2", len(tasks))
+	if len(set.images) != 2 {
+		t.Fatalf("images = %d, want 2: %#v", len(set.images), set.images)
 	}
-	wantIDs := []string{"top-id", "nested-image-id"}
-	wantSources := []string{"./top.png", "./nested.png"}
-	for i := range tasks {
-		if tasks[i].imageBlockID != wantIDs[i] || tasks[i].source != wantSources[i] {
-			t.Fatalf("task[%d] = {id:%q source:%q}, want {id:%q source:%q}",
-				i, tasks[i].imageBlockID, tasks[i].source, wantIDs[i], wantSources[i])
+	if set.images[0].imageBlockID != "top-img" || set.images[0].source != "./top.png" || set.images[0].reuseToken != "" {
+		t.Fatalf("image[0] = %#v", set.images[0])
+	}
+	img := set.images[1]
+	if img.imageBlockID != "nested-img" || img.parentID != "col-1" || img.source != "feishu://media/imgTok" ||
+		img.reuseToken != "imgTok" || img.width != 120 || img.height != 80 || img.align != 2 {
+		t.Fatalf("token 图片任务应复用素材并保留显示属性: %#v", img)
+	}
+
+	if len(set.files) != 2 || set.videoCount() != 1 {
+		t.Fatalf("files = %#v", set.files)
+	}
+	if v := set.files[0]; v.fileBlockID != "file-1" || v.viewBlockID != "view-1" || !v.video || v.source != "./demo.mp4" || v.name != "demo.mp4" {
+		t.Fatalf("视频任务应上传到 View 的子 File 块: %#v", v)
+	}
+	if f := set.files[1]; f.fileBlockID != "file-2" || f.parentID != "quote-1" || f.video || f.source != "feishu://media/fileTok" || f.failureKind() != "file" {
+		t.Fatalf("附件任务异常: %#v", f)
+	}
+
+	if len(set.boards) != 1 || set.boards[0].whiteboardID != "newBoard" || set.boards[0].sourceToken != "srcBoard" || set.boards[0].blockID != "board-blk" {
+		t.Fatalf("画板复制任务异常: %#v", set.boards)
+	}
+}
+
+// TestProcessVideoTaskUsesMultipartOverUploadAllLimit 超过 20MB 的视频改走分片上传（此前直接拒绝）。
+func TestProcessVideoTaskUsesMultipartOverUploadAllLimit(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal" {
+			_, _ = w.Write([]byte(`{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`))
+			return
 		}
-	}
-}
+		paths = append(paths, r.URL.Path)
+		// 让 prepare 失败即可证明走了分片通道，且不会回落到 upload_all
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":1061002,"msg":"params error"}`))
+	}))
+	defer server.Close()
+	initDocUpdateTestConfig(t, server.URL)
 
-func TestAppendImageTasksSkipsTokenImages(t *testing.T) {
-	tokenImage := imageNode("img_existing")
-	localImage := blockNodeWithType(converter.BlockTypeImage)
-
-	tasks := appendImageTasks(nil,
-		[]*converter.BlockNode{tokenImage, localImage},
-		[]string{"existing-id", "local-id"},
-		nil,
-		[]string{"./local.png"},
-		"/tmp",
-	)
-
-	if len(tasks) != 1 {
-		t.Fatalf("len(tasks) = %d, want 1", len(tasks))
-	}
-	if tasks[0].imageBlockID != "local-id" || tasks[0].source != "./local.png" {
-		t.Fatalf("task = {id:%q source:%q}, want local image binding", tasks[0].imageBlockID, tasks[0].source)
-	}
-}
-
-func TestProcessVideoTaskRejectsFilesOverUploadAllLimit(t *testing.T) {
 	baseDir := t.TempDir()
 	videoPath := filepath.Join(baseDir, "large.mp4")
 	f, err := os.Create(videoPath)
@@ -240,13 +216,18 @@ func TestProcessVideoTaskRejectsFilesOverUploadAllLimit(t *testing.T) {
 		fileBlockID: "block-id",
 		source:      "large.mp4",
 		basePath:    baseDir,
-	}, false, "user-token")
+	}, false, "")
 
 	if result.success {
-		t.Fatal("processVideoTask() success = true, want false")
+		t.Fatal("prepare 失败时不应成功")
 	}
-	if result.err == nil || !strings.Contains(result.err.Error(), "视频超过") {
-		t.Fatalf("processVideoTask() err = %v, want video size limit error", result.err)
+	if len(paths) == 0 || paths[0] != "/open-apis/drive/v1/medias/upload_prepare" {
+		t.Fatalf(">20MB 视频应先调用 upload_prepare，实际请求: %v", paths)
+	}
+	for _, p := range paths {
+		if strings.HasSuffix(p, "/upload_all") {
+			t.Fatalf(">20MB 视频不应走 upload_all: %v", paths)
+		}
 	}
 }
 

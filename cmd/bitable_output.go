@@ -33,6 +33,11 @@ func renderBitableResult(cmd *cobra.Command, data any) error {
 // config 校验 → 解析必需 User Token → 解析 base-token → 构造请求描述符 →
 // 若 --dry-run 仅预览描述符不发请求；否则按 useV1 路由调用并渲染。
 func bitableRun(cmd *cobra.Command, build func(baseToken string) bitableReq) error {
+	return bitableRunWithTransform(cmd, build, nil)
+}
+
+// bitableRunWithTransform 同 bitableRun，实调成功后先用 transform 加工 data 再渲染（dry-run 不经过 transform）。
+func bitableRunWithTransform(cmd *cobra.Command, build func(baseToken string) bitableReq, transform func(map[string]any) map[string]any) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
@@ -78,6 +83,9 @@ func bitableRun(cmd *cobra.Command, build func(baseToken string) bitableReq) err
 	}
 	if err != nil {
 		return err
+	}
+	if transform != nil && data != nil {
+		data = transform(data)
 	}
 	return renderBitableResult(cmd, data)
 }

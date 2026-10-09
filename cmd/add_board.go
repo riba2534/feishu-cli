@@ -10,12 +10,12 @@ import (
 )
 
 var addBoardCmd = &cobra.Command{
-	Use:   "add-board <document_id>",
+	Use:   "add-board <document_id|url>",
 	Short: "添加画板到文档",
 	Long: `向飞书文档添加画板块。
 
 参数:
-  <document_id>  文档 ID（必填）
+  <document_id>  文档 ID 或 URL（必填；/wiki/ URL 自动解析为底层文档）
   --parent-id    父块 ID，空表示根级别，默认空
   --index        插入位置索引，-1 表示末尾，默认 -1
   --output, -o   输出格式 (json)
@@ -39,11 +39,15 @@ var addBoardCmd = &cobra.Command{
 			return err
 		}
 
-		documentID := args[0]
 		parentID, _ := cmd.Flags().GetString("parent-id")
 		index, _ := cmd.Flags().GetInt("index")
 		output, _ := cmd.Flags().GetString("output")
 		userAccessToken := resolveOptionalUserToken(cmd)
+		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
+		}
 
 		// 如果父块 ID 为空，使用文档根节点
 		if parentID == "" {

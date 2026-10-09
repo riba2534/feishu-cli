@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/riba2534/feishu-cli/internal/registry"
@@ -63,6 +64,7 @@ var doctorCmd = &cobra.Command{
   proxy                HTTP(S)_PROXY 与 NO_PROXY 配置合理
   dependencies         Go 版本 / SDK 版本
   catalog              OpenAPI catalog 来源（embedded/cache/runtime）、版本、service/method 数
+  skills               本地技能目录与当前 CLI 内嵌技能是否一致（只读本地文件；--skills-dir 指定目录）
 
 输出：
   默认：pretty 表格
@@ -70,7 +72,8 @@ var doctorCmd = &cobra.Command{
 
 退出码：
   0 = 全部通过（或仅 warn）
-  1 = 至少一项 fail`,
+  1 = 至少一项 fail
+  2 = 用法错误（如 --only 含未知检查名）`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if doctorOffline {
 			registry.DisableRemoteForProcess()
@@ -139,6 +142,11 @@ var doctorCmd = &cobra.Command{
 			results = append(results, checkCatalog())
 		}
 
+		// 8. skills（本地技能与 CLI 版本漂移，零网络；见 doctor_skills.go）
+		if shouldRun("skills", only) {
+			results = append(results, checkSkills())
+		}
+
 		// 输出
 		if doctorJSON {
 			return outputJSON(results)
@@ -192,11 +200,11 @@ func parseOnly(s string) (map[string]bool, error) {
 			valid = append(valid, k)
 		}
 		sort.Strings(valid)
-		return nil, fmt.Errorf("--only 包含未知 check 名: %s（合法值: %s）",
+		return nil, clierr.Usagef("--only 包含未知 check 名: %s（合法值: %s）",
 			strings.Join(bad, ", "), strings.Join(valid, ", "))
 	}
 	if len(m) == 0 {
-		return nil, fmt.Errorf("--only 为空（去除空白后）")
+		return nil, clierr.Usagef("--only 为空（去除空白后）")
 	}
 	return m, nil
 }
@@ -235,6 +243,14 @@ func checkUserToken() checkResult {
 			"运行 feishu-cli auth login（仅 vc/minutes/mail/drive/search 等命令必需）")
 	}
 	status := token.TokenStatus()
+	if f := token.RefreshFailure; f != nil {
+		// 终态刷新失败标记：refresh_token 已被服务端判定失效，不会再自动刷新
+		if status == "valid" {
+			return checkWarn("user_token", fmt.Sprintf("access_token 仍有效，但 refresh_token 已失效（code=%d），过期后无法自动续期", f.Code),
+				"运行 feishu-cli auth login 重新授权")
+		}
+		return checkFail("user_token", f.Err().Error(), "运行 feishu-cli auth login 重新授权")
+	}
 	switch status {
 	case "valid":
 		// 不暴露 token 本体，只给状态
@@ -260,6 +276,9 @@ func checkUserIdentity() checkResult {
 	if token == nil {
 		return checkWarn("user_identity", "用户身份未就绪：未登录（token.json 不存在）",
 			"如需 search/vc/minutes/mail/drive 等用户态命令，运行 feishu-cli auth login")
+	}
+	if f := token.RefreshFailure; f != nil && token.TokenStatus() != "valid" {
+		return checkFail("user_identity", "用户身份未就绪："+f.Err().Error(), "运行 feishu-cli auth login 重新授权")
 	}
 	switch token.TokenStatus() {
 	case "valid":

@@ -63,46 +63,4 @@ func TestAtomicWriteFile_PermAndOverwrite(t *testing.T) {
 	}
 }
 
-// TestReplaceExportFile_WindowsFallback 在非 Windows 平台验证 Windows 覆盖兜底分支。
-// 该分支在 Linux/macOS 上永不执行且无测试覆盖，通过注入 exportOnWindows 验证其逻辑。
-func TestReplaceExportFile_WindowsFallback(t *testing.T) {
-	orig := exportOnWindows
-	exportOnWindows = func() bool { return true }
-	t.Cleanup(func() { exportOnWindows = orig })
-
-	dir := t.TempDir()
-	dest := filepath.Join(dir, "out.md")
-
-	// 目标不存在：直接 rename
-	tmp1 := filepath.Join(dir, "t1.tmp")
-	if err := os.WriteFile(tmp1, []byte("v1"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := replaceExportFile(tmp1, dest); err != nil {
-		t.Fatalf("目标不存在时应成功: %v", err)
-	}
-	if data, _ := os.ReadFile(dest); string(data) != "v1" {
-		t.Errorf("内容 = %q, want v1", data)
-	}
-
-	// 目标已存在：走 .bak 兜底并成功覆盖
-	tmp2 := filepath.Join(dir, "t2.tmp")
-	if err := os.WriteFile(tmp2, []byte("v2"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := replaceExportFile(tmp2, dest); err != nil {
-		t.Fatalf("覆盖既有目标应成功: %v", err)
-	}
-	if data, _ := os.ReadFile(dest); string(data) != "v2" {
-		t.Errorf("覆盖后内容 = %q, want v2", data)
-	}
-	// .bak 应被清理
-	if _, err := os.Stat(dest + ".bak"); err == nil {
-		t.Error("成功路径不应残留 .bak")
-	}
-
-	// Windows 分支下 syncExportDir 应直接返回 nil（不 fsync 目录）
-	if err := syncExportDir(dir); err != nil {
-		t.Errorf("Windows 分支 syncExportDir 应返回 nil, got %v", err)
-	}
-}
+// Windows 覆盖兜底分支已迁移到 internal/safefile（见 safefile_test.go 的 TestReplaceFileWindowsFallback）。

@@ -134,5 +134,81 @@
       "feishu-cli-meetings"
     ],
     "reason": "下载会议产物"
+  },
+  {
+    "query": "我刚用机器人发到 oc_xxx 群里的消息 om_xxx 内容发错了，帮我把它撤回。",
+    "expected_skills": [
+      "feishu-cli-messaging"
+    ],
+    "reason": "撤回消息归IM"
+  },
+  {
+    "query": "我上午提交的请假审批实例 ic_xxx 不需要了，帮我把这个审批撤回。",
+    "expected_skills": [
+      "feishu-cli-work"
+    ],
+    "reason": "撤回审批不是撤回消息"
+  },
+  {
+    "query": "只在云盘文件夹 fldxxx 里搜索 ou_xxx 创建、标题含“周报”的文档，按编辑时间排序。",
+    "expected_skills": [
+      "feishu-cli-platform"
+    ],
+    "reason": "drive search归平台搜索"
+  },
+  {
+    "query": "查一下 user@example.com 这位同事的 open_id 和所在部门。",
+    "expected_skills": [
+      "feishu-cli-platform"
+    ],
+    "reason": "通讯录不因邮箱命中mail"
+  },
+  {
+    "query": "在多维表格 bascnxxx 的仪表盘里加一个按销售额排序的排行榜图表块。",
+    "expected_skills": [
+      "feishu-cli-data"
+    ],
+    "reason": "Bitable仪表盘不是visual"
+  },
+  {
+    "query": "通读这个飞书电子表格 /sheets/shtcnxxx 的全部内容，总结近三个月的趋势，不修改任何单元格。",
+    "expected_skills": [
+      "feishu-cli-docs"
+    ],
+    "reason": "通读总结表格走docs读取"
+  },
+  {
+    "query": "飞书文档 doxcnxxx 今天被同事改坏了，帮我恢复到上周五的历史版本。",
+    "expected_skills": [
+      "feishu-cli-docs"
+    ],
+    "reason": "在线文档历史版本回滚"
+  },
+  {
+    "query": "云盘里上传的 report.xlsx（file token boxcnxxx）被覆盖了，帮我恢复到上一个版本。",
+    "expected_skills": [
+      "feishu-cli-storage"
+    ],
+    "reason": "上传文件版本归storage"
+  },
+  {
+    "query": "读一下飞书邮箱里最新那封客户投诉邮件，把要点整理后发到 oc_xxx 群里。",
+    "expected_skills": [
+      "feishu-cli-mail",
+      "feishu-cli-messaging"
+    ],
+    "reason": "邮件读取与群消息跨域"
+  },
+  {
+    "query": "用 python-pptx 在本地生成一份 5 页的季度汇报 PPT，保存为 report.pptx，不上传飞书。",
+    "expected_skills": [],
+    "reason": "本地PPT生成不触发"
+  },
+  {
+    "query": "刚升级了 feishu-cli，技能里写的命令和二进制对不上，帮我检查版本漂移并修复。",
+    "expected_skills": [
+      "feishu-cli-platform"
+    ],
+    "reason": "技能与CLI版本漂移"
   }
 ]

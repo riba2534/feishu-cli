@@ -1,9 +1,9 @@
 # 配色系统
 
-> **色值唯一出处**：`skills/feishu-cli-visual/references/workflows/dataviz/references/palette.md`（统一色板，
+> **色值唯一出处**：`../dataviz/references/palette.md`（统一色板，
 > 已通过色盲区分度/对比度脚本校验）。本文件只讲画板场景的**取用方式**与主题变体，
 > 不自创色值。改色后用
-> `skills/feishu-cli-visual/references/workflows/dataviz/scripts/validate_palette.js` 复验。
+> `../dataviz/scripts/validate_palette.js` 复验。
 
 ## 怎么上色（最重要）
 
@@ -49,13 +49,11 @@
 #3370FF, #D99904, #04B49C, #ED6D0C, #7F3BF5, #F54A45, #F14BA9, #2EA121
 ```
 
-**原样按序取用时无需校验**（该色板已预校验，结论见 `feishu-cli-visual` 的 palette.md）。
-仅当改色值/换底色时先跑校验（先定位再调用，任意 CWD 可用）：
+**原样按序取用时无需校验**（该色板已预校验，结论见 `../dataviz/references/palette.md`）。
+仅当改色值/换底色时先跑校验（路径相对 board 工作流目录解析，见 SKILL.md 的路径约定）：
 
 ```bash
-VP=~/.claude/skills/feishu-cli-visual/references/workflows/dataviz/scripts/validate_palette.js
-[ -f "$VP" ] || VP=skills/feishu-cli-visual/references/workflows/dataviz/scripts/validate_palette.js   # 仓库内开发时（CWD=仓库根）
-node "$VP" "#3370FF,#D99904,#04B49C" --mode light
+node ../dataviz/scripts/validate_palette.js "#3370FF,#D99904,#04B49C" --mode light
 ```
 
 散点/气泡类（任意两色可相邻）加 `--pairs all`，且系列色改用 all-pairs 安全子集
@@ -63,7 +61,7 @@ node "$VP" "#3370FF,#D99904,#04B49C" --mode light
 
 画板图**渲染后没有 tooltip 兜底**，所以：关键数值直接标签必须充分（端点/极值/
 每根柱的值择要标注）；文字一律用 ink 色（#1F2329），不穿系列色 —— 系列身份由
-文字旁的色块/图例承载。形式选择与反模式清单见 `feishu-cli-visual` 技能。
+文字旁的色块/图例承载。形式选择与反模式清单见 `../dataviz/references/choosing-a-form.md` 与 `anti-patterns.md`。
 
 ---
 

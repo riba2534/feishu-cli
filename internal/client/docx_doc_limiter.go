@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/riba2534/feishu-cli/internal/runctx"
 )
 
 // 飞书 docx 写类 API（CreateBlock/UpdateBlock/BatchUpdate/InsertTableRow/DeleteBlocks 等）
@@ -140,7 +142,7 @@ func acquireDocWriteSlotWithTimeout(documentID string) error {
 	if documentID == "" {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), DocWriteSlotAcquireTimeout)
+	ctx, cancel := context.WithTimeout(runctx.Root(), DocWriteSlotAcquireTimeout)
 	defer cancel()
 	return AcquireDocWriteSlot(ctx, documentID)
 }

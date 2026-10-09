@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -134,13 +136,15 @@ query 可省略，仅用 filter 搜索。加 --enrich 才补全内容/发送者/
 			if err != nil {
 				return err
 			}
+			printSearchNotice(cmd.ErrOrStderr(), lastRes.Notice)
 			if useStructured {
-				// 渲染 SearchMessagesResult（无 JSON tag）→ 旧 schema {MessageIDs,PageToken,HasMore}。
+				// 渲染 SearchMessagesResult → 旧 schema {MessageIDs,PageToken,HasMore}（+ notice，非空时）。
 				// MessageIDs 用翻页累计的全量 ids；HasMore/PageToken 取最后一页。
 				return output.Render(structuredOpts, &client.SearchMessagesResult{
 					MessageIDs: ids,
 					PageToken:  lastRes.PageToken,
 					HasMore:    lastRes.HasMore,
+					Notice:     lastRes.Notice,
 				})
 			}
 			if len(ids) == 0 {
@@ -164,6 +168,9 @@ query 可省略，仅用 filter 搜索。加 --enrich 才补全内容/发送者/
 		enriched, lastRes, err := collectEnrichedMessages(opts, userAccessToken, cardContentType, pageAll, pageLimit)
 		if err != nil {
 			return err
+		}
+		if lastRes != nil {
+			printSearchNotice(cmd.ErrOrStderr(), lastRes.Notice)
 		}
 
 		if useStructured {
@@ -191,13 +198,23 @@ query 可省略，仅用 filter 搜索。加 --enrich 才补全内容/发送者/
 func collectMessageIDs(opts client.SearchMessagesOptions, token string, pageAll bool, pageLimit int) ([]string, *client.SearchMessagesResult, error) {
 	var ids []string
 	var last *client.SearchMessagesResult
+	notice := ""
 	pages := 0
+	defer func() {
+		// 服务端 notice 往往只出现在首页，翻页后保留下来，避免被后续页覆盖丢失
+		if last != nil && last.Notice == "" {
+			last.Notice = notice
+		}
+	}()
 	for {
 		res, err := client.SearchMessages(opts, token)
 		if err != nil {
 			return nil, nil, err
 		}
 		last = res
+		if notice == "" {
+			notice = res.Notice
+		}
 		ids = append(ids, res.MessageIDs...)
 		pages++
 		more, next, err := client.PaginationCursor(res.HasMore, res.PageToken, "", opts.PageToken)
@@ -216,13 +233,22 @@ func collectMessageIDs(opts client.SearchMessagesOptions, token string, pageAll 
 func collectEnrichedMessages(opts client.SearchMessagesOptions, token, cardContentType string, pageAll bool, pageLimit int) ([]client.EnrichedMessage, *client.SearchMessagesResult, error) {
 	var all []client.EnrichedMessage
 	var last *client.SearchMessagesResult
+	notice := ""
 	pages := 0
+	defer func() {
+		if last != nil && last.Notice == "" {
+			last.Notice = notice
+		}
+	}()
 	for {
 		enriched, res, err := client.SearchMessagesEnriched(opts, token, cardContentType)
 		if err != nil {
 			return nil, nil, err
 		}
 		last = res
+		if res != nil && notice == "" {
+			notice = res.Notice
+		}
 		all = append(all, enriched...)
 		pages++
 		hasMore := res != nil && res.HasMore
@@ -240,6 +266,15 @@ func collectEnrichedMessages(opts client.SearchMessagesOptions, token, cardConte
 		opts.PageToken = next
 	}
 	return all, last, nil
+}
+
+// printSearchNotice 把服务端 notice（如"查询词超过 50 字已截断"）透出到 stderr，
+// 避免用户误以为结果是按完整查询词匹配的。
+func printSearchNotice(w io.Writer, notice string) {
+	if strings.TrimSpace(notice) == "" {
+		return
+	}
+	fmt.Fprintf(w, "[提示] 服务端提示: %s\n", notice)
 }
 
 func printMoreHint(pageAll bool, res *client.SearchMessagesResult) {

@@ -1,149 +1,96 @@
-# 搜索命令详细参考
+# 搜索命令参数映射与输出格式
 
-**重要**：`search docs` / `search apps` 需要 **User Access Token**。`search messages` 走 current IM 端点，支持 `--as bot|user|auto`（默认 auto）。
+本文件补充 `../workflow.md`：列出过滤参数到接口字段的映射与 JSON 输出结构。完整 flag 以
+`feishu-cli search <docs|messages|apps> --help` 为准。
 
-## User Access Token 获取方式
+## search messages：参数映射
 
-按优先级从高到低：
+请求走 `POST /open-apis/im/v1/messages/search`，query 可省略。
 
-1. **`feishu-cli auth login`（推荐）**：Device Flow 登录（RFC 8628），无需配置任何重定向 URL，Token 自动保存并支持过期自动刷新
-2. **AI Agent 模式**：`feishu-cli auth login --json` + `run_in_background=true`，从 stdout 读取 `verification_uri_complete` 展示给用户，等待后台完成；或两步模式 `auth login --no-wait --json` + `auth login --device-code <code> --json`
-3. **命令行参数**：`--user-access-token <token>`
-4. **环境变量**：`FEISHU_USER_ACCESS_TOKEN=<token>`
-
-Token 有效期约 2 小时，Refresh Token 有效期 30 天（Device Flow 自动注入 `offline_access`）。搜索命令通过 `resolveRequiredUserToken` 自动从 `token.json` 加载 Token；wiki、日历、任务等命令默认使用 App Token，仅在显式传 `--user-access-token` 时使用用户身份。详见 `feishu-cli-platform` 技能。
-
-**AI Agent 预检**：执行搜索前先用 `feishu-cli auth check --scope "search:docs:read search:message"` 判断 Token 是否满足需求。
-
-## 搜索消息
-
-走 `POST /open-apis/im/v1/messages/search`。`--as bot|user|auto`（默认 auto；已配置 User 刷新失败 fail-closed）。`--start-time`/`--end-time` 写入 `filter.time_range`（RFC3339；纯数字仍按 Unix 秒转换）。`--chat-type group_chat|p2p_chat` 映射为 `group|p2p`。`--enrich` 用 `GET /im/v1/messages/mget` 批量补全（每批最多 50）。`--page-all` 最多 40 页；`--page-limit` 1–40，`0` 在 `--page-all` 时等于 40（不是无限）。非法 `--format`/`--jq` 在身份解析和发网前失败。
-
-```bash
-feishu-cli search messages "关键词" \
-  --user-access-token <token> \
-  [--chat-ids oc_xxx,oc_yyy] \
-  [--from-ids ou_xxx] \
-  [--at-chatter-ids ou_xxx] \
-  [--message-type file|image|media] \
-  [--chat-type group_chat|p2p_chat] \
-  [--from-type bot|user] \
-  [--start-time 2024-01-01T00:00:00+08:00] \
-  [--end-time 2024-01-02T00:00:00+08:00] \
-  [--page-size 20] \
-  [--page-token <token>]
-```
-
-### 筛选参数
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `--chat-ids` | string | 限定群聊范围（逗号分隔） |
-| `--from-ids` | string | 限定发送者（逗号分隔） |
-| `--at-chatter-ids` | string | 限定被@的用户（逗号分隔） |
-| `--message-type` | string | 消息类型：`file`/`image`/`media` |
-| `--chat-type` | string | 会话类型：`group_chat`（群聊）/`p2p_chat`（单聊） |
-| `--from-type` | string | 发送者类型：`bot`（机器人）/`user`（用户） |
-| `--start-time` | string | 起始时间（RFC3339 或 Unix 秒） |
-| `--end-time` | string | 结束时间（RFC3339 或 Unix 秒） |
-
-### 示例
-
-```bash
-# 搜索特定群里的文件消息
-feishu-cli search messages "周报" \
-  --user-access-token u-xxx \
-  --chat-ids oc_xxx \
-  --message-type file
-
-# 搜索某时间段内的消息
-feishu-cli search messages "上线" \
-  --user-access-token u-xxx \
-  --start-time 1704067200 \
-  --end-time 1704153600
-
-# 搜索机器人发送的消息
-feishu-cli search messages "告警" \
-  --user-access-token u-xxx \
-  --from-type bot
-```
-
-## 搜索应用
-
-```bash
-feishu-cli search apps "应用名称" \
-  --user-access-token <token> \
-  [--page-size 20] \
-  [--page-token <token>]
-```
-
-## 搜索云文档
-
-使用 `/open-apis/suite/docs-api/search/object` 端点搜索当前用户可见的云文档。
-
-```bash
-feishu-cli search docs "关键词" \
-  [--count 20] \
-  [--offset 0] \
-  [--owner-ids ou_xxx,ou_yyy] \
-  [--chat-ids oc_xxx,oc_yyy] \
-  [--docs-types doc,sheet,slides]
-```
-
-### 文档类型（小写）
-
-| 类型 | 说明 |
+| 参数 | 接口字段 / 说明 |
 |------|------|
-| `doc` | 旧版飞书文档 |
-| `docx` | 新版飞书文档 |
-| `sheet` | 电子表格 |
-| `slides` | 幻灯片 |
-| `bitable` | 多维表格 |
-| `mindnote` | 思维笔记 |
-| `file` | 文件 |
-| `wiki` | 知识库文档 |
-| `shortcut` | 快捷方式 |
+| `--chat-ids` | `filter.chat_ids`（逗号分隔） |
+| `--from-ids` | `filter.from_ids`（逗号分隔） |
+| `--at-chatter-ids` | `filter.at_chatter_ids`（逗号分隔） |
+| `--chat-type` | `group_chat` / `p2p_chat`（也接受 `group` / `p2p`），映射为 `group` / `p2p` |
+| `--from-type` / `--exclude-from-type` | `bot` / `user` |
+| `--is-at-me` | 仅搜索 @我 的消息 |
+| `--message-type` | `include_attachment_types`：`file` / `image` / `video` / `link`；`media` 映射为 `video` |
+| `--start-time` / `--end-time` | `filter.time_range`；接受 RFC3339、`YYYY-MM-DD` 或 Unix 秒 |
+| `--page-size` | 1–50，默认 20，越界报错 |
+| `--page-all` / `--page-limit` | 最多 40 页；`--page-limit` 1–40，`0` 在 `--page-all` 时等于 40 |
+| `--enrich` | 额外用 `GET /open-apis/im/v1/messages/mget`（每批最多 50）补全内容/发送者/群名/时间 |
+| `--card-content-type` | 仅 `--enrich` 时生效：`user`（默认，提取 `card_texts`）/ `raw`（完整 cardDSL）/ `rendered`（OAPI 渲染版） |
 
-### 筛选参数
+### 输出
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `--count` | int | 返回数量（0-50，默认 20） |
-| `--offset` | int | 偏移量（offset + count < 200） |
-| `--owner-ids` | string | 文件所有者 Open ID 列表（逗号分隔） |
-| `--chat-ids` | string | 文件所在群 ID 列表（逗号分隔） |
-| `--docs-types` | string | 文档类型列表（逗号分隔，小写，可选值见上表） |
+默认（无 `--enrich`），`-o json` 或 `--format json`：
 
-### 示例
-
-```bash
-# 先登录获取 Token（推荐）
-feishu-cli auth login
-
-# 基础搜索
-feishu-cli search docs "产品需求"
-
-# 搜索特定类型的文档
-feishu-cli search docs "季度报告" --docs-types doc,sheet
-
-# 指定返回数量和偏移
-feishu-cli search docs "技术方案" --count 10 --offset 0
-
-# 也可以手动指定 Token
-feishu-cli search docs "产品需求" --user-access-token u-xxx
+```json
+{
+  "MessageIDs": ["om_xxx", "om_yyy"],
+  "PageToken": "ea9dcb2f...",
+  "HasMore": true
+}
 ```
 
-### 输出格式
+服务端返回提示时多一个 `notice` 字段，同时写 stderr。
 
-搜索结果包含以下信息：
-- 标题
-- 文档类型
-- 文档 Token
-- 所有者 ID
+`--enrich` 时返回对象数组：
 
-### 注意事项
+```json
+[
+  {
+    "message_id": "om_xxx",
+    "msg_type": "text",
+    "chat_id": "oc_xxx",
+    "chat_name": "项目群",
+    "sender_id": "ou_xxx",
+    "sender_name": "张三",
+    "create_time": "1704067200000",
+    "time": "2024-01-01 08:00:00",
+    "text": "今天上线"
+  }
+]
+```
 
-1. **文档类型使用小写**：`doc`、`sheet`、`wiki` 等（与 CLI `--docs-types` 帮助文本一致）
-2. **搜索范围**：只能搜索用户有权访问的文档
-3. **分页**：使用 `--offset` 和 `--count` 控制（offset + count < 200）
+## search docs：参数与输出
 
+底层与官方 CLI 一致使用 Search v2（`POST /open-apis/search/v2/doc_wiki/search`，与 `drive search` 同一端点），只返回当前用户
+有权访问的文档，默认同时搜云盘与知识库。
+
+| 参数 | 说明 |
+|------|------|
+| `--count` | 每页数量 1–20，默认 20（超过 20 按 20 处理并在 stderr 提示） |
+| `--page-token` | 上一页输出的 `PageToken` |
+| `--offset` | 已废弃：传大于 0 的值报用法错误，改用 `--page-token` |
+| `--owner-ids` | 文件所有者 open_id（逗号分隔，映射 v2 `creator_ids`） |
+| `--chat-ids` | 文件所在群 ID（逗号分隔） |
+| `--docs-types` | 小写类型（逗号分隔）：`doc` 旧版文档、`docx` 新版文档、`sheet`、`slides`、`bitable`、`mindnote`、`file`、`wiki`、`shortcut`、`folder`、`catalog` |
+
+`-o json` 输出：
+
+```json
+{
+  "Total": 35,
+  "HasMore": true,
+  "PageToken": "<下一页游标>",
+  "ResUnits": [
+    {
+      "DocsToken": "doc_token_xxx",
+      "DocsType": "docx",
+      "Title": "产品需求文档 - Q2",
+      "OwnerID": "ou_xxx",
+      "URL": "https://www.feishu.cn/docx/doc_token_xxx"
+    }
+  ]
+}
+```
+
+## search apps：参数
+
+| 参数 | 说明 |
+|------|------|
+| `--page-size` | 每页数量，默认 20 |
+| `--page-token` | 分页 token |
+| `--user-id-type` | `open_id`（默认）/ `union_id` / `user_id` |

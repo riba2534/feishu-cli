@@ -8,7 +8,7 @@ import (
 )
 
 var sheetMetaCmd = &cobra.Command{
-	Use:   "meta <spreadsheet_token>",
+	Use:   "meta <spreadsheet_token|url>",
 	Short: "获取表格元信息",
 	Long: `获取电子表格的详细元信息，包括工作表列表、权限等。
 
@@ -17,12 +17,14 @@ var sheetMetaCmd = &cobra.Command{
   feishu-cli sheet meta shtcnxxxxxx --ext-fields "protectedRange,mergedCell"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		extFields, _ := cmd.Flags().GetString("ext-fields")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
 
-		meta, err := client.GetSpreadsheetMeta(client.Context(), spreadsheetToken, extFields, userAccessToken)
+		meta, err := client.GetSpreadsheetMeta(client.Context(), target.Token, extFields, target.UAT)
 		if err != nil {
 			return err
 		}
@@ -38,14 +40,15 @@ var sheetMetaCmd = &cobra.Command{
 				if title, ok := properties["title"].(string); ok {
 					fmt.Printf("  标题: %s\n", title)
 				}
-				if ownerUser, ok := properties["ownerUser"].(float64); ok {
-					fmt.Printf("  所有者 ID: %.0f\n", ownerUser)
+				// 数字以 json.Number 保留原始字面量（ownerUser 是 19 位整数，经 float64 会丢精度）
+				if ownerUser, ok := properties["ownerUser"]; ok && ownerUser != nil {
+					fmt.Printf("  所有者 ID: %v\n", ownerUser)
 				}
-				if sheetCount, ok := properties["sheetCount"].(float64); ok {
-					fmt.Printf("  工作表数量: %.0f\n", sheetCount)
+				if sheetCount, ok := properties["sheetCount"]; ok && sheetCount != nil {
+					fmt.Printf("  工作表数量: %v\n", sheetCount)
 				}
-				if revision, ok := properties["revision"].(float64); ok {
-					fmt.Printf("  版本: %.0f\n", revision)
+				if revision, ok := properties["revision"]; ok && revision != nil {
+					fmt.Printf("  版本: %v\n", revision)
 				}
 			}
 

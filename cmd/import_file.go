@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +31,8 @@ var importFileCmd = &cobra.Command{
   docx      导入为新版文档（支持 .docx/.doc/.md/.txt 等）
   sheet     导入为电子表格（支持 .xlsx/.xls/.csv 等）
 
+Bot 身份导入时自动给当前 CLI 登录用户授予新文档 full_access（JSON 输出 permission_grant）。
+
 示例:
   # 导入 Word 文档
   feishu-cli doc import-file report.docx --type docx
@@ -49,6 +53,10 @@ var importFileCmd = &cobra.Command{
 		docName, _ := cmd.Flags().GetString("name")
 		folderToken, _ := cmd.Flags().GetString("folder")
 		output, _ := cmd.Flags().GetString("output")
+		// 本地文件在任何网络请求之前校验：敏感目录、不存在、是目录、无权限读取均为用法错误
+		if _, err := safefile.StatInputFile(localPath); err != nil {
+			return err
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		if docName == "" {
@@ -81,11 +89,14 @@ var importFileCmd = &cobra.Command{
 			return err
 		}
 
+		// Bot 身份导入时自动给当前 CLI 登录用户授予新文档 full_access（User 身份不触发）
+		grant := autoGrantCurrentUser(userAccessToken, docToken, targetType)
+
 		if output == "json" {
-			return printJSON(map[string]string{
+			return printJSON(withPermissionGrant(map[string]any{
 				"token": docToken,
 				"url":   url,
-			})
+			}, grant))
 		}
 
 		fmt.Printf("导入成功！\n")
@@ -94,6 +105,7 @@ var importFileCmd = &cobra.Command{
 		if url != "" {
 			fmt.Printf("  链接: %s\n", url)
 		}
+		printPermissionGrantText(os.Stdout, grant)
 
 		return nil
 	},

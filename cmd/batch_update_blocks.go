@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -10,12 +9,12 @@ import (
 )
 
 var batchUpdateBlocksCmd = &cobra.Command{
-	Use:   "batch-update <document_id> <requests>",
+	Use:   "batch-update <document_id|url> <requests>",
 	Short: "批量更新文档块",
 	Long: `批量更新飞书文档中的多个块。
 
 参数:
-  <document_id>             文档 ID（必填）
+  <document_id>             文档 ID 或 URL（必填；/wiki/ URL 自动解析为底层文档）
   <requests>                更新请求列表，JSON 格式（必填）
   --source-type             源类型：file/content，默认 file
   --document-revision-id    文档版本 ID，-1 表示最新
@@ -48,26 +47,30 @@ var batchUpdateBlocksCmd = &cobra.Command{
 			return err
 		}
 
-		documentID := args[0]
 		source := args[1]
 		sourceType, _ := cmd.Flags().GetString("source-type")
 		documentRevisionID, _ := cmd.Flags().GetInt("document-revision-id")
 		clientToken, _ := cmd.Flags().GetString("client-token")
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
-
-		// Get requests JSON
+		// Get requests JSON（本地文件在任何网络请求之前读取，敏感目录/不存在为用法错误）
 		var requestsJSON string
 		if sourceType == "content" {
 			requestsJSON = source
 		} else {
 			// Read from file
-			data, err := os.ReadFile(source)
+			data, err := readLocalInputFile(source)
 			if err != nil {
 				return fmt.Errorf("读取请求文件失败: %w", err)
 			}
 			requestsJSON = string(data)
+		}
+
+		userAccessToken := resolveOptionalUserToken(cmd)
+		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
+		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
+		if err != nil {
+			return err
 		}
 
 		opts := client.BatchUpdateBlocksOptions{

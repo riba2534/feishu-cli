@@ -7,6 +7,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -45,6 +46,10 @@ var taskUploadAttachmentCmd = &cobra.Command{
 		if taskGuid == "" {
 			return fmt.Errorf("--task-guid 必填")
 		}
+		taskGuid, guidErr := parseTaskGUIDArg(taskGuid)
+		if guidErr != nil {
+			return guidErr
+		}
 		if filePath == "" {
 			return fmt.Errorf("--file 必填")
 		}
@@ -52,13 +57,17 @@ var taskUploadAttachmentCmd = &cobra.Command{
 			resourceType = "task"
 		}
 
-		stat, err := os.Stat(filePath)
+		// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
+		stat, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("读取文件失败: %w", err)
+			return fmt.Errorf("--file 无效: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "上传附件: %s (%d bytes) → task=%s\n", filepath.Base(filePath), stat.Size(), taskGuid)
 
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		userToken, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 		info, err := client.UploadTaskAttachment(resourceType, taskGuid, filePath, userToken)
 		if err != nil {
 			return err
@@ -91,6 +100,7 @@ func init() {
 	taskUploadAttachmentCmd.Flags().String("resource-type", "task", "归属资源类型（task / task_delivery）")
 	taskUploadAttachmentCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	taskUploadAttachmentCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
+	addWriteAsFlag(taskUploadAttachmentCmd)
 	mustMarkFlagRequired(taskUploadAttachmentCmd, "task-guid")
 	mustMarkFlagRequired(taskUploadAttachmentCmd, "file")
 }

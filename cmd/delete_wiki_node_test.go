@@ -40,6 +40,13 @@ func initWikiNodeDeleteTestConfig(t *testing.T, baseURL string) {
 	}
 }
 
+// writeWikiNodeByTokenEcho 模拟 node_by_token：把请求里的 token 原样作为 node_token / obj_token 返回，space_id 固定。
+// 删除命令无论是否传 --space-id 都会先解析节点并核对空间，测试服务端必须响应该端点。
+func writeWikiNodeByTokenEcho(w http.ResponseWriter, r *http.Request, spaceID string) {
+	tok := r.URL.Query().Get("token")
+	_, _ = fmt.Fprintf(w, `{"code":0,"msg":"ok","data":{"node":{"space_id":%q,"node_token":%q,"obj_token":%q,"obj_type":"docx","node_type":"origin","title":"测试"}}}`, spaceID, tok, tok)
+}
+
 // TestDeleteWikiNodePathBodyAndAsyncPoll 验证 Wiki 节点删除走正确的 OpenAPI 路径、Body 以及异步任务轮询
 func TestDeleteWikiNodePathBodyAndAsyncPoll(t *testing.T) {
 	deleteCalled := false
@@ -55,7 +62,7 @@ func TestDeleteWikiNodePathBodyAndAsyncPoll(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
-		case r.URL.Path == "/open-apis/wiki/v2/spaces/get_node":
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
 			// 自动解析 space_id
 			_, _ = fmt.Fprint(w, `{
 				"code": 0,
@@ -64,6 +71,7 @@ func TestDeleteWikiNodePathBodyAndAsyncPoll(t *testing.T) {
 					"node": {
 						"space_id": "space-999",
 						"node_token": "wikcnTestNode",
+						"obj_token": "doxcnTestObj",
 						"title": "测试节点",
 						"obj_type": "docx"
 					}
@@ -168,6 +176,8 @@ func TestDeleteWikiNodeSyncCompletion(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
+			writeWikiNodeByTokenEcho(w, r, "sp-1")
 		case r.Method == "DELETE" && r.URL.Path == "/open-apis/wiki/v2/spaces/sp-1/nodes/wikcnSync":
 			deleteCalled = true
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"task_id":""}}`)
@@ -203,6 +213,8 @@ func TestDeleteWikiNodeAllFailedReturnsError(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
+			writeWikiNodeByTokenEcho(w, r, "sp-fail")
 		case r.Method == "DELETE" && r.URL.Path == "/open-apis/wiki/v2/spaces/sp-fail/nodes/node-fail":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"task_id":"task-failed-999"}}`)
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/open-apis/wiki/v2/tasks/"):
@@ -264,6 +276,8 @@ func TestDeleteWikiNodeTimeoutReturnsError(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
+			writeWikiNodeByTokenEcho(w, r, "sp-timeout")
 		case r.Method == "DELETE" && r.URL.Path == "/open-apis/wiki/v2/spaces/sp-timeout/nodes/node-timeout":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"task_id":"task-timeout-888"}}`)
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/open-apis/wiki/v2/tasks/"):
@@ -480,6 +494,8 @@ func TestDeleteWikiNodeInvalidServerTaskIDRejected(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
+			writeWikiNodeByTokenEcho(w, r, "sp-123")
 		case r.Method == "DELETE":
 			// 返回含有路径分隔符的非法 task_id
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"task_id":"task/escape/evil"}}`)
@@ -505,7 +521,7 @@ func TestDeleteWikiNodeInvalidServerTaskIDRejected(t *testing.T) {
 	}
 }
 
-// TestDeleteWikiNodeInvalidParsedSpaceIDRejected 验证 get_node 返回非法 space_id 时立即拦截且不发 DELETE 请求
+// TestDeleteWikiNodeInvalidParsedSpaceIDRejected 验证 node_by_token 返回非法 space_id 时立即拦截且不发 DELETE 请求
 func TestDeleteWikiNodeInvalidParsedSpaceIDRejected(t *testing.T) {
 	deleteCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -513,11 +529,11 @@ func TestDeleteWikiNodeInvalidParsedSpaceIDRejected(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
-		case r.URL.Path == "/open-apis/wiki/v2/spaces/get_node":
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
 			// 返回包含路径分隔符的非法 space_id
 			_, _ = fmt.Fprint(w, `{
 				"code":0,"msg":"ok",
-				"data":{"node":{"space_id":"sp/evil_path_inject","node_token":"wikcnTest","title":"测试"}}
+				"data":{"node":{"space_id":"sp/evil_path_inject","node_token":"wikcnTest","obj_token":"doxcnTest","obj_type":"docx","title":"测试"}}
 			}`)
 		case r.Method == "DELETE":
 			deleteCalled = true
@@ -593,6 +609,8 @@ func TestDeleteWikiNodePathEscaped(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
+			writeWikiNodeByTokenEcho(w, r, "sp-123")
 		case r.Method == "DELETE":
 			gotDeletePath = r.URL.EscapedPath()
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"task_id":"task-escaped-123"}}`)
@@ -658,7 +676,8 @@ func TestDeleteWikiNodeBareTokenRequiresObjType(t *testing.T) {
 	}
 }
 
-// TestDeleteWikiNodeURLInfersObjTypeAndPassesObjType 验证完整 URL 自动推断 obj_type，且对 non-wiki token 向 get_node 发送 obj_type 参数
+// TestDeleteWikiNodeURLInfersObjTypeAndPassesObjType 验证完整 URL 自动推断 obj_type 并传给删除接口；
+// 解析 space 时走 node_by_token，由服务端识别 token 类型，不再发送 obj_type
 func TestDeleteWikiNodeURLInfersObjTypeAndPassesObjType(t *testing.T) {
 	var gotGetNodeQuery string
 	var gotDeleteBody map[string]any
@@ -668,11 +687,11 @@ func TestDeleteWikiNodeURLInfersObjTypeAndPassesObjType(t *testing.T) {
 		switch {
 		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
 			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-test","expire":7200}`)
-		case r.URL.Path == "/open-apis/wiki/v2/spaces/get_node":
+		case r.URL.Path == "/open-apis/wiki/v2/spaces/node_by_token":
 			gotGetNodeQuery = r.URL.RawQuery
 			_, _ = fmt.Fprint(w, `{
 				"code": 0, "msg": "ok",
-				"data": {"node": {"space_id": "sp-inferred", "node_token": "doxcnReal", "obj_type": "docx"}}
+				"data": {"node": {"space_id": "sp-inferred", "node_token": "wikcnRealNode", "obj_token": "doxcnReal", "obj_type": "docx"}}
 			}`)
 		case r.Method == "DELETE" && r.URL.Path == "/open-apis/wiki/v2/spaces/sp-inferred/nodes/doxcnReal":
 			_ = json.NewDecoder(r.Body).Decode(&gotDeleteBody)
@@ -695,9 +714,9 @@ func TestDeleteWikiNodeURLInfersObjTypeAndPassesObjType(t *testing.T) {
 		t.Fatalf("URL 执行删除失败: %v", err)
 	}
 
-	// 验证 non-wiki docx token 向 get_node 传递了 obj_type=docx
-	if !strings.Contains(gotGetNodeQuery, "obj_type=docx") {
-		t.Fatalf("non-wiki docx URL 解析 space 时向 get_node 必须发送 obj_type=docx，实际 query: %q", gotGetNodeQuery)
+	// node_by_token 由服务端识别 token 类型：只传 token，不再传 obj_type
+	if gotGetNodeQuery != "token=doxcnReal" {
+		t.Fatalf("解析 space 时 node_by_token query 应只含 token=doxcnReal，实际 query: %q", gotGetNodeQuery)
 	}
 	if gotDeleteBody["obj_type"] != "docx" {
 		t.Fatalf("DELETE 请求 body obj_type = %v, 期望 docx", gotDeleteBody["obj_type"])

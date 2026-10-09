@@ -1,20 +1,23 @@
 package cmd
 
 import (
+	"strings"
+
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
 var sheetTableGetCmd = &cobra.Command{
-	Use:   "table-get <spreadsheet_token> <sheet_id>",
+	Use:   "table-get <spreadsheet_token|url> <sheet_id>",
 	Short: "按列类型保真读取整表（table-put 的镜像，支持 round-trip）",
 	Long: `把电子表格区域读回 DataFrame 形状的 JSON（columns + data + dtypes/formats），
 与 table-put 输入完全对称：table-get 的输出可直接（或修改后）喂给 table-put 写回。
 
 列类型自动推断（依据 V3 类型化单元格元素）:
   - 数字单元格          → float64（json 数字，保精度）
-  - 日期单元格          → datetime64[ns]（值归一为 ISO yyyy-mm-dd）
+  - 日期单元格          → datetime64[ns]（值归一为 ISO yyyy-mm-dd；带时间的格式输出 yyyy-mm-ddTHH:MM:SS，
+                          formats 为 "yyyy-mm-dd hh:mm:ss"，table-put 写回不丢时间）
   - 文本单元格          → string；全列值 ∈ {TRUE,FALSE} 时升级为 bool
   - 公式单元格          → 取计算结果值参与推断
   - 混合类型列          → object（逐格保留各自类型）
@@ -43,9 +46,16 @@ var sheetTableGetCmd = &cobra.Command{
 		}
 		rangeStr, _ := cmd.Flags().GetString("range")
 		noHeader, _ := cmd.Flags().GetBool("no-header")
-		token := resolveOptionalUserTokenWithFallback(cmd)
-		result, err := client.ReadTable(client.Context(), args[0], args[1],
-			unescapeSheetRange(rangeStr), noHeader, token)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(rangeStr) != "" {
+			if rangeStr, err = target.qualifyRange(rangeStr, args[1], ""); err != nil {
+				return err
+			}
+		}
+		result, err := client.ReadTable(client.Context(), target.Token, args[1], rangeStr, noHeader, target.UAT)
 		if err != nil {
 			return err
 		}

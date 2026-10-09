@@ -32,8 +32,9 @@ var okrProgressCreateCmd = &cobra.Command{
   --user-id-type      用户 ID 类型：open_id（默认） / union_id / user_id
   --output, -o        输出格式：json
 
-权限要求（应用 Token / Tenant，实测 user token 被服务端拒：99991668）:
-  okr:okr 或 okr:okr.progress:writeonly
+身份与权限（--as，命令组默认 bot）:
+  User/Bot 均可调用；scope 为 okr:okr 或 okr:okr.progress:writeonly。
+  bot 需应用后台开通（缺时 99991672）；user 需登录时授予（缺时 99991679）
 
 示例:
   # 给目标加一条纯文本进展
@@ -95,6 +96,14 @@ var okrProgressCreateCmd = &cobra.Command{
 		}
 		opts.ProgressRate = rate
 
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return printDryRunPlan(cmd, "okr progress create 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: "/open-apis/okr/v1/progress_records",
+				Params: map[string]any{"user_id_type": userIDType},
+				Body:   okrProgressPreviewBody(opts.ContentJSON, opts.ProgressRate, map[string]any{"target_id": targetID, "target_type": int(targetType), "source_title": sourceTitle, "source_url": sourceURL}),
+			}})
+		}
+
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
@@ -121,6 +130,29 @@ var okrProgressCreateCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// okrProgressPreviewBody 进展写入的 dry-run 请求体（与实际下发字段一致；source 为空时服务端调用前会补默认值）
+func okrProgressPreviewBody(contentJSON string, rate *client.OKRProgressRateInput, extra map[string]any) map[string]any {
+	body := map[string]any{}
+	for k, v := range extra {
+		if s, ok := v.(string); ok && s == "" {
+			continue
+		}
+		body[k] = v
+	}
+	var content any
+	if json.Unmarshal([]byte(contentJSON), &content) == nil && content != nil {
+		body["content"] = content
+	}
+	if rate != nil {
+		r := map[string]any{"percent": rate.Percent}
+		if rate.Status != nil {
+			r["status"] = int(*rate.Status)
+		}
+		body["progress_rate"] = r
+	}
+	return body
 }
 
 // pickOKRTarget 校验 --objective-id / --key-result-id 二选一，返回 (targetID, targetType)
@@ -185,6 +217,7 @@ func buildOKRProgressContentJSON(text, raw string) (string, error) {
 
 func init() {
 	okrProgressCmd.AddCommand(okrProgressCreateCmd)
+	okrProgressCreateCmd.Flags().Bool("dry-run", false, "只预览请求，不执行")
 
 	okrProgressCreateCmd.Flags().String("objective-id", "", "目标 ID（与 --key-result-id 二选一）")
 	okrProgressCreateCmd.Flags().String("key-result-id", "", "关键结果 ID（与 --objective-id 二选一）")

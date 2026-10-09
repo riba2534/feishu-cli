@@ -71,6 +71,10 @@ var approvalInstanceCreateCmd = &cobra.Command{
 			UUID:             uuid,
 		}
 
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return approvalWriteDryRun(cmd, "approval instance create", "create", opts)
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -98,6 +102,7 @@ var approvalInstanceCreateCmd = &cobra.Command{
 
 func init() {
 	approvalInstanceCmd.AddCommand(approvalInstanceCreateCmd)
+	approvalInstanceCreateCmd.Flags().Bool("dry-run", false, "只预览请求，不执行（不联网、不解析身份）")
 
 	approvalInstanceCreateCmd.Flags().String("approval-code", "", "审批定义 code（必填）")
 	approvalInstanceCreateCmd.Flags().String("form", "", "表单数据 JSON 字符串（与 --form-file 二选一）")

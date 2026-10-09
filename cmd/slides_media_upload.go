@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -22,11 +22,11 @@ var slidesMediaUploadCmd = &cobra.Command{
 
 参数:
   --file                本地图片路径（必填，≤ 20 MB）
-  --presentation-token  目标演示文稿的 xml_presentation_id（必填）
+  --presentation-token  目标演示文稿的 xml_presentation_id、/slides/ URL 或 /wiki/ URL（必填）
   --output, -o          输出格式，可选 json
 
 注意:
-  - slides 后端根据 presentation_id 自动选择 parent_type：普通 deck 为 slide_file，导入型 Office deck（fake_office_ 前缀）为 office_slide_file
+  - slides 后端根据 presentation_id 自动选择 parent_type：普通 deck 为 slide_file，导入型 Office deck（fake_office_/local_office_ 前缀，或长度 ≥25 且第 5/10/15/20/25 位依次为 OFL0X）为 office_slide_file
   - 多分片上传不支持 slide_file / office_slide_file，所以单文件上限 20 MB
   - 权限: docs:document.media:upload
 
@@ -48,11 +48,18 @@ var slidesMediaUploadCmd = &cobra.Command{
 		if presentationToken == "" {
 			return fmt.Errorf("--presentation-token 不能为空")
 		}
-
-		stat, err := os.Stat(filePath)
+		// 本地文件先于任何网络请求（含 wiki 链接解析）校验：敏感目录、不存在、是目录均为用法错误
+		stat, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("读取文件失败: %w", err)
+			return fmt.Errorf("--file 无效: %w", err)
 		}
+		// 与其他 slides 命令一致：接受 URL / wiki URL；图片必须上传到真实演示文稿（parent_node 不能是 wiki 节点 token）
+		resolved, err := resolvePresentationArg(presentationToken, userAccessToken)
+		if err != nil {
+			return err
+		}
+		presentationToken = resolved
+
 		if !stat.Mode().IsRegular() {
 			return fmt.Errorf("--file 必须是普通文件: %s", filePath)
 		}

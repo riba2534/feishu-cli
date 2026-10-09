@@ -8,19 +8,21 @@ import (
 )
 
 var sheetCopySheetCmd = &cobra.Command{
-	Use:   "copy-sheet <spreadsheet_token> <source_sheet_id>",
+	Use:   "copy-sheet <spreadsheet_token|url> <source_sheet_id>",
 	Short: "复制工作表",
 	Long:  "复制电子表格中的指定工作表",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		spreadsheetToken := args[0]
 		sourceSheetID := args[1]
 		newTitle, _ := cmd.Flags().GetString("title")
 		output, _ := cmd.Flags().GetString("output")
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		target, err := newSheetTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
 
-		info, err := client.CopySheet(client.Context(), spreadsheetToken, sourceSheetID, newTitle, userAccessToken)
+		info, err := client.CopySheet(client.Context(), target.Token, sourceSheetID, newTitle, target.UAT)
 		if err != nil {
 			return err
 		}

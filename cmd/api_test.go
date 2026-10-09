@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -284,64 +286,84 @@ func TestIsValidHTTPMethod(t *testing.T) {
 	}
 }
 
-func TestDetectFeishuBizError(t *testing.T) {
+// TestAPIBizErrorDiagnostics 验证 api 业务错误由根命令渲染修复建议与诊断（stderr），
+// 错误主文本保持 "飞书业务错误: code=N, msg=M"。
+func TestAPIBizErrorDiagnostics(t *testing.T) {
+	resetAPIFlags()
+	defer resetAPIFlags()
+	t.Setenv("FEISHU_APP_ID", "cli_test_app")
+	t.Setenv("FEISHU_APP_SECRET", "test_secret")
+	t.Setenv("FEISHU_BASE_URL", "")
+	initTestConfig(t)
 	tests := []struct {
-		name       string
-		body       []byte
-		wantHint   string
-		wantNohint bool
+		name      string
+		body      string
+		wantLines []string
+		notLines  []string
 	}{
 		{
-			name:       "code 0 不提示",
-			body:       []byte(`{"code":0,"msg":"success"}`),
-			wantNohint: true,
+			name:      "99991679 用户未授权 → auth login --scope 最窄 scope",
+			body:      `{"code":99991679,"msg":"Unauthorized.","error":{"permission_violations":[{"subject":"okr:okr.period:readonly"},{"subject":"okr:okr"}]}}`,
+			wantLines: []string{`auth login --scope "okr:okr.period:readonly"`, "所需 scope（满足其一即可）: okr:okr.period:readonly, okr:okr"},
 		},
 		{
-			name:       "非 JSON 不提示",
-			body:       []byte(`<html>nope</html>`),
-			wantNohint: true,
+			name:      "99991672 应用未开通 → 指向开放平台，不提示重新登录修复",
+			body:      `{"code":99991672,"msg":"Access denied.","error":{"log_id":"LOGID123","permission_violations":[{"subject":"okr:okr:readonly"}]}}`,
+			wantLines: []string{"开放平台", "https://open.feishu.cn/app/cli_test_app/auth?q=okr%3Aokr%3Areadonly", "重新 auth login 无法解决", "log_id: LOGID123"},
+			notLines:  []string{"auth login --recommend"},
 		},
 		{
-			name:     "scope 不足 99991679 给登录提示",
-			body:     []byte(`{"code":99991679,"msg":"Unauthorized."}`),
-			wantHint: "auth login",
+			name:      "99991668 not support → --as bot",
+			body:      `{"code":99991668,"msg":"user access token not support"}`,
+			wantLines: []string{"--as bot"},
 		},
 		{
-			name:     "限流 99991400 给限流提示",
-			body:     []byte(`{"code":99991400,"msg":"frequency limit"}`),
-			wantHint: "限流",
+			name:      "99991668 token 无效 → 重新登录",
+			body:      `{"code":99991668,"msg":"Invalid access token for authorization."}`,
+			wantLines: []string{"auth login"},
+			notLines:  []string{"--as bot"},
 		},
 		{
-			name:     "外部群 232033 指向现有排错文档",
-			body:     []byte(`{"code":232033,"msg":"forbidden"}`),
-			wantHint: "skills/feishu-cli-messaging/references/workflows/chat/references/external-chat.md",
+			name:      "230001 是参数无效，不是 scope 不足",
+			body:      `{"code":230001,"msg":"param is invalid"}`,
+			wantLines: []string{"参数无效"},
+			notLines:  []string{"scope"},
 		},
 		{
-			name:     "未知 code 至少打印 code+msg",
-			body:     []byte(`{"code":12345,"msg":"unknown"}`),
-			wantHint: "code=12345",
+			name:      "限流 99991400",
+			body:      `{"code":99991400,"msg":"frequency limit"}`,
+			wantLines: []string{"限流"},
 		},
 		{
-			name:       "空 body 不提示",
-			body:       []byte{},
-			wantNohint: true,
+			name:      "外部群 232033 指向现有排错文档",
+			body:      `{"code":232033,"msg":"forbidden"}`,
+			wantLines: []string{"skills/feishu-cli-messaging/references/workflows/chat/references/external-chat.md"},
+		},
+		{
+			name:      "字段校验与 log_id 不再丢失",
+			body:      `{"code":99992402,"msg":"field validation failed","error":{"log_id":"LOG42","field_violations":[{"field":"document_id","description":"the min len is 27"}]}}`,
+			wantLines: []string{"字段校验: document_id: the min len is 27", "log_id: LOG42"},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := detectFeishuBizError(200, tc.body)
-			if tc.wantNohint {
-				if got != "" {
-					t.Errorf("期望空字符串，得到 %q", got)
+			err := emitAPIError([]byte(tc.body), client.ParseAPIResponse("", http.StatusBadRequest, nil, []byte(tc.body)))
+			if err == nil {
+				t.Fatal("业务错误应返回非 nil")
+			}
+			if !strings.HasPrefix(err.Error(), "飞书业务错误: code=") {
+				t.Fatalf("错误主文本应保持原格式，得到 %q", err.Error())
+			}
+			rendered := strings.Join(renderErrorDiagnostics(err), "\n")
+			for _, want := range tc.wantLines {
+				if !strings.Contains(rendered, want) {
+					t.Errorf("诊断应包含 %q，实际:\n%s", want, rendered)
 				}
-				return
 			}
-			if got == "" {
-				t.Errorf("期望 hint 包含 %q，得到空", tc.wantHint)
-				return
-			}
-			if !strings.Contains(got, tc.wantHint) {
-				t.Errorf("hint = %q，期望包含 %q", got, tc.wantHint)
+			for _, not := range tc.notLines {
+				if strings.Contains(rendered, not) {
+					t.Errorf("诊断不应包含 %q，实际:\n%s", not, rendered)
+				}
 			}
 		})
 	}
@@ -492,6 +514,9 @@ func TestRunAPI_PreflightValidation(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.wantErrSub) {
 				t.Errorf("错误信息 = %q，期望包含 %q", err.Error(), tc.wantErrSub)
+			}
+			if got := exitCodeFor(err); got != 2 {
+				t.Errorf("参数校验失败应为用法错误（退出码 2），得到 %d", got)
 			}
 			if hits := atomic.LoadInt32(&serverHits); hits != 0 {
 				t.Errorf("前置验证失败时不应发出任何网络请求，实际收到 %d 次请求", hits)
@@ -793,5 +818,41 @@ func TestParseQueryParams_RejectsTrailingJSON(t *testing.T) {
 	}
 	if got := q.Get("flag"); got != "true" {
 		t.Errorf("flag = %q, want true", got)
+	}
+}
+
+// TestRunAPI_DataKeepsLargeIntegerPrecision 验证 --data 中的大整数按原始字面量发出，
+// 不经 float64 往返舍入（19 位 ID 是飞书常见字段）。
+func TestRunAPI_DataKeepsLargeIntegerPrecision(t *testing.T) {
+	isolateAPITestEnv(t)
+	defer resetAPIFlags()
+
+	var gotBody string
+	cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/open-apis/auth/v3/tenant_access_token/internal") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","tenant_access_token":"t-fake","expire":7200}`)
+			return
+		}
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{}}`)
+	})
+	defer cleanup()
+
+	cmd := newTestAPICmd()
+	apiAs = "bot"
+	apiData = `{"id":1234567890123456789,"ratio":0.1,"n":1000000}`
+	if err := cmd.RunE(cmd, []string{"POST", "/open-apis/im/v1/messages"}); err != nil {
+		t.Fatalf("非预期错误: %v", err)
+	}
+	for _, want := range []string{"1234567890123456789", "0.1", "1000000"} {
+		if !strings.Contains(gotBody, want) {
+			t.Errorf("请求体 %q 缺少原始数字字面量 %q", gotBody, want)
+		}
+	}
+	if strings.Contains(gotBody, "e+") {
+		t.Errorf("请求体不应出现科学计数法: %q", gotBody)
 	}
 }

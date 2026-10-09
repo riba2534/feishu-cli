@@ -299,3 +299,75 @@ func TestDeviceFlowHelpers(t *testing.T) {
 		}
 	})
 }
+
+// TestRequestDeviceAuthorization_ScopeWireFormat：逗号分隔的 scope 必须以空格分隔上线，
+// 并按 token（而不是子串）判断是否已含 offline_access。
+func TestRequestDeviceAuthorization_ScopeWireFormat(t *testing.T) {
+	var gotScope string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotScope = r.PostForm.Get("scope")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"device_code":      "dc",
+			"user_code":        "ABCD1234",
+			"verification_uri": "https://accounts.feishu.cn/device",
+			"expires_in":       300,
+			"interval":         5,
+		})
+	}))
+	defer ts.Close()
+	orig := deviceAuthURLFunc
+	deviceAuthURLFunc = func(string) string { return ts.URL }
+	t.Cleanup(func() { deviceAuthURLFunc = orig })
+
+	cases := map[string]string{
+		"search:docs:read,im:message:readonly":             "search:docs:read im:message:readonly offline_access",
+		"search:docs:read offline_access search:docs:read": "search:docs:read offline_access",
+		"x:offline_access_like:read":                       "x:offline_access_like:read offline_access",
+		"":                                                 "offline_access",
+		" search:docs:read,\tim:message:readonly\n,vc:note:read": "search:docs:read im:message:readonly vc:note:read offline_access",
+	}
+	for in, want := range cases {
+		if _, err := RequestDeviceAuthorization("cli_a", "sec", "", in); err != nil {
+			t.Fatalf("%q: %v", in, err)
+		}
+		if gotScope != want {
+			t.Errorf("scope(%q) 上线为 %q，want %q", in, gotScope, want)
+		}
+	}
+}
+
+func TestUniqueScopeListSplitsCommaAndWhitespace(t *testing.T) {
+	got := UniqueScopeList("a:b:c,d:e:f  g:h:i\ta:b:c，j:k:l\n,,")
+	want := []string{"a:b:c", "d:e:f", "g:h:i", "j:k:l"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("UniqueScopeList = %v, want %v", got, want)
+	}
+	if NormalizeScopeList("a,b , a") != "a b" {
+		t.Fatalf("NormalizeScopeList = %q", NormalizeScopeList("a,b , a"))
+	}
+	matched, missing := PartitionScopes("a,b c", []string{"a", "c", "d"})
+	if strings.Join(matched, " ") != "a c" || strings.Join(missing, " ") != "d" {
+		t.Fatalf("PartitionScopes matched=%v missing=%v", matched, missing)
+	}
+}
+
+func TestPollDeviceToken_PreservesStatusMessage(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"u","refresh_token":"r","expires_in":7200,"scope":"a","status_message":"Some requested scopes were silently trimmed"}`))
+	}))
+	defer ts.Close()
+	token, err := PollDeviceToken("aid", "sec", ts.URL, "dc", 1, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token.StatusMessage != "Some requested scopes were silently trimmed" {
+		t.Fatalf("StatusMessage = %q", token.StatusMessage)
+	}
+	raw, _ := json.Marshal(token)
+	if strings.Contains(string(raw), "silently trimmed") {
+		t.Fatalf("status_message 不应落盘: %s", raw)
+	}
+}

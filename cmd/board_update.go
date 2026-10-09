@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +21,8 @@ var boardUpdateCmd = &cobra.Command{
 
 --overwrite 模式会通过服务端 overwrite: true 参数原子清空并写入新节点。
 --dry-run 模式仅预览，不实际执行。
+--client-token 幂等键（≥10 字符）：网络超时等结果未知时，用同一个值重跑不会重复建节点
+（服务端对同一 client_token 直接返回首次写入的节点 ID）。
 
 示例:
   # 从文件更新（追加模式）
@@ -27,7 +32,10 @@ var boardUpdateCmd = &cobra.Command{
   cat nodes.json | feishu-cli board update BOARD_ID --stdin --overwrite
 
   # 预览覆盖操作
-  feishu-cli board update BOARD_ID nodes.json --overwrite --dry-run`,
+  feishu-cli board update BOARD_ID nodes.json --overwrite --dry-run
+
+  # 带幂等键写入（结果未知时原样重跑）
+  feishu-cli board update BOARD_ID nodes.json --client-token fp-nodes-20260101-001`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -40,6 +48,17 @@ var boardUpdateCmd = &cobra.Command{
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		snapshotPath, _ := cmd.Flags().GetString("snapshot")
 		output, _ := cmd.Flags().GetString("output")
+		clientToken, _ := cmd.Flags().GetString("client-token")
+		clientToken = strings.TrimSpace(clientToken)
+		if err := client.ValidateBoardClientToken(clientToken); err != nil {
+			return clierr.Usage(err)
+		}
+		if snapshotPath != "" {
+			// 快照路径在任何网络请求之前校验，避免先改远端画板再发现本地写不了
+			if err := validateOutputPath(snapshotPath, ""); err != nil {
+				return err
+			}
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		// 1. 读取节点 JSON（从文件或 stdin）
@@ -51,7 +70,7 @@ var boardUpdateCmd = &cobra.Command{
 			}
 			nodesJSON = string(data)
 		} else if len(args) >= 2 {
-			data, err := os.ReadFile(args[1])
+			data, err := readLocalInputFile(args[1])
 			if err != nil {
 				return fmt.Errorf("读取节点文件失败: %w", err)
 			}
@@ -80,7 +99,7 @@ var boardUpdateCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("快照导出失败: %w", err)
 			}
-			if err := os.WriteFile(snapshotPath, raw, 0644); err != nil {
+			if err := safefile.AtomicWriteFile(snapshotPath, raw, 0o644); err != nil {
 				return fmt.Errorf("写入快照文件失败: %w", err)
 			}
 			fmt.Fprintf(os.Stderr, "已导出旧画板快照 → %s（用于本地备份）\n", snapshotPath)
@@ -90,6 +109,7 @@ var boardUpdateCmd = &cobra.Command{
 		newNodeIDs, err := client.CreateBoardNodes(whiteboardID, nodesJSON, client.CreateBoardNotesOptions{
 			UserAccessToken: userAccessToken,
 			Overwrite:       overwrite,
+			ClientToken:     clientToken,
 		})
 		if err != nil {
 			return fmt.Errorf("更新画板节点失败: %w", err)
@@ -102,6 +122,9 @@ var boardUpdateCmd = &cobra.Command{
 				"new_node_ids":  newNodeIDs,
 				"created_count": len(newNodeIDs),
 				"overwrite":     overwrite,
+			}
+			if clientToken != "" {
+				result["client_token"] = clientToken
 			}
 			return printJSON(result)
 		}
@@ -146,14 +169,26 @@ func extractBoardNodeIDs(whiteboardID, userAccessToken string) ([]string, error)
 		return nil, fmt.Errorf("获取节点失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
+	return parseBoardNodeIDs(resp.Data.Nodes)
+}
+
+// parseBoardNodeIDs 从 data.nodes 中提取节点 ID。
+// 空画板的响应是 {"code":0,"data":{}}——没有 nodes 字段（官方 483043c8 同样按空处理），
+// 此时 RawMessage 为空，必须直接返回空列表，不能交给 json.Unmarshal（会报 unexpected end of JSON input）。
+func parseBoardNodeIDs(raw json.RawMessage) ([]string, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return []string{}, nil
+	}
+
 	// nodes 可能是 map[string]any 格式（key 就是 node ID）
 	var nodesMap map[string]json.RawMessage
-	if err := json.Unmarshal(resp.Data.Nodes, &nodesMap); err != nil {
+	if err := json.Unmarshal(raw, &nodesMap); err != nil {
 		// 也可能是数组格式，尝试解析为数组
 		var nodesArray []struct {
 			ID string `json:"id"`
 		}
-		if err2 := json.Unmarshal(resp.Data.Nodes, &nodesArray); err2 != nil {
+		if err2 := json.Unmarshal(raw, &nodesArray); err2 != nil {
 			return nil, fmt.Errorf("解析节点数据失败: map 解析=%w, 数组解析=%v", err, err2)
 		}
 		ids := make([]string, 0, len(nodesArray))
@@ -178,6 +213,7 @@ func init() {
 	boardUpdateCmd.Flags().Bool("overwrite", false, "原子覆盖模式（服务端 overwrite: true）")
 	boardUpdateCmd.Flags().Bool("dry-run", false, "仅预览，不实际执行")
 	boardUpdateCmd.Flags().String("snapshot", "", "执行 --overwrite 前把旧节点导出到此路径（用于本地备份）")
+	boardUpdateCmd.Flags().String("client-token", "", "幂等键（≥10 字符；结果未知时用同一个值重跑不会重复建节点）")
 	boardUpdateCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	boardUpdateCmd.Flags().String("user-access-token", "", "User Access Token")
 }

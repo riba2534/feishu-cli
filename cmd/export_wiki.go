@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -53,8 +53,16 @@ var exportWikiCmd = &cobra.Command{
 		}
 
 		// 解析 node_token
-		nodeToken, err := extractWikiToken(args[0])
+		nodeToken, err := extractWikiLookupToken(args[0])
 		if err != nil {
+			return err
+		}
+
+		// 本地输出位置在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
+		outputPath, _ := cmd.Flags().GetString("output")
+		downloadImages, _ := cmd.Flags().GetBool("download-images")
+		assetsDir, _ := cmd.Flags().GetString("assets-dir")
+		if err := validateDocExportPaths(outputPath, assetsDir, downloadImages); err != nil {
 			return err
 		}
 
@@ -63,7 +71,7 @@ var exportWikiCmd = &cobra.Command{
 
 		// 1. 获取节点信息
 		fmt.Printf("正在获取节点信息: %s\n", nodeToken)
-		node, err := client.GetWikiNode(nodeToken, userAccessToken)
+		node, err := client.ResolveWikiNode(nodeToken, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -92,14 +100,13 @@ var exportWikiCmd = &cobra.Command{
 		}
 
 		// 5. 保存文件
-		outputPath, _ := cmd.Flags().GetString("output")
 		if outputPath == "" {
-			// 使用标题作为文件名
+			// 使用标题作为文件名（标题来自远端，收敛为单段文件名，防止含 "/" 时越出 /tmp）
 			safeTitle := node.Title
 			if safeTitle == "" {
 				safeTitle = nodeToken
 			}
-			outputPath = fmt.Sprintf("/tmp/%s.md", safeTitle)
+			outputPath = filepath.Join("/tmp", safeOutputPath(safeTitle, "")+".md")
 		}
 
 		// 路径安全检查
@@ -110,13 +117,13 @@ var exportWikiCmd = &cobra.Command{
 		// 确保目录存在（使用 0700 权限保护）
 		dir := filepath.Dir(outputPath)
 		if dir != "" && dir != "." {
-			if err := os.MkdirAll(dir, 0700); err != nil {
+			if err := safefile.MkdirAll(dir, 0700); err != nil {
 				return fmt.Errorf("创建目录失败: %w", err)
 			}
 		}
 
-		// 使用 0600 权限保护导出文件
-		if err := os.WriteFile(outputPath, []byte(markdown), 0600); err != nil {
+		// 使用 0600 权限保护导出文件（原子写，失败不留半截文件）
+		if err := safefile.AtomicWriteFile(outputPath, []byte(markdown), 0600); err != nil {
 			return fmt.Errorf("写入文件失败: %w", err)
 		}
 
