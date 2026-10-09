@@ -112,9 +112,9 @@ feishu-cli doc import ./document.md --document-id <document_id>
 导出端生成的扩展标签在导入时会被识别，也可手写用于精确控制块类型。块级标签必须**开标签独占一行、内容另起一行**，
 写在同一行（`<callout type="NOTE">内容</callout>`）时只会得到一段普通文字。
 
-| 标签 | 导入结果（实测） |
+| 标签 | 导入结果（除标注外均为 2026-10 实测） |
 |---|---|
-| `<mention-user id="ou_xxx"/>`、`<mention-doc token="xxx" type="docx">标题</mention-doc>` | 行内 @用户 / @文档 |
+| `<mention-user id="ou_xxx"/>`、`<mention-doc token="xxx" type="docx">标题</mention-doc>` | 行内 @用户 / @文档（未实测，按源码） |
 | 多行 `<callout type="NOTE" color="7">`…`</callout>` | 高亮块；`color` 为背景色枚举原值（1-14），优先于 `type`；内容按纯文本处理 |
 | `<whiteboard type="blank"/>`（不带 token） | 新建空白画板 |
 | `<sheet rows="5" cols="5"/>` | 新建空电子表格块 |
