@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -56,21 +57,21 @@ var markdownCreateCmd = &cobra.Command{
 			return err
 		}
 		if contentChanged && fileChanged {
-			return fmt.Errorf("--content 与 --content-file/--file 不能同时使用")
+			return clierr.Usagef("--content 与 --content-file/--file 不能同时使用")
 		}
 		if !contentChanged && !fileChanged {
-			return fmt.Errorf("请提供 --content 或 --content-file")
+			return clierr.Usagef("请提供 --content 或 --content-file")
 		}
 		folderToken = strings.TrimSpace(folderToken)
 		wikiToken = strings.TrimSpace(wikiToken)
 		if cmd.Flags().Changed("folder-token") && folderToken == "" {
-			return fmt.Errorf("--folder-token 不能为空；省略该 flag 以上传到 Drive 根目录")
+			return clierr.Usagef("--folder-token 不能为空；省略该 flag 以上传到 Drive 根目录")
 		}
 		if cmd.Flags().Changed("wiki-token") && wikiToken == "" {
-			return fmt.Errorf("--wiki-token 不能为空")
+			return clierr.Usagef("--wiki-token 不能为空")
 		}
 		if folderToken != "" && wikiToken != "" {
-			return fmt.Errorf("--folder-token 与 --wiki-token 互斥")
+			return clierr.Usagef("--folder-token 与 --wiki-token 互斥")
 		}
 
 		fileName, err := markdownCreateSpecName(name, contentFile)
@@ -84,10 +85,10 @@ var markdownCreateCmd = &cobra.Command{
 		} else {
 			stat, err := os.Stat(contentFile)
 			if err != nil {
-				return fmt.Errorf("读取本地文件失败: %w", err)
+				return clierr.Usagef("读取本地文件失败: %w", err)
 			}
 			if stat.IsDir() {
-				return fmt.Errorf("--content-file 必须指向文件，不是目录")
+				return clierr.Usagef("--content-file 必须指向文件，不是目录")
 			}
 			if err := validateMarkdownFileName(fileName, "--name"); err != nil {
 				return err
@@ -95,7 +96,7 @@ var markdownCreateCmd = &cobra.Command{
 			size = stat.Size()
 		}
 		if size == 0 {
-			return fmt.Errorf("Markdown 内容为空，不支持创建空 .md 文件")
+			return clierr.Usagef("Markdown 内容为空，不支持创建空 .md 文件")
 		}
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
