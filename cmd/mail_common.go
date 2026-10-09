@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -420,6 +421,31 @@ func ensureForwardSubject(original string) string {
 	return "Fwd: " + original
 }
 
+// mailReadFormats 是 messages.get / threads.get / messages.batch_get 的 format 取值（服务端 enum）。
+// 服务端不接受 raw；需要 API 原始 base64url 正文时用 --raw-body。
+var mailReadFormats = []string{"full", "plain_text_full", "metadata"}
+
+// mailReadFormatHelp 是 --format 的 flag 帮助（与 mailReadFormats 保持一致）。
+const mailReadFormatHelp = "格式: full / plain_text_full / metadata"
+
+// normalizeMailReadFormat 校验 --format；空串视为 full。非法取值为用法错误（exit 2）。
+func normalizeMailReadFormat(format string) (string, error) {
+	f := strings.TrimSpace(format)
+	if f == "" {
+		return "full", nil
+	}
+	for _, v := range mailReadFormats {
+		if f == v {
+			return f, nil
+		}
+	}
+	hint := ""
+	if strings.EqualFold(f, "raw") {
+		hint = "；需要 API 原始 base64url 正文请加 --raw-body"
+	}
+	return "", clierr.Usagef("--format 仅支持 %s，得到 %q%s", strings.Join(mailReadFormats, " / "), format, hint)
+}
+
 // resolveMailReadIdentity 解析 Mail 读命令的身份与 mailbox。
 // 返回: token（空字符串表示 Bot，非空表示 User Token）, 规范化的 mailbox, error。
 // 规则：
@@ -434,9 +460,13 @@ func resolveMailReadIdentity(cmd *cobra.Command) (string, string, error) {
 	mailbox, _ := cmd.Flags().GetString("mailbox")
 	mailbox = strings.TrimSpace(mailbox)
 	if token == "" {
-		// Bot 身份
+		// Bot 身份：参数组合不合法，属于用法错误（exit 2），在任何网络请求前拒绝
 		if mailbox == "" || mailbox == "me" {
-			return "", "", fmt.Errorf("Bot 身份（--as bot）不支持 mailbox=\"me\"，请通过 --mailbox 指定具体邮箱地址（如 user@example.com）")
+			as, _ := cmd.Flags().GetString("as")
+			if a := strings.ToLower(strings.TrimSpace(as)); a == "" || a == "auto" {
+				return "", "", clierr.Usagef("未配置 User Token，--as auto 回退为 Bot 身份，而 Bot 身份不支持 mailbox=\"me\"：请通过 --mailbox 指定具体邮箱地址（如 user@example.com），或先 `feishu-cli auth login` 以本人身份读取")
+			}
+			return "", "", clierr.Usagef("Bot 身份（--as bot）不支持 mailbox=\"me\"，请通过 --mailbox 指定具体邮箱地址（如 user@example.com）")
 		}
 	} else {
 		// User 身份

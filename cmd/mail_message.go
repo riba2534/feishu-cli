@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -23,8 +23,8 @@ var mailMessageCmd = &cobra.Command{
 
 可选:
   --mailbox    邮箱地址（默认 me，即当前登录用户）
-  --format     full / plain_text_full / raw（默认 full）
-  --raw-body   保留 API 原始 base64url 正文（不解码）
+  --format     full / plain_text_full / metadata（默认 full；metadata 只返回元信息不含正文）
+  --raw-body   保留 API 原始 base64url 正文（不解码；服务端没有 raw 格式）
   -o json      JSON 格式输出
 
 示例:
@@ -34,18 +34,24 @@ var mailMessageCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token, mailbox, err := resolveMailReadIdentity(cmd)
-		if err != nil {
-			return err
-		}
 
 		messageID, _ := cmd.Flags().GetString("message-id")
 		format, _ := cmd.Flags().GetString("format")
 		output, _ := cmd.Flags().GetString("output")
 		rawBody, _ := cmd.Flags().GetBool("raw-body")
 
+		// 本地参数校验前置（用法错误 exit 2），再解析身份
 		if messageID == "" {
-			return fmt.Errorf("--message-id 必填")
+			return clierr.Usagef("--message-id 必填")
+		}
+		format, err := normalizeMailReadFormat(format)
+		if err != nil {
+			return err
+		}
+
+		token, mailbox, err := resolveMailReadIdentity(cmd)
+		if err != nil {
+			return err
 		}
 
 		data, err := client.GetMailMessage(mailbox, messageID, format, token)
@@ -69,7 +75,7 @@ func init() {
 	mailCmd.AddCommand(mailMessageCmd)
 	mailMessageCmd.Flags().String("mailbox", "me", "邮箱地址（默认 me）")
 	mailMessageCmd.Flags().String("message-id", "", "邮件 message_id（必填）")
-	mailMessageCmd.Flags().String("format", "full", "格式: full/plain_text_full/raw")
+	mailMessageCmd.Flags().String("format", "full", mailReadFormatHelp)
 	mailMessageCmd.Flags().String("as", "auto", "身份选择: bot | user | auto（默认 auto）")
 	mailMessageCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailMessageCmd.Flags().Bool("raw-body", false, "保留 API 原始 base64url 编码的正文字段（默认解码为明文）")

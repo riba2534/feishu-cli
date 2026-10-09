@@ -1,11 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -18,14 +18,14 @@ import (
 func parseMailMessageIDs(raw string) ([]string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return nil, fmt.Errorf("--message-ids 至少需要一个 ID")
+		return nil, clierr.Usagef("--message-ids 至少需要一个 ID")
 	}
 	parts := strings.Split(trimmed, ",")
 	res := make([]string, 0, len(parts))
 	for i, part := range parts {
 		item := strings.TrimSpace(part)
 		if item == "" {
-			return nil, fmt.Errorf("--message-ids 包含空的邮件 ID（第 %d 项为空）", i+1)
+			return nil, clierr.Usagef("--message-ids 包含空的邮件 ID（第 %d 项为空）", i+1)
 		}
 		res = append(res, item)
 	}
@@ -44,7 +44,7 @@ var mailMessagesCmd = &cobra.Command{
 
 可选:
   --mailbox    默认 me（Bot 身份需显式指定具体邮箱地址）
-  --format     full / plain_text_full（默认 full）
+  --format     full / plain_text_full / metadata（默认 full；metadata 只返回元信息不含正文）
   --raw-body   保留 API 原始 base64url 正文（不解码）
   --as         身份选择: bot | user | auto（默认 auto）
   -o json      JSON 格式
@@ -67,15 +67,13 @@ var mailMessagesCmd = &cobra.Command{
 			return err
 		}
 
-		if format == "" {
-			format = "full"
-		}
-		if format != "full" && format != "plain_text_full" {
-			return fmt.Errorf("--format 仅支持 full|plain_text_full，得到 %q", format)
+		format, err = normalizeMailReadFormat(format)
+		if err != nil {
+			return err
 		}
 
 		if output != "" && output != "json" {
-			return fmt.Errorf("-o/--output 仅支持 json，得到 %q", output)
+			return clierr.Usagef("-o/--output 仅支持 json，得到 %q", output)
 		}
 
 		// 2. 身份解析（仅在本地参数校验全绿后才执行，避免非法输入触发 token 刷新）
@@ -105,7 +103,7 @@ func init() {
 	mailCmd.AddCommand(mailMessagesCmd)
 	mailMessagesCmd.Flags().String("mailbox", "me", "邮箱地址（默认 me）")
 	mailMessagesCmd.Flags().String("message-ids", "", "邮件 ID 列表，逗号分隔（必填）")
-	mailMessagesCmd.Flags().String("format", "full", "格式: full/plain_text_full")
+	mailMessagesCmd.Flags().String("format", "full", mailReadFormatHelp)
 	mailMessagesCmd.Flags().String("as", "auto", "身份选择: bot | user | auto（默认 auto）")
 	mailMessagesCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailMessagesCmd.Flags().Bool("raw-body", false, "保留 API 原始 base64url 编码的正文字段（默认解码为明文）")
