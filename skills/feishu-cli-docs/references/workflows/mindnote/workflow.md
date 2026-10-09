@@ -25,11 +25,11 @@
 
 | 命令 | 身份 | 所需 scope |
 |---|---|---|
-| `mindnote nodes list` | 仅 User：`--as user`（默认），`auto` 等同 user，`--as bot` 以退出码 2 拒绝 | `mindnote:node:read` |
+| `mindnote nodes list` | `--as auto`（默认，User 优先、未配置回退 Bot）/ `user` / `bot` | `mindnote:node:read` |
 | `mindnote nodes create` | `--as auto`（默认，User 优先、未配置回退 Bot）/ `user` / `bot` | `mindnote:node:create` |
 
-- 身份按开放平台元数据的 accessTokens：list 为 `[user]`，create 为 `[user, tenant]`。list 未配置 User Token 时直接报错
-  （退出码 3），不会回退 Bot。
+- 身份与官方 catalog 一致：list、create 的 accessTokens 都是 `[user, tenant]`。auto 在已配置 User Token 但解析/刷新失败时
+  fail-closed，不会静默切 Bot；cron/无人值守显式 `--as bot`。
 - 应用未开通 scope 报 `99991672`（退出码 3，需应用管理员在开放平台开通并发布）；User 未授权报 `99991679`
   （退出码 3，`feishu-cli auth login --scope "mindnote:node:read mindnote:node:create"`）。先 `feishu-cli auth check --scope "mindnote:node:read"` 预检。
 - `--user-id-type open_id|union_id|user_id` 控制 @用户元素中的 ID 类型，不传由服务端按 open_id 处理。
@@ -98,7 +98,6 @@ feishu-cli mindnote nodes create "<mindnote_token>" --data @nodes.json -o json
 |---|---|---|
 | 退出码 2：`不是思维笔记（mindnote）` | wiki 节点底层是 docx/sheet 等 | 按真实类型改用对应命令 |
 | 退出码 2：`仅支持 mindnote` / `不接受部分路径` | 传了其他类型链接或残缺路径 | 传思维笔记 token、`/mindnotes/` 或 `/wiki/` 完整链接 |
-| 退出码 2：`仅支持 User 身份` | 对 `mindnote nodes list` 传了 `--as bot` | `auth login --scope "mindnote:node:read"` 后用 User 身份 |
 | 退出码 2：`--data...` | 请求体不是对象、`nodes` 为空、highlight 非法、client_token 冲突 | 按提示修正 `--data` |
 | `99992402 mindnote_id: the min len is 20` | token 被截断或传错 | 检查 token 是否完整 |
 | `3410003 resource not found` | token 不存在、当前身份无权访问，或把 wiki node_token 当成思维笔记 token | 传完整 `/wiki/` URL 或先 `drive inspect`；确认身份有权限 |
