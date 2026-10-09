@@ -172,3 +172,27 @@ func TestCalendarAttendeeRemoveDryRunMatchesRealRequest(t *testing.T) {
 		t.Fatalf("真实请求体应同时含 delete_ids 与 attendee_ids: %s", realJSON)
 	}
 }
+
+// TestTasklistListDefaultPageSize tasklist list 默认显式传 page_size=100（不传时服务端报 1470500），
+// 越界值本地用法错误（exit 2）且不发请求。
+func TestTasklistListDefaultPageSize(t *testing.T) {
+	rec := setupWorkCmdTest(t, "u-test", func(w http.ResponseWriter, r *http.Request, body string) {
+		_, _ = w.Write([]byte(`{"code":0,"msg":"ok","data":{"items":[],"has_more":false}}`))
+	})
+	if _, err := runWorkCmd(t, tasklistListCmd, nil, map[string]string{"output": "json"}); err != nil {
+		t.Fatalf("tasklist list: %v", err)
+	}
+	reqs := rec.apiReqs()
+	if len(reqs) != 1 || !strings.Contains(reqs[0].Query, "page_size=100") {
+		t.Fatalf("默认应显式传 page_size=100: %+v", reqs)
+	}
+	for _, size := range []string{"0", "101"} {
+		_, err := runWorkCmd(t, tasklistListCmd, nil, map[string]string{"page-size": size})
+		if err == nil || exitCodeFor(err) != 2 {
+			t.Fatalf("--page-size %s 应为用法错误（exit 2）: %v", size, err)
+		}
+	}
+	if n := len(rec.apiReqs()); n != 1 {
+		t.Fatalf("越界 --page-size 不应发请求，实际共 %d 个", n)
+	}
+}
