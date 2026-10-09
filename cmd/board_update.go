@@ -10,6 +10,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -52,6 +53,12 @@ var boardUpdateCmd = &cobra.Command{
 		if err := client.ValidateBoardClientToken(clientToken); err != nil {
 			return clierr.Usage(err)
 		}
+		if snapshotPath != "" {
+			// 快照路径在任何网络请求之前校验，避免先改远端画板再发现本地写不了
+			if err := validateOutputPath(snapshotPath, ""); err != nil {
+				return err
+			}
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		// 1. 读取节点 JSON（从文件或 stdin）
@@ -63,7 +70,7 @@ var boardUpdateCmd = &cobra.Command{
 			}
 			nodesJSON = string(data)
 		} else if len(args) >= 2 {
-			data, err := os.ReadFile(args[1])
+			data, err := readLocalInputFile(args[1])
 			if err != nil {
 				return fmt.Errorf("读取节点文件失败: %w", err)
 			}
@@ -92,7 +99,7 @@ var boardUpdateCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("快照导出失败: %w", err)
 			}
-			if err := os.WriteFile(snapshotPath, raw, 0644); err != nil {
+			if err := safefile.AtomicWriteFile(snapshotPath, raw, 0o644); err != nil {
 				return fmt.Errorf("写入快照文件失败: %w", err)
 			}
 			fmt.Fprintf(os.Stderr, "已导出旧画板快照 → %s（用于本地备份）\n", snapshotPath)

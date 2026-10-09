@@ -8,15 +8,25 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
 // resolveSafeLocalDir 把用户传入的 --local-dir 解为「完全解析符号链接 + 限定在 cwd 子树」的绝对路径。
 // 这是 drive pull/push/status 的安全前置：避免 `link/..` 这类路径在 walk 时被内核解析到 cwd 之外。
-func resolveSafeLocalDir(localDir string) (safeAbs, cwdAbs string, err error) {
+// 同时拒绝敏感目录（cwd 为家目录时 --local-dir .ssh 也在 cwd 子树内）：write=true（pull 写入/删除本地文件）
+// 按输出路径校验，否则（push/status 读取本地文件）按输入路径校验。需在任何网络请求之前调用。
+func resolveSafeLocalDir(localDir string, write bool) (safeAbs, cwdAbs string, err error) {
 	if localDir == "" {
-		return "", "", fmt.Errorf("--local-dir 不能为空")
+		return "", "", clierr.Usagef("--local-dir 不能为空")
+	}
+	validate := safefile.ValidateInputPath
+	if write {
+		validate = safefile.ValidateOutputPath
+	}
+	if err := validate(localDir); err != nil {
+		return "", "", err
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -31,10 +41,10 @@ func resolveSafeLocalDir(localDir string) (safeAbs, cwdAbs string, err error) {
 	// 先确保目录存在
 	info, statErr := os.Stat(localDir)
 	if statErr != nil {
-		return "", "", fmt.Errorf("--local-dir 不存在或无法访问: %w", statErr)
+		return "", "", clierr.Usage(fmt.Errorf("--local-dir 不存在或无法访问: %w", statErr))
 	}
 	if !info.IsDir() {
-		return "", "", fmt.Errorf("--local-dir 不是目录: %s", localDir)
+		return "", "", clierr.Usagef("--local-dir 不是目录: %s", localDir)
 	}
 
 	abs, err := filepath.Abs(localDir)
@@ -49,7 +59,11 @@ func resolveSafeLocalDir(localDir string) (safeAbs, cwdAbs string, err error) {
 
 	rel, err := filepath.Rel(cwdAbs, resolved)
 	if err != nil || rel == ".." || (len(rel) >= 3 && rel[:3] == "../") {
-		return "", "", fmt.Errorf("--local-dir 必须在当前工作目录子树内: %s", localDir)
+		return "", "", clierr.Usagef("--local-dir 必须在当前工作目录子树内: %s", localDir)
+	}
+	// 解析符号链接后的真实目录再校验一次（cwd 内的链接可能指向敏感目录）
+	if err := validate(resolved); err != nil {
+		return "", "", err
 	}
 	return resolved, cwdAbs, nil
 }

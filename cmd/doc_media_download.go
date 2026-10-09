@@ -66,15 +66,16 @@ var docMediaDownloadCmd = &cobra.Command{
 		extra, _ := cmd.Flags().GetString("extra")
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		if output == "" {
 			output = safeOutputPath(token, "")
 		}
 
+		// 输出路径在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
 		if err := validateOutputPath(output, ""); err != nil {
 			return fmt.Errorf("输出路径不安全: %w", err)
 		}
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 		// 显式扩展名时可在下载前就检查覆盖；无扩展名时在识别出最终文件名后再检查
 		if mediaHasExplicitExtension(output) {
 			if err := ensureNotOverwriting(output, overwrite); err != nil {

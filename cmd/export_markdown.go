@@ -74,6 +74,11 @@ docs_ai 引擎（--engine docs_ai，服务端导出，与 doc content-update / d
 			return clierr.Usagef("不支持的 --engine %q，可选 local（默认）或 docs_ai", engine)
 		}
 
+		// 本地输出路径在任何网络请求（含 token 刷新、wiki 解析）之前校验，敏感目录直接拒绝
+		if err := validateDocExportPaths(output, assetsDir, downloadImages); err != nil {
+			return err
+		}
+
 		// 获取可选的 User Access Token（用于访问无 App 权限的文档）
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
@@ -146,6 +151,21 @@ docs_ai 引擎（--engine docs_ai，服务端导出，与 doc content-update / d
 		// Output
 		return writeExportOutput(output, markdown)
 	},
+}
+
+// validateDocExportPaths 校验 doc export 的本地输出位置：-o 文件与（--download-images 时）--assets-dir。
+func validateDocExportPaths(output, assetsDir string, downloadImages bool) error {
+	if output != "" {
+		if err := validateOutputPath(output, ""); err != nil {
+			return err
+		}
+	}
+	if downloadImages {
+		if err := validateOutputPath(assetsDir, ""); err != nil {
+			return fmt.Errorf("--assets-dir 无效: %w", err)
+		}
+	}
+	return nil
 }
 
 // writeExportOutput 原子写入输出文件（或打印到 stdout）。

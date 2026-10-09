@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/riba2534/feishu-cli/internal/textutil"
 	"os"
 	"path"
@@ -76,6 +77,13 @@ var exportWikiTreeCmd = &cobra.Command{
 		if err := validateOutputPath(outputDir, ""); err != nil {
 			return fmt.Errorf("输出目录不安全: %w", err)
 		}
+		// --assets-dir 同样在任何网络请求之前校验（仅 --download-images 时使用）
+		if downloadImages, _ := cmd.Flags().GetBool("download-images"); downloadImages {
+			assetsDir, _ := cmd.Flags().GetString("assets-dir")
+			if err := validateOutputPath(assetsDir, ""); err != nil {
+				return fmt.Errorf("--assets-dir 无效: %w", err)
+			}
+		}
 
 		maxDepth, _ := cmd.Flags().GetInt("max-depth")
 		includeTypes, _ := cmd.Flags().GetStringSlice("include-types")
@@ -125,7 +133,7 @@ var exportWikiTreeCmd = &cobra.Command{
 			}
 
 			// 确保父目录存在
-			if err := os.MkdirAll(filepath.Dir(job.OutputPath), 0700); err != nil {
+			if err := safefile.MkdirAll(filepath.Dir(job.OutputPath), 0700); err != nil {
 				stats.Failed++
 				stats.Failures = append(stats.Failures, treeFailure{
 					NodeToken: job.Node.NodeToken,
@@ -162,7 +170,7 @@ var exportWikiTreeCmd = &cobra.Command{
 				markdown = makeImagePathsDocumentRelative(markdown, assetsDirOverride, job.OutputPath)
 			}
 
-			if err := os.WriteFile(job.OutputPath, []byte(markdown), 0600); err != nil {
+			if err := safefile.AtomicWriteFile(job.OutputPath, []byte(markdown), 0600); err != nil {
 				stats.Failed++
 				stats.Failures = append(stats.Failures, treeFailure{
 					NodeToken: job.Node.NodeToken,

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/riba2534/feishu-cli/internal/skillbundle"
 	"github.com/riba2534/feishu-cli/internal/skillinstall"
 	"github.com/spf13/cobra"
@@ -237,6 +238,10 @@ func runSkillsInstall(out io.Writer) error {
 	resolved, err := skillinstall.ResolveDir(dir)
 	if err != nil {
 		return err
+	}
+	// 技能目录是用户指定的写入位置：解析符号链接后拒绝 ~/.ssh、~/.feishu-cli、/etc 等敏感目录
+	if err := safefile.ValidateOutputPath(resolved.Real); err != nil {
+		return fmt.Errorf("技能目录无效: %w", err)
 	}
 	plan, err := skillinstall.BuildPlan(b, resolved, version)
 	if err != nil {

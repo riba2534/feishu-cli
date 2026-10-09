@@ -9,6 +9,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -50,6 +51,12 @@ Markdown 格式不指定 --sheet-id 时会导出所有可见工作表。
 		if !isSupportedSheetExportFormat(format) {
 			return fmt.Errorf("不支持的导出格式: %s（支持 xlsx/csv/markdown）", format)
 		}
+		// 显式输出路径在任何网络请求（含 token 刷新、wiki 解析）之前校验，敏感目录直接拒绝
+		if outputPath != "" {
+			if err := validateOutputPath(outputPath, ""); err != nil {
+				return err
+			}
+		}
 
 		// 解析身份与表格参数（支持 /sheets/、/spreadsheets/、/wiki/ URL）
 		target, err := newSheetTarget(cmd, args[0])
@@ -66,13 +73,16 @@ Markdown 格式不指定 --sheet-id 时会导出所有可见工作表。
 			return clierr.Usagef("CSV 格式导出必须指定 --sheet-id 参数（使用 feishu-cli sheet list-sheets <token> 查看工作表 ID）")
 		}
 
-		// 默认输出文件名
+		// 默认输出文件名（落在当前目录，同样在创建导出任务之前校验）
 		if outputPath == "" {
 			outputPath = spreadsheetToken + "." + sheetExportFileExt(format)
+			if err := validateOutputPath(outputPath, ""); err != nil {
+				return err
+			}
 		}
 
 		if format == "markdown" {
-			return exportSheetAsMarkdown(spreadsheetToken, sheetID, outputPath, userAccessToken, converter.FetchSheetDataForMarkdown, os.WriteFile)
+			return exportSheetAsMarkdown(spreadsheetToken, sheetID, outputPath, userAccessToken, converter.FetchSheetDataForMarkdown, safefile.AtomicWriteFile)
 		}
 
 		// 创建导出任务

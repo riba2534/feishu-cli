@@ -70,9 +70,12 @@ var driveDownloadCmd = &cobra.Command{
 			timeout = d
 		}
 
-		// 输出目标：显式文件路径可在联网前做覆盖检查
+		// 输出目标：显式文件路径可在联网前做覆盖检查；敏感目录在任何网络请求（含 token 刷新）之前拒绝
 		outputIsDir := false
 		if outputPath != "" {
+			if err := validateOutputPath(outputPath, ""); err != nil {
+				return err
+			}
 			if stat, err := os.Stat(outputPath); err == nil && stat.IsDir() {
 				outputIsDir = true
 			} else if err == nil && !overwrite {

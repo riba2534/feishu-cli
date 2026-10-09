@@ -10,6 +10,7 @@ import (
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
+	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
 
@@ -96,6 +97,13 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
+		files, _ := cmd.Flags().GetStringArray("file")
+		// 敏感目录在任何网络请求（含 wiki 链接解析）之前拒绝；存在性等检查见下方本地预检（dry-run 不要求文件存在）
+		for _, fp := range files {
+			if err := safefile.ValidateInputPath(fp); err != nil {
+				return fmt.Errorf("--file 无效: %w", err)
+			}
+		}
 		baseToken, err := resolveBaseToken(cmd)
 		if err != nil {
 			return err
@@ -103,7 +111,6 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 		tableID, _ := cmd.Flags().GetString("table-id")
 		recordID, _ := cmd.Flags().GetString("record-id")
 		fieldID, _ := cmd.Flags().GetString("field-id")
-		files, _ := cmd.Flags().GetStringArray("file")
 		if tableID == "" || recordID == "" || fieldID == "" {
 			return fmt.Errorf("--table-id / --record-id / --field-id 必填")
 		}
@@ -165,14 +172,11 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 			)
 		}
 
-		// 本地预检：文件存在、不是目录、不超过 2GB（先于任何网络请求）
+		// 本地预检：文件存在、不是目录、不超过 2GB（先于任何写操作）
 		for _, fp := range files {
-			stat, serr := os.Stat(fp)
+			stat, serr := safefile.StatInputFile(fp)
 			if serr != nil {
-				return fmt.Errorf("读取文件失败 %s: %w", fp, serr)
-			}
-			if stat.IsDir() {
-				return fmt.Errorf("--file 必须指向文件，不是目录: %s", fp)
+				return fmt.Errorf("--file 无效: %w", serr)
 			}
 			if stat.Size() > client.BitableAttachmentMaxFileSize {
 				return clierr.Usagef("文件 %s 超过多维表格附件上限 2GB", fp)
@@ -255,6 +259,13 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
+		outputPath, _ := cmd.Flags().GetString("output")
+		// 输出路径在任何网络请求（含 wiki 链接解析、token 刷新）之前校验，敏感目录直接拒绝
+		if outputPath != "" {
+			if err := validateOutputPath(outputPath, ""); err != nil {
+				return err
+			}
+		}
 		baseToken, err := resolveBaseToken(cmd)
 		if err != nil {
 			return err
@@ -262,7 +273,6 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 		tableID, _ := cmd.Flags().GetString("table-id")
 		recordID, _ := cmd.Flags().GetString("record-id")
 		fileTokens, _ := cmd.Flags().GetStringArray("file-token")
-		outputPath, _ := cmd.Flags().GetString("output")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
 		if tableID == "" || recordID == "" {
 			return fmt.Errorf("--table-id / --record-id 必填")

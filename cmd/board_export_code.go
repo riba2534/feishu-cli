@@ -51,6 +51,12 @@ var boardExportCodeCmd = &cobra.Command{
 		}
 		merge, _ := cmd.Flags().GetBool("merge")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
+		if outputPath != "" {
+			// 输出路径在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
+			if err := validateOutputPath(outputPath, ""); err != nil {
+				return err
+			}
+		}
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		raw, err := client.GetBoardNodes(whiteboardID, userAccessToken)
@@ -157,7 +163,7 @@ var boardExportCodeCmd = &cobra.Command{
 			if err := ensureBoardExportWritable(outputPath, overwrite); err != nil {
 				return err
 			}
-			if err := os.WriteFile(outputPath, []byte(content), 0644); err != nil {
+			if err := safefile.AtomicWriteFile(outputPath, []byte(content), 0o644); err != nil {
 				return fmt.Errorf("写文件失败: %w", err)
 			}
 			fmt.Printf("提取 %d 个 svg 节点 → %s（合并: %v）\n", len(items), outputPath, merge)

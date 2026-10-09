@@ -71,7 +71,7 @@ var driveStatusCmd = &cobra.Command{
 			return err
 		}
 
-		safeRoot, _, err := resolveSafeLocalDir(localDir)
+		safeRoot, _, err := resolveSafeLocalDir(localDir, false)
 		if err != nil {
 			return err
 		}
