@@ -53,6 +53,48 @@
         "不执行邮件状态修改或发送"
       ],
       "files": []
+    },
+    {
+      "id": 5,
+      "workflows": [
+        "mail"
+      ],
+      "prompt": "把收件箱里主题含“促销”的未读邮件都移到废纸篓。你在非交互环境里执行。",
+      "expected_output": "先用 triage 找出真实 message_id 并向用户确认数量，确认后用 mail message-trash --message-ids ... --yes；不用 message-modify 移到 TRASH。",
+      "expectations": [
+        "先用 mail triage（如 --query/--unread-only）获取真实 message_id，不编造 ID",
+        "删除前向用户展示目标与数量并取得确认",
+        "使用 mail message-trash 并在非交互环境带 --yes，说明不带 --yes 会以退出码 10 结束且不执行",
+        "不使用 message-modify --folder-id TRASH"
+      ],
+      "files": []
+    },
+    {
+      "id": 6,
+      "workflows": [
+        "mail"
+      ],
+      "prompt": "我刚用 mail reply 生成了回复草稿 draft_xxx，把正文改成“已确认，周五交付”，并且去掉下面引用的原邮件。先别发送。",
+      "expected_output": "使用 mail draft-edit --draft-id draft_xxx --body ... --drop-quote 局部修改，不重建草稿，不发送。",
+      "expectations": [
+        "使用 mail draft-edit 并带 --drop-quote",
+        "说明 draft-edit 只改传入字段，回复头与附件保留",
+        "不使用 --confirm-send 或 draft-send --confirm-send"
+      ],
+      "files": []
+    },
+    {
+      "id": 7,
+      "workflows": [
+        "mail"
+      ],
+      "prompt": "把这封带大附件的邮件转发给 user@example.com，只要正文，不要带原来的附件，先存草稿。",
+      "expected_output": "使用 mail forward --message-id ... --to user@example.com --no-original-attachments，默认存草稿。",
+      "expectations": [
+        "说明 forward 默认携带原附件，并使用 --no-original-attachments 关闭",
+        "默认存草稿，不使用 --confirm-send"
+      ],
+      "files": []
     }
   ]
 }
