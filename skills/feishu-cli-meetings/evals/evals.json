@@ -40,6 +40,14 @@
       "expected_output": "9 位会议号不能直接传给 meeting-events，先 vc meeting list-active 取 meeting_id 再用同一身份查事件；vc notes 的 --with-artifacts 对 --meeting-ids 无效，需要拿到 minute_token 后用 minutes get --summary。",
       "expectations": ["不把 9 位会议号当作 meeting_id 传给 meeting-events", "指出 AI 摘要需按 minute_token 获取"],
       "files": []
+    },
+    {
+      "id": 6,
+      "workflows": ["vc"],
+      "prompt": "我现在正在开会，帮我拿到这场会议的 meeting_id，然后查一下会中事件。",
+      "expected_output": "vc meeting list-active（默认 User）取 meeting_id，多个会议时让用户选；再 vc bot meeting-events --meeting-id <id> --as user 保持同一身份。",
+      "expectations": ["使用 vc meeting list-active 获取 meeting_id，默认 User 身份", "meeting-events 使用 --meeting-id 且 --as user，与 list-active 身份一致", "同时在多个会议中时先让用户选定 meeting_id，不把 9 位会议号当 meeting_id"],
+      "files": []
     }
   ]
 }

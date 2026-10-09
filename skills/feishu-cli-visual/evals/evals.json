@@ -85,6 +85,36 @@
         "不擅自重写复合节点子坐标"
       ],
       "files": []
+    },
+    {
+      "id": 7,
+      "workflows": [
+        "slides"
+      ],
+      "prompt": "在已有飞书 Slides（https://xxx.feishu.cn/slides/sldxxx）里把第 3 页整页换成 page3.xml，删掉最后一页，再截图检查第 3 页。当前是非交互环境。",
+      "expected_output": "先 slides get 定位 slide_id；整页用 slides update-slide --slide-id <id> --content @page3.xml（可先 --dry-run）；delete-slide 需用户确认后带 --yes（否则退出码 10）；最后 slides screenshot --slide-number 3。",
+      "expectations": [
+        "整页覆盖使用 slides update-slide --slide-id <slide_id> --content @page3.xml，不用元素级的 replace-slide",
+        "删除前用 slides get 确认最后一页的 slide_id，slides delete-slide 需用户同意后才带 --yes（非交互不带时退出码 10）",
+        "用 slides screenshot（--slide-number 3 或 --slide-id）检查结果",
+        "不自行补 --yes 跳过确认"
+      ],
+      "files": []
+    },
+    {
+      "id": 8,
+      "workflows": [
+        "slides"
+      ],
+      "prompt": "在演示文稿 sldxxx 末尾追加一页 page.xml（里面有 <img src=\"@./logo.png\">），再只把第 2 页标题元素 bkTitle 的文字改成“Q3 复盘”，同页其他元素不能动。先预览。",
+      "expected_output": "追加用 slides add-slide sldxxx --slide @page.xml（@图片按当前工作目录解析并先上传）；改单个元素用 slides replace-slide --slide-id <id> --parts 的 block_replace；两者先 --dry-run。",
+      "expectations": [
+        "追加页使用 slides add-slide <presentation> --slide @page.xml",
+        "说明 @./logo.png 相对当前工作目录（不是 page.xml 所在目录）解析并先上传",
+        "只改一个元素用 slides replace-slide --slide-id <slide_id> --parts，action 为 block_replace，不用 update-slide 整页覆盖",
+        "先用 --dry-run 预览请求"
+      ],
+      "files": []
     }
   ]
 }

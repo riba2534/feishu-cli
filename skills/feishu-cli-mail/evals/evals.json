@@ -95,6 +95,50 @@
         "默认存草稿，不使用 --confirm-send"
       ],
       "files": []
+    },
+    {
+      "id": 8,
+      "workflows": [
+        "mail"
+      ],
+      "prompt": "加一条收信规则：来自 noreply@example.com 的邮件自动标为已读并归档。先预览请求体，创建后先保持停用，等我确认再启用。",
+      "expected_output": "mail rule-create --name ... --condition from:contains:noreply@example.com --action mark_read --action archive --disable，先 --dry-run；rule-* 必须 User Token。",
+      "expectations": [
+        "使用 mail rule-create，条件写成 from:contains:noreply@example.com（或 from:equals:...）",
+        "动作包含 mark_read 与 archive，先用 --dry-run 预览",
+        "创建为停用用 --disable，不给 rule-create 传只属于 rule-update 的 --enable/--continue-after-match",
+        "说明 rule-* 命令（含只读的 rule-list/rule-get）都必须 User Token"
+      ],
+      "files": []
+    },
+    {
+      "id": 9,
+      "workflows": [
+        "mail"
+      ],
+      "prompt": "在非交互的 CI 脚本里把邮件线程 thread_xxx 整体标记为已读，然后移到垃圾箱。",
+      "expected_output": "先 mail thread-modify --thread-ids thread_xxx --remove-label-ids UNREAD，再 mail thread-trash --thread-ids thread_xxx；两者可先 --dry-run，thread-trash 在非交互环境需用户确认后带 --yes，否则退出码 10。",
+      "expectations": [
+        "标记已读用 mail thread-modify --thread-ids thread_xxx --remove-label-ids UNREAD，不用 --folder-id TRASH",
+        "移入垃圾箱用 mail thread-trash，非交互环境必须带 --yes，否则以退出码 10 结束且不执行",
+        "执行前用 --dry-run 预览或向用户确认线程 ID，不自行补 --yes",
+        "说明 thread-modify/thread-trash 必须 User Token，不用 --as bot"
+      ],
+      "files": []
+    },
+    {
+      "id": 10,
+      "workflows": [
+        "mail"
+      ],
+      "prompt": "给 user@example.com 写一封邮件，带上 ./report.pdf（约 12MB）和 ./deploy.sh 两个附件，先存草稿让我看。",
+      "expected_output": "使用 mail draft-create（或 send 不带 --confirm-send）加 --attach ./report.pdf；.sh 属于被拒绝的脚本类扩展名，需告知用户改为打包或放链接；整封编码后 ≤25MB。",
+      "expectations": [
+        "使用 --attach ./report.pdf 添加附件，且不使用 --confirm-send",
+        "指出 .sh 等可执行/脚本类扩展名会被拒绝，不能直接作为附件",
+        "说明附件按整封 base64 编码后 ≤25MB 计（原始约 18MB 触顶），超大文件改用云盘链接"
+      ],
+      "files": []
     }
   ]
 }
