@@ -79,6 +79,11 @@ func remoteEnabled() bool {
 	if os.Getenv("FEISHU_CLI_REMOTE_META") == "off" {
 		return false
 	}
+	// 网关模式只与 base_url 通信，不直连官方 host 拉取 overlay。
+	// Init 可能早于读取配置文件（命令注册阶段即会触发），这里只能看环境变量。
+	if gatewayEnvEnabled() {
+		return false
+	}
 	// 单元测试默认不打真实网络；显式 META_URL 或 REMOTE_META=on 才开启。
 	// 用注入式 seam（TestMain 置位 inTestBinary）而非 testing.Testing()：
 	// 后者要求生产文件 import "testing"，会把 testing 的 flag 注册链接进发布二进制。
@@ -86,6 +91,15 @@ func remoteEnabled() bool {
 		return false
 	}
 	return true
+}
+
+func gatewayEnvEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("FEISHU_GATEWAY"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // DisableRemoteForProcess 供 doctor --offline 等场景关闭远端 overlay（不影响已 Init 的结果）。

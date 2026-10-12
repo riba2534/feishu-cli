@@ -93,6 +93,21 @@ func TestRemoteOff_SkipsRemoteLogic(t *testing.T) {
 	}
 }
 
+func TestGatewayEnv_SkipsRemoteLogic(t *testing.T) {
+	tmp := isolateRemote(t)
+	t.Setenv("FEISHU_GATEWAY", "1")
+	testMetaURL = "http://127.0.0.1:9/should-not-be-called"
+	t.Cleanup(func() { testMetaURL = "" })
+	seedCache(t, tmp, "fake_remote_svc", "2.0.0", brandFeishu)
+	Init()
+	if remoteEnabled() {
+		t.Fatal("FEISHU_GATEWAY=1 时应关闭远端 overlay")
+	}
+	if _, ok := mergedServices["fake_remote_svc"]; ok {
+		t.Error("网关模式不应加载远端 overlay")
+	}
+}
+
 func TestFirstFetch_DoesNotBlockWhenEmbeddedExists(t *testing.T) {
 	isolateRemote(t)
 	// 本测试验证「后台刷新」机制：显式禁用首屏同步拉取，

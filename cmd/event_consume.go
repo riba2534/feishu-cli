@@ -111,6 +111,9 @@ var eventConsumeCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
+		if config.GatewayMode() {
+			return clierr.Usagef("网关模式下不支持 event consume：事件长连接需要本地 App Secret 并直连飞书长连接服务")
+		}
 		cfg := config.Get()
 
 		bus, err := event.NewBus(cfg.AppID)

@@ -102,10 +102,11 @@ var authTokenCmd = &cobra.Command{
 }
 
 // fetchTenantAccessToken 用 App ID + App Secret 换 tenant access token。
-// 端点: POST {accounts}/oauth/v3/token ，grant_type=client_credentials。
+// 端点: POST {accounts}/oauth/v3/token ，grant_type=client_credentials；
+// 网关模式下改为 POST {base_url}/open-apis/auth/v3/tenant_access_token/internal。
 func fetchTenantAccessToken() (string, error) {
 	cfg := config.Get()
-	if cfg.AppID == "" || cfg.AppSecret == "" {
+	if !cfg.HasAppCredentials() {
 		return "", fmt.Errorf("缺少 app_id 或 app_secret 配置")
 	}
 	return auth.FetchTenantAccessToken(cfg.AppID, cfg.AppSecret, cfg.BaseURL)

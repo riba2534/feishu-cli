@@ -160,7 +160,7 @@ func cachedTenantAccessToken() (string, error) {
 	if cfg == nil {
 		return "", fmt.Errorf("配置未初始化")
 	}
-	if cfg.AppID == "" || cfg.AppSecret == "" {
+	if !cfg.HasAppCredentials() {
 		return "", fmt.Errorf("缺少 app_id 或 app_secret 配置")
 	}
 	if err := config.CheckBaseURL(cfg.BaseURL); err != nil {

@@ -21,6 +21,7 @@ type Config struct {
 	AllowCustomBaseURL       bool         `mapstructure:"allow_custom_base_url"`
 	AllowInsecureHTTP        bool         `mapstructure:"allow_insecure_http"`
 	AllowCrossOriginRedirect bool         `mapstructure:"allow_cross_origin_redirect"`
+	Gateway                  bool         `mapstructure:"gateway"`
 	OwnerEmail               string       `mapstructure:"owner_email"`
 	TransferOwnership        bool         `mapstructure:"transfer_ownership"`
 	Debug                    bool         `mapstructure:"debug"`
@@ -115,6 +116,7 @@ func Init(cfgFile string) error {
 	viper.SetDefault("allow_custom_base_url", false)
 	viper.SetDefault("allow_insecure_http", false)
 	viper.SetDefault("allow_cross_origin_redirect", false)
+	viper.SetDefault("gateway", false)
 	viper.SetDefault("owner_email", "")
 	viper.SetDefault("transfer_ownership", false)
 	viper.SetDefault("debug", false)
@@ -134,6 +136,7 @@ func Init(cfgFile string) error {
 	_ = viper.BindEnv("allow_custom_base_url", envAllowCustomBaseURL)
 	_ = viper.BindEnv("allow_insecure_http", envAllowInsecureHTTP)
 	_ = viper.BindEnv("allow_cross_origin_redirect", envAllowCrossOriginRedirect)
+	_ = viper.BindEnv("gateway", envGateway)
 	_ = viper.BindEnv("owner_email", "FEISHU_OWNER_EMAIL")
 	_ = viper.BindEnv("transfer_ownership", "FEISHU_TRANSFER_OWNERSHIP")
 	_ = viper.BindEnv("debug", "FEISHU_DEBUG")
@@ -187,13 +190,23 @@ func Validate() error {
 	if cfg.AppID == "" {
 		return clierr.Authf("缺少 app_id，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_ID=xxx\n  3. 配置文件: %s", cfgPath)
 	}
-	if cfg.AppSecret == "" {
+	// gateway 模式下 App Secret 由网关托管，本地不需要
+	if cfg.AppSecret == "" && !GatewayMode() {
 		return clierr.Authf("缺少 app_secret，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_SECRET=xxx\n  3. 配置文件: %s", cfgPath)
 	}
 	if err := CheckBaseURL(cfg.BaseURL); err != nil {
 		return err
 	}
 	return nil
+}
+
+// HasAppCredentials 报告是否具备换取应用身份所需的本地凭证：
+// 普通模式需要 app_id + app_secret；gateway 模式只需要 app_id（App Secret 由网关托管）。
+func (c *Config) HasAppCredentials() bool {
+	if c == nil || c.AppID == "" {
+		return false
+	}
+	return c.AppSecret != "" || GatewayMode()
 }
 
 // activeConfigPathForError 返回当前 profile 的 config.yaml 路径（用于错误提示）。

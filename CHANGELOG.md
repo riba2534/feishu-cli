@@ -4,6 +4,12 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [Unreleased]
+
+### 新增
+
+- 网关模式（`FEISHU_GATEWAY=1` 或配置 `gateway: true`）：配合指向网关的 `base_url`，App Secret 与用户 refresh_token 可以只保存在服务端。开启后本地不再要求 `app_secret`；tenant token 统一经 `{base_url}/open-apis/auth/v3/tenant_access_token/internal` 换取，`auth token --as bot`、`doctor` 的 `bot_identity`、`markdown fetch --as bot` 不再直连官方 Accounts；User Token 刷新照常走 `base_url`。网关模式下拒绝直连官方 Open API / Accounts host（含重定向）、`base_url` 不能是官方地址、`FEISHU_GATEWAY=1` 同时关闭 OpenAPI 元数据远端 overlay；`auth login` 与 `event consume` 报用法错误（退出码 2），`auth logout` 跳过服务端吊销，`doctor` 的 `endpoint_open` 改为探测 `base_url`、`endpoint_larksuite` 跳过。未开启时所有行为不变。
+
 ## [v1.43.0] - 2026-10-10
 
 对照官方 CLI（larksuite/cli）补齐云文档能力。本版本只做新增：已有命令不带新参数时的默认值、身份、输出结构与退出码均保持不变。

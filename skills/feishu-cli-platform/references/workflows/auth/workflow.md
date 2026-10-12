@@ -260,6 +260,7 @@ feishu-cli auth login --recommend                                # 全部域（�
 | 退出码 `10` | 危险操作需确认、未执行：向用户说明目标与影响，获得同意后追加全局 `--yes` 重跑，不要自行添加（见 [Agent 调用契约](references/agent-contract.md)） |
 | `token.json 未绑定 app_id` | 执行 `auth token --bind-legacy-app --as user` 或重新 `auth login`，不要手改 token 文件把别的 App 填进去 |
 | `token.json 绑定的 app_id 与当前应用不一致` | 切回匹配的 `--profile` / `--bot-app-id`，或对该应用重新登录 |
+| `网关模式下不支持 auth login` / `网关模式下拒绝直连官方 host` | 当前处于网关模式（`FEISHU_GATEWAY=1` 或 `gateway: true`）：App 凭证与用户授权由网关负责，不要尝试 `auth login` 或补 `app_secret`；Bot 身份异常用 `doctor --only bot_identity,endpoint_open` 检查网关 |
 | `拒绝自定义远端 host` / `拒绝非 loopback 的 HTTP` | 默认只允许官方 HTTPS。确认不是配错 `base_url` 之后，才设 `FEISHU_ALLOW_CUSTOM_BASE_URL=1`（远端 HTTP 另需 `FEISHU_ALLOW_INSECURE_HTTP=1`） |
 
 ## 环境诊断（doctor）

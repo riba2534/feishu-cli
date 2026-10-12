@@ -251,6 +251,27 @@ feishu-cli config init  # 生成模板后手动编辑填入凭证
 
 </details>
 
+<details>
+<summary>网关模式（App Secret 由服务端托管）</summary>
+
+适用于由平台在服务端保管 App Secret 与用户 refresh_token、在飞书 Open API 前放一层网关的部署：本机只配置 `app_id` 和网关地址，真实 token 由网关换取和注入。
+
+```bash
+export FEISHU_GATEWAY=1
+export FEISHU_APP_ID="cli_xxx"
+export FEISHU_BASE_URL="http://127.0.0.1:18080"   # 网关地址；远端 host 另需 FEISHU_ALLOW_CUSTOM_BASE_URL=1
+```
+
+也可以在 `config.yaml` 中写 `gateway: true`。开启后：
+
+- 不需要 `app_secret`，`base_url` 不能是官方地址。
+- tenant token 一律经 `POST {base_url}/open-apis/auth/v3/tenant_access_token/internal` 换取（请求体为 `{"app_id": "..."}`，与 SDK 自取 token 是同一端点），`auth token --as bot`、`doctor`、`markdown fetch --as bot` 等也走网关；User Token 刷新照常走 `{base_url}/open-apis/authen/v2/oauth/token`（`client_secret` 为空）。
+- 拒绝直连官方 Open API / Accounts host（含重定向）；自定义 host、明文 HTTP、跨源重定向的 opt-in 规则不变。
+- `auth login`（Device Flow 走 Accounts）与 `event consume`（长连接需要 App Secret）不可用，`auth logout` 只清除本地 token、不在服务端吊销。用户 token 由部署方写入 `token.json` 或通过 `FEISHU_USER_ACCESS_TOKEN` 传入。
+- OpenAPI 元数据远端 overlay 在读取配置文件之前就会启动，只有环境变量 `FEISHU_GATEWAY=1` 能关闭它；只在 `config.yaml` 中开启时，请同时设置 `FEISHU_CLI_REMOTE_META=off`。
+
+</details>
+
 （可选）如果需要使用搜索、审批任务查询等需要用户身份的功能，还需完成 OAuth 用户授权：
 
 ```bash
@@ -737,7 +758,7 @@ feishu-cli auth logout
 - Token 保存在 `~/.feishu-cli/token.json`（0600，原子写入），Access Token 有效期约 2 小时
 - Access Token 过期时自动使用 Refresh Token 刷新（跨进程锁，避免两个进程消耗同一 refresh token）
 - 新登录写入的 `token.json` 带 `app_id` 绑定；与当前 App 不一致或旧文件未绑定时，**一律拒绝使用**（即使 access 仍有效）。迁移：`feishu-cli auth token --bind-legacy-app --as user`（不更换 token；不可与 `--as bot` / `--user-access-token` 同时用）或重新 `auth login`
-- `auth token --as bot` 走官方 Accounts OAuth v3 `client_credentials`；不可与 `--user-access-token` 同时使用
+- `auth token --as bot` 走官方 Accounts OAuth v3 `client_credentials`（网关模式下改经 `base_url`）；不可与 `--user-access-token` 同时使用
 - `offline_access` 由 CLI 自动追加，无需手动声明
 - Token 优先级：`--user-access-token` 参数 > `FEISHU_USER_ACCESS_TOKEN` 环境变量 > `token.json` > `config.yaml`
 - 审批任务查询会缓存当前登录用户资料到 `~/.feishu-cli/user_profile.json`，登录态变化或执行 `auth logout` 时会自动清理

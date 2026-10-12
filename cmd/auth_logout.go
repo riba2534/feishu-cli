@@ -53,6 +53,10 @@ func revokeStoredTokenBestEffort() {
 		// 无本地 token（未登录或读取失败）：无可吊销，静默跳过
 		return
 	}
+	if config.GatewayMode() {
+		fmt.Fprintln(os.Stderr, "网关模式：跳过服务端吊销（由网关负责），仅清除本地 token")
+		return
+	}
 	cfg := config.Get()
 	if cfg == nil || cfg.AppID == "" || cfg.AppSecret == "" {
 		fmt.Fprintln(os.Stderr, "警告: 缺少 app_id/app_secret，跳过服务端吊销，仅清除本地 token")

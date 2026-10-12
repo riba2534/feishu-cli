@@ -58,9 +58,9 @@ var doctorCmd = &cobra.Command{
   config_file          配置文件存在 + app_id/app_secret 非空
   user_token           token.json 存在 + 未过期
   user_identity        用户身份就绪度（token.json 存在且可刷新/未过期）
-  bot_identity         应用身份就绪度（App ID/Secret 可换取 tenant_access_token，需联网）
-  endpoint_open        open.feishu.cn HTTPS 可达
-  endpoint_larksuite   open.larksuite.com HTTPS 可达
+  bot_identity         应用身份就绪度（App ID/Secret 可换取 tenant_access_token，需联网；网关模式经 base_url 换取）
+  endpoint_open        open.feishu.cn HTTPS 可达（网关模式下探测 base_url）
+  endpoint_larksuite   open.larksuite.com HTTPS 可达（网关模式下跳过）
   proxy                HTTP(S)_PROXY 与 NO_PROXY 配置合理
   dependencies         Go 版本 / SDK 版本
   catalog              OpenAPI catalog 来源（embedded/cache/runtime）、版本、service/method 数
@@ -224,6 +224,12 @@ func checkConfigFile() checkResult {
 		return checkFail("config_file", "未找到 app_id 配置",
 			"运行 feishu-cli config init 或设置 FEISHU_APP_ID 环境变量")
 	}
+	if config.GatewayMode() {
+		if err := config.CheckBaseURL(cfg.BaseURL); err != nil {
+			return checkFail("config_file", err.Error(), "把 base_url / FEISHU_BASE_URL 指向网关")
+		}
+		return checkPass("config_file", fmt.Sprintf("app_id=%s baseURL=%s gateway=on（App Secret 由网关托管）", auth.MaskToken(cfg.AppID), cfg.BaseURL))
+	}
 	if cfg.AppSecret == "" {
 		return checkFail("config_file", "未找到 app_secret 配置",
 			"运行 feishu-cli config init 或设置 FEISHU_APP_SECRET")
@@ -297,7 +303,7 @@ func checkUserIdentity() checkResult {
 // 不发起 tenant_access_token 换取请求。
 func checkBotIdentityOffline() checkResult {
 	cfg := config.Get()
-	if cfg == nil || cfg.AppID == "" || cfg.AppSecret == "" {
+	if !cfg.HasAppCredentials() {
 		return checkFail("bot_identity", "应用身份未就绪：缺少 app_id/app_secret",
 			"配置 FEISHU_APP_ID/FEISHU_APP_SECRET 或运行 feishu-cli config init")
 	}
@@ -308,7 +314,7 @@ func checkBotIdentityOffline() checkResult {
 // 换取成功说明凭证有效、应用身份可直接用于无人值守命令（--as bot / Bot 身份）。
 func checkBotIdentity(ctx context.Context) checkResult {
 	cfg := config.Get()
-	if cfg == nil || cfg.AppID == "" || cfg.AppSecret == "" {
+	if !cfg.HasAppCredentials() {
 		return checkFail("bot_identity", "应用身份未就绪：缺少 app_id/app_secret",
 			"配置 FEISHU_APP_ID/FEISHU_APP_SECRET 或运行 feishu-cli config init")
 	}
@@ -330,11 +336,20 @@ func checkEndpoints(ctx context.Context, only map[string]bool) []checkResult {
 		{"endpoint_open", "https://open.feishu.cn"},
 		{"endpoint_larksuite", "https://open.larksuite.com"},
 	}
+	// 网关模式不直连官方 host：endpoint_open 改为探测 base_url（网关），endpoint_larksuite 跳过
+	gateway := config.GatewayMode()
+	if gateway {
+		targets[0].url = config.Get().BaseURL
+	}
 	var wg sync.WaitGroup
 	results := make([]checkResult, len(targets))
 	for i, t := range targets {
 		if !shouldRun(t.name, only) {
 			results[i] = checkSkip(t.name, "已跳过")
+			continue
+		}
+		if gateway && t.name == "endpoint_larksuite" {
+			results[i] = checkSkip(t.name, "已跳过（网关模式不直连官方 host）")
 			continue
 		}
 		wg.Add(1)
@@ -418,7 +433,7 @@ func checkCatalog() checkResult {
 		return checkFail("catalog", msg, "embedded catalog 为空；检查编译是否包含 meta_data.json，或设置 FEISHU_CLI_META_URL 拉取 overlay")
 	}
 	if !info.RemoteEnabled {
-		return checkWarn("catalog", msg, "远端 overlay 已关闭（--offline 或 FEISHU_CLI_REMOTE_META=off），使用 embedded baseline")
+		return checkWarn("catalog", msg, "远端 overlay 已关闭（--offline、FEISHU_CLI_REMOTE_META=off 或 FEISHU_GATEWAY=1），使用 embedded baseline")
 	}
 	return checkPass("catalog", msg)
 }

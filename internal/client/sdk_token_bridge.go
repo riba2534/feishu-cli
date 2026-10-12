@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	legacyTenantTokenInternalPath = "/open-apis/auth/v3/tenant_access_token/internal"
+	legacyTenantTokenInternalPath = config.TenantTokenInternalPath
 )
 
 // sdkTestTransport 仅测试注入：替换 SDK HTTP 客户端的底层 Transport。
@@ -33,6 +33,9 @@ func (t *legacyInternalTokenBridge) RoundTrip(req *http.Request) (*http.Response
 	if req != nil && isOfficialLegacyInternalTokenRequest(req) {
 		return fulfillLegacyInternalTokenViaAccountsV3(req)
 	}
+	if req != nil && isGatewayTenantTokenRequest(req) {
+		return fulfillGatewayTenantToken(req)
+	}
 	base := t.base
 	if base == nil {
 		base = http.DefaultTransport
@@ -49,6 +52,36 @@ func isOfficialLegacyInternalTokenRequest(req *http.Request) bool {
 	}
 	path := strings.TrimSuffix(req.URL.Path, "/")
 	return path == legacyTenantTokenInternalPath
+}
+
+// isGatewayTenantTokenRequest 判断网关模式下发往 base_url 的 tenant token 请求（SDK 自取或 drive 下载）。
+func isGatewayTenantTokenRequest(req *http.Request) bool {
+	if req == nil || req.URL == nil || req.Method != http.MethodPost || !config.GatewayMode() {
+		return false
+	}
+	return strings.TrimSuffix(req.URL.Path, "/") == legacyTenantTokenInternalPath
+}
+
+// fulfillGatewayTenantToken 把网关模式下的 tenant token 请求统一交给 auth.FetchTenantAccessTokenResult，
+// 保证所有路径发给网关的请求体一致，SDK 的本地占位 secret 不会被发出。
+func fulfillGatewayTenantToken(req *http.Request) (*http.Response, error) {
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, io.LimitReader(req.Body, 1<<20))
+		_ = req.Body.Close()
+	}
+	cfg := config.Get()
+	tok, err := auth.FetchTenantAccessTokenResult(req.Context(), cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+	if err != nil {
+		return sdkJSONResponse(http.StatusOK, map[string]any{
+			"code": 99991663,
+			"msg":  "换取 tenant_access_token 失败: " + err.Error(),
+		})
+	}
+	return sdkJSONResponse(http.StatusOK, map[string]any{
+		"code":                0,
+		"expire":              tok.ExpiresIn,
+		"tenant_access_token": tok.AccessToken,
+	})
 }
 
 func fulfillLegacyInternalTokenViaAccountsV3(req *http.Request) (*http.Response, error) {

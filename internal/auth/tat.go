@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -56,7 +57,8 @@ func DefaultTATEndpoint(baseURL string) string {
 	return strings.TrimRight(config.ResolveAccountsBase(baseURL), "/") + config.OAuthTokenV3Path
 }
 
-// FetchTenantAccessToken 用 client_credentials 向官方 Accounts OAuth v3 换取 tenant access token。
+// FetchTenantAccessToken 用 client_credentials 向官方 Accounts OAuth v3 换取 tenant access token；
+// 网关模式下改经 base_url 换取（见 fetchTenantAccessTokenViaGateway）。
 func FetchTenantAccessToken(appID, appSecret, baseURL string) (string, error) {
 	tok, err := FetchTenantAccessTokenResult(runctx.Root(), appID, appSecret, baseURL)
 	if err != nil {
@@ -124,11 +126,14 @@ func validateTATExpiresIn(expiresIn int) error {
 }
 
 func fetchTenantAccessToken(ctx context.Context, httpClient *http.Client, appID, appSecret, baseURL string) (*TenantAccessToken, error) {
-	if appID == "" || appSecret == "" {
-		return nil, fmt.Errorf("缺少 app_id 或 app_secret 配置")
-	}
 	if httpClient == nil {
 		httpClient = config.NewHTTPClient(tatHTTPTimeout)
+	}
+	if config.GatewayMode() {
+		return fetchTenantAccessTokenViaGateway(ctx, httpClient, appID, appSecret, baseURL)
+	}
+	if appID == "" || appSecret == "" {
+		return nil, fmt.Errorf("缺少 app_id 或 app_secret 配置")
 	}
 	endpoint := TATEndpointFunc(baseURL)
 	u, err := url.Parse(endpoint)
@@ -144,33 +149,9 @@ func fetchTenantAccessToken(ctx context.Context, httpClient *http.Client, appID,
 	form.Set("client_id", appID)
 	form.Set("client_secret", appSecret)
 
-	var resp *http.Response
-	for attempt := 1; ; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
-		if err != nil {
-			return nil, fmt.Errorf("构造 tenant token 请求失败: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-		resp, err = httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("请求 tenant token 失败: %w", err)
-		}
-		// 429 限流：按 Retry-After（上限 tatMaxRetryAfter）等待后重试一次
-		if resp.StatusCode != http.StatusTooManyRequests || attempt >= 2 {
-			break
-		}
-		wait := parseRetryAfter(resp.Header.Get("Retry-After"))
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxAuthResponseBytes))
-		resp.Body.Close()
-		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) <= wait {
-			return nil, fmt.Errorf("获取 tenant_access_token 被限流（HTTP 429），Retry-After=%s 超过剩余超时，请稍后重试", wait)
-		}
-		select {
-		case <-time.After(wait):
-		case <-ctx.Done():
-			return nil, fmt.Errorf("请求 tenant token 失败: %w", ctx.Err())
-		}
+	resp, err := postTATWithRetry(ctx, httpClient, endpoint, "application/x-www-form-urlencoded", []byte(form.Encode()))
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -204,6 +185,103 @@ func fetchTenantAccessToken(ctx context.Context, httpClient *http.Client, appID,
 	}
 
 	return nil, classifyTATFailure(resp.StatusCode, body)
+}
+
+// gatewayTATResponse 是 Open API 自建应用 tenant_access_token 端点的响应。
+type gatewayTATResponse struct {
+	Code              int    `json:"code"`
+	Msg               string `json:"msg"`
+	TenantAccessToken string `json:"tenant_access_token"`
+	Expire            int    `json:"expire"`
+}
+
+// fetchTenantAccessTokenViaGateway 在网关模式下经 base_url 换取 tenant token：
+// POST {base_url}/open-apis/auth/v3/tenant_access_token/internal，与 SDK 自取 token 是同一个端点，
+// 网关只需实现这一个标准端点。请求体只带 app_id（本地配置了 app_secret 时一并携带），
+// 不会访问官方 Accounts host。
+func fetchTenantAccessTokenViaGateway(ctx context.Context, httpClient *http.Client, appID, appSecret, baseURL string) (*TenantAccessToken, error) {
+	if appID == "" {
+		return nil, fmt.Errorf("缺少 app_id 配置")
+	}
+	baseURL = config.ResolveOpenBase(baseURL)
+	if err := config.CheckBaseURL(baseURL); err != nil {
+		return nil, err
+	}
+	payload := map[string]string{"app_id": appID}
+	if appSecret != "" {
+		payload["app_secret"] = appSecret
+	}
+	reqBody, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("构造 tenant token 请求失败: %w", err)
+	}
+	resp, err := postTATWithRetry(ctx, httpClient, baseURL+config.TenantTokenInternalPath, "application/json; charset=utf-8", reqBody)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := readLimitedAuthBody(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取 tenant token 响应失败: %w", err)
+	}
+	var result gatewayTATResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("获取 tenant_access_token 失败: HTTP %d %s", resp.StatusCode, authBodyPreview(body))
+	}
+	if resp.StatusCode < 400 && result.Code == 0 && result.TenantAccessToken != "" {
+		if err := validateTATExpiresIn(result.Expire); err != nil {
+			return nil, err
+		}
+		return &TenantAccessToken{AccessToken: result.TenantAccessToken, ExpiresIn: result.Expire}, nil
+	}
+	if resp.StatusCode >= 500 {
+		return nil, fmt.Errorf("tenant token 端点暂时失败（HTTP %d, code=%d）: %s",
+			resp.StatusCode, result.Code, redactAuthPreview(result.Msg))
+	}
+	if result.Code == 0 {
+		return nil, fmt.Errorf("tenant token 响应缺少 tenant_access_token（HTTP %d）", resp.StatusCode)
+	}
+	te := &TATError{
+		msg: fmt.Sprintf("获取 tenant_access_token 失败: HTTP %d code=%d %s",
+			resp.StatusCode, result.Code, redactAuthPreview(result.Msg)),
+		HTTPStatus: resp.StatusCode,
+		Code:       result.Code,
+	}
+	if te.CredentialRejected() {
+		return nil, clierr.Auth(te)
+	}
+	return nil, te
+}
+
+// postTATWithRetry 发出 tenant token 请求；429 限流时按 Retry-After（上限 tatMaxRetryAfter）等待后重试一次。
+func postTATWithRetry(ctx context.Context, httpClient *http.Client, endpoint, contentType string, body []byte) (*http.Response, error) {
+	for attempt := 1; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("构造 tenant token 请求失败: %w", err)
+		}
+		req.Header.Set("Content-Type", contentType)
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("请求 tenant token 失败: %w", err)
+		}
+		if resp.StatusCode != http.StatusTooManyRequests || attempt >= 2 {
+			return resp, nil
+		}
+		wait := parseRetryAfter(resp.Header.Get("Retry-After"))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxAuthResponseBytes))
+		resp.Body.Close()
+		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) <= wait {
+			return nil, fmt.Errorf("获取 tenant_access_token 被限流（HTTP 429），Retry-After=%s 超过剩余超时，请稍后重试", wait)
+		}
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return nil, fmt.Errorf("请求 tenant token 失败: %w", ctx.Err())
+		}
+	}
 }
 
 // TATError 是 tenant_access_token 换取被服务端拒绝的结果；Error() 文本与历史版本一致。

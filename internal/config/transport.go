@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -15,12 +16,16 @@ const (
 	OfficialFeishuAccounts = "https://accounts.feishu.cn"
 	OfficialLarkAccounts   = "https://accounts.larksuite.com"
 	OAuthTokenV3Path       = "/oauth/v3/token"
+	// TenantTokenInternalPath 是 Open API 自建应用 tenant_access_token 端点（SDK 自取 token 走它）。
+	// 网关模式下所有 tenant token 都经 base_url 的这个端点换取。
+	TenantTokenInternalPath = "/open-apis/auth/v3/tenant_access_token/internal"
 )
 
 const (
 	envAllowCustomBaseURL       = "FEISHU_ALLOW_CUSTOM_BASE_URL"
 	envAllowInsecureHTTP        = "FEISHU_ALLOW_INSECURE_HTTP"
 	envAllowCrossOriginRedirect = "FEISHU_ALLOW_CROSS_ORIGIN_REDIRECT"
+	envGateway                  = "FEISHU_GATEWAY"
 )
 
 // Brand 标识飞书国内站或 Lark 国际站。
@@ -76,6 +81,20 @@ func configAllowCrossOriginRedirect() bool {
 		return false
 	}
 	return cfg.AllowCrossOriginRedirect
+}
+
+func configGateway() bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.Gateway
+}
+
+// GatewayMode 是否启用网关模式（配置 gateway: true 或 FEISHU_GATEWAY=1）。
+// 网关模式下 base_url 指向一个代持 App 凭证的网关：本地不需要 app_secret，所有 token
+// 都经 base_url 换取，且不会直连官方 Open API / Accounts host。
+func GatewayMode() bool {
+	return envOrConfigBool(envGateway, configGateway())
 }
 
 // AllowCustomBaseURL 是否允许非官方远端 host（配置或环境变量显式 opt-in）。
@@ -196,10 +215,15 @@ func rejectCustomHost(u *url.URL, official bool) error {
 	return nil
 }
 
+var errGatewayNeedsBaseURL = errors.New("网关模式（gateway: true / FEISHU_GATEWAY=1）需要把 base_url 指向网关（loopback，或配合 allow_custom_base_url 的自定义 host），不能是官方地址")
+
 // CheckBaseURL 校验 Open API base_url：官方 HTTPS、loopback，或显式 opt-in 的自定义/明文端点。
 func CheckBaseURL(raw string) error {
 	raw = strings.TrimSpace(strings.TrimRight(raw, "/"))
 	if raw == "" || raw == OfficialFeishuOpen || raw == OfficialLarkOpen {
+		if GatewayMode() {
+			return errGatewayNeedsBaseURL
+		}
 		return nil
 	}
 	u, err := parseAbsoluteURL(raw)
@@ -210,6 +234,9 @@ func CheckBaseURL(raw string) error {
 		return err
 	}
 	host := u.Hostname()
+	if GatewayMode() && (IsOfficialOpenHost(host) || IsOfficialAccountsHost(host)) {
+		return errGatewayNeedsBaseURL
+	}
 	official := IsOfficialOpenHost(host) && officialHTTPSPortOK(u)
 	if official {
 		return nil
@@ -243,6 +270,9 @@ func CheckRequestURL(u *url.URL) error {
 	host := u.Hostname()
 	if IsLoopbackHost(host) {
 		return nil
+	}
+	if GatewayMode() && (IsOfficialOpenHost(host) || IsOfficialAccountsHost(host)) {
+		return fmt.Errorf("网关模式下拒绝直连官方 host %s：所有请求只经 base_url 指向的网关发出", host)
 	}
 	if (IsOfficialOpenHost(host) || IsOfficialAccountsHost(host)) && officialHTTPSPortOK(u) {
 		return nil

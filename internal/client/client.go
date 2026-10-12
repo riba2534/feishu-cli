@@ -38,7 +38,7 @@ func secretFingerprint(secret string) string {
 // GetClient returns a Feishu API client, recreating if config changed
 func GetClient() (*lark.Client, error) {
 	cfg := config.Get()
-	if cfg.AppID == "" || cfg.AppSecret == "" {
+	if !cfg.HasAppCredentials() {
 		return nil, clierr.Authf("缺少 app_id 或 app_secret 配置")
 	}
 	if err := config.CheckBaseURL(cfg.BaseURL); err != nil {
@@ -66,7 +66,7 @@ func GetClient() (*lark.Client, error) {
 		if cfg.Debug {
 			opts = append(opts, lark.WithLogLevel(larkcore.LogLevelDebug))
 		}
-		instance = lark.NewClient(cfg.AppID, cfg.AppSecret, opts...)
+		instance = lark.NewClient(cfg.AppID, sdkAppSecret(cfg.AppSecret), opts...)
 
 		lastCfg.appID = cfg.AppID
 		lastCfg.secretFingerprint = fp
@@ -75,6 +75,18 @@ func GetClient() (*lark.Client, error) {
 	}
 
 	return instance, nil
+}
+
+// gatewaySDKAppSecret 只用于通过 SDK 对 AppSecret 非空的本地校验：网关模式下 SDK 的
+// tenant token 请求由 legacyInternalTokenBridge 在本地截获、改走 auth.FetchTenantAccessTokenResult，
+// 这个值不会被发出。
+const gatewaySDKAppSecret = "feishu-cli-gateway-mode"
+
+func sdkAppSecret(secret string) string {
+	if secret == "" && config.GatewayMode() {
+		return gatewaySDKAppSecret
+	}
+	return secret
 }
 
 // Context returns a context with timeout for API calls.

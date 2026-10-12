@@ -94,6 +94,8 @@ export FEISHU_APP_SECRET=xxx
 # 配置文件 (~/.feishu-cli/config.yaml 或 profiles/<name>/config.yaml)
 ```
 
+**网关模式**（`FEISHU_GATEWAY=1` / `gateway: true`，配合指向网关的 `base_url`）：不需要 `app_secret`；tenant token 经 `{base_url}/open-apis/auth/v3/tenant_access_token/internal` 换取（`auth.fetchTenantAccessTokenViaGateway`，SDK 的 token 请求由 `sdk_token_bridge.go` 截获后走同一路径），`config.CheckRequestURL` 拒绝直连官方 Open API / Accounts host；`auth login`、`event consume` 报用法错误。
+
 ### 退出码
 
 | 退出码 | 含义 | 处理 |

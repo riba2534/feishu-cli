@@ -52,6 +52,9 @@ Token 保存位置: ~/.feishu-cli/token.json
 		if err := config.Validate(); err != nil {
 			return err
 		}
+		if config.GatewayMode() {
+			return clierr.Usagef("网关模式下不支持 auth login：用户授权由网关侧完成")
+		}
 
 		cfg := config.Get()
 		jsonOutput, _ := cmd.Flags().GetBool("json")
