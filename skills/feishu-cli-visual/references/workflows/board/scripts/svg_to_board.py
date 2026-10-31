@@ -154,6 +154,26 @@ def step2_fix_zindex(nodes):
     return nodes
 
 
+def fill_rich_text_color(nodes):
+    """whiteboard-cli 只给文字写顶层 text_color；画板渲染读 rich_text 里的 text_style，
+    没有 rich_text 时彩色字会显示成黑色。按顶层样式补一段 rich_text（已有 rich_text 的不动）。"""
+    fixed = 0
+    for node in nodes:
+        text = node.get("text")
+        if not isinstance(text, dict) or not text.get("text") or text.get("rich_text"):
+            continue
+        style = {k: text[k] for k in ("font_size", "font_weight", "italic", "line_through", "underline", "text_color")
+                 if k in text}
+        text["rich_text"] = {"paragraphs": [
+            {"elements": [{"element_type": 0, "text_element": {"text": line, "text_style": style}}], "paragraph_type": 0}
+            for line in str(text["text"]).split("\n")
+        ]}
+        fixed += 1
+    if fixed:
+        info(f"已为 {fixed} 个文字节点补 rich_text（保留文字颜色）")
+    return nodes
+
+
 def step3_trim_overflow(nodes, vw, vh, keep_overflow, min_x=0.0, min_y=0.0):
     """按原始 viewBox 边界裁剪，保留复合节点内部的相对坐标。"""
     step(3, f"修剪 viewBox 溢出（原点 {min_x},{min_y}，{vw}x{vh}）")
@@ -362,6 +382,7 @@ def main():
     nodes = step1_translate(args.svg_path, args.verbose)
     # Step 2
     nodes = step2_fix_zindex(nodes)
+    nodes = fill_rich_text_color(nodes)
     # Step 3
     nodes = step3_trim_overflow(nodes, vw, vh, args.keep_overflow, min_x, min_y)
     if not nodes:
