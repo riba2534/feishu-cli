@@ -225,8 +225,8 @@ Bot-only 任务不能因为没有 User 登录而被阻断；先用 `doctor --onl
 
 ## 业务域登录
 
-`--domain` 可重复或逗号分隔。内置可选域：`approval apps attendance bitable calendar chat contact doc_access docs drive event im mail markdown minutes okr search sheets slides task vc whiteboard wiki`，或 `all`；
-运行时 catalog 生效后可能追加个别域（如 `mindnotes`），以 `auth login --help` 为准。
+`--domain` 可重复或逗号分隔。内置可选域：`approval apps attendance bitable calendar chat contact doc_access docs drive event im mail markdown mindnotes minutes okr search sheets slides task vc whiteboard wiki`，或 `all`；
+以 `auth login --help` 为准。
 `okr` 用于 `okr --as user`，`apps` 为妙搭（spark），`markdown` 为云盘原生 .md 文件。未知域名报用法错误。
 
 ```bash

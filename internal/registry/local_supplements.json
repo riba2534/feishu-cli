@@ -1,0 +1,10 @@
+{
+ "description": "远端 overlay（按 service 整体替换）之后从内嵌 meta_data.json 补回的方法白名单。只收录：官方公开 meta 端点缺失、但本项目专用命令在用的方法（按 resource 收录）。定义取自内嵌 catalog，远端已有同名方法时以远端为准。新增条目需写明命令与证据。",
+ "methods": [
+  {"service": "task", "resources": ["comments"], "method": "create", "reason": "task comment add 调用 POST /open-apis/task/v2/comments；公开 meta 端点无 task.comments"},
+  {"service": "task", "resources": ["comments"], "method": "list", "reason": "task comment list 调用 GET /open-apis/task/v2/comments；公开 meta 端点无 task.comments"},
+  {"service": "task", "resources": ["comments"], "method": "get", "reason": "与 task comment 同一 resource，供 api 透传查 schema；端点实测在线"},
+  {"service": "task", "resources": ["comments"], "method": "patch", "reason": "与 task comment 同一 resource，供 api 透传查 schema"},
+  {"service": "task", "resources": ["comments"], "method": "delete", "reason": "与 task comment 同一 resource，供 api 透传查 schema"}
+ ]
+}
