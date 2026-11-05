@@ -70,6 +70,24 @@ func okrLevelArgs(cmd *cobra.Command) (level, cycleID, objectiveID string, err e
 	return
 }
 
+// addOKRUserOnlyAsFlag 只支持 User 身份的命令用本地 --as 覆盖命令组继承的 --as（默认 bot），避免帮助误导
+func addOKRUserOnlyAsFlag(c *cobra.Command) {
+	c.Flags().String("as", "user", "身份: 仅支持 user（必需 User Token；--as bot 报用法错误）")
+}
+
+// validateOKRUserOnlyAs 本地校验（dry-run 与凭据检查之前）：显式 --as bot 报用法错误，不再静默忽略
+func validateOKRUserOnlyAs(cmd *cobra.Command, action string) error {
+	as := strings.TrimSpace(flagString(cmd, "as"))
+	switch strings.ToLower(as) {
+	case "", "user", "auto":
+		return nil
+	case "bot", "tenant", "app":
+		return clierr.Usagef("%s 必需 User Token，不支持 --as %s", action, as)
+	default:
+		return clierr.Usagef("--as 仅支持 user，得到 %q", as)
+	}
+}
+
 // okrResolveToken 统一的凭据解析（dry-run 之后调用）
 func okrResolveToken(cmd *cobra.Command, userRequired bool, action string) (string, error) {
 	if err := config.Validate(); err != nil {
@@ -355,6 +373,9 @@ var okrCommentUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if err := validateOKRUserOnlyAs(cmd, "okr comment update"); err != nil {
+			return err
+		}
 		content, err := okrContentFlags(cmd, "content")
 		if err != nil {
 			return err
@@ -395,6 +416,9 @@ var okrCommentDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id, err := okrCommentIDArg(args)
 		if err != nil {
+			return err
+		}
+		if err := validateOKRUserOnlyAs(cmd, "okr comment delete"); err != nil {
 			return err
 		}
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
@@ -528,5 +552,8 @@ func init() {
 	}
 	for _, c := range []*cobra.Command{okrWeightCmd, okrReorderCmd, okrIndicatorUpdateCmd, okrObjectiveBatchCreateCmd, okrCommentGetCmd, okrCommentUpdateCmd, okrCommentDeleteCmd} {
 		c.Flags().StringP("output", "o", "", "输出格式（json）")
+	}
+	for _, c := range []*cobra.Command{okrCommentCreateCmd, okrCommentUpdateCmd, okrCommentDeleteCmd} {
+		addOKRUserOnlyAsFlag(c)
 	}
 }

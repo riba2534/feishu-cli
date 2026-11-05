@@ -46,7 +46,7 @@ OKR 命令组默认 **`--as bot`**（App/Tenant Token，无需 `auth login`，�
 - 只有 `cycle list --tenant`（v1 periods）**只收 Tenant Token**，User 身份报 99991668。
 - `cycle list`（v2）、`cycle detail`、`progress list/get`、`comment list` 都支持 User 与 Tenant：缺 scope 时
   Bot 报 99991672（应用未开通）、User 报 99991679（用户未授权）。
-- `comment create/update/delete` **必需 User Token**，与 `--as` 无关；`comment get` 跟随 `--as`。
+- `comment create/update/delete` **必需 User Token**：这三个命令的 `--as` 默认 `user`，显式 `--as bot` 在 dry-run 和凭据检查之前报用法错误（exit 2）；`comment get` 跟随 `--as`。
 - `cycle list` 的 `--user-id` 默认取当前登录用户，只决定查询对象；请求身份仍按 `--as`（默认 bot）。未登录时必须传 `--user-id`。
 
 | 命令 | 所需 scope（任一即可；Bot 在开放平台为应用开通，User 需 `auth login --scope` 授权同名 scope） |

@@ -80,6 +80,54 @@ func TestPrepareRichDescriptionPaths(t *testing.T) {
 	}
 }
 
+// TestPrepareRichDescriptionCodeAndTitle 代码块/行内代码中的图片语法不当作本地图片；带 title 与尖括号写法只取路径
+func TestPrepareRichDescriptionCodeAndTitle(t *testing.T) {
+	dir := calendarChdirTemp(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.png"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "my file.png"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// 代码里引用不存在的文件：不应报错，也不应计入上传
+	for _, md := range []string{
+		"```\n![x](./nope.png)\n```",
+		"~~~md\n![x](./nope.png)\n~~~\n正文",
+		"  ```\n![x](./nope.png)\n", // 未闭合围栏到文末
+		"用 `![x](./nope.png)` 写图片",
+		"用 ``a ` ![x](./nope.png)`` 写图片",
+	} {
+		rd, err := prepareRichDescription(md)
+		if err != nil {
+			t.Fatalf("%q 代码中的图片不应校验: %v", md, err)
+		}
+		if len(rd.Images) != 0 || rd.preview() != md {
+			t.Fatalf("%q 不应识别图片: %+v", md, rd.Images)
+		}
+	}
+	// 代码外的图片仍然识别；未闭合的反引号按普通文本
+	md := "```\n![c](./nope.png)\n```\n![a](./a.png \"标题\") `x` ![b](<my file.png>) ![d](my file.png) ![e](./a.png 'q') ![f](./a.png (p)) 单个 ` 反引号 ![g](./a.png)"
+	rd, err := prepareRichDescription(md)
+	if err != nil {
+		t.Fatalf("合法写法: %v", err)
+	}
+	var srcs []string
+	for _, img := range rd.Images {
+		srcs = append(srcs, img.Src)
+	}
+	if strings.Join(srcs, "|") != "./a.png|my file.png|my file.png|./a.png|./a.png|./a.png" {
+		t.Fatalf("识别的路径不对: %q", srcs)
+	}
+	want := "```\n![c](./nope.png)\n```\n![a](U \"标题\") `x` ![b](<U>) ![d](U) ![e](U 'q') ![f](U (p)) 单个 ` 反引号 ![g](U)"
+	if got := rd.rewrite([]string{"U", "U", "U", "U", "U", "U"}); got != want {
+		t.Fatalf("改写应保留 title 与尖括号:\n got %q\nwant %q", got, want)
+	}
+	// 远端图片带 title 不受影响
+	if rd, err := prepareRichDescription(`![r](https://example.com/r.png "t")`); err != nil || len(rd.Images) != 0 {
+		t.Fatalf("远端图片应原样保留: %+v %v", rd, err)
+	}
+}
+
 // TestCreateEventDescriptionFormatMarkdownDryRun markdown 写 description_rich 并列出图片上传步骤；默认 text 不变
 func TestCreateEventDescriptionFormatMarkdownDryRun(t *testing.T) {
 	dir := calendarChdirTemp(t)

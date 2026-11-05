@@ -122,3 +122,44 @@ func TestWorkDryRunWithoutCredentials(t *testing.T) {
 		}
 	}
 }
+
+// TestApprovalHighRiskWriteAuthBeforeConfirm 审批 rollback/add-sign/remind：未登录时先报凭据错误（exit 3）而不是确认门禁（exit 10）；
+// 已登录、非交互且未带 --yes 时才是确认门禁；两种情况都不发业务请求
+func TestApprovalHighRiskWriteAuthBeforeConfirm(t *testing.T) {
+	cases := []struct {
+		cmd   *cobra.Command
+		flags map[string]string
+	}{
+		{approvalTaskRollbackCmd, map[string]string{"instance-code": "ic_x", "task-id": "1", "node-ids": "n1"}},
+		{approvalTaskAddSignCmd, map[string]string{"instance-code": "ic_x", "task-id": "1", "type": "parallel", "user-ids": "ou_a"}},
+		{approvalTaskRemindCmd, map[string]string{"instance-code": "ic_x", "task-ids": "1"}},
+	}
+	for _, c := range cases {
+		rec := setupNoCredsWorkTest(t)
+		_, err := runWorkCmd(t, c.cmd, nil, c.flags)
+		if err == nil || !clierr.HasKind(err, clierr.KindAuth) {
+			t.Fatalf("%s 无凭据应为 exit 3，得到 %v", c.cmd.CommandPath(), err)
+		}
+		if len(rec.all()) != 0 {
+			t.Fatalf("%s 不应联网: %+v", c.cmd.CommandPath(), rec.all())
+		}
+
+		rec = setupWorkCmdTest(t, "", nil)
+		_, err = runWorkCmd(t, c.cmd, nil, c.flags)
+		if err == nil || !clierr.HasKind(err, clierr.KindAuth) || !strings.Contains(err.Error(), "User Access Token") {
+			t.Fatalf("%s 有 App 凭据但未登录应要求 User Token（exit 3），得到 %v", c.cmd.CommandPath(), err)
+		}
+		if len(rec.apiReqs()) != 0 {
+			t.Fatalf("%s 不应发业务请求: %+v", c.cmd.CommandPath(), rec.apiReqs())
+		}
+
+		rec = setupWorkCmdTest(t, "u-test", nil)
+		_, err = runWorkCmd(t, c.cmd, nil, c.flags)
+		if err == nil || !clierr.HasKind(err, clierr.KindConfirmationRequired) {
+			t.Fatalf("%s 已登录未确认应为 exit 10，得到 %v", c.cmd.CommandPath(), err)
+		}
+		if len(rec.apiReqs()) != 0 {
+			t.Fatalf("%s 未确认不应执行: %+v", c.cmd.CommandPath(), rec.apiReqs())
+		}
+	}
+}
