@@ -17,8 +17,10 @@ type bitableReq struct {
 	params map[string]any // query 参数
 	body   any            // 请求体
 	useV1  bool           // true → bitable/v1（BitableV1Call）；false → base/v3（BaseV3Call）
-	// preview 追加到 dry-run 预览顶层的说明字段（如 auto_paginate、多步编排的 steps）。
+	// preview 追加到 dry-run 预览顶层的说明字段（如 auto_paginate）。
 	preview map[string]any
+	// steps 非空时为多步编排：dry-run 预览输出 {"api","steps"}，method/path/params/body 不再单独展示。
+	steps []map[string]any
 }
 
 // bitableCaller 执行一次已构造好的请求，返回待渲染的数据（对象、数组或 nil）。
@@ -83,6 +85,9 @@ func bitableDryRunPreview(req bitableReq) map[string]any {
 		"path":   req.path,
 		"params": req.params,
 		"body":   req.body,
+	}
+	if len(req.steps) > 0 {
+		preview = map[string]any{"api": apiVer, "steps": req.steps}
 	}
 	for k, v := range req.preview {
 		preview[k] = v
@@ -183,6 +188,26 @@ func bitablePrepare(cmd *cobra.Command, build func(baseToken string) bitableReq)
 func bitableExecute(cmd *cobra.Command, build func(baseToken string) bitableReq, call bitableCaller) error {
 	p, err := bitablePrepare(cmd, build)
 	if err != nil || p.dryRun {
+		return err
+	}
+	if call == nil {
+		call = bitableDefaultCall
+	}
+	data, err := call(p.req, p.token)
+	if err != nil {
+		return err
+	}
+	return renderBitableWith(p.opts, data)
+}
+
+// bitableExecuteConfirmed 同 bitableExecute，但在身份解析之后、执行之前走确认门禁
+// （--yes 跳过；非交互且未确认时 exit 10、不发写请求）。用于新增的删除 / 覆盖类高危命令。
+func bitableExecuteConfirmed(cmd *cobra.Command, build func(baseToken string) bitableReq, prompt func(req bitableReq) string, call bitableCaller) error {
+	p, err := bitablePrepare(cmd, build)
+	if err != nil || p.dryRun {
+		return err
+	}
+	if err := confirmDangerousAction(cmd, prompt(p.req)); err != nil {
 		return err
 	}
 	if call == nil {
