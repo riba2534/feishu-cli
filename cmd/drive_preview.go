@@ -23,6 +23,24 @@ var drivePreviewTypeNames = map[string]string{
 	"25": "doc_part", "26": "watermark_pdf", "27": "file_watermark",
 }
 
+// validateDrivePreviewType 本地校验 --type：help 列出的名称（含 image 别名）、码表中的类型名，或纯数字类型代码。
+// 非法值在 --dry-run 与任何网络请求之前以用法错误（exit 2）返回。
+func validateDrivePreviewType(t string) error {
+	switch t {
+	case "pdf", "pdf_lin", "html", "text", "image", "source_file":
+		return nil
+	}
+	if t != "" && strings.Trim(t, "0123456789") == "" {
+		return nil
+	}
+	for _, name := range drivePreviewTypeNames {
+		if t == name {
+			return nil
+		}
+	}
+	return clierr.Usagef("不支持的 --type %q，可选: pdf | pdf_lin | html | text | image | source_file，或码表中的类型名 / 数字类型代码", t)
+}
+
 // drivePreviewImageTypes 是 --type image 的别名命中范围（优先选可下载的）。
 var drivePreviewImageTypes = map[string]bool{"png": true, "jpg": true, "jpg_lin": true, "png_lin": true, "split_png": true}
 
@@ -152,7 +170,8 @@ var drivePreviewCmd = &cobra.Command{
 参数:
   <file_token|url>  上传文件 token、/file/ 链接，或包裹上传文件的 /wiki/ 链接（wiki 在凭据解析后解包）
   --list-only       只列出候选，不下载（与 --type / --output 互斥）
-  --type            要下载的类型：pdf | pdf_lin | html | text | image（png/jpg 任一）| source_file，或类型代码
+  --type            要下载的类型：pdf | pdf_lin | html | text | image（png/jpg 任一）| source_file，或码表中的类型名 / 数字类型代码；
+                    其他取值在联网前以用法错误（退出码 2）拒绝
   --version         文件版本（默认最新）
   --output, -o      保存路径（--type 时必填；不带扩展名时按内容补全）；在任何网络请求之前校验
   --overwrite       目标文件已存在时覆盖（默认拒绝）
@@ -195,6 +214,9 @@ var drivePreviewCmd = &cobra.Command{
 		} else {
 			if reqType == "" {
 				return clierr.Usagef("请指定 --list-only 或 --type")
+			}
+			if err := validateDrivePreviewType(reqType); err != nil {
+				return err
 			}
 			if output == "" {
 				return clierr.Usagef("--type 时 --output 必填")

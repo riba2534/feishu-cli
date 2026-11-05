@@ -57,7 +57,8 @@ feishu-cli search docs "季度报告" --count 10 --page-token "<上一页 PageTo
 两者底层与官方 CLI 一致，都使用 Search v2（`POST /open-apis/search/v2/doc_wiki/search`），都必须 User Token（没有 `--as`）、
 需要 `search:docs:read`；区别在 CLI 暴露的过滤参数：`search docs` 面向关键词粗筛（类型、所有者、所在群），
 `drive search` 提供文件夹（`--folder-tokens`）、知识空间（`--space-ids`）、所有者/原始创建者/分享者、编辑/评论/打开/创建时间窗、
-仅标题/仅评论与排序等扁平 filter，按位置、人或时间精筛时用它。
+仅标题/仅评论与排序等扁平 filter，按位置、人或时间精筛时用它。`drive search` 的关键字推荐写 `--query`；也可写成唯一的
+位置参数（`drive search 季度报告`），与 `--query` 同时使用或位置参数多于 1 个时报用法错误（exit 2）。
 
 ```bash
 feishu-cli drive search --query "季度报告" --doc-types DOCX,SHEET --sort edit_time

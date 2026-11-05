@@ -178,6 +178,9 @@ func TestRegisterSubscriptionsAsBotNoBody(t *testing.T) {
 	var mu sync.Mutex
 	var gotAuth, gotBody, gotCT, gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isForeignProbe(w, r) {
+			return
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		gotAuth = r.Header.Get("Authorization")
