@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -46,10 +47,6 @@ CID 内联图片走 --inline-images-auto-scan 自动扫描。
   feishu-cli mail send --to user@example.com --subject "test" --body "hi" --confirm-send    # 立即发送
   feishu-cli mail send --to user1@example.com,user2@example.com --cc user3@example.com --subject "会议" --body "<b>议程</b>"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		mailbox, _ := cmd.Flags().GetString("mailbox")
 		toRaw, _ := cmd.Flags().GetString("to")
 		ccRaw, _ := cmd.Flags().GetString("cc")
@@ -65,7 +62,7 @@ CID 内联图片走 --inline-images-auto-scan 自动扫描。
 		output, _ := cmd.Flags().GetString("output")
 
 		if forceHTML && plainText {
-			return fmt.Errorf("--html 与 --plain-text 互斥，只能指定其中一个")
+			return clierr.Usagef("--html 与 --plain-text 互斥，只能指定其中一个")
 		}
 
 		to, err := parseEmailList(toRaw)
@@ -73,7 +70,7 @@ CID 内联图片走 --inline-images-auto-scan 自动扫描。
 			return err
 		}
 		if len(to) == 0 {
-			return fmt.Errorf("--to 至少一个收件人")
+			return clierr.Usagef("--to 至少一个收件人")
 		}
 		cc, err := parseEmailList(ccRaw)
 		if err != nil {
@@ -87,7 +84,14 @@ CID 内联图片走 --inline-images-auto-scan 自动扫描。
 		if err != nil {
 			return err
 		}
+		sendTime, err := validateMailSendTime(cmd)
+		if err != nil {
+			return err
+		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		token, err := requireUserToken(cmd, "mail send")
 		if err != nil {
 			return err
@@ -104,6 +108,10 @@ CID 内联图片走 --inline-images-auto-scan 自动扫描。
 			}
 		}
 
+		if err := requireMailReceiptSender(cmd, from); err != nil {
+			return err
+		}
+
 		// 决定 body 类型
 		isHTML := forceHTML
 		if !forceHTML && !plainText {
@@ -118,6 +126,7 @@ CID 内联图片走 --inline-images-auto-scan 自动扫描。
 			BCC:      bcc,
 			Subject:  subject,
 		}
+		input.DispositionNotificationTo = mailReceiptAddress(cmd, from)
 		input.Attachments = attachments
 		if isHTML {
 			input.BodyHTML = body
@@ -162,7 +171,7 @@ CID 内联图片走 --inline-images-auto-scan 自动扫描。
 		}
 
 		// 发送草稿
-		data, err := client.SendMailDraft(mailbox, draftID, token)
+		data, err := client.SendMailDraftAt(mailbox, draftID, sendTime, token)
 		if err != nil {
 			return fmt.Errorf("发送草稿失败（草稿已创建 %s）: %w", draftID, err)
 		}
@@ -179,10 +188,17 @@ CID 内联图片走 --inline-images-auto-scan 自动扫描。
 			"thread_id":  parsed.ThreadID,
 			"confirmed":  true,
 		}
+		if sendTime != "" {
+			result["send_time"] = sendTime
+		}
 		if output == "json" {
 			return printJSON(result)
 		}
-		fmt.Printf("邮件发送成功!\n")
+		if sendTime != "" {
+			fmt.Printf("邮件已定时发送（send_time=%s）\n", sendTime)
+		} else {
+			fmt.Printf("邮件发送成功!\n")
+		}
 		fmt.Printf("  草稿 ID:  %s\n", draftID)
 		if parsed.MessageID != "" {
 			fmt.Printf("  邮件 ID:  %s\n", parsed.MessageID)
@@ -205,6 +221,8 @@ func init() {
 	mailSendCmd.Flags().String("from", "", "发件人地址（默认从登录 profile 获取）")
 	mailSendCmd.Flags().String("from-name", "", "发件人显示名")
 	mailSendCmd.Flags().Bool("confirm-send", false, "保存草稿后立即发送")
+	addMailSendTimeFlag(mailSendCmd)
+	addMailRequestReceiptFlag(mailSendCmd)
 	mailSendCmd.Flags().Bool("html", false, "强制视为 HTML body")
 	mailSendCmd.Flags().Bool("plain-text", false, "强制视为纯文本")
 	mailSendCmd.Flags().Bool("inline-images-auto-scan", false, "扫描 HTML body 中 <img src=\"本地路径\">，改写为 cid: 引用并作为内联图片直接嵌入邮件（不上传云盘；路径须在当前目录或 home 下，单张 ≤10MB）")

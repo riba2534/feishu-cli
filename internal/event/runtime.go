@@ -51,6 +51,14 @@ type ConsumeOptions struct {
 	// 如审批 v4、VC participant/note/recording）在 consume 启动前以 User 身份注册订阅关系。
 	UserAccessToken string
 
+	// SubscribeAsBot 为 true 时以 App 身份（TenantAccessToken）注册服务端订阅（--as bot，
+	// 仅 AuthTypes 含 bot 的 key 可用，如云文档评论、任务、画板）。
+	SubscribeAsBot    bool
+	TenantAccessToken string
+
+	// Params 为 --param 解析后的参数（订阅路径占位符、审批 subscription_type、Match 过滤）。
+	Params map[string]string
+
 	// 守护进程协议
 	Bus *Bus // 已构造好的 bus 句柄；nil 时不注册到 bus.json（test 模式）
 
@@ -313,7 +321,12 @@ func (r *Runtime) buildDispatcher(defs []KeyDefinition) *dispatcher.EventDispatc
 			})
 			continue
 		}
+		match := def.Match
 		dis.OnCustomizedEvent(def.EventType, func(ctx context.Context, ev *larkevent.EventReq) error {
+			if match != nil && (ev == nil || !match(ev.Body, r.opts.Params)) {
+				// 不属于本次 --param 指定对象（如其他画板）的事件：ACK 后本地丢弃
+				return nil
+			}
 			return r.emit(ev)
 		})
 	}
@@ -506,35 +519,59 @@ func subscriptionBodyLabel(body map[string]string) string {
 // fail-closed：HTTP 非 2xx、响应体不可解析都视为注册失败——订阅没建立时连上 WS 也收不到
 // 事件，静默继续只会制造"看似在跑却永远无事件"的假象。
 func (r *Runtime) registerSubscriptions(ctx context.Context, def KeyDefinition) error {
-	if r.opts.UserAccessToken == "" {
+	token := r.subscribeToken()
+	if token == "" {
+		if r.opts.SubscribeAsBot {
+			return fmt.Errorf("EventKey %s 以 Bot 身份注册服务端订阅需要 App Token，请检查 app_id/app_secret 配置", def.Key)
+		}
 		return fmt.Errorf("EventKey %s 需要以 User 身份注册服务端订阅，请先 `feishu-cli auth login`（scope: %s）",
 			def.Key, strings.Join(def.Scopes, " "))
 	}
-	for _, body := range subscriptionRequestBodies(def) {
-		label := subscriptionBodyLabel(body)
-		if err := r.postSubscription(ctx, def.SubscribePath, body); err != nil {
-			return fmt.Errorf("注册订阅（%s %s）失败: %w", def.SubscribePath, label, err)
+	calls, err := SubscriptionPlan(def, r.opts.Params)
+	if err != nil {
+		return err
+	}
+	for _, call := range calls {
+		if err := r.postSubscription(ctx, call.Path, call.Body); err != nil {
+			return fmt.Errorf("注册订阅（%s %s）失败: %w", call.Path, call.Label, err)
 		}
-		fmt.Fprintf(r.opts.ErrOut, "[event] 已注册服务端订阅: %s %s\n", def.Key, label)
+		fmt.Fprintf(r.opts.ErrOut, "[event] 已注册服务端订阅: %s %s\n", def.Key, call.Label)
 	}
 	return nil
 }
 
+// subscribeToken 返回注册服务端订阅所用的 token（--as bot 时为 App Token）。
+func (r *Runtime) subscribeToken() string {
+	if r.opts.SubscribeAsBot {
+		return r.opts.TenantAccessToken
+	}
+	return r.opts.UserAccessToken
+}
+
 // unregisterSubscriptions 进程退出时 best-effort 注销 VC 等会话级订阅。
 func (r *Runtime) unregisterSubscriptions(def KeyDefinition) {
-	if def.UnsubscribePath == "" || r.opts.UserAccessToken == "" {
+	if def.UnsubscribePath == "" || r.subscribeToken() == "" {
+		return
+	}
+	calls, err := SubscriptionPlan(def, r.opts.Params)
+	if err != nil {
+		fmt.Fprintf(r.opts.ErrOut, "[event] 注销订阅失败（可忽略，下次 subscribe 幂等覆盖）: %s %v\n", def.Key, err)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), unsubscribeHTTPTimeout)
 	defer cancel()
-	for _, body := range subscriptionRequestBodies(def) {
-		if err := r.postSubscription(ctx, def.UnsubscribePath, body); err != nil {
+	for _, call := range calls {
+		if call.UnsubscribePath == "" {
+			continue
+		}
+		if err := r.postSubscription(ctx, call.UnsubscribePath, call.Body); err != nil {
 			fmt.Fprintf(r.opts.ErrOut, "[event] 注销订阅失败（可忽略，下次 subscribe 幂等覆盖）: %s %v\n", def.Key, err)
 		}
 	}
 }
 
-func (r *Runtime) postSubscription(ctx context.Context, path string, body map[string]string) error {
+// body 为 nil 时不带请求体（任务订阅）；map 按 JSON 序列化。
+func (r *Runtime) postSubscription(ctx context.Context, path string, body any) error {
 	timeout := subscribeHTTPTimeout
 	if dl, ok := ctx.Deadline(); ok {
 		if rem := time.Until(dl); rem > 0 && rem < timeout {
@@ -543,13 +580,19 @@ func (r *Runtime) postSubscription(ctx context.Context, path string, body map[st
 	}
 	// 带 Bearer 的请求必须走 config.NewHTTPClient（重定向校验 host + 剥离 Authorization）
 	httpClient := config.NewHTTPClient(timeout)
-	payload, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.opts.BaseURL+path, bytes.NewReader(payload))
+	var reader io.Reader
+	if !isNilBody(body) {
+		payload, _ := json.Marshal(body)
+		reader = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.opts.BaseURL+path, reader)
 	if err != nil {
 		return fmt.Errorf("构造订阅请求失败: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+r.opts.UserAccessToken)
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Authorization", "Bearer "+r.subscribeToken())
+	if reader != nil {
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
@@ -570,6 +613,19 @@ func (r *Runtime) postSubscription(ctx context.Context, path string, body map[st
 		return fmt.Errorf("code=%d, msg=%s", apiResp.Code, apiResp.Msg)
 	}
 	return nil
+}
+
+// isNilBody 判断 body 是否为空（含 typed nil map）。
+func isNilBody(body any) bool {
+	switch b := body.(type) {
+	case nil:
+		return true
+	case map[string]string:
+		return b == nil
+	case map[string]any:
+		return b == nil
+	}
+	return false
 }
 
 // truncateForErr 把响应体截断到 512 字节内用于错误信息，避免超长 HTML 刷屏。

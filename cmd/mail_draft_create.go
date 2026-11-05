@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -20,14 +21,6 @@ var mailDraftCreateCmd = &cobra.Command{
 示例:
   feishu-cli mail draft-create --to user@example.com --subject "草稿" --body "内容"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-		token, err := requireUserToken(cmd, "mail draft-create")
-		if err != nil {
-			return err
-		}
-
 		mailbox, _ := cmd.Flags().GetString("mailbox")
 		toRaw, _ := cmd.Flags().GetString("to")
 		ccRaw, _ := cmd.Flags().GetString("cc")
@@ -45,7 +38,7 @@ var mailDraftCreateCmd = &cobra.Command{
 			return err
 		}
 		if len(to) == 0 {
-			return fmt.Errorf("--to 至少一个收件人")
+			return clierr.Usagef("--to 至少一个收件人")
 		}
 		cc, err := parseEmailList(ccRaw)
 		if err != nil {
@@ -60,6 +53,14 @@ var mailDraftCreateCmd = &cobra.Command{
 			return err
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, err := requireUserToken(cmd, "mail draft-create")
+		if err != nil {
+			return err
+		}
+
 		if from == "" {
 			if profile, perr := client.GetMailboxProfile(mailbox, token); perr == nil && profile != nil {
 				from = profile.PrimaryEmailAddress
@@ -67,6 +68,10 @@ var mailDraftCreateCmd = &cobra.Command{
 					fromName = profile.Name
 				}
 			}
+		}
+
+		if err := requireMailReceiptSender(cmd, from); err != nil {
+			return err
 		}
 
 		isHTML := forceHTML
@@ -82,6 +87,7 @@ var mailDraftCreateCmd = &cobra.Command{
 			BCC:      bcc,
 			Subject:  subject,
 		}
+		input.DispositionNotificationTo = mailReceiptAddress(cmd, from)
 		input.Attachments = attachments
 		if isHTML {
 			input.BodyHTML = body
@@ -123,5 +129,6 @@ func init() {
 	mailDraftCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailDraftCreateCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	addMailAttachFlag(mailDraftCreateCmd)
+	addMailRequestReceiptFlag(mailDraftCreateCmd)
 	mustMarkFlagRequired(mailDraftCreateCmd, "to", "subject", "body")
 }

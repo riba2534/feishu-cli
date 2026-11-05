@@ -54,6 +54,59 @@ type KeyDefinition struct {
 	UnsubscribePath    string   `json:"unsubscribe_path,omitempty"`
 	SubscribeTypes     []string `json:"subscribe_types,omitempty"`
 	SubscribeEventType bool     `json:"subscribe_event_type,omitempty"`
+
+	// SubscribeNoBody 为 true 时订阅请求不带 body（任务 task_subscription）。
+	SubscribeNoBody bool `json:"subscribe_no_body,omitempty"`
+	// SubscribeBody 非空时作为固定订阅/退订 body（如邮箱 {"event_type":1}），优先于上面两种 body 规则。
+	SubscribeBody map[string]any `json:"subscribe_body,omitempty"`
+
+	// Params 声明 event consume --param k=v 可接受的参数；SubscribePath/UnsubscribePath
+	// 中的 {name} 占位符按参数值（路径段转义后）替换。
+	Params []ParamDef `json:"params,omitempty"`
+
+	// Match 非空时对收到的事件做本地过滤（如画板按 whiteboard_id 过滤），返回 false 的事件 ACK 后丢弃。
+	Match func(payload []byte, params map[string]string) bool `json:"-"`
+}
+
+// ParamDef 描述一个 --param 参数。
+type ParamDef struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Required    bool     `json:"required,omitempty"`
+	Multi       bool     `json:"multi,omitempty"`   // 允许逗号分隔多值或重复传入
+	Values      []string `json:"values,omitempty"`  // 非空时为枚举
+	Default     string   `json:"default,omitempty"` // 未传时的默认值
+}
+
+// HasSubscription 表示该 key 在 consume 前需要注册服务端订阅。
+func (d KeyDefinition) HasSubscription() bool {
+	return d.SubscribePath != ""
+}
+
+// IdentityTypes 返回该 key 可用于 --as 的身份。需要服务端订阅但未声明 AuthTypes 时默认 [user]；
+// 不需要订阅且未声明时返回 nil（不限制，WebSocket 本身走 App 凭证）。
+func (d KeyDefinition) IdentityTypes() []string {
+	if len(d.AuthTypes) > 0 {
+		return d.AuthTypes
+	}
+	if d.HasSubscription() {
+		return []string{"user"}
+	}
+	return nil
+}
+
+// AllowsIdentity 判断 identity（user/bot）是否可用于该 key。
+func (d KeyDefinition) AllowsIdentity(identity string) bool {
+	types := d.IdentityTypes()
+	if len(types) == 0 {
+		return true
+	}
+	for _, t := range types {
+		if t == identity {
+			return true
+		}
+	}
+	return false
 }
 
 // keyRegistry 是手工维护的常用 EventKey 列表。
@@ -316,6 +369,7 @@ var keyRegistry = []KeyDefinition{
 		},
 		SubscribePath:  "/open-apis/approval/v4/instances/subscription",
 		SubscribeTypes: []string{"INVOLVED_APPROVAL", "MANAGED_APPROVAL"},
+		Params:         approvalSubscriptionParams,
 	},
 	{
 		Key:         "approval.task.status_changed_v4",
@@ -329,6 +383,7 @@ var keyRegistry = []KeyDefinition{
 		},
 		SubscribePath:  "/open-apis/approval/v4/tasks/subscription",
 		SubscribeTypes: []string{"INVOLVED_APPROVAL", "MANAGED_APPROVAL"},
+		Params:         approvalSubscriptionParams,
 	},
 
 	// ---------- 视频会议（用户参会生命周期 + 纪要/录制；均需 User 身份 pre-consume）----------
@@ -430,6 +485,109 @@ var keyRegistry = []KeyDefinition{
 		UnsubscribePath:    "/open-apis/vc/v1/recordings/unsubscription",
 		SubscribeEventType: true,
 	},
+
+	// ---------- 妙记（User 身份 pre-consume，退出时注销）----------
+	{
+		Key:         "minutes.minute.generated_v1",
+		EventType:   "minutes.minute.generated_v1",
+		Description: "妙记已生成（当前用户可见的妙记）",
+		Domain:      "minutes",
+		Scopes:      []string{"minutes:minutes.basic:read"},
+		AuthTypes:   []string{"user"},
+		RequiredConsoleEvents: []string{
+			"minutes.minute.generated_v1",
+		},
+		SubscribePath:      "/open-apis/minutes/v1/minutes/subscription",
+		UnsubscribePath:    "/open-apis/minutes/v1/minutes/unsubscription",
+		SubscribeEventType: true,
+	},
+
+	// ---------- 云文档评论（user/bot 均可；订阅按 App+身份+事件类型共享，退出时不注销）----------
+	{
+		Key:         "drive.notice.comment_add_v1",
+		EventType:   "drive.notice.comment_add_v1",
+		Description: "云文档评论/回复通知了当前用户或 Bot（如评论里 @ 了它）",
+		Domain:      "drive",
+		Scopes:      []string{"docs:document.comment:read"},
+		AuthTypes:   []string{"user", "bot"},
+		RequiredConsoleEvents: []string{
+			"drive.notice.comment_add_v1",
+		},
+		SubscribePath:      "/open-apis/drive/v1/user/subscription",
+		SubscribeEventType: true,
+	},
+
+	// ---------- 任务（user/bot 均可；订阅无 body，退出时不注销）----------
+	{
+		Key:         "task.task.update_user_access_v2",
+		EventType:   "task.task.update_user_access_v2",
+		Description: "当前用户或应用可见的任务被创建/删除/更新",
+		Domain:      "task",
+		Scopes:      []string{"task:task:read"},
+		AuthTypes:   []string{"user", "bot"},
+		RequiredConsoleEvents: []string{
+			"task.task.update_user_access_v2",
+		},
+		SubscribePath:   "/open-apis/task/v2/task_v2/task_subscription?user_id_type=open_id",
+		SubscribeNoBody: true,
+	},
+
+	// ---------- 画板（按画板订阅，必填 whiteboard_id；退出时注销）----------
+	{
+		Key:         "board.whiteboard.updated_v1",
+		EventType:   "board.whiteboard.updated_v1",
+		Description: "画板内容更新（需 --param whiteboard_id=<id>，只输出该画板的事件）",
+		Domain:      "board",
+		Scopes:      []string{"board:whiteboard:node:read"},
+		AuthTypes:   []string{"user", "bot"},
+		RequiredConsoleEvents: []string{
+			"board.whiteboard.updated_v1",
+		},
+		Params: []ParamDef{
+			{Name: "whiteboard_id", Required: true, Description: "要订阅的画板 ID，订阅按画板维度"},
+		},
+		SubscribePath:      "/open-apis/board/v1/whiteboards/{whiteboard_id}/subscribe",
+		UnsubscribePath:    "/open-apis/board/v1/whiteboards/{whiteboard_id}/unsubscribe",
+		SubscribeEventType: true,
+		Match:              matchWhiteboardID,
+		PayloadSchema: `{
+  "schema": "2.0",
+  "header": {"event_id": "...", "event_type": "board.whiteboard.updated_v1"},
+  "event": {
+    "whiteboard_id": "画板 ID",
+    "operator_ids": [{"open_id": "ou_xxx", "union_id": "on_xxx", "user_id": "xxx"}]
+  }
+}`,
+	},
+
+	// ---------- 邮箱（User 身份订阅邮箱事件，退出时注销；复用本进程的单条长连接）----------
+	{
+		Key:         "mail.user_mailbox.event.message_received_v1",
+		EventType:   "mail.user_mailbox.event.message_received_v1",
+		Description: "邮箱收到新邮件（事件只含 mail_address/message_id 等元数据，正文用 mail message 读取）",
+		Domain:      "mail",
+		Scopes:      []string{"mail:event", "mail:user_mailbox.event.mail_address:read"},
+		AuthTypes:   []string{"user"},
+		RequiredConsoleEvents: []string{
+			"mail.user_mailbox.event.message_received_v1",
+		},
+		Params: []ParamDef{
+			{Name: "mailbox", Default: "me", Description: "要订阅的邮箱地址，默认 me（当前用户主邮箱）"},
+		},
+		SubscribePath:   "/open-apis/mail/v1/user_mailboxes/{mailbox}/event/subscribe",
+		UnsubscribePath: "/open-apis/mail/v1/user_mailboxes/{mailbox}/event/unsubscribe",
+		SubscribeBody:   map[string]any{"event_type": 1},
+	},
+}
+
+// approvalSubscriptionParams 审批订阅关系类型：不传时两种都注册（与旧版一致）。
+var approvalSubscriptionParams = []ParamDef{
+	{
+		Name:        "subscription_type",
+		Multi:       true,
+		Values:      []string{"INVOLVED_APPROVAL", "MANAGED_APPROVAL"},
+		Description: "要注册的审批订阅关系（逗号分隔多值）；不传时 INVOLVED_APPROVAL 与 MANAGED_APPROVAL 都注册",
+	},
 }
 
 // ListAll 返回所有已注册 EventKey，按 Domain + Key 排序（list 命令使用）。
@@ -487,9 +645,7 @@ var commonAckEventTypes = []string{
 	"approval.approval.updated",
 	"application.application.visibility.added_v6",
 	"task.task.update_tenant_v1",
-	"task.task.update_user_access_v2",
 	"task.task.comment_updated_v1",
-	"drive.notice.comment_add_v1",
 }
 
 // ackOnlyEventTypes 返回需要"收到即 ACK"的已知事件类型（不含卡片回调），去重保序。

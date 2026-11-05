@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -40,7 +41,19 @@ var eventConsumeCmd = &cobra.Command{
 启动协议:
   服务端订阅（如审批/VC）注册完成、且 WebSocket 握手就绪后，才会在 stderr 输出
   一行 [event] ready event_key=<key>（多个 key 时以逗号连接，如 event_key=k1,k2）。
-  父进程应阻塞等待该行再读 stdout；握手完成前不会发 ready。VC EventKey 还需 User Token 做 pre-consume。
+  父进程应阻塞等待该行再读 stdout；握手完成前不会发 ready。
+
+服务端订阅（pre-consume）:
+  审批、VC、妙记、云文档评论、任务、画板、邮箱等 EventKey 在连接前需先 POST 订阅接口，
+  否则连上也收不到事件。身份由 --as 决定（默认 auto：User 优先；所选 key 都支持 bot 且未登录时用 Bot），
+  必须落在 key 的 auth_types 内（event schema <key> 查看），否则 exit 2：
+  - 审批 v4 / VC / 妙记 / 邮箱：仅 user；云文档评论 / 任务 / 画板：user 或 bot
+  - 退出时注销：VC、妙记、画板、邮箱（会话级）；审批、云文档评论、任务为持久关系，不注销
+  --param key=value 传 key 级参数（可重复）：
+  - board.whiteboard.updated_v1 必填 whiteboard_id，且只输出该画板的事件
+  - mail.user_mailbox.event.message_received_v1 可选 mailbox（默认 me）
+  - 审批 v4 可选 subscription_type=INVOLVED_APPROVAL|MANAGED_APPROVAL（逗号分隔多值；不传两种都注册）
+  --dry-run 只打印订阅计划（身份、订阅请求、需在后台勾选的事件）后 exit 0，不读凭据、不联网。
 
 退出条件（whichever 先触发）:
   - 接收 N 条事件后退出：--max-events N
@@ -63,7 +76,7 @@ var eventConsumeCmd = &cobra.Command{
   长时间断线建议结合 --timeout 主动退出，由父进程拉起。
 
 权限要求:
-  默认 App Token；具体 scope 见 event schema <key>。请在飞书开放平台:
+  长连接本身用 App 凭证；具体 scope 见 event schema <key>。请在飞书开放平台:
   1. 开启「事件订阅 - 长连接接收事件」
   2. 在「事件与回调 - 事件订阅」选中目标 EventType 并发布版本
 
@@ -81,17 +94,28 @@ var eventConsumeCmd = &cobra.Command{
   feishu-cli event consume im.message.receive_v1 --output-dir ./events --quiet
 
   # 配合 jq 实时过滤群消息
-  feishu-cli event consume im.message.receive_v1 | jq 'select(.event.message.chat_type=="group")'`,
+  feishu-cli event consume im.message.receive_v1 | jq 'select(.event.message.chat_type=="group")'
+
+  # 预览审批订阅计划（不联网）；只注册 INVOLVED_APPROVAL
+  feishu-cli event consume approval.instance.status_changed_v4 --dry-run
+  feishu-cli event consume approval.instance.status_changed_v4 --param subscription_type=INVOLVED_APPROVAL
+
+  # 以 Bot 身份监听云文档评论 @；监听某个画板的变更
+  feishu-cli event consume drive.notice.comment_add_v1 --as bot
+  feishu-cli event consume board.whiteboard.updated_v1 --param whiteboard_id=<whiteboard_id>`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		keys := event.NormalizeEventKeys(args)
 		if len(keys) == 0 {
 			return clierr.Usagef("至少指定一个 EventKey（运行 `feishu-cli event list` 查看支持的 key）")
 		}
+		defs := make([]event.KeyDefinition, 0, len(keys))
 		for _, key := range keys {
-			if _, ok := event.Lookup(key); !ok {
+			def, ok := event.Lookup(key)
+			if !ok {
 				return clierr.Usagef("未知 EventKey: %q（运行 `feishu-cli event list` 查看支持的 key）", key)
 			}
+			defs = append(defs, def)
 		}
 
 		maxEvents, _ := cmd.Flags().GetInt("max-events")
@@ -106,6 +130,40 @@ var eventConsumeCmd = &cobra.Command{
 		}
 		if err := event.ValidateOutputDir(outputDir); err != nil {
 			return clierr.Usage(err)
+		}
+
+		rawParams, _ := cmd.Flags().GetStringArray("param")
+		params, err := event.ParseParams(defs, rawParams)
+		if err != nil {
+			return clierr.Usage(err)
+		}
+		as, _ := cmd.Flags().GetString("as")
+		as = strings.ToLower(strings.TrimSpace(as))
+		switch as {
+		case "", "auto":
+			as = "auto"
+		case "user":
+		case "bot", "tenant", "app":
+			as = "bot"
+		default:
+			return clierr.Usagef("--as 仅支持 user|bot|auto，得到 %q", as)
+		}
+		if as != "auto" {
+			if err := event.CheckIdentity(defs, as); err != nil {
+				return clierr.Usage(err)
+			}
+		}
+		plan := make([]event.SubscriptionCall, 0)
+		for _, def := range defs {
+			calls, planErr := event.SubscriptionPlan(def, params)
+			if planErr != nil {
+				return clierr.Usage(planErr)
+			}
+			plan = append(plan, calls...)
+		}
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printEventConsumeDryRun(cmd, defs, params, as, plan)
 		}
 
 		if err := config.Validate(); err != nil {
@@ -155,25 +213,29 @@ var eventConsumeCmd = &cobra.Command{
 			baseURL = "https://open.feishu.cn"
 		}
 
-		// 需要服务端订阅注册的 EventKey（如审批 v4）依赖 User Token；
-		// 其余 key 拿不到也不影响（best-effort，缺失时 runtime 会给出明确报错）。
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		subscribeIdentity, userToken, tenantToken, err := resolveEventSubscribeIdentity(cmd, defs, as)
+		if err != nil {
+			return err
+		}
 
 		runtime := event.NewRuntime(event.ConsumeOptions{
-			AppID:           cfg.AppID,
-			AppSecret:       cfg.AppSecret,
-			EventKey:        keys[0],
-			EventKeys:       keys,
-			BaseURL:         baseURL,
-			Out:             os.Stdout,
-			ErrOut:          errOut,
-			JQExpr:          jqExpr,
-			OutputDir:       outputDir,
-			MaxEvents:       maxEvents,
-			Timeout:         timeout,
-			UserAccessToken: userToken,
-			Bus:             bus,
-			AckUnsubscribed: ackUnsubscribed,
+			AppID:             cfg.AppID,
+			AppSecret:         cfg.AppSecret,
+			EventKey:          keys[0],
+			EventKeys:         keys,
+			BaseURL:           baseURL,
+			Out:               os.Stdout,
+			ErrOut:            errOut,
+			JQExpr:            jqExpr,
+			OutputDir:         outputDir,
+			MaxEvents:         maxEvents,
+			Timeout:           timeout,
+			UserAccessToken:   userToken,
+			SubscribeAsBot:    subscribeIdentity == "bot",
+			TenantAccessToken: tenantToken,
+			Params:            params,
+			Bus:               bus,
+			AckUnsubscribed:   ackUnsubscribed,
 		})
 
 		// 信号 + stdin EOF 处理
@@ -212,6 +274,86 @@ var eventConsumeCmd = &cobra.Command{
 		fmt.Fprintf(errOut, "[event] exited — elapsed=%s reason=%s\n", elapsed.Round(time.Millisecond), reason)
 		return runErr
 	},
+}
+
+// resolveEventSubscribeIdentity 决定服务端订阅注册所用身份与 token。
+//
+//   - --as 未传 / auto：与旧版一致先按 User 优先解析（只含 user-only 订阅 key 时沿用
+//     resolveOptionalUserTokenWithFallback，缺失时由 runtime 报「需要 auth login」）；
+//     所选订阅 key 都支持 bot 且未配置 User 时改用 App 身份；已配置 User 但不可用时 fail-closed，
+//     不静默切 Bot（只有可用 bot 的新 key 走这条）；
+//   - --as user：必须 User Token（缺失 exit 3）；
+//   - --as bot：用 App Token 注册（CheckIdentity 已保证所有 key 支持 bot）。
+//
+// 不含订阅 key 时仍按旧版 best-effort 解析 User Token（不影响 WebSocket）。
+func resolveEventSubscribeIdentity(cmd *cobra.Command, defs []event.KeyDefinition, as string) (identity, userToken, tenantToken string, err error) {
+	needsSub := false
+	for _, def := range defs {
+		if def.HasSubscription() {
+			needsSub = true
+			break
+		}
+	}
+	switch as {
+	case "user":
+		userToken, err = requireUserToken(cmd, "event consume --as user")
+		return "user", userToken, "", err
+	case "bot":
+		if needsSub {
+			if tenantToken, err = fetchTenantAccessToken(); err != nil {
+				return "", "", "", fmt.Errorf("获取 App Token 失败（--as bot 注册服务端订阅需要）: %w", err)
+			}
+		}
+		return "bot", "", tenantToken, nil
+	}
+	if !event.AnySupportsBot(defs) {
+		return "user", resolveOptionalUserTokenWithFallback(cmd), "", nil
+	}
+	userToken, err = resolveAutoUserToken(cmd)
+	if err != nil {
+		return "", "", "", err
+	}
+	if event.ResolveAutoIdentity(defs, userToken != "") == "bot" {
+		if tenantToken, err = fetchTenantAccessToken(); err != nil {
+			return "", "", "", fmt.Errorf("获取 App Token 失败（未登录 User，改用 Bot 身份注册服务端订阅）: %w", err)
+		}
+		return "bot", "", tenantToken, nil
+	}
+	return "user", userToken, "", nil
+}
+
+// printEventConsumeDryRun 静态预览：不读凭据、不联网、不加单实例锁，打印订阅计划后退出。
+// auto 身份按本地是否配置 User Token 静态推断（不刷新 token）。
+func printEventConsumeDryRun(cmd *cobra.Command, defs []event.KeyDefinition, params map[string]string, as string, plan []event.SubscriptionCall) error {
+	identity := as
+	if as == "auto" {
+		flagToken, _ := cmd.Flags().GetString("user-access-token")
+		hasUser := auth.HasUserTokenConfigured(flagToken, config.Get().UserAccessToken)
+		identity = event.ResolveAutoIdentity(defs, hasUser)
+		if identity == "" {
+			identity = "无需（未涉及服务端订阅）"
+		}
+	}
+	keys := make([]string, 0, len(defs))
+	var consoleEvents, scopes []string
+	for _, def := range defs {
+		keys = append(keys, def.Key)
+		consoleEvents = append(consoleEvents, def.RequiredConsoleEvents...)
+		scopes = append(scopes, def.Scopes...)
+	}
+	out := map[string]any{
+		"dry_run":                 true,
+		"event_keys":              keys,
+		"identity":                identity,
+		"subscriptions":           plan,
+		"required_console_events": consoleEvents,
+		"scopes":                  scopes,
+		"desc":                    "仅预览：未注册订阅、未建立长连接。subscriptions 为启动前要 POST 的服务端订阅（unsubscribe_path 非空的会在退出时注销）",
+	}
+	if len(params) > 0 {
+		out["params"] = params
+	}
+	return printJSON(out)
 }
 
 // countRemoteEventConnections 远端长连接计数（可在测试中替换）。
@@ -271,5 +413,8 @@ func init() {
 	eventConsumeCmd.Flags().String("user-access-token", "", "User Access Token（审批/VC 等需服务端订阅注册的 EventKey 使用）")
 	eventConsumeCmd.Flags().String("output-dir", "", "把每条事件 dump 为 <event_id>.json 到该目录（不影响 stdout）")
 	eventConsumeCmd.Flags().Bool("quiet", false, "静默模式：抑制 stderr 诊断（不影响 stdout 事件流；ready marker 仍会输出，便于父进程判断就绪）")
+	eventConsumeCmd.Flags().StringArrayP("param", "p", nil, "EventKey 参数 key=value（可重复），如 whiteboard_id=xxx、subscription_type=INVOLVED_APPROVAL；见 event schema <key>")
+	eventConsumeCmd.Flags().String("as", "auto", "注册服务端订阅的身份: user | bot | auto（auto: User 优先；所选 key 都支持 bot 且未登录时用 Bot；必须与 key 的 auth_types 一致）")
+	eventConsumeCmd.Flags().Bool("dry-run", false, "只预览订阅计划（身份、订阅请求、需勾选的事件）后退出，不读凭据、不联网")
 	eventConsumeCmd.Flags().Bool("force", false, "跳过同一 App 单实例检查（不安全：多进程会随机拆分事件，每个进程只收到一部分）")
 }

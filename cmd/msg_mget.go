@@ -1,11 +1,10 @@
 package cmd
 
 import (
-	"fmt"
-
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -26,22 +25,22 @@ var msgMgetCmd = &cobra.Command{
   # interactive 卡片返回 schema 2.0 JSON，并额外提取 card_texts（默认）
   feishu-cli msg mget --message-ids om_xxx,om_yyy --card-content-type user`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		messageIDsStr, _ := cmd.Flags().GetString("message-ids")
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		messageIDs := splitAndTrim(messageIDsStr)
 		if len(messageIDs) == 0 {
-			return fmt.Errorf("请提供至少一个消息 ID")
+			return clierr.Usagef("请提供至少一个消息 ID")
 		}
 
 		cardContentType, err := resolveCardContentType(cmd)
 		if err != nil {
 			return err
 		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		userToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		result, err := client.BatchGetMessages(messageIDs, userToken, cardContentType)
 		if err != nil {

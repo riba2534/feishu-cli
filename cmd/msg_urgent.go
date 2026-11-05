@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -36,13 +37,9 @@ var msgUrgentCmd = &cobra.Command{
   feishu-cli msg urgent om_xxx --urgent-type sms --user-id-type union_id --user-ids on_xxx,on_yyy`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		messageID := args[0]
 		if strings.HasPrefix(messageID, "bm_") {
-			return fmt.Errorf("不支持批量消息 ID（bm_xxx），请传入单条消息 ID（om_xxx）")
+			return clierr.Usagef("不支持批量消息 ID（bm_xxx），请传入单条消息 ID（om_xxx）")
 		}
 
 		urgentType, _ := cmd.Flags().GetString("urgent-type")
@@ -59,7 +56,11 @@ var msgUrgentCmd = &cobra.Command{
 
 		userIDs := splitAndTrim(userIDsStr)
 		if len(userIDs) == 0 {
-			return fmt.Errorf("目标用户 ID 列表不能为空，请通过 --user-ids 传入至少一个用户 ID")
+			return clierr.Usagef("目标用户 ID 列表不能为空，请通过 --user-ids 传入至少一个用户 ID")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		result, err := client.UrgentMessage(messageID, urgentType, userIDType, userIDs)
