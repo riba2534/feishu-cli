@@ -195,13 +195,8 @@ func Execute() {
 	err := rootCmd.ExecuteContext(ctx)
 	stopSignals()
 	if err != nil {
-		if msg := err.Error(); msg != "" {
-			fmt.Fprintln(os.Stderr, msg)
-		}
-		// 附加 log_id / 缺失 scope / 字段校验等诊断与按业务码的修复建议
-		for _, line := range renderErrorDiagnostics(err) {
-			fmt.Fprintln(os.Stderr, line)
-		}
+		// 错误主文本 + log_id / 缺失 scope 等诊断与修复建议；--error-format json 时为一行 JSON 信封
+		writeCommandError(os.Stderr, err)
 		// 按错误分类退出（0 成功 / 1 一般 / 2 用法 / 3 鉴权 / 4 网络 / 10 需确认 / 130 中断），
 		// 供脚本与 AI Agent 区分失败类型；错误文本保持不变。
 		os.Exit(exitCodeFor(err))
