@@ -60,7 +60,7 @@ event consume <EventKey> [EventKey...]
 | **stdout** | 每条事件一行 JSON（NDJSON），适合 jq / 脚本管道 |
 | **stderr** | 诊断日志；pre-consume 与 WebSocket 握手都完成后一行 `[event] ready event_key=<key>`（多个 key 时 `event_key=k1,k2`，顺序同命令行） |
 
-> **AI Agent 推荐**：父进程把 consume 跑后台（`run_in_background=true`），先阻塞 stderr 等到 `[event] ready` 那一行再开始读 stdout。ready 发出前握手未完成，不要靠额外 sleep 猜。VC EventKey 还需 User Token 做服务端订阅；同 key 每个 consume 都幂等 POST subscribe，确认订阅成功后才发 ready，最后一个人退出才注销。
+> **AI Agent 推荐**：父进程把 consume 跑后台（`run_in_background=true`），先阻塞 stderr 等到 `[event] ready` 那一行再开始读 stdout。ready 发出前握手未完成，不要靠额外 sleep 猜。需要服务端订阅的 EventKey（审批/VC/妙记/云文档评论/任务/画板/邮箱，见[服务端订阅](#服务端订阅pre-consume)）在 ready 前完成订阅；同 key 每个 consume 都幂等 POST subscribe，最后一个人退出才注销（仅会话级订阅）。启动前可先 `--dry-run` 看订阅计划。
 
 ### 退出码与退出 reason
 
@@ -68,8 +68,8 @@ event consume <EventKey> [EventKey...]
 |---|---|
 | 0 | 正常退出（达到 `--max-events` / `--timeout` / SIGTERM / Ctrl-C / stdin EOF / 下游管道关闭） |
 | 1 | 同一 App 已有 consume 进程（单实例锁冲突），或其他启动 / 运行错误 |
-| 2 | 参数错误（未知 EventKey、非法 `--jq` / `--output-dir`） |
-| 3 / 4 | 按全局分类：鉴权或凭证问题（如审批/VC 缺 User Token）/ 网络错误 |
+| 2 | 参数错误（未知 EventKey、非法 `--jq` / `--output-dir` / `--param`、`--as` 不在 key 的 auth_types 内、必填参数缺失） |
+| 3 / 4 | 按全局分类：鉴权或凭证问题（如 `--as user` 未登录、缺 App 凭证）/ 网络错误 |
 
 stderr 末尾会输出 `[event] exited — elapsed=<d> reason=<r>`，reason 有 4 个：
 
@@ -84,6 +84,7 @@ stderr 末尾会输出 `[event] exited — elapsed=<d> reason=<r>`，reason 有 
 feishu-cli event list [--json]                       # 1. 列所有支持的 EventKey
 feishu-cli event schema <event_key> [--json]         # 2. 看某 key 的 EventType / scope / payload schema
 feishu-cli event consume <event_key> [event_key...] [flags]  # 3. 启动订阅（阻塞，同一进程一条连接）
+feishu-cli event consume <event_key> --dry-run       #    只打印订阅计划（身份/订阅请求/需勾选事件），不读凭据、不联网
 feishu-cli event status [--json]                     # 4. 看本机活跃 consume 进程
 feishu-cli event stop {--pid N | --event-key K | --all} [--force] [--json]  # 5. 停 consume
 ```
@@ -100,8 +101,9 @@ feishu-cli event list
 feishu-cli event list --json | jq -r '.[] | select(.domain=="im") | .key'
 ```
 
-**输出字段**（JSON 模式）：`key` / `event_type` / `description` / `domain` / `scopes[]` / `auth_types[]`（`bot` 或 `user`，
-`user` 表示需要 User Token 做服务端订阅）/ `required_console_events[]`（需在开放平台勾选的事件）/ `payload_schema`。
+**输出字段**（JSON 模式）：`key` / `event_type` / `description` / `domain` / `scopes[]` / `auth_types[]`（`--as` 可选身份；
+需要服务端订阅的 key 未声明时默认 `user`）/ `required_console_events[]`（需在开放平台勾选的事件）/ `payload_schema`，
+需要服务端订阅的 key 另有 `subscribe_path` / `unsubscribe_path`（含 `{whiteboard_id}` 等占位符）与 `params[]`（`--param` 可接受的参数）。
 
 ### 2. `event schema`：看 payload schema 与 scope
 
@@ -111,7 +113,9 @@ feishu-cli event schema im.message.receive_v1 --json
 ```
 
 输出 `Key` / `Event Type` / `Domain` / `Description` / `Scopes` / `Auth Types` / `Console`（需在开放平台勾选的事件），
+需要服务端订阅的 key 还有 `Subscribe`（订阅端点、可用 `--as`、退出时是否注销）与 `Param`（`--param` 名称、必填/默认值/可选值），
 部分 key 附 `Payload Schema (示例)`。Payload schema 为手工整理的示例，实际 payload 以飞书开放平台文档为准。
+未知 EventKey 报用法错误（exit 2）。
 
 ### 3. `event consume`：启动 WebSocket 订阅（阻塞）
 
@@ -134,6 +138,14 @@ feishu-cli event status
 jq -c 'select(.header.event_type=="im.message.receive_v1")' events.ndjson > receive.ndjson
 
 # ❌ 不要为每个 EventKey 各起一个进程：同 App 多连接会随机拆分事件，第二个进程也会被单实例锁拒绝
+
+# 预览订阅计划（不联网）：审批默认注册两种 subscription_type
+feishu-cli event consume approval.instance.status_changed_v4 --dry-run
+
+# 只注册 INVOLVED_APPROVAL；以 Bot 身份订阅云文档评论 @；只看某个画板
+feishu-cli event consume approval.instance.status_changed_v4 --param subscription_type=INVOLVED_APPROVAL
+feishu-cli event consume drive.notice.comment_add_v1 --as bot
+feishu-cli event consume board.whiteboard.updated_v1 --param whiteboard_id=<whiteboard_id>
 ```
 
 **关键 flag**：
@@ -143,6 +155,9 @@ jq -c 'select(.header.event_type=="im.message.receive_v1")' events.ndjson > rece
 | `--max-events N` | 0（不限制） | 接收 N 条事件后退出，reason=`limit`；有界运行忽略 stdin EOF |
 | `--timeout <duration>`（示例 `60s`） | 0（不限制） | 运行 D 时长后退出，reason=`timeout`；有界运行忽略 stdin EOF |
 | `--force` | false | 跳过同一 App 单实例检查（**不安全**：多进程随机拆分事件） |
+| `--param k=v`（`-p`，可重复） | 无 | EventKey 参数，如 `whiteboard_id=xxx`、`mailbox=me`、`subscription_type=INVOLVED_APPROVAL`；未声明的参数 / 非法取值 / 缺必填均 exit 2 |
+| `--as user\|bot\|auto` | auto | 注册服务端订阅的身份；auto = User 优先，所选订阅 key 都支持 bot 且未登录时用 Bot（已登录但 token 不可用时 fail-closed）；必须落在 key 的 `auth_types` 内，否则 exit 2 |
+| `--dry-run` | false | 打印 JSON 计划（`identity` / `subscriptions[]` / `required_console_events` / `scopes`）后 exit 0；不读凭据、不加锁、不联网 |
 | `--jq .event.xxx` | "" | 极简**点路径**过滤，不支持完整 jq 语法（用 pipe 接外部 jq） |
 | `--output-dir ./events` | "" | 每条事件额外 dump 为 `<event_id>.json` 落盘（不影响 stdout） |
 | `--quiet` | false | 抑制 stderr 诊断；**AI Agent 慎用**——会一起抑制大部分 stderr，但 ready marker 仍走真实 os.Stderr 不受影响 |
@@ -200,6 +215,11 @@ feishu-cli event stop --all --force                        # SIGKILL（紧急情
 | vc | `vc.meeting.participant_meeting_started_v1` / `joined_v1` / `ended_v1` | 当前用户参与的会议开始/加入/结束（User pre-consume） |
 | vc | `vc.note.generated_v1` | 智能纪要已生成 |
 | vc | `vc.recording.recording_started_v1` / `recording_transcript_generated_v1` / `recording_ended_v1` | 录制开始/逐字稿/结束 |
+| minutes | `minutes.minute.generated_v1` | 妙记已生成（User pre-consume，退出注销） |
+| drive | `drive.notice.comment_add_v1` | 云文档评论/回复通知了当前用户或 Bot（如评论里 @ 它；user/bot，持久订阅） |
+| task | `task.task.update_user_access_v2` | 当前用户或应用可见的任务被创建/删除/更新（user/bot，持久订阅） |
+| board | `board.whiteboard.updated_v1` | 画板内容更新（必填 `--param whiteboard_id=`，只输出该画板事件；user/bot，退出注销） |
+| mail | `mail.user_mailbox.event.message_received_v1` | 邮箱收到新邮件（User；`--param mailbox=` 默认 me；退出注销；事件只含元数据，正文用 `mail message` 读） |
 
 > **EventKey 与 EventType 通常一致**；接收到的 payload 里 `header.event_type` 等于 `event_type` 字段。
 
@@ -216,31 +236,49 @@ payload 里的关键字段：`event.operator.open_id`（谁点的）、`event.ac
 `event.context.open_message_id / open_chat_id`（消息与会话定位）。
 开放平台需在「事件与回调 - 回调订阅」勾选 `card.action.trigger` 并发布版本。
 
-### 审批事件的服务端订阅注册（v4，自动完成）
+### 服务端订阅（pre-consume）
 
-审批 v4 事件**除了后台勾选事件，还必须以 User 身份注册服务端订阅关系**，否则连上 WS 也收不到。
-consume 启动时自动完成注册（对 INVOLVED_APPROVAL 与 MANAGED_APPROVAL 各注册一次）：
+下列 EventKey 除了后台勾选事件，还要在连接前 POST 订阅接口，否则连上 WS 也收不到。consume 启动时自动完成，
+`--dry-run` 可先看会发哪些请求：
+
+| EventKey | 订阅端点 | body | 身份（`--as`） | 退出时 |
+|---|---|---|---|---|
+| 审批 v4（instance / task） | `/approval/v4/{instances,tasks}/subscription` | `{"subscription_type": ...}`，默认两种各一次 | user | 不注销（持久） |
+| VC participant / note / recording | `/vc/v1/{meetings,notes,recordings}/subscription` | `{"event_type": "<key>"}` | user | 注销 |
+| `minutes.minute.generated_v1` | `/minutes/v1/minutes/subscription` | `{"event_type": "<key>"}` | user | 注销 |
+| `drive.notice.comment_add_v1` | `/drive/v1/user/subscription` | `{"event_type": "<key>"}` | user / bot | 不注销（按 App+身份+事件类型共享） |
+| `task.task.update_user_access_v2` | `/task/v2/task_v2/task_subscription?user_id_type=open_id` | 无 body | user / bot | 不注销 |
+| `board.whiteboard.updated_v1` | `/board/v1/whiteboards/{whiteboard_id}/subscribe` | `{"event_type": "<key>"}` | user / bot | 注销（`.../unsubscribe`） |
+| `mail.user_mailbox.event.message_received_v1` | `/mail/v1/user_mailboxes/{mailbox}/event/subscribe` | `{"event_type": 1}` | user | 注销（`.../unsubscribe`） |
+
+（端点均以 `/open-apis` 开头。）
 
 ```bash
-feishu-cli auth login   # 需 approval:instance:read / approval:task:read scope
+feishu-cli auth login   # User 身份订阅需要；scope 见 event schema <key>
 feishu-cli event consume approval.instance.status_changed_v4
 # stderr: [event] 已注册服务端订阅: ... subscription_type=INVOLVED_APPROVAL / MANAGED_APPROVAL
 ```
 
-订阅是**持久的用户级关系**，进程退出不注销；重复注册服务端幂等处理。未登录时报错并提示 auth login。
+- 审批：`--param subscription_type=INVOLVED_APPROVAL|MANAGED_APPROVAL`（逗号分隔多值）只注册指定关系；不传与旧版一致注册两种。
+  订阅是**持久的用户级关系**，进程退出不注销；重复注册服务端幂等处理。
+- 画板：`whiteboard_id` 必填，路径段会转义；收到其他画板的事件不输出——本连接是该 App 唯一长连接时 ACK 后丢弃，否则不代答、交由服务端重投给订阅了该画板的连接（与未订阅类型同一策略）。
+- 订阅生命周期按「EventKey + 订阅身份 + 该 key 的 `--param`」计：不同画板 / 邮箱 / `--as` 的 consumer 互不影响，最后一个同范围的 consumer 退出时才注销。
+- `--as` 只约束需要服务端订阅的 key：IM 消息等仅长连接的 key 与审批、妙记等 user-only 订阅 key 一起监听时可以 `--as user`。
+- 邮箱：复用本进程的单条长连接（不另起 WebSocket），可与其他 key 一起订阅：`event consume mail.user_mailbox.event.message_received_v1 im.message.receive_v1`。
+- 身份：未登录且所选订阅 key 都支持 bot 时，auto 改用 App 身份注册；User-only 的 key 未登录时报错并提示 auth login。
 
-### VC 事件的服务端订阅（User pre-consume，last-consumer 注销）
+### 会话级订阅的 last-consumer 注销（VC / 妙记 / 画板 / 邮箱）
 
-`vc.meeting.participant_meeting_*` / `vc.note.generated_v1` / `vc.recording.*` 必须用 User Token 在 consume 启动前 POST 对应 `.../subscription`（body `{"event_type": "<key>"}`）。同一 EventKey 多个 consume 并存时（仅 `--force` 绕过单实例锁时可能出现），**每个 consumer 都幂等 POST subscribe**，自己的订阅成功后才发 ready（避免 first 的 subscribe 阻塞/失败时 second 跳过订阅并提前 ready）。最后一个人退出才 POST `.../unsubscription`（5s timeout），避免先退出者打断后者。
+会话级订阅（上表「退出时：注销」的 key）同一 EventKey 多个 consume 并存时（仅 `--force` 绕过单实例锁时可能出现），**每个 consumer 都幂等 POST subscribe**，自己的订阅成功后才发 ready（避免 first 的 subscribe 阻塞/失败时 second 跳过订阅并提前 ready）。最后一个人退出才 POST 注销端点（5s timeout），避免先退出者打断后者。
 
 **注销后复检补订阅**：unsubscription 是文件锁之外的网络调用，注销在途期间可能有新 consumer 完成注册并订阅。因此注销后会复检存活 consumer 数，若 > 0 则幂等重新订阅并在 stderr 提示「注销后检测到 N 个新 consumer，正在恢复服务端订阅」——否则新 consumer 虽已 ready 却会静默收不到任何事件。看到该提示属正常自愈，无需干预。
 
 ## 权限与开放平台配置
 
-### 默认 App Token，无需 `auth login`
+### 长连接走 App 凭证；服务端订阅按 `--as` 选身份
 
-WebSocket 连接本身走 App 身份（app_id + app_secret）。普通事件不强制 User Token；
-审批 v4 和 VC 事件还需用户身份完成前置订阅注册，详见上文相应章节。配好 `~/.feishu-cli/config.yaml` 或 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 环境变量即可。
+WebSocket 连接本身走 App 身份（app_id + app_secret）。普通事件不需要 User Token；
+需要服务端订阅的 key 按 `--as` 选身份注册（审批/VC/妙记/邮箱仅 User），详见[服务端订阅](#服务端订阅pre-consume)。配好 `~/.feishu-cli/config.yaml` 或 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 环境变量即可。
 
 ### 飞书开放平台配置
 
@@ -248,7 +286,7 @@ WebSocket 连接本身走 App 身份（app_id + app_secret）。普通事件不�
 
 1. **「事件订阅 - 长连接接收事件」** 开启长连接模式（feishu-cli 走 WebSocket，**不是** webhook URL 模式）
 2. **「事件与回调 - 事件订阅」** 选中目标 EventType（与 `event schema <key>` 输出的 Event Type 一致）并**发布版本**
-3. **scope 开通**：每个 EventKey 需要的 scope 见 `event schema <key>` 的 `Scopes` 字段；在「权限管理」页面开通。`event` 域已加入 `--domain event --recommend` 推荐列表，可一次性申请 IM/contact/calendar/drive/approval/vc 常用 scope 并集
+3. **scope 开通**：每个 EventKey 需要的 scope 见 `event schema <key>` 的 `Scopes` 字段；在「权限管理」页面开通。`event` 域已加入 `--domain event --recommend` 推荐列表，可一次性申请 IM/contact/calendar/drive/approval/vc 常用 scope 并集；妙记、云文档评论、任务、画板、邮箱事件的 scope 以 `event schema <key>` 为准单独申请
 
 ### 常见错误
 

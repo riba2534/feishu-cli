@@ -1,7 +1,7 @@
 # 飞书电子表格工作流
 
 本工作流覆盖普通电子表格（Sheet）的全部命令。本页展开高级能力：筛选视图与条件（filter-view）、下拉菜单（dropdown）、
-浮动图片与单元格图片（image）、批量样式（batch-set-style），并汇总全部命令的决策要点。
+条件格式（cond-format）、浮动图片与单元格图片（image）、批量样式（batch-set-style），并汇总全部命令的决策要点。
 
 > **按需阅读**：基础读写、行列与工作表管理、`table-get` / `table-put` 类型保真读写、Markdown 互转、保护、身份与 API 限制
 > 见 `references/basic-commands.md`。多维表格另见 `../bitable/workflow.md`。
@@ -12,6 +12,7 @@
 - [筛选视图 filter-view](#筛选视图-filter-view5-命令)
 - [筛选条件取值](#筛选条件取值filter-view-condition-与-filter-通用)
 - [下拉菜单 dropdown](#下拉菜单-dropdownv2-datavalidation4-命令)
+- [条件格式 cond-format](#条件格式-cond-formatv2-condition_formats4-命令)
 - [浮动图片与单元格图片 image](#浮动图片与单元格图片-image)
 - [批量样式 batch-set-style](#批量样式-batch-set-style)
 - [典型工作流](#典型工作流)
@@ -48,6 +49,7 @@ feishu-cli sheet filter-view create --token shtcnxxxxxx --sheet-id 0b1212 --rang
 feishu-cli sheet filter-view get    --token shtcnxxxxxx --sheet-id 0b1212 --filter-view-id pH9hbVcCXA
 feishu-cli sheet filter-view list   --token shtcnxxxxxx --sheet-id 0b1212 -o json
 feishu-cli sheet filter-view delete --token shtcnxxxxxx --sheet-id 0b1212 --filter-view-id pH9hbVcCXA
+feishu-cli sheet filter-view delete --token shtcnxxxxxx --sheet-id 0b1212 --filter-view-id pH9hbVcCXA --dry-run   # 预览
 
 # update —— --name / --range 至少一个
 feishu-cli sheet filter-view update --token shtcnxxxxxx --sheet-id 0b1212 \
@@ -69,6 +71,7 @@ feishu-cli sheet filter-view condition update --token shtcnxxxxxx --sheet-id 0b1
 feishu-cli sheet filter-view condition get    --token shtcnxxxxxx --sheet-id 0b1212 --filter-view-id pH9hbVcCXA --condition-id E
 feishu-cli sheet filter-view condition list   --token shtcnxxxxxx --sheet-id 0b1212 --filter-view-id pH9hbVcCXA
 feishu-cli sheet filter-view condition delete --token shtcnxxxxxx --sheet-id 0b1212 --filter-view-id pH9hbVcCXA --condition-id E
+feishu-cli sheet filter-view condition delete --token shtcnxxxxxx --sheet-id 0b1212 --filter-view-id pH9hbVcCXA --condition-id E --dry-run
 ```
 
 ### 筛选条件取值（filter-view condition 与 filter 通用）
@@ -114,13 +117,57 @@ feishu-cli sheet dropdown update --token shtcnxxxxxx --sheet-id 0b1212 \
 feishu-cli sheet dropdown update --token shtcnxxxxxx --sheet-id 0b1212 \
   --ranges "0b1212!A1:A100" --options "P0,P1,P2" --highlight
 
-# delete —— --ranges 逗号分隔，最多 100 个
+# delete —— --ranges 逗号分隔，最多 100 个（超出本地报错，退出码 2）；--dry-run 预览请求
 feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100,0b1212!B1:B100"
+feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100" --dry-run
 ```
 
 > `set` 用 `--range`（单个），`update` / `delete` 用 `--ranges`（逗号分隔，`update` 还需 `--sheet-id`）。
 > `get` / `update` / `delete` 接受 `--spreadsheet-token` 作为 `--token` 的兼容别名，`set` 只认 `--token`。
 > 范围前缀可写 sheetId 或子表名；不带前缀时用 `--token` URL 的 `?sheet=` 或唯一子表补全。
+
+### 条件格式 cond-format（V2 condition_formats，4 命令）
+
+```bash
+# list —— 不指定子表时列出全部子表；可传 sheetId 或子表名
+feishu-cli sheet cond-format list shtcnxxxxxx
+feishu-cli sheet cond-format list shtcnxxxxxx 0b1212 Sheet2 -o json
+
+# create —— 数值在 1~10 之间加粗、绿底（between / notBetween 需 2 个 --formula，其余 1 个）
+feishu-cli sheet cond-format create shtcnxxxxxx 0b1212 --range C2:C100 \
+  --rule-type cellIs --operator between --formula 1 --formula 10 --bold --back-color "#e0f6dd"
+
+# create —— 文本以“2020”开头时斜体加下划线；重复值标红字
+feishu-cli sheet cond-format create shtcnxxxxxx Sheet1 --range A:A --rule-type containsText \
+  --operator beginsWith --text 2020 --italic --text-decoration 1
+feishu-cli sheet cond-format create shtcnxxxxxx 0b1212 --range B2:B --rule-type duplicateValues --fore-color "#f54a45"
+
+# update —— 整条覆盖，范围、规则、样式都要重新给全；cf_id 来自 list；带确认门禁（非交互需 --yes）
+feishu-cli sheet cond-format update shtcnxxxxxx 0b1212 <cf_id> --range C2:C100 \
+  --rule-type cellIs --operator greaterThan --formula 60 --back-color "#fdecd1" --dry-run
+feishu-cli sheet cond-format update shtcnxxxxxx 0b1212 <cf_id> --range C2:C100 \
+  --rule-type cellIs --operator greaterThan --formula 60 --back-color "#fdecd1" --yes
+
+# delete —— 不可撤销，带确认门禁：交互终端询问，非交互必须加 --yes（否则退出码 10、不执行）
+feishu-cli sheet cond-format delete shtcnxxxxxx 0b1212 <cf_id> --dry-run
+feishu-cli sheet cond-format delete shtcnxxxxxx 0b1212 <cf_id> <cf_id2> --yes
+```
+
+| `--rule-type` | 参数 |
+|---|---|
+| `cellIs` | `--operator`：`equal` `notEqual` `greaterThan` `greaterThanOrEqual` `lessThan` `lessThanOrEqual` `between` `notBetween`；`--formula` 可重复 |
+| `containsText` | `--text` 必填；`--operator`：`containsText`（默认）`notContains` `is` `beginsWith` `endsWith` |
+| `timePeriod` | `--time-period`：`yesterday` `today` `tomorrow` |
+| `containsBlanks` / `notContainsBlanks` / `duplicateValues` / `uniqueValues` | 无参数 |
+
+> - 样式至少一项（`--bold` / `--italic` / `--text-decoration 0-3` / `--fore-color` / `--back-color`，颜色 `#RRGGBB`）：
+>   实测接口缺 style 报 9499，空 style 报 `res_code=90232 style is empty`，CLI 在本地以用法错误拦截。
+> - `--formula` 数字原样写，文本自动加双引号（`--formula P1` 发送 `"P1"`）。
+> - `timePeriod` 的 `last7Days` 公开文档列出，但实测返回成功、读回却是 `tomorrow`，CLI 拒绝该值。
+> - 范围可写 `A1:B10` / `A:B` / `1:5` / `A2:C`（到最后一行），不带前缀时补位置参数的子表；跨子表的范围报用法错误。
+> - 每个子表最多 20 条，单次最多 10 条；批量接口顶层成功但某条 `res_code≠0`（如 `90233 cf_Id not exist`）时 CLI 报错退出码 1。
+> - `--data '<condition_format JSON>'` 可直接传接口结构（对象或数组，≤10 条），与规则 / 样式 flag 互斥。
+> - create / update / delete 的 `--dry-run` 不联网、不需要凭据，默认输出 JSON 预览。
 
 ### 浮动图片与单元格图片 image
 
@@ -135,6 +182,7 @@ feishu-cli sheet image add shtcnxxxxxx 0b1212 --token <file_token> --range "A1:A
 feishu-cli sheet image get    shtcnxxxxxx 0b1212 ScDmuyHm
 feishu-cli sheet image list   shtcnxxxxxx 0b1212 -o json
 feishu-cli sheet image delete shtcnxxxxxx 0b1212 ScDmuyHm
+feishu-cli sheet image delete shtcnxxxxxx 0b1212 ScDmuyHm --dry-run   # 预览
 
 # update —— 更新浮动图片锚点 / 尺寸 / 偏移（仅提交显式传入的字段；--range 必须是单格）
 feishu-cli sheet image update shtcnxxxxxx 0b1212 ScDmuyHm --width 200 --height 150
@@ -207,7 +255,7 @@ feishu-cli sheet filter-view condition create --token $TOKEN --sheet-id $SHEET \
 ### 2. 清理工作表筛选视图
 
 ```bash
-# list → 拿到 ID → 逐个 delete（delete 无确认门禁，立即执行；先看清 list 结果再删）
+# list → 拿到 ID → 逐个 delete（delete 无确认门禁，立即执行；先看清 list 结果，或先加 --dry-run 预览）
 for FV in $(feishu-cli sheet filter-view list --token $TOKEN --sheet-id $SHEET -o json | jq -r '.[].filter_view_id'); do
   feishu-cli sheet filter-view delete --token $TOKEN --sheet-id $SHEET --filter-view-id "$FV"
 done
@@ -225,10 +273,13 @@ done
 - **filter 与 filter-view 区别**：`sheet filter` 是子表唯一的临时筛选（create/update 必须带 `--col` + `--filter-type`，
   缺了 CLI 直接以用法错误退出，退出码 2）；`filter-view` 是可命名、可多个的筛选视图。多维表格的视图筛选走
   `feishu-cli bitable view view-filter-set`（另一套 DSL）。
+- **下拉框单元格在富文本接口里读不到值**：`read-rich` 返回 `#UNSUPPORTED_TYPE` 并在 stderr 告警；`table-get` 自动按纯文本回填，
+  `read` / `read-plain` 直接返回选项值。
 - **filter-view 范围不写数据**：`--range` 只圈定视图作用域；写数据的限制见 `references/basic-commands.md` 的「API 限制」。
-- **`-o json` 支持面**：`filter-view`（含 `condition get/list/create/update`）、`image get/list/add/update/media-upload/write-image/write-batch`
-  支持 `-o json`（默认 `text`）；`dropdown get` 只输出 JSON；`dropdown set/update/delete`、`filter-view delete`、
-  `condition delete` 没有 `-o`，只输出成功摘要文本。
+- **`-o json` 支持面**：`filter-view`（含 `condition get/list/create/update`）、`image get/list/add/update/media-upload/write-image/write-batch`、
+  `cond-format list/create/update/delete` 支持 `-o json`（默认 `text`）；`dropdown get` 只输出 JSON；`dropdown set/update/delete`、
+  `filter-view delete`、`condition delete` 没有 `-o`，只输出成功摘要文本（`--dry-run` 输出 JSON 预览）。
+- **参数错误退出码 2**：缺必填 flag、JSON 格式错误、取值越界等在联网前报错，退出码 2（无凭据时也是 2），不要重试。
 
 ## 其他 Sheet 命令
 
@@ -237,20 +288,22 @@ done
 | 需求 | 命令（`feishu-cli sheet <cmd>`） |
 |---|---|
 | 创建 / 元信息 | `create` / `get` / `meta` / `list-sheets`（含 `resource_type`、冻结与隐藏状态） |
-| 读取（普通 + 富文本） | `read` / `read-plain` / `read-rich`（`read` 的日期单元格默认读出序列号，要显示值加 `--value-render FormattedValue`） |
-| 写入 / 追加 / 插入 / 清除 | `write` / `write-rich` / `append` / `append-rich` / `insert` / `clear`（`write` / `append` 超过 5000 行自动分批） |
-| 整表按列类型保真读写 | `table-get` / `table-put`（dtype 只有 `int*` / `uint*` / `float*` / `complex*` 是数字，`number` 不是合法 dtype 会按文本写；`--mode append`、`--start-cell`；日期时间保留时分秒） |
+| 读取（普通 + 富文本） | `read` / `read-plain` / `read-rich`（`read` 的日期单元格默认读出序列号，要显示值加 `--value-render FormattedValue`；文本模式链接显示为 `文本(链接)`） |
+| 写入 / 追加 / 插入 / 清除 | `write` / `write-rich` / `append` / `append-rich` / `insert` / `clear`（`write` / `append` 超过 5000 行自动分批；`write` / `clear` 支持 `--dry-run`） |
+| 整表按列类型保真读写 | `table-get` / `table-put`（dtype 只有 `int*` / `uint*` / `float*` / `complex*` 是数字，`number` 不是合法 dtype 会按文本写；`--mode append`、`--start-cell`、`--dry-run`；日期时间保留时分秒；下拉框单元格按纯文本回填） |
 | 行列管理 | `add-rows` / `add-cols` / `insert-rows` / `insert-cols` / `delete-rows` / `delete-cols`（`--range "3:5"` / `"B:D"` 1 起始两端包含，或 `--start/--end` 0 起始不含 end；删除支持 `--dry-run`） |
 | 隐藏行列 / 行高列宽 / 移动行列 | `update-dimension --range "3:5" --hidden` / `--size 40`；`move-dimension --range "2:3" --target 5`（移到原第 5 行之前） |
 | 工作表管理 | `add-sheet` / `copy-sheet` / `delete-sheet`（`--dry-run`）/ `update-sheet`（改名、隐藏、位置、冻结）/ `freeze --rows 1 --cols 1` |
 | 单范围样式 / 合并 / 保护 | `style` / `merge` / `unmerge` / `protect` / `unprotect`（多范围批量样式用上文 `batch-set-style`） |
-| 查找 / 替换 / 简单筛选 | `find` / `replace`（都必须带 `--range`；`--regex` 正则）/ `filter create/update/get/delete` |
+| 查找 / 替换 / 简单筛选 | `find` / `replace`（都必须带 `--range`；`--regex` 正则）/ `filter create/update/get/delete`（delete 支持 `--dry-run`） |
+| 条件格式 | `cond-format list/create/update/delete`（见上文） |
 | 导出 / Markdown 导入 | `export`（XLSX / CSV / Markdown；`-o` 是输出文件路径）/ `import-md` |
 | 浮动图片与单元格写图 | `image add/get/update/list/delete/media-upload/write-image/write-batch`（见上文） |
 
 > 整表结构化处理优先 `table-get` / `table-put`；只改已知区域时使用范围读写命令。
-> 删除类命令（`delete-rows/delete-cols/delete-sheet`、`filter-view delete`、`image delete`、`unprotect`）没有确认门禁，
-> 执行即生效且不可撤销；行列与子表删除先 `--dry-run` 核对实际行号。
+> 删除类命令（`delete-rows/delete-cols/delete-sheet`、`filter delete`、`filter-view delete`、`condition delete`、`dropdown delete`、
+> `image delete`、`unprotect`、`clear`）没有确认门禁，执行即生效且不可撤销；都支持 `--dry-run`（不联网、不需要凭据），先预览再执行。
+> `cond-format update`（整条覆盖）与 `cond-format delete` 带确认门禁，非交互环境须加 `--yes`（否则退出码 10、不执行）。
 
 ## 权限要求
 

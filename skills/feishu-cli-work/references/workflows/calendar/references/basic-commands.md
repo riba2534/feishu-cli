@@ -29,17 +29,26 @@ feishu-cli calendar create-event \
   --summary "会议标题" \
   --start "2026-01-21T14:00:00+08:00" \
   --end "2026-01-21T15:00:00+08:00" \
-  [--description "会议描述"] [--location "会议室名称"] \
+  [--description "会议描述" [--description-format text|markdown]] [--location "会议室名称"] \
   [--rrule "FREQ=WEEKLY;BYDAY=MO"] \
   [--attendee-ids ou_xxx,oc_xxx,omm_xxx,user@example.com] \
-  [--vchat] [--dry-run] [--as auto|user|bot] [-o json]
+  [--vchat] [--meeting-owner-id ou_xxx] [--dry-run] [--as auto|user|bot] [-o json]
 ```
 
 - 必填 `--summary`、`--start`、`--end`（`--end` 必须晚于 `--start`）；`--calendar-id` 默认 `primary`。
 - `--attendee-ids` 按前缀识别：`ou_` 用户、`oc_` 群、`omm_` 会议室、含 `@` 为外部邮箱。日程创建后再添加参与人并立即通知；
   **添加失败会自动删除刚创建的日程**（输出"回滚成功"；回滚也失败时给出残留 event_id，需手动删除）。User 身份会把本人一并加入参与人。
 - `--vchat` 同时创建飞书视频会议，`get-event` 的 `vchat.meeting_url` 为会议链接。
-- `--dry-run` 只打印将发出的请求（不联网、不解析身份），带参与人时会列出第二步添加参与人的请求。
+- `--meeting-owner-id` 指定视频会议 owner（写入 `vchat.meeting_settings.owner_id`，隐含 `--vchat`）：只在 `--as bot`
+  的应用日历上生效，必须是 `ou_` 开头的本租户用户；非 Bot 身份或前缀不对在本地报用法错误（exit 2）。
+- `--description-format`：默认 `text`（写纯文本 `description`，与旧版一致）；`markdown` 写富文本 `description_rich`，
+  支持粗体/斜体/链接/标题/列表/表格/图片。`![alt](./img/a.png)` 本地图片必须是**当前目录内的相对路径**（绝对路径、
+  `../` 越界、不存在都在联网前 exit 2），执行时先上传到云空间（`parent_type=calendar`）再改写为图片 URL；`https://` 图片原样保留。
+  支持 `![alt](./a.png "标题")` 与 `![alt](<带空格.png>)` 写法（CLI 只改写路径、保留标题）；围栏代码块与行内代码里的图片语法按原文保留，不上传。注意服务端渲染时会丢弃图片标题，日程描述也不支持代码块排版（代码块按普通文本显示）。
+  `markdown` 必须同时传 `--description`。读取时 `get-event` 只输出服务端生成的纯文本 `description`（图片显示为 `[图片]`），
+  要看原始 Markdown 用 `feishu-cli api GET /open-apis/calendar/v4/calendars/<calendar_id>/events/<event_id> --as user` 的 `description_rich`。
+- `--dry-run` 只打印将发出的请求（不联网、不解析身份），带参与人时会列出第二步添加参与人的请求；`markdown` 描述含本地图片时
+  先列出每张图片的上传请求，`description_rich` 中以 `<上传后的图片 URL: ./a.png>` 占位。
 - `--rrule` 创建重复日程，`--start`/`--end` 为首个实例时间，见 workflow.md 的「重复日程（RRULE）操作指引」。
 
 ### 列出日程（原始日程）
@@ -71,13 +80,15 @@ feishu-cli calendar get-event [calendar_id] <event_id> [--share-link] [-o json]
 feishu-cli calendar update-event [calendar_id] <event_id> \
   [--summary "新标题"] \
   [--start "2026-01-21T15:00:00+08:00" --end "2026-01-21T16:00:00+08:00"] \
-  [--description "新描述"] [--location "新地点"] \
+  [--description "新描述" [--description-format text|markdown]] [--location "新地点"] \
   [--rrule "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"] \
   [--apply-to single|all|this-and-following] [--notify=false] [--dry-run] [--yes] [-o json]
 ```
 
 - 至少提供一个可更新字段（含 `--rrule`）。**`--start` 与 `--end` 必须成对传**：只改一端时服务端返回成功但时间不变，
   CLI 在本地报用法错误（exit 2）。
+- `--description-format markdown` 与 create-event 相同（写 `description_rich`，本地图片在当前目录内、确认之后上传）；
+  `this-and-following` 新建的后续序列同样使用本次的富文本描述。
 - `-o json`：不传 `--apply-to` 或 `single` 时输出更新后的日程对象；`all` / `this-and-following` 输出
   `{kind, scope, master_event_id, follow_event, exceptions, ...}` 汇总。重复日程范围见 workflow.md。
 
@@ -125,14 +136,15 @@ feishu-cli calendar event-reply <calendar_id> <event_id> --status accept|decline
 ```
 
 与 `calendar rsvp` 等价，**必需 User Token**（行为变更：此前版本默认 Bot 身份，必然答复失败）。`calendar_id` 可写 `primary`。
+`calendar rsvp` 另有 `--dry-run`（不联网；省略 `--calendar-id` 时预览里先列出取主日历的请求）。
 
 ## 参与人管理
 
 ```bash
-# 添加（立即通知被添加者；无 --dry-run）
+# 添加（立即通知被添加者；先 --dry-run 核对名单）
 feishu-cli calendar attendee add <calendar_id> <event_id> \
   [--user-ids ou_xxx,ou_yyy] [--chat-ids oc_xxx] [--room-ids omm_xxx] \
-  [--attendee-ids ou_xxx,oc_xxx,omm_xxx,user@example.com]
+  [--attendee-ids ou_xxx,oc_xxx,omm_xxx,user@example.com] [--dry-run]
 
 # 移除（POST attendees/batch_delete）
 feishu-cli calendar attendee remove <calendar_id> <event_id> \

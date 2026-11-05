@@ -62,9 +62,6 @@ var mailThreadModifyCmd = &cobra.Command{
   feishu-cli mail thread-modify --thread-ids t1,t2 --add-label-ids flagged
   feishu-cli mail thread-modify --thread-ids t1 --remove-label-ids UNREAD --folder-id archive`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		mailbox, _ := cmd.Flags().GetString("mailbox")
 		raw, _ := cmd.Flags().GetString("thread-ids")
 		addRaw, _ := cmd.Flags().GetString("add-label-ids")
@@ -120,6 +117,9 @@ var mailThreadModifyCmd = &cobra.Command{
 			}
 			return printJSON(map[string]any{"dry_run": true, "batch_size": mailManageMaxMessageIDs, "requests": reqs})
 		}
+		if err := config.Validate(); err != nil {
+			return err
+		}
 
 		token, err := requireUserToken(cmd, "mail thread-modify")
 		if err != nil {
@@ -174,9 +174,6 @@ var mailThreadTrashCmd = &cobra.Command{
   feishu-cli mail thread-trash --thread-ids t1,t2 --dry-run
   feishu-cli mail thread-trash --thread-ids t1,t2 --yes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		mailbox, _ := cmd.Flags().GetString("mailbox")
 		raw, _ := cmd.Flags().GetString("thread-ids")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
@@ -193,11 +190,14 @@ var mailThreadTrashCmd = &cobra.Command{
 			}
 			return printJSON(map[string]any{"dry_run": true, "batch_size": mailManageMaxMessageIDs, "requests": reqs})
 		}
-		if err := confirmDangerousAction(cmd, fmt.Sprintf("将把 %d 个邮件线程（含其中全部邮件）移入废纸篓，确认?", len(threadIDs))); err != nil {
+		if err := config.Validate(); err != nil {
 			return err
 		}
 		token, err := requireUserToken(cmd, "mail thread-trash")
 		if err != nil {
+			return err
+		}
+		if err := confirmDangerousAction(cmd, fmt.Sprintf("将把 %d 个邮件线程（含其中全部邮件）移入废纸篓，确认?", len(threadIDs))); err != nil {
 			return err
 		}
 		success, failed, _ := runMailManageBatches(threadIDs, func(batch []string) (json.RawMessage, error) {

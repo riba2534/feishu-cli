@@ -1,7 +1,8 @@
 # 飞书 OKR 工作流
 
-覆盖 OKR 周期查询（`cycle list/detail`）、目标与关键结果创建/更新（`objective` / `key-result`）、进展记录
-（`progress list/get/create/update/delete`、`upload-image`）、评论（`comment list/create`）；量化指标等未封装能力走 `feishu-cli api` 透传。
+覆盖 OKR 周期查询（`cycle list/detail`）、目标与关键结果创建/批量创建/更新（`objective` / `key-result`）、
+权重与排序（`weight` / `reorder`）、量化指标当前值（`indicator update`）、进展记录（`progress list/get/create/update/delete`、
+`upload-image`）、评论（`comment list/get/create/update/delete`）；其余未封装能力走 `feishu-cli api` 透传。
 完整参数以 `feishu-cli okr <cmd> --help` 为准。
 
 ## 目录
@@ -12,19 +13,21 @@
 4. [周期：cycle list / detail](#周期cycle-list--detail)
 5. [进展记录：progress](#进展记录progress)
 6. [目标 / 关键结果写入与评论（v2）](#目标--关键结果写入与评论v2)
-7. [未封装的能力（api 透传）](#未封装的能力api-透传)
-8. [错误处理](#错误处理)
-9. [相关技能](#相关技能)
+7. [权重、排序与量化指标](#权重排序与量化指标)
+8. [未封装的能力（api 透传）](#未封装的能力api-透传)
+9. [错误处理](#错误处理)
+10. [相关技能](#相关技能)
 
 ## 核心概念
 
 | 层级 | 对象 | 说明 | 命令 |
 |------|------|------|------|
 | 1 | **Cycle（周期）** | 每个用户有自己的周期（v2 用户周期，`tenant_cycle_id` 指向租户级周期） | `cycle list` / `cycle detail` |
-| 2 | **Objective（目标 O）** | 用户周期内的目标 | `objective create/update`；读取用 `cycle detail` |
-| 3 | **Key Result（关键结果 KR）** | O 下的可量化结果 | `key-result create/update`；读取用 `cycle detail` |
+| 2 | **Objective（目标 O）** | 用户周期内的目标 | `objective create/batch-create/update`、`weight`、`reorder`；读取用 `cycle detail` |
+| 3 | **Key Result（关键结果 KR）** | O 下的可量化结果 | `key-result create/update`、`weight`、`reorder`；读取用 `cycle detail` |
 | 4 | **Progress Record（进展记录）** | O 或 KR 下的一条进展 | `progress *`、`upload-image` |
-| - | **Comment（评论）** | 周期 / 进展 / O / KR 上的评论 | `comment list/create` |
+| - | **Indicator（量化指标）** | O / KR 绑定的指标（起始/当前/目标值） | `indicator update` |
+| - | **Comment（评论）** | 周期 / 进展 / O / KR 上的评论 | `comment list/get/create/update/delete` |
 
 - **两种周期 ID 不通用**：`cycle list` 默认返回 v2 **用户周期 ID**（`GET /open-apis/okr/v2/cycles?user_id=`），`cycle detail`
   与 `objective create --cycle-id` 只认它；`cycle list --tenant` 返回 v1 **租户周期**（`/open-apis/okr/v1/periods`，带名称），
@@ -43,7 +46,7 @@ OKR 命令组默认 **`--as bot`**（App/Tenant Token，无需 `auth login`，�
 - 只有 `cycle list --tenant`（v1 periods）**只收 Tenant Token**，User 身份报 99991668。
 - `cycle list`（v2）、`cycle detail`、`progress list/get`、`comment list` 都支持 User 与 Tenant：缺 scope 时
   Bot 报 99991672（应用未开通）、User 报 99991679（用户未授权）。
-- `comment create` **必需 User Token**，与 `--as` 无关。
+- `comment create/update/delete` **必需 User Token**：这三个命令的 `--as` 默认 `user`，显式 `--as bot` 在 dry-run 和凭据检查之前报用法错误（exit 2）；`comment get` 跟随 `--as`。
 - `cycle list` 的 `--user-id` 默认取当前登录用户，只决定查询对象；请求身份仍按 `--as`（默认 bot）。未登录时必须传 `--user-id`。
 
 | 命令 | 所需 scope（任一即可；Bot 在开放平台为应用开通，User 需 `auth login --scope` 授权同名 scope） |
@@ -55,8 +58,8 @@ OKR 命令组默认 **`--as bot`**（App/Tenant Token，无需 `auth login`，�
 | `progress create` / `update` | `okr:okr`、`okr:okr.progress:writeonly` |
 | `progress delete` | `okr:okr`、`okr:okr.progress:delete` |
 | `upload-image` | `okr:okr`、`okr:okr.progress.file:upload` |
-| `objective` / `key-result` create/update | `okr:okr.content:writeonly` |
-| `comment list` / `comment create` | `okr:okr.comment.readonly` / `okr:okr.comment.writeonly` |
+| `objective` / `key-result` create/update、`objective batch-create`、`weight`、`reorder`、`indicator update` | `okr:okr.content:writeonly` |
+| `comment list/get` / `comment create/update` / `comment delete` | `okr:okr.comment.readonly` / `okr:okr.comment.writeonly` / `okr:okr.comment.delete` |
 
 ## 命令速查
 
@@ -74,12 +77,21 @@ OKR 命令组默认 **`--as bot`**（App/Tenant Token，无需 `auth login`，�
 | `okr objective update <id>` | 更新目标内容/备注/得分/截止 | 至少一个字段 |
 | `okr key-result create` | 在目标下创建关键结果 | `--objective-id` + 内容 |
 | `okr key-result update <id>` | 更新关键结果内容/得分/截止 | 至少一个字段 |
+| `okr objective batch-create` | 批量创建目标与关键结果，失败自动回滚 | `--cycle-id` + `--input` |
+| `okr weight` | 调整目标 / KR 权重（其余自动归一） | `--level` + 周期或目标 ID + `--weights` |
+| `okr reorder` | 调整目标 / KR 顺序 | `--level` + 周期或目标 ID + `--ops` |
+| `okr indicator update` | 更新量化指标当前值 | `--level` + `--id` + `--value` |
 | `okr comment list` | 列出评论 | `--target-type` + `--target-id` |
+| `okr comment get <id>` | 查看单条评论（原始 JSON） | 评论 ID |
 | `okr comment create` | 创建评论或回复（必需 User Token） | `--target-type` + `--target-id` + 内容 |
+| `okr comment update <id>` | 修改评论内容（必需 User Token） | 评论 ID + 内容 |
+| `okr comment delete <id>` | 删除评论（必需 User Token，需确认） | 评论 ID |
 
-**OKR 对组织可见**：所有写命令（`progress create/update/delete`、`objective`/`key-result` create/update、`comment create`）
-都支持 `--dry-run`（只打印请求，不联网、不解析身份）。先预览并向用户确认目标对象和内容，再去掉 `--dry-run` 执行。
-`progress delete` 非交互环境需 `--yes`（否则 exit 10 且不执行）。
+**OKR 对组织可见**：所有写命令（`progress create/update/delete`、`upload-image`、`objective`/`key-result` create/update、
+`objective batch-create`、`weight`、`reorder`、`indicator update`、`comment create/update/delete`）都支持 `--dry-run`
+（只打印请求，不联网、不解析身份）。先预览并向用户确认目标对象和内容，再去掉 `--dry-run` 执行。
+`progress delete`、`comment delete` 非交互环境需 `--yes`（否则 exit 10 且不执行）。参数错误（ID 不是正整数、JSON 不合法、
+权重越界等）一律 exit 2，在解析身份之前返回。
 
 ## 周期：cycle list / detail
 
@@ -163,25 +175,63 @@ feishu-cli okr comment create --target-type objective --target-id <objective_id>
 - 目标/KR 评论必须且只能指定 `--selected-text` / `--select-all` / `--ref-comment-id` 之一（`--select-all` 发送的 `selected_text` 不是字面量 `"*"`，而是与 `--content` 纯文本等长（按字符计）的 `*` 串；改用 `--content-json` 时 CLI 拿不到纯文本，生成的串为空）。
 - 租户强制 OKR 分类时创建目标需带 `--category-id`：先 `feishu-cli api GET /open-apis/okr/v2/categories --as user` 查
   （该端点需用户 scope `okr:okr.setting:read`，缺失报 99991679）。
+- 评论修改与删除：`okr comment update <comment_id> --content "..." [--dry-run]`、`okr comment delete <comment_id> [--dry-run] [--yes]`；
+  只能操作本人发表的评论。`okr comment get <comment_id>` 输出服务端原始 JSON。
+
+### 批量创建目标（失败回滚）
+
+```bash
+cat > okr.json <<'EOF'
+[{"text":"提升交付质量","notes":"以线上缺陷为口径","krs":[{"text":"缺陷率降到 1% 以下"},{"text":"P0 故障 0 起"}]},
+ {"text":"缩短交付周期","krs":[{"text":"平均交付周期 ≤ 5 天"}]}]
+EOF
+feishu-cli okr objective batch-create --cycle-id <cycle_id> --input @okr.json [--category-id <id>] --dry-run
+```
+
+- 逐条创建目标与 KR；任一步失败时**逆序删除本次已创建的目标**（KR 随目标删除），错误信息说明回滚结果；回滚也失败时列出需要手动清理的目标 ID。
+- `--input` 每项 `text` 必填，`notes` / `category_id`（正整数 ID）/ `krs[].text` 可选；纯文本自动包装为 v2 ContentBlock。
+- `-o json` 输出 `{created:[{objective_id, key_result_ids}]}`。
+
 - 验证状态：测试租户未开通 OKR 写 scope，以上写命令只做了 `--dry-run` 与单元测试，未做真实写入。
 
-## 未封装的能力（api 透传）
+## 权重、排序与量化指标
 
-目标/KR 的 list/get/delete、排序与权重、对齐关系、评论 get/patch/delete 等走 `feishu-cli api` 透传，
-先 `feishu-cli schema okr` 列出方法，再 `feishu-cli schema okr.<resource>.<method>` 查参数。
+```bash
+# 权重：只写要改的项（0..1、最多 3 位小数、id 不重复、总和 ≤ 1），其余按原权重比例分摊剩余权重
+feishu-cli okr weight --level objective --cycle-id <cycle_id> --weights '[{"id":"<objective_id>","weight":0.4}]' --dry-run
+feishu-cli okr weight --level key-result --objective-id <objective_id> --weights @weights.json
 
-### 量化指标 indicators
+# 排序：把指定项放到目标位置（1 为第一位），其余保持原相对顺序
+feishu-cli okr reorder --level key-result --objective-id <objective_id> --ops '[{"id":"<key_result_id>","position":1}]' --dry-run
+
+# 量化指标当前值：先查指标 ID 再 PATCH
+feishu-cli okr indicator update --level key-result --id <key_result_id> --value 42 --dry-run
+```
+
+- `weight`：服务端要求提交完整列表且总和为 1。CLI 先读取现有目标/KR，再按"指定项原样 + 其余按原权重比例分摊（原权重全 0 时均分）"
+  以三位小数定点算出完整列表，尾差计入最后一项，按 position 顺序 PUT。`--dry-run` 不联网，只能列出指定项，完整列表执行时才算出。
+  `-o json` 输出 `{level, total, weights:[{id, weight}]}`。
+- `reorder`：`--ops` 的 id 与 position 都不能重复；执行时读取现有顺序后 PUT 完整 ID 列表，`-o json` 输出 `order`。
+- `indicator update`：`--value` 范围 ±99999999999；目标/KR 未配置指标时报错提示先在 OKR 中设置。只有
+  `current_value_calculate_type=0`（手动）的指标允许改当前值。
+- `--weights` / `--ops` / `--input` 都接受内联 JSON 或 `@文件`。
+
+### 量化指标字段
 
 ```bash
 feishu-cli api GET /open-apis/okr/v2/objectives/<id>/indicators --as user     # O 的指标
 feishu-cli api GET /open-apis/okr/v2/key_results/<id>/indicators --as user    # KR 的指标
-feishu-cli api PATCH /open-apis/okr/v2/indicators/<indicator_id> --as user --data '{"current_value":8}'
 ```
 
 字段语义（汇报进度时的防错口径）：
 - `current_value_calculate_type`：0=手动 / 2=按 KR 汇总 / 3=按拆解汇总；**仅 0 允许 PATCH 当前值**
 - `entity_type`：2=Objective / 3=Key Result；`indicator_status`：-1/0/1/2
 - **默认初始指标不带 start/current/target/unit**——此时汇报必须说「未设置进度」，不能说 0%
+
+## 未封装的能力（api 透传）
+
+目标/KR 的 list/get/delete、对齐关系等走 `feishu-cli api` 透传，
+先 `feishu-cli schema okr` 列出方法，再 `feishu-cli schema okr.<resource>.<method>` 查参数。
 
 ## 错误处理
 
@@ -191,6 +241,8 @@ feishu-cli api PATCH /open-apis/okr/v2/indicators/<indicator_id> --as user --dat
 | `必须指定 --content 或 --content-json 之一` / `只能填一个` | 内容缺失或两个都传 | 二选一 |
 | `--progress-status 必须配合 --progress-percent 一起使用` | 单独传 status | 加上 `--progress-percent` |
 | `--content-json 不是合法 JSON` | JSON 语法错误 | 用 `jq .` 校验后再传 |
+| `--weights 权重总和必须 ≤ 1` / `最多 3 位小数` / `id 重复` | `weight` 输入不合法（exit 2） | 只列要改的项，权重写成如 0.25 |
+| `id "..." 不在当前列表中` | `weight` / `reorder` 指定的 ID 不属于该周期 / 目标 | 用 `cycle detail` 核对 ID 与层级 |
 | `99991672` | 应用缺少对应 tenant scope（Bot 身份） | 按错误里的开放平台链接为应用开通（见上方 scope 表）并发布版本 |
 | `99991679` | 用户未授权该 scope（User 身份） | `feishu-cli auth login --scope "<scope>"` 增量授权 |
 | `99991668 user access token not support` | `cycle list --tenant` 只收 Tenant Token | 用默认 `--as bot` 运行 |

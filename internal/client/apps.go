@@ -120,3 +120,47 @@ func SparkReleaseGetPath(appID, releaseID string) string {
 func SparkReleaseListPath(appID string) string {
 	return SparkReleaseCreatePath(appID)
 }
+
+// SparkAppFeaturesPath 返回 GET /apps/{id}/features（应用业务功能开关，如 database）。
+func SparkAppFeaturesPath(appID string) string {
+	return SparkAppGetPath(appID) + "/features"
+}
+
+// SparkIconUploadPath 返回 POST /icon（multipart 上传应用图标，响应 data.icon_url）。
+func SparkIconUploadPath() string {
+	return SparkBasePath + "/icon"
+}
+
+// SparkUploadIcon 以 multipart（字段 file）上传应用图标，返回服务端生成的 icon_url。
+// 内容类型与大小由调用方预先校验；只发一次请求，不重放。
+func SparkUploadIcon(content []byte, userAccessToken string) (string, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+	fd := larkcore.NewFormdata().AddFile("file", bytes.NewReader(content))
+	req := &larkcore.ApiReq{
+		HttpMethod:                http.MethodPost,
+		ApiPath:                   SparkIconUploadPath(),
+		Body:                      fd,
+		QueryParams:               larkcore.QueryParams{},
+		SupportedAccessTokenTypes: []larkcore.AccessTokenType{larkcore.AccessTokenTypeUser},
+	}
+	opts := []larkcore.RequestOptionFunc{larkcore.WithFileUpload()}
+	if userAccessToken != "" {
+		opts = append(opts, larkcore.WithUserAccessToken(userAccessToken))
+	}
+	resp, err := cli.Do(Context(), req, opts...)
+	if err != nil {
+		return "", fmt.Errorf("妙搭图标上传失败: %w", err)
+	}
+	data, err := parseSparkResponse(resp.StatusCode, resp.RawBody)
+	if err != nil {
+		return "", err
+	}
+	iconURL, _ := data["icon_url"].(string)
+	if strings.TrimSpace(iconURL) == "" {
+		return "", fmt.Errorf("妙搭图标上传响应缺少 icon_url")
+	}
+	return iconURL, nil
+}

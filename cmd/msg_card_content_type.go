@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -39,6 +39,6 @@ func resolveCardContentType(cmd *cobra.Command) (string, error) {
 	case "raw", client.CardMsgContentTypeRaw:
 		return client.CardMsgContentTypeRaw, nil
 	default:
-		return "", fmt.Errorf("无效的 --card-content-type 取值 %q（合法值：user / raw / rendered / user_card_content / raw_card_content）", v)
+		return "", clierr.Usagef("无效的 --card-content-type 取值 %q（合法值：user / raw / rendered / user_card_content / raw_card_content）", v)
 	}
 }

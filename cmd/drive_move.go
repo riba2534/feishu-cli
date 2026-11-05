@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -34,10 +35,6 @@ var driveMoveCmd = &cobra.Command{
   feishu-cli drive move --file-token boxxxx --type docx --folder-token fldxxx
   feishu-cli drive move --file-token fldxxx --type folder`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken, _ := cmd.Flags().GetString("file-token")
 		folderToken, _ := cmd.Flags().GetString("folder-token")
 		fileType, _ := cmd.Flags().GetString("type")
@@ -45,7 +42,7 @@ var driveMoveCmd = &cobra.Command{
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 		if fileToken == "" {
-			return fmt.Errorf("--file-token 必填")
+			return clierr.Usagef("--file-token 必填")
 		}
 		if err := validateEnum(fileType, "--type", driveMoveAllowedTypes); err != nil {
 			return err
@@ -86,6 +83,10 @@ var driveMoveCmd = &cobra.Command{
 				"file_token": fileToken,
 				"type":       fileType,
 			}, steps)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveIdentityToken(cmd)

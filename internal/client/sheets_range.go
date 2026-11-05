@@ -289,15 +289,18 @@ func MaxRowWidth(values [][]any) int {
 
 // PlanSheetWriteChunks 把一次 v2 写入按「≤maxRows 行 × ≤maxCols 列」拆成多个请求。
 //
-// 未超限时原样返回单个分块（range 不做任何改写，保持旧行为）。超限时以范围左上角为锚点
-// 计算每块的精确范围；范围显式声明的结束行/列小于数据尺寸时报错（与接口「range 需大于等于
-// 写入数据范围」的约束一致，避免写到声明范围之外）。
+// 范围显式声明的结束行/列小于数据尺寸时报错（CheckSheetWriteRangeFits，与接口「range 需大于等于
+// 写入数据范围」的约束一致，是否分批都检查）。未超限时原样返回单个分块（range 不做任何改写，
+// 保持旧行为）；超限时以范围左上角为锚点计算每块的精确范围。
 func PlanSheetWriteChunks(fullRange string, values [][]any, maxRows, maxCols int) ([]SheetWriteChunk, error) {
 	if maxRows <= 0 {
 		maxRows = SheetV2MaxRowsPerWrite
 	}
 	if maxCols <= 0 {
 		maxCols = SheetV2MaxColsPerWrite
+	}
+	if err := CheckSheetWriteRangeFits(fullRange, values); err != nil {
+		return nil, err
 	}
 	width := MaxRowWidth(values)
 	if len(values) <= maxRows && width <= maxCols {
@@ -321,18 +324,6 @@ func PlanSheetWriteChunks(fullRange string, values [][]any, maxRows, maxCols int
 	}
 	if startRow < 0 {
 		startRow = 0
-	}
-	if !strings.Contains(rest, ":") {
-		// 单个单元格（如 "A1"）只作为左上角锚点，不限制行列数
-		b.EndRow, b.EndCol = -1, -1
-	}
-	if b.EndRow >= 0 && b.EndRow-startRow+1 < len(values) {
-		return nil, fmt.Errorf("范围 %q 只有 %d 行，小于数据的 %d 行；请扩大范围或只写左上角单元格（如 %s!%s%d）",
-			fullRange, b.EndRow-startRow+1, len(values), sheetID, IndexToColumn(startCol), startRow+1)
-	}
-	if b.EndCol >= 0 && b.EndCol-startCol+1 < width {
-		return nil, fmt.Errorf("范围 %q 只有 %d 列，小于数据的 %d 列；请扩大范围或只写左上角单元格（如 %s!%s%d）",
-			fullRange, b.EndCol-startCol+1, width, sheetID, IndexToColumn(startCol), startRow+1)
 	}
 
 	var chunks []SheetWriteChunk
@@ -370,6 +361,51 @@ func PlanSheetWriteChunks(fullRange string, values [][]any, maxRows, maxCols int
 		}
 	}
 	return chunks, nil
+}
+
+// CheckSheetWriteRangeFits 校验显式声明结束行/列的范围能容纳数据，不发网络请求。
+// 单个单元格（"A1"，只作左上角锚点）、整表、开放端（整列 "B:C" 的行、整行 "1:3" 的列）不限制；
+// 无法解析的范围放行，交给后续逻辑或接口报错。服务端对这种情况返回 90202（实测行、列都会拒绝），
+// 本地提前拦下可给出可操作的提示。
+func CheckSheetWriteRangeFits(fullRange string, values [][]any) error {
+	fullRange = strings.TrimSpace(fullRange)
+	sheetID, rest, ok := SplitSheetRangePrefix(fullRange)
+	if !ok {
+		if !LooksLikeA1Range(fullRange) {
+			return nil
+		}
+		rest = fullRange
+	}
+	if !strings.Contains(rest, ":") {
+		return nil
+	}
+	b, ok := ParseA1Bounds(rest)
+	if !ok {
+		return nil
+	}
+	startCol, startRow := b.StartCol, b.StartRow
+	if startCol < 0 {
+		startCol = 0
+	}
+	if startRow < 0 {
+		startRow = 0
+	}
+	if (b.EndRow >= 0 && b.EndRow < startRow) || (b.EndCol >= 0 && b.EndCol < startCol) {
+		return fmt.Errorf("范围 %q 的起止位置写反了（终点在起点的左侧或上方），请写成左上角:右下角", fullRange)
+	}
+	anchor := fmt.Sprintf("%s%d", IndexToColumn(startCol), startRow+1)
+	if sheetID != "" {
+		anchor = sheetID + "!" + anchor
+	}
+	if b.EndRow >= 0 && b.EndRow-startRow+1 < len(values) {
+		return fmt.Errorf("范围 %q 只有 %d 行，小于数据的 %d 行；请扩大范围或只写左上角单元格（如 %s）",
+			fullRange, b.EndRow-startRow+1, len(values), anchor)
+	}
+	if width := MaxRowWidth(values); b.EndCol >= 0 && b.EndCol-startCol+1 < width {
+		return fmt.Errorf("范围 %q 只有 %d 列，小于数据的 %d 列；请扩大范围或只写左上角单元格（如 %s）",
+			fullRange, b.EndCol-startCol+1, width, anchor)
+	}
+	return nil
 }
 
 // unmarshalUseNumber 与 json.Unmarshal 相同，但数字解析为 json.Number。

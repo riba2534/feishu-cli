@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -60,10 +61,6 @@ var attendanceUserStatsQueryCmd = &cobra.Command{
       --stats-type month --start 2026-05-01 --end 2026-05-31 -o json`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		employeeType, _ := cmd.Flags().GetString("employee-type")
 		statsType, _ := cmd.Flags().GetString("stats-type")
 		userIDsRaw, _ := cmd.Flags().GetString("user-ids")
@@ -95,30 +92,33 @@ var attendanceUserStatsQueryCmd = &cobra.Command{
 		userIDs = unique
 
 		if len(userIDs) == 0 {
-			return fmt.Errorf("--user-ids 不能为空")
+			return clierr.Usagef("--user-ids 不能为空")
 		}
 		if len(userIDs) > 200 {
-			return fmt.Errorf("--user-ids 单次最多 200 个，当前 %d 个", len(userIDs))
+			return clierr.Usagef("--user-ids 单次最多 200 个，当前 %d 个", len(userIDs))
 		}
 
 		startDate, err := client.ParseAttendanceDate(startStr)
 		if err != nil {
-			return fmt.Errorf("--start: %w", err)
+			return clierr.Usagef("--start: %w", err)
 		}
 		endDate, err := client.ParseAttendanceDate(endStr)
 		if err != nil {
-			return fmt.Errorf("--end: %w", err)
+			return clierr.Usagef("--end: %w", err)
 		}
 		if startDate > endDate {
-			return fmt.Errorf("--start (%d) 不能晚于 --end (%d)", startDate, endDate)
+			return clierr.Usagef("--start (%d) 不能晚于 --end (%d)", startDate, endDate)
 		}
 		// OpenAPI 限制：单次查询跨度 ≤ 31 天
 		tStart, _ := time.Parse("20060102", strconv.Itoa(startDate))
 		tEnd, _ := time.Parse("20060102", strconv.Itoa(endDate))
 		if tEnd.Sub(tStart) > 31*24*time.Hour {
-			return fmt.Errorf("--start 到 --end 跨度不能超过 31 天（当前 %.0f 天，请缩短范围或多次查询）", tEnd.Sub(tStart).Hours()/24)
+			return clierr.Usagef("--start 到 --end 跨度不能超过 31 天（当前 %.0f 天，请缩短范围或多次查询）", tEnd.Sub(tStart).Hours()/24)
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		result, err := client.QueryAttendanceUserStats(
 			employeeType,
 			statsType,

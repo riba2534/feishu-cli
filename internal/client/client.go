@@ -62,6 +62,8 @@ func GetClient() (*lark.Client, error) {
 			lark.WithHttpClient(wrapSDKHTTPClient()),
 			// token 缓存随 client 实例重建而丢弃，避免配置变更后复用旧配置的 token（见 instanceTokenCache）
 			lark.WithTokenCache(newInstanceTokenCache()),
+			// SDK 默认 logger 写 stdout；改为非 debug 静默、debug 写 stderr，保证 stdout 只有命令结果
+			lark.WithLogger(newSDKLogger(cfg.Debug)),
 		}
 		if cfg.Debug {
 			opts = append(opts, lark.WithLogLevel(larkcore.LogLevelDebug))

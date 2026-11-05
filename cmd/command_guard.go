@@ -106,6 +106,7 @@ func flagSuggestionErrorFunc(cmd *cobra.Command, err error) error {
 	if err == nil {
 		return nil
 	}
+	flagParseError = true
 	// 纯分组命令上 flag 解析失败，多半是子命令拼错：优先提示子命令拼写
 	if subErr := misspelledSubcommandError(cmd); subErr != nil {
 		return subErr

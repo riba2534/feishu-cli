@@ -53,10 +53,6 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
   feishu-cli drive import --file data.xlsx --type sheet --folder-token fldxxx
   feishu-cli drive import --file deck.pptx --type slides --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		filePath, _ := cmd.Flags().GetString("file")
 		targetType, _ := cmd.Flags().GetString("type")
 		folderToken, _ := cmd.Flags().GetString("folder-token")
@@ -71,7 +67,7 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
 		targetToken = strings.TrimSpace(targetToken)
 
 		if filePath == "" {
-			return fmt.Errorf("--file 必填")
+			return clierr.Usagef("--file 必填")
 		}
 		// --folder-token 也接受文件夹 URL（/drive/folder/、/drive/shr/ 等），只按路径前缀解析
 		if folderToken != "" {
@@ -92,7 +88,7 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
 		// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
 		stat, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("--file 无效: %w", err)
+			return clierr.Usagef("--file 无效: %w", err)
 		}
 		if !stat.Mode().IsRegular() {
 			return clierr.Usagef("--file 必须指向普通文件")
@@ -163,6 +159,10 @@ upload_all 省略 parent_node；upload_prepare 显式 parent_node=""。
 				"type": targetType,
 				"size": stat.Size(),
 			}, steps)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveIdentityToken(cmd)
@@ -262,7 +262,7 @@ func rejectDriveImportWikiFolderToken(folderToken, userToken string) error {
 	if node == nil || (node.ObjToken == "" && node.NodeToken == "") {
 		return nil
 	}
-	return fmt.Errorf("--folder-token 只支持 Drive 文件夹 token，但提供的 token 解析为 wiki 节点；请改用 Drive 文件夹或省略 --folder-token")
+	return clierr.Usagef("--folder-token 只支持 Drive 文件夹 token，但提供的 token 解析为 wiki 节点；请改用 Drive 文件夹或省略 --folder-token")
 }
 
 func init() {

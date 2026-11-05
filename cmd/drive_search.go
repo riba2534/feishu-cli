@@ -3,21 +3,33 @@ package cmd
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
 var driveSearchCmd = &cobra.Command{
-	Use:   "search",
+	Use:   "search [query]",
 	Short: "在云盘 / 知识库范围内搜索文档（v2 doc_wiki/search，扁平 filter）",
 	Long: `走 /open-apis/search/v2/doc_wiki/search v2 端点，比 search docs（v1）支持更丰富的扁平 filter：
 folder-tokens、space-ids、creator-ids、sharer-ids、only-title、sort 排序等。
 
 可选:
-  --query           关键字（可空，纯按 filter 浏览）
-  --creator-ids     CSV，创建者 open_id 列表
+  --query           关键字（可空，纯按 filter 浏览）；也可写成唯一的位置参数 [query]，
+                    与 --query 同时使用或位置参数多于 1 个时报用法错误（退出码 2）
+  --creator-ids     CSV，所有者 open_id 列表（接口字段名为 creator_ids，实际按所有者匹配）；与 --mine 互斥
+  --mine            只看我拥有的文档（等价 --creator-ids <当前用户 open_id>）
+  --original-creator-ids  CSV，原始创建者 open_id 列表（创建者不随所有权转移变化）；与 --created-by-me 互斥
+  --created-by-me   只看我创建的文档（等价 --original-creator-ids <当前用户 open_id>）
+  --edited-since / --edited-until        我编辑过的时间窗（服务端按小时聚合，非整点向外取整并提示）
+  --commented-since / --commented-until  我评论过的时间窗（按小时聚合）
+  --opened-since / --opened-until        我打开过的时间窗；服务端单次最多 3 个月：超过 90 天只查最近 90 天切片，
+                                         stderr 列出全部切片的绝对时间；超过 365 天 exit 2
+  --created-since / --created-until      文档创建时间窗
+                    时间值: 7d / 1m(30 天) / 1y(365 天) / YYYY-MM-DD[ HH:MM:SS] / RFC3339 / unix 秒
   --folder-tokens   CSV，限定在某些云盘文件夹（与 --space-ids 互斥）
   --space-ids       CSV，限定在某些知识库 space（与 --folder-tokens 互斥）
   --chat-ids        CSV，限定群分享列表
@@ -38,18 +50,15 @@ folder-tokens、space-ids、creator-ids、sharer-ids、only-title、sort 排序�
   feishu-cli drive search --query "季度报告" --doc-types DOC,SHEET --sort edit_time
   feishu-cli drive search --folder-tokens fldxxx --doc-types FILE
   feishu-cli drive search --space-ids spcxxx --query "API 设计"
-  feishu-cli drive search --query "RFC" --only-title -o json`,
+  feishu-cli drive search --query "RFC" --only-title -o json
+  feishu-cli drive search --created-since 7d --created-by-me -o json
+  feishu-cli drive search --edited-since 2026-10-01 --edited-until 2026-10-31 --doc-types DOCX
+  feishu-cli drive search --opened-since 6m --mine`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		userToken, err := resolveRequiredUserToken(cmd)
+		query, err := resolveDriveSearchQuery(cmd, args)
 		if err != nil {
 			return err
 		}
-
-		query, _ := cmd.Flags().GetString("query")
 		creators, _ := cmd.Flags().GetString("creator-ids")
 		folders, _ := cmd.Flags().GetString("folder-tokens")
 		spaces, _ := cmd.Flags().GetString("space-ids")
@@ -63,15 +72,62 @@ folder-tokens、space-ids、creator-ids、sharer-ids、only-title、sort 排序�
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
 
+		mine, _ := cmd.Flags().GetBool("mine")
+		createdByMe, _ := cmd.Flags().GetBool("created-by-me")
+		originalCreators, _ := cmd.Flags().GetString("original-creator-ids")
+
 		if folders != "" && spaces != "" {
-			return fmt.Errorf("--folder-tokens 与 --space-ids 互斥")
+			return clierr.Usagef("--folder-tokens 与 --space-ids 互斥")
+		}
+		if mine && strings.TrimSpace(creators) != "" {
+			return clierr.Usagef("--mine 与 --creator-ids 不能同时使用")
+		}
+		if createdByMe && strings.TrimSpace(originalCreators) != "" {
+			return clierr.Usagef("--created-by-me 与 --original-creator-ids 不能同时使用")
+		}
+		timeInputs := map[string]driveSearchTimeInput{}
+		for _, d := range driveSearchTimeDims {
+			since, _ := cmd.Flags().GetString(d.flag + "-since")
+			until, _ := cmd.Flags().GetString(d.flag + "-until")
+			timeInputs[d.flag] = driveSearchTimeInput{Since: strings.TrimSpace(since), Until: strings.TrimSpace(until)}
+		}
+		timeRanges, notices, err := buildDriveSearchTimeRanges(timeInputs, time.Now())
+		if err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
+		userToken, err := resolveRequiredUserToken(cmd)
+		if err != nil {
+			return err
+		}
+
+		creatorIDs := splitAndTrim(creators)
+		originalCreatorIDs := splitAndTrim(originalCreators)
+		if mine || createdByMe {
+			openID, err := resolveCurrentAuthedUserID(cmd, "open_id")
+			if err != nil {
+				return err
+			}
+			if mine {
+				creatorIDs = []string{openID}
+			}
+			if createdByMe {
+				originalCreatorIDs = []string{openID}
+			}
+		}
+		for _, n := range notices {
+			fmt.Fprintln(cmd.ErrOrStderr(), n)
 		}
 
 		opts := client.DriveSearchOptions{
 			Query:        query,
 			PageToken:    pageToken,
 			PageSize:     pageSize,
-			CreatorIDs:   splitAndTrim(creators),
+			CreatorIDs:   creatorIDs,
 			FolderTokens: splitAndTrim(folders),
 			SpaceIDs:     splitAndTrim(spaces),
 			ChatIDs:      splitAndTrim(chats),
@@ -80,6 +136,9 @@ folder-tokens、space-ids、creator-ids、sharer-ids、only-title、sort 排序�
 			OnlyTitle:    onlyTitle,
 			OnlyComment:  onlyComment,
 			Sort:         sortBy,
+
+			OriginalCreatorIDs: originalCreatorIDs,
+			TimeRanges:         timeRanges,
 		}
 
 		result, err := client.DriveSearchV2(opts, userToken)
@@ -161,7 +220,14 @@ func normalizeDocTypes(s string) []string {
 func init() {
 	driveCmd.AddCommand(driveSearchCmd)
 	driveSearchCmd.Flags().String("query", "", "关键字（可空）")
-	driveSearchCmd.Flags().String("creator-ids", "", "CSV，创建者 open_id")
+	driveSearchCmd.Flags().String("creator-ids", "", "CSV，所有者 open_id（接口字段 creator_ids）")
+	driveSearchCmd.Flags().Bool("mine", false, "只看我拥有的文档（等价 --creator-ids <自己>）")
+	driveSearchCmd.Flags().String("original-creator-ids", "", "CSV，原始创建者 open_id")
+	driveSearchCmd.Flags().Bool("created-by-me", false, "只看我创建的文档（等价 --original-creator-ids <自己>）")
+	for _, d := range driveSearchTimeDims {
+		driveSearchCmd.Flags().String(d.flag+"-since", "", "时间窗起点（7d/1m/1y/YYYY-MM-DD/RFC3339/unix 秒）")
+		driveSearchCmd.Flags().String(d.flag+"-until", "", "时间窗终点（同上）")
+	}
 	driveSearchCmd.Flags().String("folder-tokens", "", "CSV，限定云盘文件夹")
 	driveSearchCmd.Flags().String("space-ids", "", "CSV，限定知识库 space")
 	driveSearchCmd.Flags().String("chat-ids", "", "CSV，限定群分享")
@@ -174,4 +240,20 @@ func init() {
 	driveSearchCmd.Flags().String("page-token", "", "分页 token")
 	driveSearchCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	driveSearchCmd.Flags().String("user-access-token", "", "User Access Token（搜索 API 必需）")
+}
+
+// resolveDriveSearchQuery 关键字来源：--query，或唯一的位置参数（未显式传 --query 时）。
+// 位置参数多于 1 个、或与 --query 同时出现，都是用法错误（exit 2），避免关键字被静默忽略。
+func resolveDriveSearchQuery(cmd *cobra.Command, args []string) (string, error) {
+	query, _ := cmd.Flags().GetString("query")
+	if len(args) > 1 {
+		return "", clierr.Usagef("drive search 最多接受 1 个位置参数作为关键字，得到 %d 个；含空格的关键字请加引号或改用 --query", len(args))
+	}
+	if len(args) == 1 {
+		if cmd.Flags().Changed("query") {
+			return "", clierr.Usagef("位置参数 %q 与 --query 不能同时使用，只保留一个", args[0])
+		}
+		return args[0], nil
+	}
+	return query, nil
 }

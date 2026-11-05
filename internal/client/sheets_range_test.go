@@ -192,6 +192,37 @@ func TestPlanSheetWriteChunks(t *testing.T) {
 	}
 }
 
+// TestCheckSheetWriteRangeFits 未超分批上限的小写入同样校验显式范围（服务端对此返回 90202，行列均实测）。
+func TestCheckSheetWriteRangeFits(t *testing.T) {
+	row3 := [][]any{{"a", "b", "c"}}
+	rows2 := [][]any{{"a", "b"}, {"c", "d"}}
+	bad := []struct {
+		rng    string
+		values [][]any
+		want   string
+	}{
+		{"s1!H1:I1", row3, `范围 "s1!H1:I1" 只有 2 列，小于数据的 3 列；请扩大范围或只写左上角单元格（如 s1!H1）`},
+		{"s1!H1:I1", rows2, `范围 "s1!H1:I1" 只有 1 行，小于数据的 2 行；请扩大范围或只写左上角单元格（如 s1!H1）`},
+		{"H1:I1", row3, `范围 "H1:I1" 只有 2 列，小于数据的 3 列；请扩大范围或只写左上角单元格（如 H1）`},
+		{"s1!1:1", rows2, "只有 1 行"},
+		{"s1!A:A", row3, "只有 1 列"},
+	}
+	for _, c := range bad {
+		err := CheckSheetWriteRangeFits(c.rng, c.values)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("CheckSheetWriteRangeFits(%q) = %v, want 含 %q", c.rng, err, c.want)
+		}
+		if _, err := PlanSheetWriteChunks(c.rng, c.values, 0, 0); err == nil {
+			t.Errorf("PlanSheetWriteChunks(%q) 小写入也应报错", c.rng)
+		}
+	}
+	for _, rng := range []string{"s1!H1:J3", "s1!H1", "s1!H:J", "s1!1:5", "s1", "Sheet1", "H1", "s1!坏范围", ""} {
+		if err := CheckSheetWriteRangeFits(rng, rows2); err != nil {
+			t.Errorf("CheckSheetWriteRangeFits(%q) 不应报错: %v", rng, err)
+		}
+	}
+}
+
 func TestAppendChunkRangeAndSpan(t *testing.T) {
 	if got := AppendChunkRange("s1!A:B", "s1!A12001:B17000", 2, 1000); got != "s1!A17001:B18000" {
 		t.Errorf("AppendChunkRange = %q", got)
@@ -207,5 +238,18 @@ func TestAppendChunkRangeAndSpan(t *testing.T) {
 	}
 	if got := SheetRangesSpan([]string{"s1!A1:B2"}); got != "s1!A1:B2" {
 		t.Errorf("单范围 span = %q", got)
+	}
+}
+
+// 起止颠倒的范围给出明确原因，不报「只有 -1 行」。
+func TestCheckSheetWriteRangeFits_Reversed(t *testing.T) {
+	for _, r := range []string{"C3:A1", "s1!B2:A1"} {
+		err := CheckSheetWriteRangeFits(r, [][]any{{1}})
+		if err == nil || !strings.Contains(err.Error(), "写反") {
+			t.Fatalf("%s: %v", r, err)
+		}
+	}
+	if err := CheckSheetWriteRangeFits("A1:B2", [][]any{{1, 2}, {3, 4}}); err != nil {
+		t.Fatalf("合法范围不应报错: %v", err)
 	}
 }

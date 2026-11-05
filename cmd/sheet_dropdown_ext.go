@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +26,7 @@ range 前缀可写 sheetId 或子表名（如 0b1212!A2:A100、Sheet1!A2:A100）
 		rangeStr, _ := cmd.Flags().GetString("range")
 
 		if spreadsheetToken == "" || rangeStr == "" {
-			return fmt.Errorf("--token/--spreadsheet-token、--range 均为必填项")
+			return clierr.Usagef("--token/--spreadsheet-token、--range 均为必填项")
 		}
 		rangeStr = unescapeSheetRange(rangeStr)
 
@@ -79,15 +80,15 @@ ranges 可指定多个范围（前缀可写 sheetId 或子表名，不带前缀�
 		highlight, _ := cmd.Flags().GetBool("highlight")
 
 		if spreadsheetToken == "" || sheetID == "" || rangesStr == "" {
-			return fmt.Errorf("--token/--spreadsheet-token、--sheet-id、--ranges 均为必填项")
+			return clierr.Usagef("--token/--spreadsheet-token、--sheet-id、--ranges 均为必填项")
 		}
 		if strings.TrimSpace(optionsJSON) != "" && strings.TrimSpace(optionsCSV) != "" {
-			return fmt.Errorf("--options 和 --options-json 不能同时使用，请选其一")
+			return clierr.Usagef("--options 和 --options-json 不能同时使用，请选其一")
 		}
 
 		ranges := splitSheetCSV(unescapeSheetRange(rangesStr))
 		if len(ranges) == 0 {
-			return fmt.Errorf("--ranges 至少需要一个范围")
+			return clierr.Usagef("--ranges 至少需要一个范围")
 		}
 
 		options, err := parseDropdownOptions(optionsCSV, optionsJSON)
@@ -95,7 +96,7 @@ ranges 可指定多个范围（前缀可写 sheetId 或子表名，不带前缀�
 			return err
 		}
 		if len(options) == 0 {
-			return fmt.Errorf("--options 或 --options-json 至少需要一个非空选项")
+			return clierr.Usagef("--options 或 --options-json 至少需要一个非空选项")
 		}
 
 		var colors []string
@@ -120,12 +121,16 @@ ranges 可指定多个范围（前缀可写 sheetId 或子表名，不带前缀�
 	},
 }
 
+// sheetDropdownDeleteMaxRanges 是删除下拉菜单单次请求的范围数上限（服务端实测 101 个报 90204 max size limit = 100）。
+const sheetDropdownDeleteMaxRanges = 100
+
 // dropdown delete
 var sheetDropdownDeleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "删除下拉菜单",
 	Long: `删除指定范围的下拉菜单（数据验证）。
-ranges 前缀可写 sheetId 或子表名（不带前缀时用唯一子表补全），最多 100 个，逗号分隔。
+ranges 前缀可写 sheetId 或子表名（不带前缀时用 URL ?sheet= 或唯一子表补全），最多 100 个（超出在本地报用法错误，exit 2），逗号分隔。
+--dry-run 不读凭据、不联网；子表名前缀与唯一子表补全在执行时才确定，预览保留原样并在请求步骤 desc 中注明。
 
 示例:
   feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100"
@@ -138,12 +143,34 @@ ranges 前缀可写 sheetId 或子表名（不带前缀时用唯一子表补全�
 		rangesStr, _ := cmd.Flags().GetString("ranges")
 
 		if spreadsheetToken == "" || rangesStr == "" {
-			return fmt.Errorf("--token/--spreadsheet-token、--ranges 均为必填项")
+			return clierr.Usagef("--token/--spreadsheet-token、--ranges 均为必填项")
 		}
 
 		ranges := splitSheetCSV(unescapeSheetRange(rangesStr))
 		if len(ranges) == 0 {
-			return fmt.Errorf("--ranges 至少需要一个范围")
+			return clierr.Usagef("--ranges 至少需要一个范围")
+		}
+		if len(ranges) > sheetDropdownDeleteMaxRanges {
+			return clierr.Usagef("--ranges 最多 %d 个范围，当前 %d 个；请分批删除", sheetDropdownDeleteMaxRanges, len(ranges))
+		}
+		previewRanges, pending, err := previewSheetRanges(ranges, "", urlSheetParam(spreadsheetToken))
+		if err != nil {
+			return err
+		}
+		dvRanges := make([]any, len(previewRanges))
+		for i, r := range previewRanges {
+			dvRanges[i] = map[string]any{"range": r}
+		}
+		stepDesc := ""
+		if pending {
+			stepDesc = sheetRangePendingDesc
+		}
+		if handled, err := sheetDryRunWithStepDesc(cmd, spreadsheetToken, "--token", fmt.Sprintf("删除 %d 个范围的下拉菜单", len(ranges)), stepDesc, map[string]any{
+			"ranges": previewRanges,
+		}, "DELETE", "/open-apis/sheets/v2/spreadsheets/%s/dataValidation", map[string]any{
+			"dataValidationRanges": dvRanges,
+		}); handled {
+			return err
 		}
 
 		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
@@ -203,5 +230,6 @@ func init() {
 	sheetDropdownDeleteCmd.Flags().String("token", "", "电子表格 token（必填）")
 	sheetDropdownDeleteCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名，与 --token 等价）")
 	sheetDropdownDeleteCmd.Flags().String("ranges", "", "范围，逗号分隔（前缀可写 sheetId 或子表名，最多 100 个）（必填）")
+	sheetDropdownDeleteCmd.Flags().Bool("dry-run", false, "只打印将要发送的请求，不执行")
 	sheetDropdownDeleteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

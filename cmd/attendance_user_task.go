@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -68,10 +69,6 @@ var attendanceUserTaskQueryCmd = &cobra.Command{
       --need-overtime -o json`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		employeeType, _ := cmd.Flags().GetString("employee-type")
 		userIDsRaw, _ := cmd.Flags().GetString("user-ids")
 		startStr, _ := cmd.Flags().GetString("start")
@@ -102,26 +99,29 @@ var attendanceUserTaskQueryCmd = &cobra.Command{
 			if !cmd.Flags().Changed("employee-type") {
 				employeeType = "employee_no"
 			} else if employeeType != "employee_no" {
-				return fmt.Errorf("--employee-type 为 %s 时必须指定 --user-ids（如需查询本人请使用 --employee-type employee_no 且无需指定 --user-ids）", employeeType)
+				return clierr.Usagef("--employee-type 为 %s 时必须指定 --user-ids（如需查询本人请使用 --employee-type employee_no 且无需指定 --user-ids）", employeeType)
 			}
 		}
 
 		if len(userIDs) > 50 {
-			return fmt.Errorf("--user-ids 单次最多 50 个，当前 %d 个", len(userIDs))
+			return clierr.Usagef("--user-ids 单次最多 50 个，当前 %d 个", len(userIDs))
 		}
 
 		dateFrom, err := client.ParseAttendanceDate(startStr)
 		if err != nil {
-			return fmt.Errorf("--start: %w", err)
+			return clierr.Usagef("--start: %w", err)
 		}
 		dateTo, err := client.ParseAttendanceDate(endStr)
 		if err != nil {
-			return fmt.Errorf("--end: %w", err)
+			return clierr.Usagef("--end: %w", err)
 		}
 		if dateFrom > dateTo {
-			return fmt.Errorf("--start (%d) 不能晚于 --end (%d)", dateFrom, dateTo)
+			return clierr.Usagef("--start (%d) 不能晚于 --end (%d)", dateFrom, dateTo)
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err

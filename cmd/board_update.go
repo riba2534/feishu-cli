@@ -38,10 +38,6 @@ var boardUpdateCmd = &cobra.Command{
   feishu-cli board update BOARD_ID nodes.json --client-token fp-nodes-20260101-001`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		whiteboardID := args[0]
 		useStdin, _ := cmd.Flags().GetBool("stdin")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
@@ -59,7 +55,9 @@ var boardUpdateCmd = &cobra.Command{
 				return err
 			}
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
 
 		// 1. 读取节点 JSON（从文件或 stdin）
 		var nodesJSON string
@@ -76,14 +74,17 @@ var boardUpdateCmd = &cobra.Command{
 			}
 			nodesJSON = string(data)
 		} else {
-			return fmt.Errorf("请提供节点 JSON 文件路径，或使用 --stdin 从标准输入读取")
+			return clierr.Usagef("请提供节点 JSON 文件路径，或使用 --stdin 从标准输入读取")
 		}
 
 		// 2. dry-run 模式：仅预览
 		if dryRun {
 			var nodes []json.RawMessage
 			if err := json.Unmarshal([]byte(nodesJSON), &nodes); err != nil {
-				return fmt.Errorf("解析节点 JSON 失败（需要 JSON 数组格式）: %w", err)
+				return clierr.Usagef("解析节点 JSON 失败（需要 JSON 数组格式）: %w", err)
+			}
+			if label, ok := visualDryRunIdentity(cmd); ok {
+				fmt.Fprintf(os.Stderr, "[dry-run] 身份: %s\n", label)
 			}
 			if overwrite {
 				fmt.Fprintf(os.Stderr, "[dry-run] 将以原子覆盖模式 (overwrite: true) 写入 %d 个节点到画板 %s\n", len(nodes), whiteboardID)
@@ -91,6 +92,14 @@ var boardUpdateCmd = &cobra.Command{
 				fmt.Fprintf(os.Stderr, "[dry-run] 将追加写入 %d 个节点到画板 %s\n", len(nodes), whiteboardID)
 			}
 			return nil
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
+			return err
 		}
 
 		// 3. --snapshot：在执行 overwrite 之前先把旧节点导出到本地（只读备份）
@@ -216,4 +225,5 @@ func init() {
 	boardUpdateCmd.Flags().String("client-token", "", "幂等键（≥10 字符；结果未知时用同一个值重跑不会重复建节点）")
 	boardUpdateCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	boardUpdateCmd.Flags().String("user-access-token", "", "User Access Token")
+	addVisualWriteAsFlag(boardUpdateCmd)
 }

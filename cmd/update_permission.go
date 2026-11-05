@@ -19,6 +19,11 @@ var updatePermissionCmd = &cobra.Command{
   --member-type   成员类型（必填）
   --member-id     成员标识（必填）
   --perm          新权限级别（必填）
+  --member-kind   知识空间成员组（仅且必须在 --member-type wikispaceid 时传）：
+                  wiki_space_member / wiki_space_viewer / wiki_space_editor
+  --dry-run       只打印将要发出的请求（不读取凭据、不联网）
+
+<doc_token> 可传裸 token 或文档链接（自动推断 token 与类型）。
 
 权限级别:
   view          查看权限
@@ -51,23 +56,37 @@ var updatePermissionCmd = &cobra.Command{
     --perm full_access`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
+		docToken, docType, err := resolvePermTarget(cmd, args[0])
+		if err != nil {
 			return err
 		}
-
-		docToken := args[0]
-		docType, _ := cmd.Flags().GetString("doc-type")
 		memberType, _ := cmd.Flags().GetString("member-type")
 		memberID, _ := cmd.Flags().GetString("member-id")
 		perm, _ := cmd.Flags().GetString("perm")
+		memberKindFlag, _ := cmd.Flags().GetString("member-kind")
 
 		memberType = normalizePermMemberType(memberType)
+		memberKind, err := resolvePermMemberKind(memberType, memberKindFlag, "")
+		if err != nil {
+			return err
+		}
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printPermDryRun(cmd, "Update document collaborator permission", "PUT",
+				permAPIPath("/open-apis/drive/v1/permissions/%s/members/%s", docToken, memberID),
+				map[string]any{"type": docType},
+				permMemberBody(client.PermissionMember{MemberType: memberType, MemberID: memberID, Perm: perm, Type: memberKind}))
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 
 		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {
 			return err
 		}
-		if err := client.UpdatePermission(docToken, docType, memberID, memberType, perm, userToken); err != nil {
+		if err := client.UpdatePermission(docToken, docType, memberID, memberType, perm, memberKind, userToken); err != nil {
 			return wrapPermError(err, userToken)
 		}
 
@@ -85,5 +104,6 @@ func init() {
 	updatePermissionCmd.Flags().String("member-type", "", "成员类型（email/openid/open_id/userid/user_id 等）")
 	updatePermissionCmd.Flags().String("member-id", "", "成员标识")
 	updatePermissionCmd.Flags().String("perm", "", "新权限级别（view/edit/full_access）")
+	updatePermissionCmd.Flags().String("member-kind", "", "知识空间成员组（仅 --member-type wikispaceid，必填）：wiki_space_member / wiki_space_viewer / wiki_space_editor")
 	mustMarkFlagRequired(updatePermissionCmd, "member-type", "member-id", "perm")
 }

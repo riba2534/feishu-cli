@@ -178,7 +178,7 @@ func validateUserIDType(t string) error {
 	case "open_id", "union_id", "user_id":
 		return nil
 	default:
-		return fmt.Errorf("不支持的 --user-id-type: %s（可选: open_id / union_id / user_id）", t)
+		return clierr.Usagef("不支持的 --user-id-type: %s（可选: open_id / union_id / user_id）", t)
 	}
 }
 

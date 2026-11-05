@@ -273,16 +273,16 @@ feishu-cli <command> [subcommand] [flags]
 Commands:
   doc       文档操作（创建、导入、导出、文本级/块级编辑、docs_ai 读取与创建、历史版本、异步导出/导入文件）
   wiki      知识库操作（节点增删改查、空间详情、成员管理）
-  sheet     电子表格（读写、子表名寻址、样式、行列结构/冻结/隐藏、V3 富文本 API、table-get/put、导出 XLSX/CSV、image、filter、dropdown、--as）
-  bitable   多维表格（base/v3 + bitable/v1：数据表/字段/记录/附件/视图/仪表盘/表单/角色/权限/聚合/工作流，88 命令）
-  msg       消息操作（发送、转发、合并转发、回复、Pin、表情回复、书签、批量获取、资源下载）
+  sheet     电子表格（读写、子表名寻址、样式、行列结构/冻结/隐藏、V3 富文本 API、table-get/put、导出 XLSX/CSV、image、filter、dropdown、条件格式、--as）
+  bitable   多维表格（base/v3 + bitable/v1：数据表/字段/记录/附件/视图/仪表盘/表单/角色/权限/聚合/工作流/字段 AI 扩展/按钮绑定/表复制/模板中心/顶层块，110 命令）
+  msg       消息操作（发送、转发（含话题）、合并转发、回复、Pin、表情回复、书签、批量获取、已读状态、资源下载）
   chat      群聊管理（创建、更新、删除、群列表、成员管理）
-  mail      邮箱操作（分类/搜索、发送、草稿含发送、回复、转发、批量改 label/软删、CID 内联图片、模板、签名）
-  drive     云盘增强（分块/原地覆盖上传、流式断点续传下载、异步导出/导入、移动、重命名、版本、评论、镜像 pull/push/status、密级标签）
+  mail      邮箱操作（分类/搜索、发送与定时发送、草稿含发送、回复、转发、分享到会话、已读回执、批量改 label/软删、CID 内联图片、模板、签名）
+  drive     云盘增强（分块/原地覆盖上传、流式断点续传下载、异步导出/导入、移动、重命名、版本、评论、镜像 pull/push/status 与差集预览、时间窗搜索、预览产物与封面、密级标签）
   markdown  Drive 原生 Markdown 文件 CRUD（.md 整体读写、版本比对，不转换 docx 块）
-  vc        视频会议（多维搜索、聚合详情、智能纪要 note、会议纪要、录制查询、机器人入会/离会/事件）
-  minutes   妙记操作（详情 + AI 产物、搜索、权限申请、媒体批量下载）
-  apps      妙搭（Miaoda）应用（创建、发布 HTML 并等待构建结果、发布记录、修改、访问范围管理）
+  vc        视频会议（多维搜索、聚合详情、智能纪要 note、会议纪要、录制查询、机器人入会/离会/事件、会中倒计时/消息/截图/邀请/结束）
+  minutes   妙记操作（详情 + AI 产物、搜索、权限申请、媒体批量下载、上传生成、改标题/摘要/待办、说话人与词替换）
+  apps      妙搭（Miaoda）应用（创建、发布 HTML 或按分支发布并等待构建结果、发布记录、修改（含图标）、删除、功能开关、访问范围管理）
   file      文件管理（列出、移动、复制、删除、上传、下载、版本管理）
   media     素材操作（上传、下载）
   perm      权限管理（添加、删除、批量添加、公开权限、密码、转移所有权）
@@ -290,15 +290,15 @@ Commands:
   task      任务操作（增删改查、服务端搜索、子任务、成员、提醒、评论、附件、我的任务）
   tasklist  任务清单管理（CRUD、任务关联、成员管理）
   attendance 考勤操作（打卡记录查询、统计数据查询）
-  okr       OKR 操作（周期列表/详情、进展记录 CRUD、进展图片上传、--as 身份）
-  slides    Slides 演示文稿（创建带页面、加页/删页/替换、按页读取 XML、截图、媒体上传）
+  okr       OKR 操作（周期列表/详情、目标批量创建、权重/排序/指标、进展记录 CRUD、评论、进展图片上传、--as 身份）
+  slides    Slides 演示文稿（创建带页面、加页/删页/替换、按页读取 XML、截图、媒体上传、历史版本与回滚）
   user      用户操作（获取信息、搜索、部门用户列表）
   dept      部门操作（详情、子部门列表）
   board     画板操作（精排绘图、图表导入、克隆、几何质检 lint、SVG 双向、图片上传、覆盖更新）
   comment   评论操作（列出含正文与分页、批量获取、添加、解决/恢复、回复编辑与表情）
   approval  审批操作（定义/实例详情、已发起列表、任务查询、实例创建/撤回/抄送、任务通过/拒绝/转交；全部 User Token）
   search    搜索操作（消息、应用、文档）
-  event     实时事件订阅（WebSocket 长连接、list/schema/consume/status/stop）
+  event     实时事件订阅（WebSocket 长连接、list/schema/consume/status/stop、--param/--as/--dry-run）
   schema    本地浏览飞书 OpenAPI 方法（无需 token）
   api       通用 OpenAPI 透传调用（任意 method/path，自动鉴权 + 错误码翻译，覆盖 2500+ 端点）
   profile   多 App / 多账号配置切换
@@ -311,7 +311,9 @@ Commands:
 
 **通用约定**：
 - 全局 `--yes` 跳过删除类操作的确认；非交互环境（stdin 不是终端）执行这类操作时必须显式带上，否则以退出码 10 退出且不执行。
-- 退出码：0 成功 / 1 一般错误 / 2 用法错误 / 3 鉴权或权限 / 4 网络 / 10 需要确认 / 130 中断。
+- 退出码：0 成功 / 1 一般错误 / 2 用法错误 / 3 鉴权或权限 / 4 网络 / 10 需要确认 / 130 中断。参数在读取凭据之前校验，参数写错时无论是否登录都返回 2。
+- 写命令的 `--dry-run` 只做本地预览，不联网、不需要凭据（`board clone`、`drive push/pull` 等需要读取远端才能算出计划的命令除外，见其 `--help`）。
+- 全局 `--error-format json`：错误以一行 JSON 信封输出到 stderr（`{"error":{"message","exit_code","kind","code","log_id","missing_scopes","retryable","hint"}}`），便于脚本与 AI Agent 解析；默认 text 输出不变。
 - 接受 token 的参数大多也接受飞书链接（docx/sheets/base/slides/wiki 等，wiki 链接自动解析到底层文档）。
 
 <details>
@@ -444,6 +446,12 @@ feishu-cli sheet list-sheets <token> --as bot
 # 样式与合并
 feishu-cli sheet style <token> "Sheet1!A1:C3" --bold --font-size 14
 feishu-cli sheet merge <token> "Sheet1!A1:C1"
+
+# 条件格式（delete 带确认门禁）
+feishu-cli sheet cond-format list <token> <sheet_id>
+feishu-cli sheet cond-format create <token> <sheet_id> --range C2:C100 --rule-type cellIs \
+  --operator between --formula 1 --formula 10 --back-color "#d9f5d6" --dry-run
+feishu-cli sheet cond-format delete <token> <sheet_id> <cf_id> --yes
 ```
 
 </details>
@@ -505,6 +513,16 @@ feishu-cli msg reaction list <message_id>
 feishu-cli msg pin <message_id>
 feishu-cli msg unpin <message_id>
 feishu-cli msg pins --chat-id CHAT_ID
+
+# 本人对消息的已读状态（仅 User，1–50 个）
+feishu-cli msg read-status om_xxx om_yyy -o json
+
+# 紧凑 Markdown 视图（与 -o json 互斥）
+feishu-cli msg history --container-id oc_xxx --concise
+feishu-cli msg thread-messages omt_xxx --concise
+
+# 转发整个话题
+feishu-cli msg forward omt_xxx --receive-id oc_xxx --receive-id-type chat_id --dry-run
 ```
 
 </details>
@@ -539,6 +557,11 @@ feishu-cli perm auth <doc_token> --action view
 
 # 转移所有权
 feishu-cli perm transfer-owner <doc_token> --member-type email --member-id user@example.com
+
+# 直接传文档链接；知识空间成员组
+feishu-cli perm list https://example.feishu.cn/wiki/wikcnxxx
+feishu-cli perm add <doc_token> --member-type wikispaceid --member-id <space_id> \
+  --member-kind wiki_space_viewer --perm view --dry-run
 ```
 
 </details>
@@ -798,6 +821,7 @@ feishu-cli board export-code <whiteboard_id> --merge --output-path design.svg  #
 feishu-cli board update <whiteboard_id> nodes.json --overwrite --snapshot old.json  # 覆盖更新+快照备份
 feishu-cli board nodes <whiteboard_id>                            # 获取画板所有节点
 feishu-cli board image <whiteboard_id> output                     # 下载画板截图（自动按实际格式补扩展名，通常 JPEG）
+feishu-cli board delete <whiteboard_id> --node-ids a,b --dry-run       # 先预览要删的节点
 # ⭐ AI 自由作图（飞轮/鱼骨/Dashboard/插画/周期表/赛博朋克等）：用 skill 的一键脚本，每个矢量元素都可单独点击编辑
 python3 skills/feishu-cli-visual/references/workflows/board/scripts/svg_to_board.py drawing.svg <whiteboard_id>
 #   内置 5 步管道：whiteboard-cli 翻译 → 修 z_index → 修剪 viewBox 溢出 → 分批 create-notes → 验证
@@ -869,6 +893,13 @@ feishu-cli bitable workflow update  --base-token bscnxxxx --workflow-id wkfxxxx 
 feishu-cli bitable workflow enable  --base-token bscnxxxx --workflow-id wkfxxxx
 feishu-cli bitable workflow disable --base-token bscnxxxx --workflow-id wkfxxxx
 
+# 字段 AI 扩展 / 按钮绑定工作流 / 复制数据表 / 模板中心 / 顶层块
+feishu-cli bitable field extension get --base-token bscnxxxx --table-id tblxxx --field-id fldxxx
+feishu-cli bitable field button-rule bind --base-token bscnxxxx --table-id tblxxx --field-id 按钮 --workflow-id wkfxxxx
+feishu-cli bitable table copy --base-token bscnxxxx --table-id tblxxx --name "任务副本" --range all --wait
+feishu-cli bitable template search --keyword 项目管理
+feishu-cli bitable block create --base-token bscnxxxx --type folder --name "归档"
+
 # 云盘增强（drive）
 feishu-cli drive upload --file big.zip --folder-token fldxxx
 feishu-cli drive upload --file new.zip --file-token boxcnXXX        # 原地覆盖上传新版本
@@ -895,8 +926,16 @@ feishu-cli drive push   --folder-token fldxxx --local-dir ./mirror --if-exists s
 feishu-cli drive pull   --folder-token fldxxx --local-dir ./mirror --delete-local --yes  # 高危：双确认
 
 # 云盘 v2 搜索（与 search docs 同一 Search v2 端点，drive search 暴露更多 filter 与排序）
-feishu-cli drive search --query "季度报告" --doc-types DOC,SHEET --sort edit_time
+feishu-cli drive search --query "季度报告" --doc-types DOC,SHEET --sort edit_time   # 关键字也可写成唯一位置参数
 feishu-cli drive search --folder-tokens fldxxx --only-title
+feishu-cli drive search --created-since 7d --created-by-me      # 时间窗：--edited/--commented/--opened/--created-since|until
+feishu-cli drive search --opened-since 1m --mine                 # --mine 按所有者，--created-by-me 按原始创建者
+feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --delete-remote --dry-run   # 差集计划，不删除
+
+# 上传文件的预览产物与封面
+feishu-cli drive preview boxcnxxx --list-only
+feishu-cli drive preview boxcnxxx --type source_file -o ./file.bin
+feishu-cli drive cover boxcnxxx --spec default -o cover.png
 
 # 邮箱（mail，需 User Token）
 feishu-cli mail triage --folder INBOX --unread-only --page-size 20
@@ -915,6 +954,9 @@ feishu-cli mail reply --message-id msg_xxx --body "收到" --confirm-send
 feishu-cli mail forward --message-id msg_xxx --to team@example.com --body "请关注"
 feishu-cli mail signature                                          # 列出邮箱签名
 feishu-cli mail signature --detail 7012345678901234567 -o json     # 单个签名详情
+feishu-cli mail send --to user@example.com --subject "周报" --body "hi" --confirm-send --send-time 1793000000  # 定时发送（Unix 秒，≥5 分钟）
+feishu-cli mail send --to user@example.com --subject "确认" --body "hi" --request-receipt               # 请求已读回执
+feishu-cli mail share-to-chat --message-id msg_xxx --receive-id oc_xxx --dry-run              # 邮件卡片分享到会话
 
 # 视频会议（vc）：search/notes/recording 默认 User，可 `--as bot`；bot meeting-join/leave 默认 Bot/Tenant 身份
 feishu-cli vc search --query "周会" --start 2026-03-20 --end 2026-03-28
@@ -928,6 +970,12 @@ feishu-cli vc bot meeting-join --meeting-number 123456789          # 机器人�
 feishu-cli vc bot meeting-leave --meeting-id 6911188411932033028   # 机器人离会（Bot/Tenant 身份）
 feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --as user --start 2026-03-01 --end 2026-03-31
 feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --as bot --dry-run  # 与 meeting_id 来源身份一致；禁止静默回落
+# 会中控制：countdown/message-send/screenshot 默认 --as auto；invite/end 仅 Bot，end 带确认门禁
+feishu-cli vc bot meeting-countdown --meeting-id 6911188411932033028 --action set --duration 10
+feishu-cli vc bot meeting-message-send --meeting-id 6911188411932033028 --text "五分钟后开始"
+feishu-cli vc bot meeting-screenshot --meeting-id 6911188411932033028 --output shot.jpg
+feishu-cli vc bot meeting-invite --meeting-id 6911188411932033028 --type selected --open-ids ou_xxx
+feishu-cli vc bot meeting-end --meeting-id 6911188411932033028 --yes
 
 # 妙记（minutes，默认 User，可 `--as bot`）
 feishu-cli minutes get <minute_token> --with-artifacts
@@ -936,6 +984,13 @@ feishu-cli minutes search --query "周会"                            # 搜索�
 feishu-cli minutes apply-permission --minute-token <token> --perm view  # 申请妙记权限
 feishu-cli minutes download --minute-tokens obcnxxxx --output ./media
 feishu-cli minutes download --minute-tokens obcnxxxx --url-only
+# 妙记编辑（仅 User，均支持 --dry-run）
+feishu-cli minutes upload --file-token boxcnxxx                     # 用云盘音视频生成妙记
+feishu-cli minutes update obcnxxxx --topic "新标题"
+feishu-cli minutes summary obcnxxxx --summary @summary.md
+feishu-cli minutes todo obcnxxxx --operation add --todo "补充数据" --is-done=false
+feishu-cli minutes speaker-replace obcnxxxx --from-speaker-id <speaker_id> --to-user-id ou_xxx
+feishu-cli minutes word-replace obcnxxxx --replace-words '[{"source_word":"a","target_word":"b"}]'
 
 # 妙搭（Miaoda）应用 —— 一份 HTML 秒级发布成可分享的飞书应用（需 User Token + spark scope）
 feishu-cli auth login --scope "spark:app:read spark:app:write"      # ⚠️ --scope 是替换不是合并，需并入你完整 scope 串
@@ -949,6 +1004,11 @@ feishu-cli apps access-scope-set --app-id app_xxx --scope specific \
   --targets '[{"type":"user","id":"ou_xxx"},{"type":"chat","id":"oc_xxx"}]'
 feishu-cli apps access-scope-get --app-id app_xxx                   # 查看当前访问范围
 feishu-cli apps update --app-id app_xxx --name "新名字"
+feishu-cli apps update --app-id app_xxx --icon-file ./icon.png      # 改图标（png/jpeg ≤2MB，或 --icon-url）
+feishu-cli apps list --owner-id ou_xxx
+feishu-cli apps release create --app-id app_xxx --branch main --wait  # 按分支发布并等待结果
+feishu-cli apps features --app-id app_xxx                           # 功能开关（只读）
+feishu-cli apps delete --app-id app_xxx --confirm-name "我的页面" --yes  # 名称校验 + 确认门禁
 
 # 日历增强
 feishu-cli calendar agenda                                         # 查看今日日程
@@ -957,6 +1017,8 @@ feishu-cli calendar suggestion --attendee-ids ou_aaa,ou_bbb --duration 30m
 feishu-cli calendar room-find --slot 2026-03-28T14:00:00+08:00~2026-03-28T15:00:00+08:00 \
   --city "北京" --min-capacity 6
 feishu-cli calendar rsvp --event-id EVENT_xxx --action accept
+feishu-cli calendar create-event --summary "评审" --start 2026-11-10T14:00:00+08:00 --end 2026-11-10T15:00:00+08:00 \
+  --description "**议程**" --description-format markdown --dry-run   # 富文本描述，当前目录内本地图片自动上传
 
 # 任务增强
 feishu-cli task my                                                 # 查看我的任务
@@ -965,6 +1027,9 @@ feishu-cli task reopen <task_guid>                                 # 重新打�
 feishu-cli task comment add <task_guid> --content "评论"
 feishu-cli tasklist task-add <tasklist_guid> --task-ids guid1,guid2
 feishu-cli tasklist member add <tasklist_guid> --members ou_xxx
+feishu-cli task create -s "整理周报" --assignee ou_xxx --tasklist-id <guid> --idempotency-key weekly-01 --dry-run
+feishu-cli task comment update <comment_id> --content "已更新"      # 另有 get / delete（delete 带确认门禁）
+feishu-cli tasklist task-add <tasklist_guid> --task-ids guid1 --section-guid <section_guid>
 
 # 消息增强
 feishu-cli msg mget --message-ids om_xxx,om_yyy
@@ -1060,6 +1125,11 @@ feishu-cli okr cycle detail <cycle_id>                              # 周期下�
 feishu-cli okr progress get/update/delete <progress_id>             # 进展记录全生命周期
 feishu-cli okr upload-image --file chart.png --objective-id 7xxx    # 进展图片素材
 feishu-cli okr progress create --key-result-id 7xxx --content "本周完成核心模块联调"
+feishu-cli okr objective batch-create --cycle-id <cycle_id> --input @okr.json --dry-run   # 失败回滚
+feishu-cli okr weight --level key-result --objective-id <objective_id> --weights '[{"id":"<kr_id_1>","weight":0.6},{"id":"<kr_id_2>","weight":0.4}]'
+feishu-cli okr reorder --level objective --cycle-id <cycle_id> --ops '[{"id":"<objective_id>","position":1}]'
+feishu-cli okr indicator update --level key-result --id <key_result_id> --value 80   # ID 均为数字
+feishu-cli okr comment update <comment_id> --content "已同步"        # 另有 get / delete；update/delete 需 User
 
 # Slides 演示文稿
 feishu-cli slides create --title "Q2 OKR" --slide @page1.xml --output json   # 创建时带页面，@./img.png 自动上传
@@ -1067,6 +1137,9 @@ feishu-cli slides add-slide <presentation> --slide @page2.xml
 feishu-cli slides get <presentation_or_url> --slide-number 2 --output-file page2.xml
 feishu-cli slides screenshot <presentation> --slide-number 1 --output cover
 feishu-cli slides media-upload --file ./cover.png --presentation-token <xml_presentation_id>
+feishu-cli slides history list <presentation>                      # 历史版本
+feishu-cli slides history revert <presentation> --history-version-id 3 --wait --yes   # 回滚：只轮询不重放，≤5 分钟
+feishu-cli slides add-slide <presentation> --slide @page3.xml --as user                # slides/board 写命令默认 Bot，可 --as user|auto
 
 # 实时事件订阅
 feishu-cli event list
@@ -1075,6 +1148,8 @@ feishu-cli event consume im.message.receive_v1 --max-events 5 --timeout 60s
 feishu-cli event consume card.action.trigger                        # 卡片按钮/表单回调（交互式 Bot）
 feishu-cli event consume approval.instance.status_changed_v4        # 审批事件（自动注册服务端订阅）
 feishu-cli event consume vc.meeting.participant_meeting_ended_v1    # VC：User pre-consume，握手后才发 ready
+feishu-cli event consume approval.instance.status_changed_v4 --dry-run  # 预览订阅计划（身份、订阅请求、需勾选的事件），不联网
+feishu-cli event consume board.whiteboard.updated_v1 --param whiteboard_id=<id>  # 带参数的 EventKey，见 event schema <key>
 feishu-cli event status
 feishu-cli event stop --all
 
@@ -1099,6 +1174,9 @@ feishu-cli api GET /open-apis/im/v1/chats --page-all --page-limit 10 --as user
 feishu-cli api POST /open-apis/im/v1/messages --params '{"receive_id_type":"email"}' \
   --data '{"receive_id":"u@example.com","msg_type":"text","content":"{\"text\":\"hi\"}"}' --as bot
 feishu-cli api DELETE /open-apis/im/v1/messages/om_xxx --as bot --dry-run    # 预览
+feishu-cli api POST /open-apis/im/v1/files --as bot --file file=./report.pdf \
+  --data '{"file_type":"pdf","file_name":"report.pdf"}' --dry-run          # multipart 上传
+feishu-cli --error-format json api GET /open-apis/im/v1/chats --as bot        # 错误以一行 JSON 输出到 stderr
 feishu-cli auth token --as user                                              # 导出 token 给其他工具用（如果需要）
 ```
 

@@ -28,6 +28,7 @@ var driveUploadCmd = &cobra.Command{
   --as            bot | user | auto（不传时保持旧行为：必须 User Token）；
                   Bot 新建文件后自动给当前登录用户授予 full_access
   --user-access-token  覆盖登录态
+  --dry-run       只打印将要发出的上传请求（按文件大小区分 upload_all / 分块；不读取凭据、不联网）
 
 覆盖上传说明（--file-token）:
   - 内容写入目标文件的新版本，文件 token 不变；不会新建文件
@@ -42,12 +43,9 @@ var driveUploadCmd = &cobra.Command{
 示例:
   feishu-cli drive upload --file /tmp/report.pdf
   feishu-cli drive upload --file /tmp/big.zip --folder-token fldxxx --name "大文件.zip"
-  feishu-cli drive upload --file /tmp/report.pdf --file-token boxcnXXXX   # 原地覆盖为新版本`,
+  feishu-cli drive upload --file /tmp/report.pdf --file-token boxcnXXXX   # 原地覆盖为新版本
+  feishu-cli drive upload --file /tmp/report.pdf --dry-run                 # 预览请求`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
@@ -57,6 +55,7 @@ var driveUploadCmd = &cobra.Command{
 		overwriteToken, _ := cmd.Flags().GetString("file-token")
 		fileName, _ := cmd.Flags().GetString("name")
 		output, _ := cmd.Flags().GetString("output")
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 		if filePath == "" {
 			return clierr.Usagef("--file 必填")
@@ -68,7 +67,27 @@ var driveUploadCmd = &cobra.Command{
 		// 本地文件在任何网络请求（含 token 刷新）之前校验：敏感目录、不存在、是目录、无权限读取均为用法错误
 		stat, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("--file 无效: %w", err)
+			return clierr.Usagef("--file 无效: %w", err)
+		}
+
+		if dryRun {
+			name := fileName
+			if name == "" {
+				name = filepath.Base(filePath)
+			}
+			desc := "Upload local file to Drive"
+			if overwriteToken != "" {
+				desc = "Overwrite existing Drive file as a new version (file_token unchanged)"
+			}
+			return printDryRunPlan(cmd, desc, map[string]any{
+				"file":       filePath,
+				"size_bytes": stat.Size(),
+				"overwrite":  overwriteToken != "",
+			}, driveFileUploadSteps(filePath, name, folderToken, overwriteToken, stat.Size()))
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveIdentityWithLegacyDefault(cmd, func(c *cobra.Command) (string, error) {
@@ -137,6 +156,7 @@ func init() {
 	driveUploadCmd.Flags().String("file-token", "", "已有文件 token：原地覆盖为新版本（token 不变、不改权限，与 --folder-token 互斥）")
 	driveUploadCmd.Flags().String("name", "", "上传后的文件名（默认本地文件名）")
 	driveUploadCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	driveUploadCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求")
 	driveUploadCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	addLegacyAsFlag(driveUploadCmd, "保持旧行为（必须 User Token）")
 	mustMarkFlagRequired(driveUploadCmd, "file")

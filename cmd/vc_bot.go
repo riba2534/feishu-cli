@@ -129,10 +129,6 @@ var vcBotJoinCmd = &cobra.Command{
   feishu-cli vc bot meeting-join --meeting-number 123456789
   feishu-cli vc bot meeting-join --meeting-number 123456789 --password 1234 --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		meetingNo, _ := cmd.Flags().GetString("meeting-number")
 		password, _ := cmd.Flags().GetString("password")
 		callID, _ := cmd.Flags().GetString("call-id")
@@ -170,6 +166,10 @@ var vcBotJoinCmd = &cobra.Command{
 				"body":   client.BuildVCBotJoinBody(req),
 				"as":     "bot",
 			})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// 仅 Bot 身份：空 token 即 App/Tenant Token
@@ -212,10 +212,6 @@ var vcBotLeaveCmd = &cobra.Command{
 示例:
   feishu-cli vc bot meeting-leave --meeting-id 6911188411932033028`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		meetingID, _ := cmd.Flags().GetString("meeting-id")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		output, _ := cmd.Flags().GetString("output")
@@ -235,6 +231,10 @@ var vcBotLeaveCmd = &cobra.Command{
 				"body":   map[string]any{"meeting_id": meetingID},
 				"as":     "bot",
 			})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// 仅 Bot 身份：空 token 即 App/Tenant Token
@@ -286,10 +286,6 @@ var vcBotEventsCmd = &cobra.Command{
   feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --as bot --dry-run
   feishu-cli vc bot meeting-events --meeting-id 6911188411932033028 --start 2026-03-01 --end 2026-03-31 -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		meetingID, _ := cmd.Flags().GetString("meeting-id")
 		startStr, _ := cmd.Flags().GetString("start")
 		endStr, _ := cmd.Flags().GetString("end")
@@ -301,6 +297,9 @@ var vcBotEventsCmd = &cobra.Command{
 
 		meetingID = strings.TrimSpace(meetingID)
 		if err := validateVCEventsMeetingID(meetingID); err != nil {
+			return err
+		}
+		if err := validateVCBotAs(cmd); err != nil {
 			return err
 		}
 
@@ -368,6 +367,10 @@ var vcBotEventsCmd = &cobra.Command{
 				preview["page_all"] = true
 			}
 			return printJSON(preview)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, _, err := resolveVCBotEventsIdentity(cmd)
@@ -566,6 +569,16 @@ func init() {
 	mustMarkFlagRequired(vcBotEventsCmd, "meeting-id")
 }
 
+// validateVCBotAs 在 dry-run 与 config.Validate 之前校验 --as 取值，非法值 exit 2（不读凭据、不联网）。
+func validateVCBotAs(cmd *cobra.Command) error {
+	as, _ := cmd.Flags().GetString("as")
+	switch strings.ToLower(strings.TrimSpace(as)) {
+	case "", "auto", "bot", "tenant", "app", "user":
+		return nil
+	}
+	return clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
+}
+
 // peekVCBotEventsIdentity 供 dry-run：只静态探测身份，不刷新、不联网、不写 token。
 func peekVCBotEventsIdentity(cmd *cobra.Command) (identity string, err error) {
 	as, _ := cmd.Flags().GetString("as")
@@ -609,7 +622,7 @@ func resolveVCBotEventsIdentity(cmd *cobra.Command) (token string, identity stri
 	case "user":
 		token, err = resolveRequiredUserToken(cmd)
 		if err != nil {
-			return "", "", fmt.Errorf("--as user 需要 User Access Token（请先 `feishu-cli auth login`，或改用 --as bot）: %w", err)
+			return "", "", clierr.Authf("--as user 需要 User Access Token（请先 `feishu-cli auth login`，或改用 --as bot）: %w", err)
 		}
 		return token, "user", nil
 	default:

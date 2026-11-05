@@ -76,6 +76,9 @@ type ConsumerEntry struct {
 	JQExpr     string    `json:"jq_expr,omitempty"`
 	MaxEvents  int       `json:"max_events,omitempty"`
 	TimeoutSec int       `json:"timeout_sec,omitempty"`
+	// Scope 区分同一 EventKey 下独立的服务端订阅（订阅身份 + 该 key 声明的 --param，如不同画板/邮箱）。
+	// 空串表示默认身份且无参数，与旧版 bus.json 条目等价。
+	Scope string `json:"scope,omitempty"`
 }
 
 // IsAlive 检查 PID 对应的进程是否还存活（不可移植：仅 Unix）。
@@ -198,10 +201,11 @@ func pruneDeadConsumers(state *BusState) {
 	state.Consumers = alive
 }
 
-func countEventKey(state *BusState, eventKey string) int {
+func countEventKey(state *BusState, eventKey, scope string) int {
 	n := 0
 	for _, c := range state.Consumers {
-		if c.EventKey == eventKey {
+		// 旧版本写入的条目没有 Scope，无法判断它订阅的对象：保守计入，宁可不注销也不误删别人的订阅
+		if c.EventKey == eventKey && (c.Scope == scope || c.Scope == "") {
 			n++
 		}
 	}
@@ -243,19 +247,19 @@ func (b *Bus) ClaimConsumer(entry ConsumerEntry) (firstForKey bool, err error) {
 	err = b.withLock(func(state *BusState) error {
 		pruneDeadConsumers(state)
 		stripConsumer(state, entry.PID, entry.EventKey)
-		firstForKey = countEventKey(state, entry.EventKey) == 0
+		firstForKey = countEventKey(state, entry.EventKey, entry.Scope) == 0
 		state.Consumers = append(state.Consumers, entry)
 		return b.save(state)
 	})
 	return firstForKey, err
 }
 
-// ReleaseConsumer 移除 (PID, EventKey)，并告诉调用方移除后该 key 是否已无活着的 consumer。
-func (b *Bus) ReleaseConsumer(pid int, eventKey string) (lastForKey bool, err error) {
+// ReleaseConsumer 移除 (PID, EventKey)，并告诉调用方移除后同一 (EventKey, Scope) 是否已无活着的 consumer。
+func (b *Bus) ReleaseConsumer(pid int, eventKey, scope string) (lastForKey bool, err error) {
 	err = b.withLock(func(state *BusState) error {
 		pruneDeadConsumers(state)
 		stripConsumer(state, pid, eventKey)
-		lastForKey = countEventKey(state, eventKey) == 0
+		lastForKey = countEventKey(state, eventKey, scope) == 0
 		return b.save(state)
 	})
 	return lastForKey, err
@@ -264,11 +268,11 @@ func (b *Bus) ReleaseConsumer(pid int, eventKey string) (lastForKey bool, err er
 // CountEventKeyConsumers 返回当前该 eventKey 下存活 consumer 的数量。
 // 用于 last-consumer 注销后的复检：注销是锁外的网络调用，期间可能有新 consumer
 // 完成注册并订阅，必须复检以免把它的订阅误抹掉。
-func (b *Bus) CountEventKeyConsumers(eventKey string) (int, error) {
+func (b *Bus) CountEventKeyConsumers(eventKey, scope string) (int, error) {
 	n := 0
 	err := b.withLock(func(state *BusState) error {
 		pruneDeadConsumers(state)
-		n = countEventKey(state, eventKey)
+		n = countEventKey(state, eventKey, scope)
 		return b.save(state)
 	})
 	return n, err

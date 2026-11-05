@@ -8,6 +8,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -122,6 +123,9 @@ func runDocCreateDocsAI(cmd *cobra.Command, userAccessToken string) error {
 	output, _ := cmd.Flags().GetString("output")
 	if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
 		return printDocCreateDryRun(cmd, body, resources, userAccessToken)
+	}
+	if err := config.Validate(); err != nil {
+		return err
 	}
 
 	data, createErr := client.CreateDocsAIDocument(body, userAccessToken)

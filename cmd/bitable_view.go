@@ -6,7 +6,6 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
-	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +45,7 @@ var bitableViewGetCmd = &cobra.Command{
 		tableID, _ := cmd.Flags().GetString("table-id")
 		viewID, _ := cmd.Flags().GetString("view-id")
 		if viewID == "" {
-			return fmt.Errorf("--view-id 必填")
+			return clierr.Usagef("--view-id 必填")
 		}
 		return runBaseV3Simple(cmd, "GET", func(bt string) string {
 			return bitableViewPath(bt, tableID, viewID)
@@ -71,7 +70,7 @@ var bitableViewCreateCmd = &cobra.Command{
 			return runBaseV3WithJSON(cmd, "POST", pathFn)
 		}
 		if name == "" {
-			return fmt.Errorf("需要 --name 或 --config 至少一个")
+			return clierr.Usagef("需要 --name 或 --config 至少一个")
 		}
 		// 官方 base/v3 body 顶层直接是 {name, type}，不包 "view" 一层
 		body := map[string]any{"name": name, "type": viewType}
@@ -86,7 +85,7 @@ var bitableViewDeleteCmd = &cobra.Command{
 		tableID, _ := cmd.Flags().GetString("table-id")
 		viewID, _ := cmd.Flags().GetString("view-id")
 		if viewID == "" {
-			return fmt.Errorf("--view-id 必填")
+			return clierr.Usagef("--view-id 必填")
 		}
 		return runBaseV3Simple(cmd, "DELETE", func(bt string) string {
 			return bitableViewPath(bt, tableID, viewID)
@@ -102,7 +101,7 @@ var bitableViewRenameCmd = &cobra.Command{
 		viewID, _ := cmd.Flags().GetString("view-id")
 		name, _ := cmd.Flags().GetString("name")
 		if viewID == "" || name == "" {
-			return fmt.Errorf("--view-id 和 --name 必填")
+			return clierr.Usagef("--view-id 和 --name 必填")
 		}
 		body := map[string]any{"name": name}
 		return runBaseV3WithBody(cmd, "PATCH", func(bt string) string {
@@ -168,7 +167,7 @@ func newViewConfigCmd(kind, action string) *cobra.Command {
 			tableID, _ := cc.Flags().GetString("table-id")
 			viewID, _ := cc.Flags().GetString("view-id")
 			if viewID == "" {
-				return fmt.Errorf("--view-id 必填")
+				return clierr.Usagef("--view-id 必填")
 			}
 			return runViewConfigCall(cc, "GET", func(bt string) string {
 				return bitableViewPath(bt, tableID, viewID, suffix)
@@ -180,7 +179,7 @@ func newViewConfigCmd(kind, action string) *cobra.Command {
 			tableID, _ := cc.Flags().GetString("table-id")
 			viewID, _ := cc.Flags().GetString("view-id")
 			if viewID == "" {
-				return fmt.Errorf("--view-id 必填")
+				return clierr.Usagef("--view-id 必填")
 			}
 			configJSON, _ := cc.Flags().GetString("config")
 			configFile, _ := cc.Flags().GetString("config-file")
@@ -190,7 +189,7 @@ func newViewConfigCmd(kind, action string) *cobra.Command {
 			}
 			var parsed any
 			if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-				return fmt.Errorf("解析 --config 失败: %w", err)
+				return clierr.Usagef("解析 --config 失败: %w", err)
 			}
 			// 用户既可能传数组（[]）也可能传已经包装好的对象（{wrapKey:[...]}）
 			if wrapKey, ok := viewConfigWrapKey[kind]; ok {
@@ -216,22 +215,11 @@ func newViewConfigCmd(kind, action string) *cobra.Command {
 
 // runViewConfigCall 调用视图配置端点并输出解包后的 data（可能是对象或数组）。
 func runViewConfigCall(cmd *cobra.Command, method string, pathFn func(baseToken string) string, body any) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
-	token, err := resolveIdentityToken(cmd)
-	if err != nil {
-		return err
-	}
-	baseToken, err := resolveBaseToken(cmd)
-	if err != nil {
-		return err
-	}
-	data, err := client.BaseV3CallAny(method, pathFn(baseToken), nil, body, token)
-	if err != nil {
-		return err
-	}
-	return printJSON(data)
+	return bitableExecute(cmd, func(bt string) bitableReq {
+		return bitableReq{method: method, path: pathFn(bt), body: body}
+	}, func(req bitableReq, token string) (any, error) {
+		return client.BaseV3CallAny(req.method, req.path, nil, req.body, token)
+	})
 }
 
 func init() {
@@ -243,6 +231,7 @@ func init() {
 		bitableViewDeleteCmd, bitableViewRenameCmd,
 	} {
 		bitableViewCmd.AddCommand(c)
+		addBitablePreviewFlags(c)
 		addBaseTokenFlag(c)
 		c.Flags().String("table-id", "", "table_id（必填）")
 		c.Flags().String("user-access-token", "", "User Access Token")
@@ -269,6 +258,7 @@ func init() {
 			c.Flags().String("view-id", "", "view_id（必填）")
 			c.Flags().String("user-access-token", "", "User Access Token")
 			mustMarkFlagRequired(c, "table-id", "view-id")
+			addBitablePreviewFlags(c)
 		}
 		setCmd.Flags().String("config", "", "JSON 配置（必填）")
 		setCmd.Flags().String("config-file", "", "JSON 配置文件")

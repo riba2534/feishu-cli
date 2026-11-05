@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -23,15 +24,27 @@ var deleteBlocksCmd = &cobra.Command{
   feishu-cli doc delete DOC_ID PARENT_BLOCK_ID --all`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		blockID := args[1]
 		startIndex, _ := cmd.Flags().GetInt("start")
 		endIndex, _ := cmd.Flags().GetInt("end")
 		deleteAll, _ := cmd.Flags().GetBool("all")
 		force, _ := cmd.Flags().GetBool("force")
+		// 索引参数是纯本地校验，先于凭据检查与任何网络请求
+		if !deleteAll {
+			if !cmd.Flags().Changed("end") {
+				return clierr.Usagef("必须指定 --all 或 --end")
+			}
+			if endIndex <= startIndex {
+				return clierr.Usagef("结束索引 (%d) 必须大于起始索引 (%d)", endIndex, startIndex)
+			}
+			if startIndex < 0 {
+				return clierr.Usagef("起始索引必须非负")
+			}
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
 		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
@@ -63,17 +76,6 @@ var deleteBlocksCmd = &cobra.Command{
 			}
 			startIndex = 0
 			endIndex = len(children)
-		} else {
-			// Validate index range when not using --all
-			if !cmd.Flags().Changed("end") {
-				return fmt.Errorf("必须指定 --all 或 --end")
-			}
-			if endIndex <= startIndex {
-				return fmt.Errorf("结束索引 (%d) 必须大于起始索引 (%d)", endIndex, startIndex)
-			}
-			if startIndex < 0 {
-				return fmt.Errorf("起始索引必须非负")
-			}
 		}
 
 		// 危险操作确认

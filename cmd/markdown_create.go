@@ -37,10 +37,6 @@ var markdownCreateCmd = &cobra.Command{
   feishu-cli markdown create --file ./local.md --folder-token fldxxx
   feishu-cli markdown create --name draft.md --content "# wiki" --wiki-token wikcnxxx --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		name, _ := cmd.Flags().GetString("name")
 		content, _ := cmd.Flags().GetString("content")
 		contentFile, _ := cmd.Flags().GetString("content-file")
@@ -82,7 +78,7 @@ var markdownCreateCmd = &cobra.Command{
 			// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求；先于按文件名推断 --name）
 			stat, err := safefile.StatInputFile(contentFile)
 			if err != nil {
-				return fmt.Errorf("--content-file 无效: %w", err)
+				return clierr.Usagef("--content-file 无效: %w", err)
 			}
 			size = stat.Size()
 		}
@@ -133,6 +129,10 @@ var markdownCreateCmd = &cobra.Command{
 				"parent_node": parentNode,
 				"size":        size,
 			}, steps)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveIdentityToken(cmd)

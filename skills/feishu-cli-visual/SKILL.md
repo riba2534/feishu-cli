@@ -2,7 +2,7 @@
 name: feishu-cli-visual
 description: >-
   飞书可视化载体：画板（架构图、流程图、SVG/Mermaid/PlantUML 转可编辑节点、取回 Mermaid 源码、克隆、质检与导出）、飞书 Slides 演示文稿（从 XML 创建、按页增删改、截图）、文档内妙笔 HTMLBox 动态组件（ECharts、地图、3D、动画、交互大屏）、妙搭 HTML 应用发布与访问范围，以及数据图表形式与配色规范。用户要在飞书里画图、做幻灯片/PPT、嵌入会动或可交互的图表、发布 HTML 应用时使用。不用于：只产出本地 SVG/PPTX/HTML 文件；消息卡片（feishu-cli-messaging）；HTML 邮件（feishu-cli-mail）；随 Markdown 导入的图表（feishu-cli-docs）；多维表格仪表盘（feishu-cli-data）。
-compatibility: Requires feishu-cli v1.43.0+ and network access for Feishu API calls. SVG conversion needs whiteboard-cli; local checks need Python 3.10+, Node.js and agent-browser.
+compatibility: Requires feishu-cli v1.44.0+ and network access for Feishu API calls. SVG conversion needs whiteboard-cli; local checks need Python 3.10+, Node.js and agent-browser.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(python3:*) Bash(node:*) Bash(jq:*) Bash(sleep:*) Bash(whiteboard-cli:*) Read Write
 ---
 
@@ -20,9 +20,9 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 |---|---|
 | 未指定载体的数据图表、配色和形式选择 | `references/workflows/dataviz/workflow.md` |
 | 静态画板：SVG/Mermaid/PlantUML 导入、手写节点、取回源码、克隆、质检、导出 | `references/workflows/board/workflow.md` |
-| Slides 幻灯片/PPT：创建、读 XML、按页增删改、截图预览、上传图片 | `references/workflows/slides/workflow.md` |
+| Slides 幻灯片/PPT：创建、读 XML、按页增删改、截图预览、上传图片、历史版本与回滚 | `references/workflows/slides/workflow.md` |
 | 文档内动态、交互、CSS/JS、ECharts、3D、window.magic 小程序 | `references/workflows/htmlbox/workflow.md` |
-| 妙搭 HTML 应用：创建、发布、查发布状态、访问范围 | `references/workflows/apps/workflow.md` |
+| 妙搭 HTML 应用：创建、修改（含图标）、删除、发布与按分支发布、查发布状态、功能开关、访问范围 | `references/workflows/apps/workflow.md` |
 
 ## 载体边界
 
@@ -34,12 +34,13 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 
 ## 执行规则
 
-1. **身份**：board、`doc htmlbox`、slides 的写命令默认 Bot；操作用户已有的文档、画板或演示文稿时显式传
-   `--user-access-token`（或 `FEISHU_USER_ACCESS_TOKEN`）。Slides 新建优先用 User：应用未开通 tenant 的
+1. **身份**：board、slides 写命令默认 Bot，可用 `--as user|auto` 或 `--user-access-token` 改用本人身份（操作用户已有的画板或
+   演示文稿时加 `--as user`）；`doc htmlbox` 写命令默认 Bot，只认显式 `--user-access-token`（或 `FEISHU_USER_ACCESS_TOKEN`）。Slides 新建优先用 User：应用未开通 tenant 的
    `slides:presentation:create` 时 Bot 创建报 99991672（exit 3）。`apps` 全部命令必须 User Token + spark scope。
-2. **破坏性操作先问用户**：`board delete`、`slides delete-slide`、把妙搭应用设为 `--scope public` 前先向用户确认。
+2. **破坏性操作先问用户**：`board delete`、`slides delete-slide`、`slides history revert`（整份演示文稿回到历史版本）、`apps delete`、把妙搭应用设为 `--scope public` 前先向用户确认。
    `board import/update/create-notes --overwrite` 会清空整张画板（含其他图表），`board update --overwrite` 先加
-   `--snapshot old.json` 留备份；`board delete` 没有确认门禁、立即执行。删除类命令以退出码 10 返回时是在等确认，
+   `--snapshot old.json` 留备份；`board delete` 没有确认门禁、立即执行，先 `--dry-run` 看要删的节点。
+   演示文稿误改用 `slides history revert` 回滚（需确认，非交互环境加 `--yes`）。删除类命令以退出码 10 返回时是在等确认，
    不要自行补 `--yes`，先取得用户同意。
 3. **不重复写入**：画板写入结果不明时，`board update/svg-import/create-notes/import --engine local` 用同一个
    `--client-token` 重跑；服务端 `board import` 不接受 client token（CLI 自动重试前会回读去重），

@@ -38,10 +38,6 @@ Markdown 格式不指定 --sheet-id 时会导出所有可见工作表。
   feishu-cli sheet export SPREADSHEET_TOKEN -o report.xlsx --max-retries 60`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		format, _ := cmd.Flags().GetString("format")
 		format = normalizeSheetExportFormat(format)
 		sheetID, _ := cmd.Flags().GetString("sheet-id")
@@ -49,7 +45,7 @@ Markdown 格式不指定 --sheet-id 时会导出所有可见工作表。
 		maxRetries, _ := cmd.Flags().GetInt("max-retries")
 
 		if !isSupportedSheetExportFormat(format) {
-			return fmt.Errorf("不支持的导出格式: %s（支持 xlsx/csv/markdown）", format)
+			return clierr.Usagef("不支持的导出格式: %s（支持 xlsx/csv/markdown）", format)
 		}
 		// 显式输出路径在任何网络请求（含 token 刷新、wiki 解析）之前校验，敏感目录直接拒绝
 		if outputPath != "" {
@@ -58,6 +54,9 @@ Markdown 格式不指定 --sheet-id 时会导出所有可见工作表。
 			}
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		// 解析身份与表格参数（支持 /sheets/、/spreadsheets/、/wiki/ URL）
 		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {

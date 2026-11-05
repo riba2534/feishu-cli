@@ -54,10 +54,6 @@ var docMediaDownloadCmd = &cobra.Command{
   feishu-cli doc media-download boxcnXXX -o large.bin --timeout 30m`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		token := args[0]
 		mediaType, _ := cmd.Flags().GetString("type")
 		output, _ := cmd.Flags().GetString("output")
@@ -75,7 +71,6 @@ var docMediaDownloadCmd = &cobra.Command{
 		if err := validateOutputPath(output, ""); err != nil {
 			return fmt.Errorf("输出路径不安全: %w", err)
 		}
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 		// 显式扩展名时可在下载前就检查覆盖；无扩展名时在识别出最终文件名后再检查
 		if mediaHasExplicitExtension(output) {
 			if err := ensureNotOverwriting(output, overwrite); err != nil {
@@ -88,9 +83,14 @@ var docMediaDownloadCmd = &cobra.Command{
 			var err error
 			timeout, err = time.ParseDuration(timeoutStr)
 			if err != nil {
-				return fmt.Errorf("无效的超时时间格式: %s（示例: 10m, 1h）", timeoutStr)
+				return clierr.Usagef("无效的超时时间格式: %s（示例: 10m, 1h）", timeoutStr)
 			}
 		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		// --doc-token 支持 URL 与 wiki：换出底层文档 token/类型（--extra 优先，此时不解析）
 		if strings.TrimSpace(docToken) != "" && strings.TrimSpace(extra) == "" {

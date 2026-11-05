@@ -34,6 +34,7 @@ func resetAPIFlags() {
 	apiPageAll = false
 	apiPageLimit = 10
 	apiPageDelayMs = 200
+	apiFile = ""
 }
 
 func newTestAPICmd() *cobra.Command {
@@ -56,6 +57,7 @@ func newTestAPICmd() *cobra.Command {
 	c.Flags().BoolVar(&apiPageAll, "page-all", false, "")
 	c.Flags().IntVar(&apiPageLimit, "page-limit", 10, "")
 	c.Flags().IntVar(&apiPageDelayMs, "page-delay", 200, "")
+	c.Flags().StringVar(&apiFile, "file", "", "")
 	c.Flags().String("user-access-token", "", "")
 	return c
 }

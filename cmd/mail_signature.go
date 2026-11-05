@@ -34,9 +34,6 @@ JSON 输出同时返回 signatures 与 usages（usages 承载默认/回复默认
   feishu-cli mail signature --mailbox me -o json
   feishu-cli mail signature --detail 7012345678901234567`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 
 		detail, _ := cmd.Flags().GetString("detail")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
@@ -62,6 +59,9 @@ JSON 输出同时返回 signatures 与 usages（usages 承载默认/回复默认
 				"detail_id":  detail,
 				"mailbox_id": mailboxID,
 			})
+		}
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := requireUserToken(cmd, "mail signature")

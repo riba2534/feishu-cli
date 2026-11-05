@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -59,12 +60,12 @@ var approvalTaskApproveCmd = &cobra.Command{
 func readApprovalTaskActionFlags(cmd *cobra.Command) (client.ApprovalTaskActionOptions, error) {
 	instanceCode, _ := cmd.Flags().GetString("instance-code")
 	if strings.TrimSpace(instanceCode) == "" {
-		return client.ApprovalTaskActionOptions{}, fmt.Errorf("--instance-code 不能为空")
+		return client.ApprovalTaskActionOptions{}, clierr.Usagef("--instance-code 不能为空")
 	}
 
 	taskID, _ := cmd.Flags().GetString("task-id")
 	if strings.TrimSpace(taskID) == "" {
-		return client.ApprovalTaskActionOptions{}, fmt.Errorf("--task-id 不能为空")
+		return client.ApprovalTaskActionOptions{}, clierr.Usagef("--task-id 不能为空")
 	}
 
 	comment, _ := cmd.Flags().GetString("comment")
@@ -86,7 +87,7 @@ func validateApprovalWriteUserIDType(userIDType string) error {
 	case "", "open_id", "user_id", "union_id":
 		return nil
 	default:
-		return fmt.Errorf("user_id_type 不支持 %q，仅支持 open_id / user_id / union_id", userIDType)
+		return clierr.Usagef("user_id_type 不支持 %q，仅支持 open_id / user_id / union_id", userIDType)
 	}
 }
 

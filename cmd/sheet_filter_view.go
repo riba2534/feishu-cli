@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -34,7 +35,7 @@ var sheetFilterViewCreateCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if spreadsheetToken == "" || sheetID == "" || rangeStr == "" {
-			return fmt.Errorf("--token、--sheet-id、--range 均为必填项")
+			return clierr.Usagef("--token、--sheet-id、--range 均为必填项")
 		}
 		if err := validateFilterViewID(filterViewID); err != nil {
 			return err
@@ -71,7 +72,7 @@ func readSheetSpreadsheetToken(cmd *cobra.Command) (string, error) {
 	token, _ := cmd.Flags().GetString("token")
 	officialToken, _ := cmd.Flags().GetString("spreadsheet-token")
 	if token != "" && officialToken != "" && token != officialToken {
-		return "", fmt.Errorf("--token 与 --spreadsheet-token 不能同时指定不同值")
+		return "", clierr.Usagef("--token 与 --spreadsheet-token 不能同时指定不同值")
 	}
 	if token != "" {
 		return token, nil
@@ -84,13 +85,13 @@ func validateFilterViewID(filterViewID string) error {
 		return nil
 	}
 	if len(filterViewID) != 10 {
-		return fmt.Errorf("--filter-view-id 必须是 10 位字母数字，当前长度 %d", len(filterViewID))
+		return clierr.Usagef("--filter-view-id 必须是 10 位字母数字，当前长度 %d", len(filterViewID))
 	}
 	for _, ch := range filterViewID {
 		if (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') {
 			continue
 		}
-		return fmt.Errorf("--filter-view-id 必须是 10 位字母数字，包含非法字符 %q", ch)
+		return clierr.Usagef("--filter-view-id 必须是 10 位字母数字，包含非法字符 %q", ch)
 	}
 	return nil
 }
@@ -108,7 +109,7 @@ var sheetFilterViewListCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if spreadsheetToken == "" || sheetID == "" {
-			return fmt.Errorf("--token、--sheet-id 均为必填项")
+			return clierr.Usagef("--token、--sheet-id 均为必填项")
 		}
 
 		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
@@ -153,7 +154,12 @@ var sheetFilterViewDeleteCmd = &cobra.Command{
 		filterViewID, _ := cmd.Flags().GetString("filter-view-id")
 
 		if spreadsheetToken == "" || sheetID == "" || filterViewID == "" {
-			return fmt.Errorf("--token、--sheet-id、--filter-view-id 均为必填项")
+			return clierr.Usagef("--token、--sheet-id、--filter-view-id 均为必填项")
+		}
+		if handled, err := sheetDryRunIfRequested(cmd, spreadsheetToken, "--token", "删除筛选视图 "+filterViewID, map[string]any{
+			"sheet_id": sheetID, "filter_view_id": filterViewID,
+		}, "DELETE", "/open-apis/sheets/v3/spreadsheets/%s/sheets/"+sheetID+"/filter_views/"+filterViewID, nil); handled {
+			return err
 		}
 
 		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
@@ -199,5 +205,6 @@ func init() {
 	sheetFilterViewDeleteCmd.Flags().String("spreadsheet-token", "", "电子表格 token（兼容别名）")
 	sheetFilterViewDeleteCmd.Flags().String("sheet-id", "", "工作表 ID（必填）")
 	sheetFilterViewDeleteCmd.Flags().String("filter-view-id", "", "筛选视图 ID（必填）")
+	sheetFilterViewDeleteCmd.Flags().Bool("dry-run", false, "只打印将要发送的请求，不执行")
 	sheetFilterViewDeleteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

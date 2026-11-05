@@ -13,6 +13,7 @@
   - `internal/client/doc_cover_url.go`、`internal/client/restricted_ip.go`：封面图片 URL 受控下载与受限 IP 判定
   - `cmd/doc_script*.go`、`cmd/doc_write_resources.go`、`cmd/doc_content_local_resources.go`、`cmd/doc_write_dryrun.go`
   - `skills/feishu-cli-docs/references/workflows/author/`：写作工作流、DocxXML 写作规范与文体模板
+  - `skills/feishu-cli-visual/references/workflows/slides/references/`：`slides_chart_demo.xml`（图表示例原文）、`slides_chart_schema.xml`（官方 XSD 图表节选）、`iconpark.md`（IconPark 常用图标清单，改编）
 
 ```text
 MIT License

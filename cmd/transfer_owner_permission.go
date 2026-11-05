@@ -22,6 +22,9 @@ var transferOwnerCmd = &cobra.Command{
   --remove-old-owner   移除原所有者权限（默认: false）
   --stay-put           文档保留在原位置（默认: false）
   --old-owner-perm     原所有者保留权限（默认: full_access，仅 remove-old-owner=false 时生效）
+  --dry-run            只打印将要发出的请求（不读取凭据、不联网）
+
+<doc_token> 可传裸 token 或文档链接（自动推断 token 与类型）。
 
 成员类型:
   email             飞书邮箱
@@ -59,12 +62,10 @@ var transferOwnerCmd = &cobra.Command{
     --old-owner-perm view`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
+		docToken, docType, err := resolvePermTarget(cmd, args[0])
+		if err != nil {
 			return err
 		}
-
-		docToken := args[0]
-		docType, _ := cmd.Flags().GetString("doc-type")
 		memberType, _ := cmd.Flags().GetString("member-type")
 		memberID, _ := cmd.Flags().GetString("member-id")
 		notification, _ := cmd.Flags().GetBool("notification")
@@ -73,6 +74,23 @@ var transferOwnerCmd = &cobra.Command{
 		oldOwnerPerm, _ := cmd.Flags().GetString("old-owner-perm")
 
 		memberType = normalizePermMemberType(memberType)
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printPermDryRun(cmd, "Transfer document ownership", "POST",
+				permAPIPath("/open-apis/drive/v1/permissions/%s/members/transfer_owner", docToken),
+				map[string]any{
+					"type":              docType,
+					"need_notification": notification,
+					"remove_old_owner":  removeOldOwner,
+					"stay_put":          stayPut,
+					"old_owner_perm":    oldOwnerPerm,
+				},
+				map[string]any{"member_type": memberType, "member_id": memberID})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 
 		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {

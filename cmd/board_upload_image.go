@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
@@ -44,7 +45,9 @@ var boardUploadImageCmd = &cobra.Command{
 		if _, err := safefile.StatInputFile(imgPath); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
 
 		// 读图片实际像素（只读文件头，见 decodeImagePixelSize；解析失败返回 0）
 		pxW, pxH := decodeImagePixelSize(imgPath)
@@ -59,7 +62,7 @@ var boardUploadImageCmd = &cobra.Command{
 			height = pxHeight
 		}
 		if width == 0 || height == 0 {
-			return fmt.Errorf("无法识别图片尺寸（不支持的格式或带旋转 EXIF 的 JPEG），请显式指定 --width/--height")
+			return clierr.Usagef("无法识别图片尺寸（不支持的格式或带旋转 EXIF 的 JPEG），请显式指定 --width/--height")
 		}
 
 		if dryRun {
@@ -73,6 +76,9 @@ var boardUploadImageCmd = &cobra.Command{
 				"px_height": pxHeight,
 				"dry_run":   true,
 			}
+			if label, ok := visualDryRunIdentity(cmd); ok {
+				r["identity"] = label
+			}
 			if output == "json" {
 				return printJSON(r)
 			}
@@ -82,6 +88,10 @@ var boardUploadImageCmd = &cobra.Command{
 		}
 
 		if err := config.Validate(); err != nil {
+			return err
+		}
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
 			return err
 		}
 
@@ -134,5 +144,6 @@ func init() {
 	boardUploadImageCmd.Flags().Int("z-index", 10, "节点层级")
 	boardUploadImageCmd.Flags().Bool("dry-run", false, "预览不调用 API")
 	boardUploadImageCmd.Flags().String("user-access-token", "", "User Access Token")
+	addVisualWriteAsFlag(boardUploadImageCmd)
 	boardUploadImageCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 }

@@ -113,7 +113,7 @@ func TestSkillHelpGroupListsAllWorkflows(t *testing.T) {
 			"feishu-cli-visual/htmlbox:htmlbox",
 		}},
 		{[]string{"msg"}, []string{
-			"feishu-cli-messaging/chat:flag,get,history,list,mget,pin,pins,reaction,read-users,resource-download,search-chats,thread-messages,unpin",
+			"feishu-cli-messaging/chat:flag,get,history,list,mget,pin,pins,reaction,read-status,read-users,resource-download,search-chats,thread-messages,unpin",
 			"feishu-cli-messaging/msg:delete,edit,forward,merge-forward,reply,send,urgent",
 		}},
 		// 叶子命令：只有自身归属，不带子命令列表

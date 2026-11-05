@@ -15,7 +15,13 @@ import (
 
 func stubCmdFeishuServer(t *testing.T, handler http.HandlerFunc) func() {
 	t.Helper()
-	srv := httptest.NewServer(handler)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isPortProbe(r) {
+			http.NotFound(w, r)
+			return
+		}
+		handler(w, r)
+	}))
 
 	viper.Reset()
 	tmpDir := t.TempDir()

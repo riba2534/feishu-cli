@@ -215,6 +215,15 @@ var taskSetAncestorCmd = &cobra.Command{
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
+		if taskDryRunRequested(cmd) {
+			body := map[string]any{}
+			if ancestor != "" {
+				body["ancestor_guid"] = ancestor
+			}
+			return printDryRunPlan(cmd, "task set-ancestor 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: taskAPIPath("tasks", child, "set_ancestor_task"), Desc: "设置或解除父任务", Params: taskOpenIDParams(), Body: body,
+			}})
+		}
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -380,6 +389,7 @@ func init() {
 	taskSetAncestorCmd.Flags().String("ancestor-id", "", "父任务 GUID（不传则解除父任务）")
 	taskSetAncestorCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(taskSetAncestorCmd)
+	addTaskDryRunFlag(taskSetAncestorCmd)
 
 	tasklistCmd.AddCommand(tasklistSearchCmd)
 	tasklistSearchCmd.Flags().String("query", "", "关键词")

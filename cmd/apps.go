@@ -25,11 +25,16 @@ auth login 是增量授权：多次登录申请的 scope 在服务端累积，�
   get               查看单个应用详情（app_type / 发布状态等）
   list              按名称定位应用 app_id（--keyword）
   html-publish      把 HTML 文件/目录按官方三段协议打包发布，返回 release_id（--wait 等待完成拿 online_url）
+  release create    按分支创建一次发布（frontend / full_stack，--wait 等待结果）
   release get       按 release_id 查询发布状态 / online_url / error_logs
   release list      发布历史
-  update            修改应用名称 / 描述
+  update            修改应用名称 / 描述 / 图标
+  delete            删除应用（--confirm-name 名称校验 + 确认门禁）
+  features          查看应用业务功能开关（只读）
   access-scope-get  查看应用访问范围
   access-scope-set  设置应用访问范围（specific / public / tenant）
+
+所有子命令都支持 --dry-run：只做本地校验并打印将要发出的请求，不获取 token、不访问网络。
 
 典型流程:
   feishu-cli apps create --name "我的页面" --app-type html                 # 拿 app_id
@@ -39,6 +44,9 @@ auth login 是增量授权：多次登录申请的 scope 在服务端累积，�
 
 // sparkBasePath 妙搭 OpenAPI 前缀（与 client.SparkBasePath 同源）。
 const sparkBasePath = client.SparkBasePath
+
+// appsAppIDListHint 应用定位类失败的通用提示（对齐官方 appIDListHint）。
+const appsAppIDListHint = "确认 --app-id 正确且你有该应用的访问权限；用 `feishu-cli apps list --keyword <名称>` 查找自己的应用"
 
 func init() {
 	rootCmd.AddCommand(appsCmd)

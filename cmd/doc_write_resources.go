@@ -118,7 +118,7 @@ func readReferenceMapFlag(raw string, allowEmpty bool) (map[string]any, error) {
 	case raw == "-":
 		data, err := io.ReadAll(docWriteStdin)
 		if err != nil {
-			return nil, fmt.Errorf("--reference-map 读取标准输入失败: %w", err)
+			return nil, clierr.Usagef("--reference-map 读取标准输入失败: %w", err)
 		}
 		value = string(data)
 	case strings.HasPrefix(strings.TrimSpace(raw), "@"):

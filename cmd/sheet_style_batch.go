@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +30,7 @@ style 字段沿用飞书 V2 styles_batch_update 的原始结构（如 font / hAl
 		dataStr, _ := cmd.Flags().GetString("data")
 
 		if strings.TrimSpace(dataStr) == "" {
-			return fmt.Errorf("--data 为必填项（{ranges, style} 对象的 JSON 数组）")
+			return clierr.Usagef("--data 为必填项（{ranges, style} 对象的 JSON 数组）")
 		}
 
 		styles, err := parseSheetBatchStyleData(dataStr)
@@ -37,7 +38,7 @@ style 字段沿用飞书 V2 styles_batch_update 的原始结构（如 font / hAl
 			return err
 		}
 		if len(styles) == 0 {
-			return fmt.Errorf("--data 至少需要一个 {ranges, style} 对象")
+			return clierr.Usagef("--data 至少需要一个 {ranges, style} 对象")
 		}
 
 		target, err := newSheetTarget(cmd, args[0])
@@ -71,7 +72,7 @@ func qualifyBatchStyleRanges(target *sheetTarget, styles []map[string]any) error
 			}
 			q, err := target.qualifyRange(rs, "", "")
 			if err != nil {
-				return fmt.Errorf("--data[%d].ranges[%d]: %w", i, j, err)
+				return clierr.Usagef("--data[%d].ranges[%d]: %w", i, j, err)
 			}
 			rawRanges[j] = q
 		}
@@ -83,7 +84,7 @@ func qualifyBatchStyleRanges(target *sheetTarget, styles []map[string]any) error
 func parseSheetBatchStyleData(dataStr string) ([]map[string]any, error) {
 	var styles []map[string]any
 	if err := json.Unmarshal([]byte(dataStr), &styles); err != nil {
-		return nil, fmt.Errorf("--data 必须是 {ranges, style} 对象的 JSON 数组: %w", err)
+		return nil, clierr.Usagef("--data 必须是 {ranges, style} 对象的 JSON 数组: %w", err)
 	}
 	return styles, nil
 }

@@ -88,7 +88,7 @@ feishu-cli approval task query --topic todo --page-all
 feishu-cli approval task query --topic done
 feishu-cli approval task query --topic cc-unread
 feishu-cli approval task query --topic cc-read
-# 注意：topic=started 已被官方 tasks 接口下线，CLI 在本地直接报错（exit 1），查「我发起的」用下面的专用入口
+# 注意：topic=started 已被官方 tasks 接口下线，CLI 在本地直接报用法错误（exit 2），查「我发起的」用下面的专用入口
 
 # 查我发起的审批实例（专用入口，同样是稀疏分页）
 feishu-cli approval instance initiated --page-all
@@ -280,7 +280,7 @@ feishu-cli approval task remind --instance-code <ic> --task-ids <task1>,<task2> 
 | `task rollback` / `task add-sign` / `task remind` | 是：非交互环境不带 `--yes` 以 exit 10 退出且不执行 | 先 `--dry-run`，用户确认后加 `--yes` |
 | `instance create` / `instance cancel` / `instance cc` / `task approve` / `task reject` / `task transfer` | 否：直接执行 | 必须先展示目标实例/任务与关键参数（必要时 `--dry-run`），得到用户明确同意后再执行 |
 
-所有写命令的 `--dry-run` 只构造并打印请求（不联网、不解析身份）。
+所有写命令的 `--dry-run` 只构造并打印请求（不联网、不解析身份）。`task rollback/add-sign/remind` 先解析 User Token 再走确认门禁：未登录时为 exit 3（先 `auth login`），已登录未确认才是 exit 10。
 
 ## 踩坑
 

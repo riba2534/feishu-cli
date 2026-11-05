@@ -1,11 +1,8 @@
 package cmd
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"github.com/riba2534/feishu-cli/internal/client"
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +43,7 @@ var bitableFieldGetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fieldID, _ := cmd.Flags().GetString("field-id")
 		if fieldID == "" {
-			return fmt.Errorf("--field-id 必填")
+			return clierr.Usagef("--field-id 必填")
 		}
 		return runBaseV3Simple(cmd, "GET", func(baseToken string) string {
 			tableID, _ := cmd.Flags().GetString("table-id")
@@ -73,7 +70,7 @@ var bitableFieldUpdateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fieldID, _ := cmd.Flags().GetString("field-id")
 		if fieldID == "" {
-			return fmt.Errorf("--field-id 必填")
+			return clierr.Usagef("--field-id 必填")
 		}
 		// 官方 base/v3 字段更新是 PUT（全量替换），不是 PATCH
 		return runBaseV3WithJSON(cmd, "PUT", func(baseToken string) string {
@@ -89,7 +86,7 @@ var bitableFieldDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fieldID, _ := cmd.Flags().GetString("field-id")
 		if fieldID == "" {
-			return fmt.Errorf("--field-id 必填")
+			return clierr.Usagef("--field-id 必填")
 		}
 		return runBaseV3Simple(cmd, "DELETE", func(baseToken string) string {
 			tableID, _ := cmd.Flags().GetString("table-id")
@@ -104,7 +101,7 @@ var bitableFieldSearchOptionsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fieldID, _ := cmd.Flags().GetString("field-id")
 		if fieldID == "" {
-			return fmt.Errorf("--field-id 必填")
+			return clierr.Usagef("--field-id 必填")
 		}
 		query, _ := cmd.Flags().GetString("query")
 		offset, _ := cmd.Flags().GetInt("offset")
@@ -128,60 +125,39 @@ var bitableFieldSearchOptionsCmd = &cobra.Command{
 }
 
 // ------- Generic runner helpers -------
+// 全部经 bitableExecute：本地校验 → --dry-run → config.Validate → 身份 → base-token 解析 → 执行。
 
-// runBaseV3Simple 运行一个简单的 GET/DELETE 请求（无 body）
+// runBaseV3Simple 运行一个简单的 GET/DELETE（或无 body 的 PUT）请求
 func runBaseV3Simple(cmd *cobra.Command, method string, pathFn func(baseToken string) string, params map[string]any) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
-	token, err := resolveIdentityToken(cmd)
-	if err != nil {
-		return err
-	}
-	baseToken, err := resolveBaseToken(cmd)
-	if err != nil {
-		return err
-	}
-	path := pathFn(baseToken)
-	data, err := client.BaseV3Call(method, path, params, nil, token)
-	if err != nil {
-		return err
-	}
-	return printJSON(data)
+	return bitableExecute(cmd, func(bt string) bitableReq {
+		return bitableReq{method: method, path: pathFn(bt), params: params}
+	}, nil)
 }
 
 // runBaseV3ListAll 按 offset/limit 翻页取完 table/field/view 列表，输出 {key:[...],"total":N}。
 func runBaseV3ListAll(cmd *cobra.Command, key string, pathFn func(baseToken string) string) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
-	token, err := resolveIdentityToken(cmd)
-	if err != nil {
-		return err
-	}
-	baseToken, err := resolveBaseToken(cmd)
-	if err != nil {
-		return err
-	}
-	items, total, err := listBaseV3Items(pathFn(baseToken), key, token)
-	if err != nil {
-		return err
-	}
-	return printJSON(map[string]any{key: items, "total": total})
+	return bitableExecute(cmd, func(bt string) bitableReq {
+		return bitableReq{
+			method:  "GET",
+			path:    pathFn(bt),
+			params:  map[string]any{"offset": 0, "limit": baseV3ListPageLimit},
+			preview: map[string]any{"auto_paginate": true},
+		}
+	}, func(req bitableReq, token string) (any, error) {
+		items, total, err := listBaseV3Items(req.path, key, token)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{key: items, "total": total}, nil
+	})
 }
 
 // runBaseV3WithJSON 运行一个带 JSON body 的 POST/PUT/PATCH 请求
 // 从 --config / --config-file 读取 JSON 请求体
 func runBaseV3WithJSON(cmd *cobra.Command, method string, pathFn func(baseToken string) string) error {
-	configJSON, _ := cmd.Flags().GetString("config")
-	configFile, _ := cmd.Flags().GetString("config-file")
-	raw, err := loadJSONInput(configJSON, configFile, "config", "config-file", "请求体")
+	body, err := loadBitableJSONBody(cmd)
 	if err != nil {
 		return err
-	}
-	var body any
-	if err := json.Unmarshal([]byte(raw), &body); err != nil {
-		return fmt.Errorf("解析 --config 失败: %w", err)
 	}
 	return runBaseV3WithBody(cmd, method, pathFn, body)
 }
@@ -189,22 +165,9 @@ func runBaseV3WithJSON(cmd *cobra.Command, method string, pathFn func(baseToken 
 // runBaseV3WithBody 运行一个带明确 body 的 POST/PUT/PATCH 请求
 // 用于命令层自己构造 body 的场景（如 view create/rename 的快捷方式）
 func runBaseV3WithBody(cmd *cobra.Command, method string, pathFn func(baseToken string) string, body any) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
-	token, err := resolveIdentityToken(cmd)
-	if err != nil {
-		return err
-	}
-	baseToken, err := resolveBaseToken(cmd)
-	if err != nil {
-		return err
-	}
-	data, err := client.BaseV3Call(method, pathFn(baseToken), nil, body, token)
-	if err != nil {
-		return err
-	}
-	return printJSON(data)
+	return bitableExecute(cmd, func(bt string) bitableReq {
+		return bitableReq{method: method, path: pathFn(bt), body: body}
+	}, nil)
 }
 
 func init() {
@@ -256,4 +219,7 @@ func init() {
 	bitableFieldSearchOptionsCmd.Flags().Int("limit", 0, "分页 limit（默认 30）")
 	bitableFieldSearchOptionsCmd.Flags().String("user-access-token", "", "User Access Token")
 	mustMarkFlagRequired(bitableFieldSearchOptionsCmd, "table-id", "field-id")
+
+	addBitablePreviewFlags(bitableFieldListCmd, bitableFieldGetCmd, bitableFieldCreateCmd,
+		bitableFieldUpdateCmd, bitableFieldDeleteCmd, bitableFieldSearchOptionsCmd)
 }

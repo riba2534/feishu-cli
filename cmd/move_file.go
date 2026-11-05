@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -32,16 +33,26 @@ var moveFileCmd = &cobra.Command{
   feishu-cli file move doccnXXX --target fldcnYYY --type docx
 
   # 移动文件夹
-  feishu-cli file move fldcnXXX --target fldcnYYY --type folder`,
+  feishu-cli file move fldcnXXX --target fldcnYYY --type folder
+
+  # 预览请求（--dry-run 只打印将要发出的请求，不读取凭据、不联网）
+  feishu-cli file move doccnXXX --target fldcnXXX --type docx --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken := args[0]
 		targetFolder, _ := cmd.Flags().GetString("target")
 		fileType, _ := cmd.Flags().GetString("type")
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Move file", nil, []dryRunStep{{
+				Method: "POST",
+				URL:    "/open-apis/drive/v1/files/" + url.PathEscape(fileToken) + "/move",
+				Body:   map[string]any{"type": fileType, "folder_token": targetFolder},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		taskID, err := client.MoveFileWithToken(fileToken, targetFolder, fileType, userAccessToken)
@@ -63,6 +74,7 @@ var moveFileCmd = &cobra.Command{
 func init() {
 	fileCmd.AddCommand(moveFileCmd)
 	moveFileCmd.Flags().String("target", "", "目标文件夹 Token（必填）")
+	moveFileCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	moveFileCmd.Flags().String("type", "", "文件类型（必填）")
 	moveFileCmd.Flags().String("user-access-token", "", "User Access Token（可选，使用用户身份访问文件）")
 	mustMarkFlagRequired(moveFileCmd, "target", "type")

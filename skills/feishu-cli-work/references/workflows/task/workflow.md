@@ -14,17 +14,20 @@
 | "我的任务"里的分组、清单里的分组 | `task section list` / `task section tasks` | User 优先回退 Bot；`my_tasks` 需 User |
 | 找清单 | `tasklist search` / `tasklist list` | User 优先回退 Bot |
 | 把任务挂到另一个任务下 / 解除 | `task set-ancestor` | `--as`，默认 auto |
-| 任何写操作 | create/update/delete/complete/reopen、subtask create、member、reminder、comment add、upload-attachment、清单写操作 | `--as bot\|user\|auto`，默认 auto |
+| 建任务时一步指派负责人/关注人、放进清单 | `task create --assignee/--follower/--tasklist-id` | `--as`，默认 auto |
+| 修改或删除发错的评论 | `task comment update` / `task comment delete`（delete 需 `--yes`） | `--as`，默认 auto |
+| 任何写操作 | create/update/delete/complete/reopen、subtask create、member、reminder、comment add/update/delete、upload-attachment、清单写操作 | `--as bot\|user\|auto`，默认 auto |
 
 - 写命令**默认 auto**：已登录即以本人身份操作（**行为变更**：此前默认 Bot；实测纯 Bot 改用户的任务报 1470403）；
   未配置 User Token 时回落 Bot，已配置但刷新失败 fail-closed。无人值守或操作 Bot 自建的任务时显式 `--as bot`。
-- `task get/list`、`subtask list`、`comment list`、`tasklist get/list/tasks/search`、`task section list/tasks` 无 `--as`：
+- `task get/list`、`subtask list`、`comment list/get`、`tasklist get/list/tasks/search`、`task section list/tasks` 无 `--as`：
   User Token 优先，未登录回落 App Token。
 
 ## Task
 
 ```bash
 feishu-cli task create --summary "完成项目文档" --due "2026-12-31 18:00:00"
+feishu-cli task create --summary "跟进上线" --assignee ou_xxx --tasklist-id <tasklist_guid> --idempotency-key deploy-0601 --dry-run
 feishu-cli task get <task_guid>                     # 也接受任务 applink
 feishu-cli task list [--completed | --uncompleted]
 feishu-cli task my --uncompleted
@@ -43,6 +46,8 @@ feishu-cli task reminder add <task_guid> --minutes 30
 feishu-cli task reminder remove <task_guid> --ids <reminder_id>
 feishu-cli task comment add <task_guid> --content "进展说明" [--reply-to <comment_id>]
 feishu-cli task comment list <task_guid> [-o json]
+feishu-cli task comment update <comment_id> --content "更正" [--dry-run]
+feishu-cli task comment delete <comment_id> --yes
 feishu-cli task upload-attachment --task-guid <task_guid> --file ./report.pdf
 feishu-cli task section list [--resource-type tasklist --resource-id <tasklist_guid>]
 feishu-cli task section tasks <section_guid> --uncompleted
@@ -55,7 +60,10 @@ feishu-cli task section tasks <section_guid> --uncompleted
 - `task get` 输出成员、父任务与**提醒 ID**（`task reminder remove --ids` 需要）；`--minutes 0` 表示截止时提醒。
 - `task my` 默认返回**全部**任务（与官方一致）；`--completed` / `--uncompleted` 互斥（同时传 exit 2）。`task list`、`task section tasks` 同理。
 - `task complete` 幂等：已完成的任务不会被重复改写完成时间（JSON 带 `already_completed=true`）。
-- 删除任务、清单不需要 `--yes`，执行前自行向用户确认 GUID。
+- 删除任务、清单不需要 `--yes`，执行前自行向用户确认 GUID；`task comment delete` 有确认门禁（非交互不带 `--yes` 时 exit 10）。
+- 所有写命令支持 `--dry-run`（不联网、不读凭据），写之前先预览请求体；`--data` 透传的自定义字段尤其要先预览。
+- 参数错误（`--due` 格式、`task create --assignee/--follower` 的成员前缀、角色、`--data` 不是 JSON 对象等）都是用法错误 exit 2，在解析身份前返回，不要重试。
+- `task member add/remove --members` 只接受用户 open_id（`ou_`），一律按 `type=user` 发送，本地不校验前缀；要把应用（`cli_`）设为关注者，在 `task create --follower` 时一并指定。
 
 ### 分页
 
@@ -73,7 +81,7 @@ feishu-cli tasklist get <tasklist_guid>
 feishu-cli tasklist list
 feishu-cli tasklist search --query "Sprint" [--creator ou_xxx]
 feishu-cli tasklist tasks <tasklist_guid> [--completed]
-feishu-cli tasklist task-add <tasklist_guid> --task-ids <task_guid>[,<task_guid>]
+feishu-cli tasklist task-add <tasklist_guid> --task-ids <task_guid>[,<task_guid>] [--section-guid <section_guid>]
 feishu-cli tasklist task-remove <tasklist_guid> --task-ids <task_guid>
 feishu-cli tasklist member add <tasklist_guid> --members ou_xxx --role editor
 feishu-cli tasklist member remove <tasklist_guid> --members ou_xxx --role editor

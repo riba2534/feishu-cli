@@ -65,14 +65,20 @@ feishu-cli wiki node-copy --space-id <src_space_id> --node-token <node_token> --
 feishu-cli wiki space-create --name "新知识库" --description "说明" --dry-run
 feishu-cli wiki member add <space_id> --member-type openid --member-id ou_xxx --role member   # --role 仅 admin/member
 feishu-cli wiki member add <space_id> --member-type openid --member-id ou_xxx --role member --need-notification=false --dry-run
-feishu-cli wiki member remove <space_id> --member-type openid --member-id ou_xxx --role member
+feishu-cli wiki member remove <space_id> --member-type openid --member-id ou_xxx --role member [--dry-run]
 ```
+
+- **写操作都支持 `--dry-run`**：`wiki create/update/move/delete/delete-space/node-copy/space-create/move-docs/move-to-drive`、
+  `wiki member add/remove`。预览只打印将要发出的请求，**不读取凭据、不联网**（无凭据环境退出码 0）；需要服务端解析的值
+  （`update`/`move`/`delete` 的 space_id、真实 node_token 等）以 `<space_id>` 这类占位符表示，并在计划中先列出
+  node_by_token 的 GET 步骤。`wiki delete` / `delete-space` 的 `--dry-run` 不需要 `--yes`，确认门禁在预览之后。
+  参数错误（如 `--name` 为空、`--node-type shortcut` 缺 `--origin-node-token`、链接无法解析）先于预览报出，退出码 2。
 
 - `wiki update` 只支持 doc/docx/快捷方式节点；其他类型节点可改用 `drive update-title --token <node_token> --type wiki`（见 drive 工作流）。
 - `wiki move` 会携带子节点一起移动。传了 `--target-parent` 时先经 node_by_token 解析父节点（也接受文档 obj_token）：
   `--target-space` 与父节点实际所在空间不一致时**直接报错拒绝**（退出码 2）；只传 `--target-parent` 时自动取父节点所在空间；
   `--target-space my_library` 会先解析成真实 space_id 再比较，该别名只支持 User 身份（需显式 `--user-access-token`）。
-- `wiki node-copy`：`--target-space-id` 与 `--target-parent-node-token` 二选一；`--dry-run` 不解析身份、不发请求。
+- `wiki node-copy`：`--target-space-id` 与 `--target-parent-node-token` 二选一（违反时退出码 2）。
 - `wiki member add` 默认给新成员发送通知（`--need-notification` 默认 true）；静默添加传 `--need-notification=false`。
   `--role` 只有 admin/member，CLI 不做本地枚举校验，传错由服务端拒绝。
 
@@ -102,6 +108,7 @@ feishu-cli drive task-result --scenario wiki_move_to_drive --task-id <task_id> -
 # 删除节点：URL 输入自动推断 --obj-type；裸 token 必须显式 --obj-type（wiki/docx/sheet/...）
 feishu-cli wiki delete "https://xxx.feishu.cn/wiki/wikcnxxx" --yes
 feishu-cli wiki delete wikcnxxx --obj-type wiki --include-children=false --yes   # 只删单节点
+feishu-cli wiki delete wikcnxxx --obj-type wiki --dry-run                         # 预览，不确认、不删除
 feishu-cli wiki delete-space <space_id> --yes [--as auto|user|bot]
 ```
 

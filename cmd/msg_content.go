@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
@@ -105,21 +106,21 @@ func (input messageContentInput) validate() error {
 		}
 	}
 	if len(specified) == 0 && len(input.attachments) == 0 {
-		return fmt.Errorf("必须指定 --content、--content-file、--text、--markdown、--file、--image、--audio、--video 或 --attachment")
+		return clierr.Usagef("必须指定 --content、--content-file、--text、--markdown、--file、--image、--audio、--video 或 --attachment")
 	}
 	if len(specified) > 1 {
-		return fmt.Errorf("以下内容标志互斥，只能指定其中一个: %s", strings.Join(specified, ", "))
+		return clierr.Usagef("以下内容标志互斥，只能指定其中一个: %s", strings.Join(specified, ", "))
 	}
 	if input.video != "" && input.videoCover == "" {
-		return fmt.Errorf("使用 --video 时必须同时指定 --video-cover")
+		return clierr.Usagef("使用 --video 时必须同时指定 --video-cover")
 	}
 	if input.video == "" && input.videoCover != "" {
-		return fmt.Errorf("--video-cover 只能与 --video 一起使用")
+		return clierr.Usagef("--video-cover 只能与 --video 一起使用")
 	}
 
 	inferredType := input.inferredMessageType()
 	if input.msgTypeChanged && inferredType != "" && input.msgType != inferredType {
-		return fmt.Errorf("--msg-type %q 与内容快捷参数推断出的消息类型 %q 冲突", input.msgType, inferredType)
+		return clierr.Usagef("--msg-type %q 与内容快捷参数推断出的消息类型 %q 冲突", input.msgType, inferredType)
 	}
 	if err := input.validateAttachments(); err != nil {
 		return err
@@ -128,7 +129,7 @@ func (input messageContentInput) validate() error {
 	switch {
 	case input.content != "":
 		if !json.Valid([]byte(input.content)) {
-			return fmt.Errorf("--content 必须是有效 JSON")
+			return clierr.Usagef("--content 必须是有效 JSON")
 		}
 	case input.contentFile != "":
 		data, err := readLocalInputFile(input.contentFile)
@@ -136,7 +137,7 @@ func (input messageContentInput) validate() error {
 			return fmt.Errorf("读取内容文件失败: %w", err)
 		}
 		if !json.Valid(data) {
-			return fmt.Errorf("--content-file %s 的内容必须是有效 JSON", input.contentFile)
+			return clierr.Usagef("--content-file %s 的内容必须是有效 JSON", input.contentFile)
 		}
 	case input.image != "":
 		if err := validateImageInput("--image", input.image); err != nil {
@@ -153,7 +154,7 @@ func (input messageContentInput) validate() error {
 		if !isIMFileKey(input.audio) {
 			ext := strings.ToLower(filepath.Ext(input.audio))
 			if ext != ".opus" && ext != ".ogg" {
-				return fmt.Errorf("--audio 仅支持 Opus（.opus）或 Ogg Opus（.ogg）；其他音频请用 --file 作为附件发送")
+				return clierr.Usagef("--audio 仅支持 Opus（.opus）或 Ogg Opus（.ogg）；其他音频请用 --file 作为附件发送")
 			}
 		}
 	case input.video != "":
@@ -161,7 +162,7 @@ func (input messageContentInput) validate() error {
 			return err
 		}
 		if !isIMFileKey(input.video) && strings.ToLower(filepath.Ext(input.video)) != ".mp4" {
-			return fmt.Errorf("--video 仅支持 MP4 文件；其他视频请先转换为 MP4，或用 --file 作为附件发送")
+			return clierr.Usagef("--video 仅支持 MP4 文件；其他视频请先转换为 MP4，或用 --file 作为附件发送")
 		}
 		if err := validateImageInput("--video-cover", input.videoCover); err != nil {
 			return err
@@ -251,7 +252,7 @@ func validateFileInput(flagName, value, label string) error {
 		return fmt.Errorf("%s %s 不是普通文件: %s", flagName, label, path)
 	}
 	if info.Size() == 0 {
-		return fmt.Errorf("%s %s 不能为空文件: %s", flagName, label, path)
+		return clierr.Usagef("%s %s 不能为空文件: %s", flagName, label, path)
 	}
 	return nil
 }

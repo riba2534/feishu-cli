@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -79,13 +79,13 @@ func shouldDoubleCancelMsgFlag(cmd *cobra.Command) bool {
 func validateMsgFlagMessageID(messageID string) error {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
-		return fmt.Errorf("message_id 不能为空")
+		return clierr.Usagef("message_id 不能为空")
 	}
 	if strings.HasPrefix(messageID, "omt_") {
-		return fmt.Errorf("无效的 message_id %q：omt_ 是 thread_id，书签操作需要 om_ 消息 ID", messageID)
+		return clierr.Usagef("无效的 message_id %q：omt_ 是 thread_id，书签操作需要 om_ 消息 ID", messageID)
 	}
 	if !strings.HasPrefix(messageID, "om_") {
-		return fmt.Errorf("无效的 message_id %q：书签操作需要 om_ 消息 ID", messageID)
+		return clierr.Usagef("无效的 message_id %q：书签操作需要 om_ 消息 ID", messageID)
 	}
 	return nil
 }
@@ -107,13 +107,13 @@ func validateMsgFlagCombination(itemType, flagType string) error {
 	case itemType == "msg_thread" && flagType == "feed":
 		return nil
 	default:
-		return fmt.Errorf("无效的书签类型组合: item-type=%s, flag-type=%s（支持 default+message、thread+feed、msg_thread+feed）", itemType, flagType)
+		return clierr.Usagef("无效的书签类型组合: item-type=%s, flag-type=%s（支持 default+message、thread+feed、msg_thread+feed）", itemType, flagType)
 	}
 }
 
 func validateMsgFlagPageSize(pageSize int) error {
 	if pageSize < 1 || pageSize > 50 {
-		return fmt.Errorf("--page-size 必须在 1-50 之间，当前 %d", pageSize)
+		return clierr.Usagef("--page-size 必须在 1-50 之间，当前 %d", pageSize)
 	}
 	return nil
 }

@@ -45,5 +45,6 @@ feishu-cli mail rule-delete --rule-id <rule_id> --yes
   `--before-rule-id/--after-rule-id/--to-top/--to-bottom` 之一。
 - 所有写操作支持 `--dry-run`，且优先于确认。`rule-create`、`rule-reorder --rule-ids`、`rule-delete` 的预览给出完整请求；
   `rule-update/enable/disable` 与移动模式的 `rule-reorder` 预览只列出修改字段和读取/写回步骤，不联网、不校验规则是否存在。
+  `--dry-run` 不读取凭据，未登录或未配置应用时也能预览（exit 0）；参数错误（如缺 `--rule-id`、条件语法错）exit 2。
 - `rule-delete` 会先读取规则并在确认提示中展示描述；非交互环境必须带 `--yes`，否则以退出码 10 结束、不删除。
   `delete_mail`、`all_mail` 这类影响面大的规则，先向用户复述中文描述再创建。

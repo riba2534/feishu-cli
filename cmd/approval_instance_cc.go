@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -32,12 +33,12 @@ var approvalInstanceCcCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		instanceCode, _ := cmd.Flags().GetString("instance-code")
 		if strings.TrimSpace(instanceCode) == "" {
-			return fmt.Errorf("--instance-code 不能为空")
+			return clierr.Usagef("--instance-code 不能为空")
 		}
 		ccRaw, _ := cmd.Flags().GetString("cc-user-ids")
 		ccUserIDs := parseCommaSeparatedIDs(ccRaw)
 		if len(ccUserIDs) == 0 {
-			return fmt.Errorf("--cc-user-ids 至少需要一个用户 ID")
+			return clierr.Usagef("--cc-user-ids 至少需要一个用户 ID")
 		}
 
 		comment, _ := cmd.Flags().GetString("comment")

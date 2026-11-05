@@ -41,6 +41,9 @@ type mailMessageInput struct {
 	// LMSReplyToMessageID 原邮件在飞书邮箱内的 message_id。
 	// 仅在 InReplyTo 非空时写入 X-LMS-Reply-To-Message-Id，飞书据此把回复/转发关联到原邮件（与官方一致）。
 	LMSReplyToMessageID string
+
+	// DispositionNotificationTo 非空时写入 Disposition-Notification-To（--request-receipt，RFC 3798 已读回执）。
+	DispositionNotificationTo string
 }
 
 // inlineImagePart 内嵌图片 part（用于 multipart/related）
@@ -156,7 +159,7 @@ func buildEMLBase64URL(input mailMessageInput) (string, error) {
 // buildEMLBytes 构造原始 EML 字节（buildEMLBase64URL 的内部实现，便于测试断言）。
 func buildEMLBytes(input mailMessageInput) ([]byte, error) {
 	if len(input.To) == 0 {
-		return nil, fmt.Errorf("邮件至少需要一个 --to")
+		return nil, clierr.Usagef("邮件至少需要一个 --to")
 	}
 	// 安全：拒绝 header 值含 CR/LF，避免 SMTP header injection（构造任意额外 header 或 split message）
 	for name, val := range map[string]string{
@@ -166,6 +169,7 @@ func buildEMLBytes(input mailMessageInput) ([]byte, error) {
 		"--in-reply-to": input.InReplyTo,
 		"--references":  input.References,
 		"--message-id":  input.LMSReplyToMessageID,
+		"回执地址":          input.DispositionNotificationTo,
 	} {
 		if strings.ContainsAny(val, "\r\n") {
 			return nil, fmt.Errorf("%s 不能含 CR/LF 字符（防 header injection）", name)
@@ -211,6 +215,11 @@ func buildEMLBytes(input mailMessageInput) ([]byte, error) {
 
 	// MIME-Version
 	b.WriteString("MIME-Version: 1.0\r\n")
+
+	// 已读回执请求（--request-receipt）：回执发往发件人
+	if dnt := strings.TrimSpace(input.DispositionNotificationTo); dnt != "" {
+		fmt.Fprintf(&b, "Disposition-Notification-To: %s\r\n", formatMailAddress("", dnt))
+	}
 
 	// In-Reply-To / References（回复、转发场景）：规范化为 <id>
 	if inReplyTo := normalizeMailMessageID(input.InReplyTo); inReplyTo != "" {
@@ -380,7 +389,7 @@ func parseEmailList(raw string) ([]string, error) {
 		// 允许 "Name <email>" 或 "email"
 		a, err := mail.ParseAddress(p)
 		if err != nil {
-			return nil, fmt.Errorf("邮箱地址格式不正确: %q (%w)；显示名含逗号时请用英文双引号包裹，如 \"Doe, John\" <user@example.com>", p, err)
+			return nil, clierr.Usage(fmt.Errorf("邮箱地址格式不正确: %q (%w)；显示名含逗号时请用英文双引号包裹，如 \"Doe, John\" <user@example.com>", p, err))
 		}
 		out = append(out, a.String())
 	}

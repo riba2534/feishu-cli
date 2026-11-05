@@ -50,6 +50,8 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
   --on-duplicate-remote  fail（默认）/ newest / oldest：远端多个文件映射到同一路径时以哪个为准
   --delete-remote        清理远端不存在于本地的 file（高危）
   --yes                  与 --delete-remote 配套，确认删除
+  --dry-run              只输出差集计划（将创建的文件夹、上传/覆盖/跳过的文件、--delete-remote 将删除的远端文件），
+                         不上传、不建文件夹、不删除；需要凭据（会只读列举远端文件夹），不要求 --yes
   --as                   bot | user | auto（不传时保持旧行为：User 优先，不可用时告警回退 Bot；
                          --delete-remote 下已配置 User 但不可用则 fail-closed）
   --output / -o          输出格式（json）
@@ -65,12 +67,9 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
   feishu-cli drive push --folder-token fldxxx --local-dir ./mirror
   feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --if-exists overwrite
   feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --if-exists smart
+  feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --delete-remote --dry-run
   feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --delete-remote --yes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		folderToken, _ := cmd.Flags().GetString("folder-token")
 		localDir, _ := cmd.Flags().GetString("local-dir")
 		ifExists, _ := cmd.Flags().GetString("if-exists")
@@ -78,6 +77,7 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 		deleteRemote, _ := cmd.Flags().GetBool("delete-remote")
 		yes, _ := cmd.Flags().GetBool("yes")
 		output, _ := cmd.Flags().GetString("output")
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 		if folderToken == "" {
 			return clierr.Usagef("--folder-token 必填")
@@ -105,8 +105,13 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 		if err != nil {
 			return err
 		}
-		if deleteRemote && !yes && !confirmationBypassed(cmd) {
+		// --dry-run 只预览差集计划、不删除，因此不要求 --yes
+		if deleteRemote && !dryRun && !yes && !confirmationBypassed(cmd) {
 			return clierr.ConfirmationRequiredf("--delete-remote 是高危操作，必须同时加 --yes 才执行")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// --delete-remote 会删远端文件：身份降级会让"本地不存在"的判定基于错误的远端视图，
@@ -150,6 +155,11 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 		folderCache := map[string]string{"": folderToken}
 		for rel, tok := range view.Folders {
 			folderCache[rel] = tok
+		}
+
+		if dryRun {
+			plan := planDrivePush(localDirs, localFiles, snapshots, remoteFiles, folderCache, ifExists, deleteRemote)
+			return printDriveMirrorPlan(cmd, output, "drive push", folderToken, safeRoot, plan)
 		}
 
 		type item struct {
@@ -432,6 +442,7 @@ func init() {
 	drivePushCmd.Flags().String("on-duplicate-remote", driveDuplicateRemoteFail, "远端重名处理: fail / newest / oldest")
 	drivePushCmd.Flags().Bool("delete-remote", false, "清理远端不存在于本地的文件（高危，需 --yes）")
 	drivePushCmd.Flags().Bool("yes", false, "与 --delete-remote 配套确认删除")
+	drivePushCmd.Flags().Bool("dry-run", false, "只输出差集计划，不上传/下载/删除（需要凭据，只读列举远端）")
 	drivePushCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	drivePushCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	addLegacyAsFlag(drivePushCmd, "保持旧行为（User 优先，不可用时告警回退 Bot；--delete-remote 时 fail-closed）")

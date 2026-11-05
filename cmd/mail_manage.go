@@ -276,6 +276,7 @@ var mailDraftSendCmd = &cobra.Command{
 可选:
   --mailbox        邮箱地址（默认 me，即当前登录用户）
   --confirm-send   确认发送（不加则不会真正发送）
+  --send-time      定时发送（Unix 秒，至少晚于当前 5 分钟；须配合 --confirm-send）
   -o json          JSON 格式输出
 
 权限:
@@ -286,17 +287,20 @@ var mailDraftSendCmd = &cobra.Command{
   feishu-cli mail draft-send --draft-id xxx                 # 仅提示，不发送
   feishu-cli mail draft-send --draft-id xxx --confirm-send  # 确认发送`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		mailbox, _ := cmd.Flags().GetString("mailbox")
 		draftID, _ := cmd.Flags().GetString("draft-id")
 		confirmSend, _ := cmd.Flags().GetBool("confirm-send")
 		output, _ := cmd.Flags().GetString("output")
 
 		if draftID == "" {
-			return fmt.Errorf("--draft-id 必填")
+			return clierr.Usagef("--draft-id 必填")
+		}
+		sendTime, err := validateMailSendTime(cmd)
+		if err != nil {
+			return err
+		}
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// 发送不可撤销：未确认时短路，仅提示确认方式，不调用任何接口。
@@ -320,7 +324,7 @@ var mailDraftSendCmd = &cobra.Command{
 			return err
 		}
 
-		data, err := client.SendMailDraft(mailbox, draftID, token)
+		data, err := client.SendMailDraftAt(mailbox, draftID, sendTime, token)
 		if err != nil {
 			return fmt.Errorf("发送草稿失败: %w", err)
 		}
@@ -337,10 +341,17 @@ var mailDraftSendCmd = &cobra.Command{
 			"thread_id":  parsed.ThreadID,
 			"confirmed":  true,
 		}
+		if sendTime != "" {
+			result["send_time"] = sendTime
+		}
 		if output == "json" {
 			return printJSON(result)
 		}
-		fmt.Printf("草稿发送成功!\n")
+		if sendTime != "" {
+			fmt.Printf("草稿已定时发送（send_time=%s）\n", sendTime)
+		} else {
+			fmt.Printf("草稿发送成功!\n")
+		}
 		fmt.Printf("  草稿 ID: %s\n", draftID)
 		if parsed.MessageID != "" {
 			fmt.Printf("  邮件 ID: %s\n", parsed.MessageID)
@@ -443,6 +454,7 @@ func init() {
 	mailDraftSendCmd.Flags().String("mailbox", "me", "邮箱地址（默认 me）")
 	mailDraftSendCmd.Flags().String("draft-id", "", "草稿 ID（必填）")
 	mailDraftSendCmd.Flags().Bool("confirm-send", false, "确认发送（不加则不会真正发送）")
+	addMailSendTimeFlag(mailDraftSendCmd)
 	mailDraftSendCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailDraftSendCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(mailDraftSendCmd, "draft-id")

@@ -59,7 +59,9 @@ board import --syntax svg（服务端把 SVG 拆成原生节点）或 svg_to_boa
 		if err := client.ValidateBoardClientToken(clientToken); err != nil {
 			return clierr.Usage(err)
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
 
 		// 读 SVG 内容
 		var svgCode string
@@ -75,7 +77,7 @@ board import --syntax svg（服务端把 SVG 拆成原生节点）或 svg_to_boa
 
 		svgCode = strings.TrimSpace(svgCode)
 		if !strings.Contains(svgCode, "<svg") {
-			return fmt.Errorf("内容不是有效的 SVG（未找到 <svg 标签）")
+			return clierr.Usagef("内容不是有效的 SVG（未找到 <svg 标签）")
 		}
 
 		// 推断宽高
@@ -92,7 +94,7 @@ board import --syntax svg（服务端把 SVG 拆成原生节点）或 svg_to_boa
 			if vbErr != nil {
 				return fmt.Errorf("解析 SVG 尺寸失败且未指定 --width/--height: %w", vbErr)
 			}
-			return fmt.Errorf("SVG 缺少 viewBox/width/height，请显式传 --width --height")
+			return clierr.Usagef("SVG 缺少 viewBox/width/height，请显式传 --width --height")
 		}
 
 		// 构造节点 JSON
@@ -136,6 +138,9 @@ board import --syntax svg（服务端把 SVG 拆成原生节点）或 svg_to_boa
 				"node":         node,
 				"dry_run":      true,
 			}
+			if label, ok := visualDryRunIdentity(cmd); ok {
+				result["identity"] = label
+			}
 			if output == "json" {
 				return printJSON(result)
 			}
@@ -145,6 +150,10 @@ board import --syntax svg（服务端把 SVG 拆成原生节点）或 svg_to_boa
 		}
 
 		if err := config.Validate(); err != nil {
+			return err
+		}
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
 			return err
 		}
 
@@ -295,6 +304,7 @@ func init() {
 	boardSVGImportCmd.Flags().Int("z-index", 10, "节点层级")
 	boardSVGImportCmd.Flags().Bool("dry-run", false, "预览节点 JSON 但不调用 API")
 	boardSVGImportCmd.Flags().String("user-access-token", "", "User Access Token")
+	addVisualWriteAsFlag(boardSVGImportCmd)
 	boardSVGImportCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	boardSVGImportCmd.Flags().String("client-token", "", "幂等键（≥10 字符；结果未知时用同一个值重跑不会重复建节点）")
 }

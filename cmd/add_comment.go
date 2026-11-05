@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -17,6 +18,7 @@ var addCommentCmd = &cobra.Command{
   file_token    文档 Token
   --type        文件类型（必填）
   --text        评论内容（必填）
+  --dry-run     只打印将要发出的请求（不读取凭据、不联网）
 
 身份说明:
   User 优先：--user-access-token > FEISHU_USER_ACCESS_TOKEN > auth login 保存的 token.json
@@ -33,18 +35,32 @@ var addCommentCmd = &cobra.Command{
   feishu-cli comment add doccnXXX --type docx --text "这是一条评论" \
     --user-access-token "u-xxxxx"
 
+  # 预览请求
+  feishu-cli comment add doccnXXX --type docx --text "评论内容" --dry-run
+
   # JSON 格式输出
   feishu-cli comment add doccnXXX --type docx --text "评论内容" --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken := args[0]
 		fileType, _ := cmd.Flags().GetString("type")
 		text, _ := cmd.Flags().GetString("text")
 		output, _ := cmd.Flags().GetString("output")
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Create a whole-document comment", nil, []dryRunStep{{
+				Method: "POST",
+				URL:    "/open-apis/drive/v1/files/" + url.PathEscape(fileToken) + "/comments",
+				Params: map[string]any{"file_type": fileType},
+				Body: map[string]any{"reply_list": map[string]any{"replies": []map[string]any{{
+					"content": map[string]any{"elements": []map[string]any{{"type": "text_run", "text_run": map[string]any{"text": text}}}},
+				}}}},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		commentID, err := client.CreateComment(fileToken, fileType, text, userAccessToken)
@@ -72,5 +88,6 @@ func init() {
 	addCommentCmd.Flags().String("type", "", "文件类型（必填: doc/docx/sheet/bitable）")
 	addCommentCmd.Flags().String("text", "", "评论内容（必填）")
 	addCommentCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	addCommentCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求")
 	mustMarkFlagRequired(addCommentCmd, "type", "text")
 }
