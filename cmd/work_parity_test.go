@@ -49,6 +49,9 @@ func TestWorkParamErrorsAreUsageBeforeCredentials(t *testing.T) {
 		{"approval instance initiated bad id type", approvalInstanceInitiatedCmd, nil, map[string]string{"user-id-type": "email"}, "user_id_type"},
 		{"task create bad due", createTaskCmd, nil, map[string]string{"summary": "t", "due": "notadate"}, "解析截止时间失败"},
 		{"task update bad due", updateTaskCmd, []string{"g1"}, map[string]string{"due": "notadate"}, "解析截止时间失败"},
+		// --as user 且未登录：若先解析身份会返回鉴权错误；参数校验在前则返回用法错误
+		{"task create bad due as user", createTaskCmd, nil, map[string]string{"summary": "t", "due": "notadate", "as": "user"}, "解析截止时间失败"},
+		{"task update bad due as user", updateTaskCmd, []string{"g1"}, map[string]string{"due": "notadate", "as": "user"}, "解析截止时间失败"},
 		{"task get bad guid", getTaskCmd, []string{"t123"}, nil, ""},
 		{"task search both", taskSearchCmd, nil, map[string]string{"completed": "true", "uncompleted": "true"}, "不能同时使用"},
 		{"task search no cond", taskSearchCmd, nil, nil, "请至少提供一个搜索条件"},

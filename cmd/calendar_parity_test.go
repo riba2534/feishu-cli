@@ -38,6 +38,14 @@ func TestPrepareRichDescriptionPaths(t *testing.T) {
 	if err := os.WriteFile(outside, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// 当前目录上一级真实存在的图片：只能靠"必须在当前目录内"拦截
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "parent.png"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	rd, err := prepareRichDescription("**议程** ![a]( ./img/a.png ) ![r](https://example.com/r.png) ![a2](img/a.png)")
 	if err != nil {
@@ -54,6 +62,12 @@ func TestPrepareRichDescriptionPaths(t *testing.T) {
 		t.Fatalf("预览应带占位符: %q", p)
 	}
 
+	if err := os.Chdir(sub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareRichDescription("![x](../parent.png)"); err == nil || !clierr.HasKind(err, clierr.KindUsage) || !strings.Contains(err.Error(), "不在当前目录内") {
+		t.Fatalf("上一级目录的图片应被拒绝: %v", err)
+	}
 	for _, bad := range []string{
 		"![x](" + outside + ")",        // 绝对路径
 		"![x](../b.png)",               // 越出当前目录
