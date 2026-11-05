@@ -169,7 +169,8 @@ feishu-cli apps access-scope-set --app-id app_xxx --scope specific \
 
 - 所有命令支持 `--format json|pretty|table|ndjson|csv` + `--jq` 与 `--dry-run`（同样尊重 `--format/--jq`）
 - `--dry-run` 先做本地参数校验，再打印计划，不获取 token、不访问网络，未配置 App 凭证时也 exit 0；去掉 `--dry-run` 缺凭证时 exit 3
-- 用法错误一律 exit 2，且在凭证检查之前报出：`--app-type`/`--status`/`--page-size`/`--scope`/`--targets` 等取值非法、缺必填参数、
+- 用法错误一律 exit 2，且在凭证检查之前报出：`--app-type`/`--status`/`--scope`/`--targets` 等取值非法、`apps release list` 的
+  `--page-size` 超出 1-500（`apps list` 的 `--page-size` 与官方一致不做本地校验，原样交给服务端）、缺必填参数、
   `html-publish` / `release get|create` / `features` 的 `--app-id` 不是 `app_` 开头、`html-publish` 的 `--path` 不可读或含凭证文件、
   超出大小上限、缺 `index.html`（实跑时）；缺 spark scope 报 99991679，exit 3
 - 被限流（99991400 / HTTP 429）时错误后的提示是退避建议而不是「确认参数」：参数无需修改，停止立即重试，稍后退避重跑同一命令并减少并发

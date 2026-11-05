@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/apidiag"
@@ -150,8 +152,9 @@ func writeCommandError(w io.Writer, err error) {
 }
 
 // errorEnvelope 构造 JSON 错误信封的 error 对象。字段只取自已有的结构化信息：
-// exit_code/kind 来自 exitCodeFor 与 clierr 分类；code/log_id/missing_scopes 只取错误链上的
-// *client.APIError（不从文本猜）；hint 与文本模式的修复建议同源；取不到的字段省略。
+// exit_code/kind 来自 exitCodeFor 与 clierr 分类；code/log_id/missing_scopes 与文本模式同源（diagnosticsFor）：
+// 错误链上的 *client.APIError，或仍以 "code=%d" 格式化的旧错误按业务码匹配传输层记录的真实响应（apidiag），
+// 不凭文本臆造；hint 与文本模式的修复建议同源；取不到的字段省略。
 func errorEnvelope(err error) map[string]any {
 	code := exitCodeFor(err)
 	env := map[string]any{
@@ -160,10 +163,9 @@ func errorEnvelope(err error) map[string]any {
 		"kind":      errorKindName(err, code),
 		"retryable": code == clierr.ExitNetwork || client.IsRateLimitError(err),
 	}
-	apiErr, hasAPI := client.AsAPIError(err)
-	var info apidiag.Info
+	// 与文本模式同源：优先 *client.APIError，否则按错误文本里的 code=N 匹配传输层记录的最近错误响应
+	info, hasAPI := diagnosticsFor(err)
 	if hasAPI {
-		info = apiErr.Info
 		if info.Code != 0 {
 			env["code"] = info.Code
 		}
@@ -174,10 +176,49 @@ func errorEnvelope(err error) map[string]any {
 			env["missing_scopes"] = info.MissingScopes
 		}
 	}
+	if !hasAPI || info.Code == 0 || info.LogID == "" {
+		// 兜底：apidiag 未记录（如 SDK 内部错误、非受控 Transport）时，从旧式错误文本里取 code=N / log_id=X
+		code, logID := legacyAPIFieldsFromText(err.Error())
+		if _, ok := env["code"]; !ok && code != 0 {
+			env["code"] = code
+		}
+		if _, ok := env["log_id"]; !ok && logID != "" {
+			env["log_id"] = logID
+		}
+	}
 	if hint := errorHint(err, info, hasAPI); hint != "" {
 		env["hint"] = hint
 	}
 	return env
+}
+
+var (
+	// legacyCodePattern 匹配旧式错误文本里的业务码字段：code=N、code: N、"code": N（与 client.HasAPICode 同形态）
+	legacyCodePattern = regexp.MustCompile(`(?:^|[^\w])code\s*[:=]\s*(\d+)\b|"code"\s*:\s*(\d+)\b`)
+	// legacyStatusCodePattern 匹配 status code: N 这类传输层措辞，先剔除，避免把 HTTP 状态码当业务码
+	legacyStatusCodePattern = regexp.MustCompile(`(?i)\bstatus[\s_-]*code\s*[:=]?\s*\d+\b`)
+	// legacyLogIDPattern 匹配 log_id=X / log_id: X / "log_id":"X" / LogID: X
+	legacyLogIDPattern = regexp.MustCompile(`(?i)"?\blog_?id"?\s*[:=]\s*"?([0-9A-Za-z]+)`)
+)
+
+// legacyAPIFieldsFromText 从仍以 fmt.Errorf("...code=%d, msg=%s...") 返回的旧错误文本中取第一个非零业务码与 log_id。
+// 只解析显式的字段形态，取不到返回零值；不改变错误文本本身。
+func legacyAPIFieldsFromText(msg string) (code int, logID string) {
+	stripped := legacyStatusCodePattern.ReplaceAllString(msg, " ")
+	for _, m := range legacyCodePattern.FindAllStringSubmatch(stripped, -1) {
+		raw := m[1]
+		if raw == "" {
+			raw = m[2]
+		}
+		if n, err := strconv.Atoi(raw); err == nil && n != 0 {
+			code = n
+			break
+		}
+	}
+	if m := legacyLogIDPattern.FindStringSubmatch(msg); m != nil {
+		logID = m[1]
+	}
+	return code, logID
 }
 
 // errorKindName 返回与退出码对应的稳定分类名（usage/auth/network/confirmation_required/cancelled/interrupted/general）。

@@ -254,7 +254,9 @@ func checkUserToken() checkResult {
 	switch status {
 	case "valid":
 		// 不暴露 token 本体，只给状态
-		return checkPass("user_token", "access_token 有效")
+		r := checkPass("user_token", "access_token 有效")
+		r.Hint = doctorMissingRefreshHint(token)
+		return r
 	case "needs_refresh":
 		return checkPass("user_token", "access_token 过期但 refresh_token 有效（下次调用自动刷新）")
 	case "expired":
@@ -269,14 +271,20 @@ func checkUserToken() checkResult {
 	}
 }
 
+// doctorMissingRefreshHint 在 access_token 仍有效、但登录时从未下发 refresh_token 时给出提示
+// （与 auth status 的 health=missing_refresh_token 一致）；检查结论仍为 pass，其余情况返回空串。
+func doctorMissingRefreshHint(token *auth.TokenStore) string {
+	if token == nil || token.RefreshToken != "" {
+		return ""
+	}
+	return "登录时未下发 refresh_token，access_token 过期后需重新登录（详见 feishu-cli auth status）。处理：" +
+		doctorNoRefreshTokenFix(token)
+}
+
 // doctorNoRefreshTokenFix 返回「从未下发 refresh_token」的修复建议（含应用安全设置页链接）。
 func doctorNoRefreshTokenFix(token *auth.TokenStore) string {
 	cfg := config.Get()
-	appID := cfg.AppID
-	if appID == "" {
-		appID = token.AppID
-	}
-	return auth.NoRefreshTokenFix(cfg.BaseURL, appID)
+	return auth.NoRefreshTokenFix(cfg.BaseURL, auth.NoRefreshTokenAppID(token, cfg.AppID))
 }
 
 // checkUserIdentity 诊断用户身份就绪度：token.json 是否存在、access_token 是否有效、
@@ -296,7 +304,9 @@ func checkUserIdentity() checkResult {
 	}
 	switch token.TokenStatus() {
 	case "valid":
-		return checkPass("user_identity", "用户身份就绪：access_token 有效")
+		r := checkPass("user_identity", "用户身份就绪：access_token 有效")
+		r.Hint = doctorMissingRefreshHint(token)
+		return r
 	case "needs_refresh":
 		return checkPass("user_identity", "用户身份就绪：access_token 已过期但 refresh_token 有效（下次调用自动刷新）")
 	case "expired":

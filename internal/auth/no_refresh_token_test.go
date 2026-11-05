@@ -101,3 +101,16 @@ func TestResolveExpiredTokenDistinguishesMissingRefresh(t *testing.T) {
 		})
 	}
 }
+
+// settings_url 应指向签发 token 的应用；token 未记录签发应用时才回退到当前配置。
+func TestNoRefreshTokenAppIDPrefersIssuer(t *testing.T) {
+	if got := NoRefreshTokenAppID(&TokenStore{AppID: "cli_issuer"}, "cli_cfg"); got != "cli_issuer" {
+		t.Fatalf("应优先签发应用, got %q", got)
+	}
+	if got := NoRefreshTokenAppID(&TokenStore{}, "cli_cfg"); got != "cli_cfg" {
+		t.Fatalf("签发应用为空应回退, got %q", got)
+	}
+	if got := NoRefreshTokenAppID(nil, "cli_cfg"); got != "cli_cfg" {
+		t.Fatalf("nil token 应回退, got %q", got)
+	}
+}

@@ -136,10 +136,7 @@ var authStatusCmd = &cobra.Command{
 		}
 		if !refreshPresent {
 			// 结构化归因（additive）：与 auth login --json 的 no_refresh_token 同形
-			appID := config.Get().AppID
-			if appID == "" {
-				appID = token.AppID
-			}
+			appID := auth.NoRefreshTokenAppID(token, config.Get().AppID)
 			result["no_refresh_token"] = noRefreshTokenInfo(config.Get().BaseURL, appID)
 		}
 		if refreshPresent {

@@ -131,7 +131,7 @@ func resolveUserAccessToken(flagValue, configValue, appID, appSecret, baseURL st
 		}
 		if token.RefreshToken == "" {
 			// 登录时就没拿到 refresh_token：根因在应用安全设置，单纯重新登录 2 小时后还会失效
-			return "", expiredWithoutRefreshTokenError(baseURL, appID)
+			return "", expiredWithoutRefreshTokenError(baseURL, NoRefreshTokenAppID(token, appID))
 		}
 		return "", fmt.Errorf("User Access Token 已过期（access_token 和 refresh_token 均已失效）。\n" +
 			"请重新登录: feishu-cli auth login")
@@ -166,7 +166,7 @@ func refreshIfStaleLocalToken(explicitToken, appID, appSecret, baseURL string) (
 		return "", local.RefreshFailure.Err()
 	}
 	if local.RefreshToken == "" {
-		return "", expiredWithoutRefreshTokenError(baseURL, appID)
+		return "", expiredWithoutRefreshTokenError(baseURL, NoRefreshTokenAppID(local, appID))
 	}
 	if !local.IsRefreshTokenValid() {
 		return "", fmt.Errorf("显式传入的 access_token 匹配本地 token.json，但 refresh_token 已失效。请重新 `feishu-cli auth login`")
@@ -212,7 +212,7 @@ func ensureFreshLocalToken(appID, appSecret, baseURL string, snapshot *TokenStor
 		return nil, false, snapshot.RefreshFailure.Err()
 	}
 	if snapshot.RefreshToken == "" {
-		return nil, false, expiredWithoutRefreshTokenError(baseURL, appID)
+		return nil, false, expiredWithoutRefreshTokenError(baseURL, NoRefreshTokenAppID(snapshot, appID))
 	}
 	if !snapshot.IsRefreshTokenValid() {
 		return nil, false, fmt.Errorf("access_token 和 refresh_token 都已失效，请重新 `feishu-cli auth login`")
