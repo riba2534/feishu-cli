@@ -217,27 +217,63 @@ func TestRegisterSubscriptionsAsBotNoBody(t *testing.T) {
 	}
 }
 
-// 画板事件按 --param whiteboard_id 过滤：其他画板的事件 ACK 后不输出。
+// 画板事件按 --param whiteboard_id 过滤：其他画板的事件不输出。
+// 确认是唯一长连接（AckUnsubscribed）时 ACK 丢弃；否则返回错误让服务端重投给订阅该画板的连接。
 func TestBuildDispatcherAppliesMatch(t *testing.T) {
-	var out concurrentBuffer
-	r := NewRuntime(ConsumeOptions{
-		EventKey: "board.whiteboard.updated_v1",
-		Params:   map[string]string{"whiteboard_id": "wb_a"},
-		Out:      &out,
-		ErrOut:   io.Discard,
-	})
-	dis := r.buildDispatcher([]KeyDefinition{mustLookup(t, "board.whiteboard.updated_v1")})
 	payload := func(id, wb string) []byte {
 		return []byte(`{"schema":"2.0","header":{"event_id":"` + id + `","event_type":"board.whiteboard.updated_v1","create_time":"1"},"event":{"whiteboard_id":"` + wb + `"}}`)
 	}
-	if _, err := dis.Do(context.Background(), payload("ev1", "wb_b")); err != nil {
-		t.Fatalf("其他画板事件应 ACK: %v", err)
+	for _, ackUnsub := range []bool{true, false} {
+		var out concurrentBuffer
+		r := NewRuntime(ConsumeOptions{
+			EventKey:        "board.whiteboard.updated_v1",
+			Params:          map[string]string{"whiteboard_id": "wb_a"},
+			Out:             &out,
+			ErrOut:          io.Discard,
+			AckUnsubscribed: ackUnsub,
+		})
+		dis := r.buildDispatcher([]KeyDefinition{mustLookup(t, "board.whiteboard.updated_v1")})
+		_, err := dis.Do(context.Background(), payload("ev1", "wb_b"))
+		if ackUnsub && err != nil {
+			t.Fatalf("唯一连接时其他画板事件应 ACK: %v", err)
+		}
+		if !ackUnsub && err == nil {
+			t.Fatal("存在其他连接时其他画板事件不得 ACK（应返回错误交由服务端重投）")
+		}
+		if _, err := dis.Do(context.Background(), payload("ev2", "wb_a")); err != nil {
+			t.Fatal(err)
+		}
+		got := out.String()
+		if strings.Contains(got, "wb_b") || !strings.Contains(got, "wb_a") {
+			t.Fatalf("应只输出 wb_a 的事件，got %q", got)
+		}
 	}
-	if _, err := dis.Do(context.Background(), payload("ev2", "wb_a")); err != nil {
-		t.Fatal(err)
+}
+
+// 订阅范围包含订阅身份与该 key 声明的参数；默认身份无参数时为空（兼容旧 bus.json）。
+func TestSubscriptionScope(t *testing.T) {
+	board := mustLookup(t, "board.whiteboard.updated_v1")
+	a := NewRuntime(ConsumeOptions{Params: map[string]string{"whiteboard_id": "wb_a", "unrelated": "x"}})
+	b := NewRuntime(ConsumeOptions{Params: map[string]string{"whiteboard_id": "wb_b"}, SubscribeAsBot: true})
+	if got := a.subscriptionScope(board); got != "whiteboard_id=wb_a" {
+		t.Fatalf("scope = %q", got)
 	}
-	got := out.String()
-	if strings.Contains(got, "wb_b") || !strings.Contains(got, "wb_a") {
-		t.Fatalf("应只输出 wb_a 的事件，got %q", got)
+	if got := b.subscriptionScope(board); got != "as=bot;whiteboard_id=wb_b" {
+		t.Fatalf("scope = %q", got)
+	}
+	vc := mustLookup(t, "vc.note.generated_v1")
+	if got := NewRuntime(ConsumeOptions{}).subscriptionScope(vc); got != "" {
+		t.Fatalf("默认身份无参数应为空 scope，got %q", got)
+	}
+}
+
+// --as 只约束需要服务端订阅的 key：IM 消息（仅长连接）与 user-only 订阅 key 组合时 --as user 合法。
+func TestCheckIdentitySkipsKeysWithoutSubscription(t *testing.T) {
+	defs := []KeyDefinition{mustLookup(t, "im.message.receive_v1"), mustLookup(t, "approval.instance.status_changed_v4")}
+	if err := CheckIdentity(defs, "user"); err != nil {
+		t.Fatalf("IM + 审批 --as user 应合法: %v", err)
+	}
+	if err := CheckIdentity([]KeyDefinition{mustLookup(t, "approval.instance.status_changed_v4")}, "bot"); err == nil {
+		t.Fatal("审批只支持 user，--as bot 应报错")
 	}
 }

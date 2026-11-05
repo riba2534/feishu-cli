@@ -261,7 +261,9 @@ feishu-cli event consume approval.instance.status_changed_v4
 
 - 审批：`--param subscription_type=INVOLVED_APPROVAL|MANAGED_APPROVAL`（逗号分隔多值）只注册指定关系；不传与旧版一致注册两种。
   订阅是**持久的用户级关系**，进程退出不注销；重复注册服务端幂等处理。
-- 画板：`whiteboard_id` 必填，路径段会转义；同一 App 收到其他画板的事件会 ACK 后丢弃，不输出。
+- 画板：`whiteboard_id` 必填，路径段会转义；收到其他画板的事件不输出——本连接是该 App 唯一长连接时 ACK 后丢弃，否则不代答、交由服务端重投给订阅了该画板的连接（与未订阅类型同一策略）。
+- 订阅生命周期按「EventKey + 订阅身份 + 该 key 的 `--param`」计：不同画板 / 邮箱 / `--as` 的 consumer 互不影响，最后一个同范围的 consumer 退出时才注销。
+- `--as` 只约束需要服务端订阅的 key：IM 消息等仅长连接的 key 与审批、妙记等 user-only 订阅 key 一起监听时可以 `--as user`。
 - 邮箱：复用本进程的单条长连接（不另起 WebSocket），可与其他 key 一起订阅：`event consume mail.user_mailbox.event.message_received_v1 im.message.receive_v1`。
 - 身份：未登录且所选订阅 key 都支持 bot 时，auto 改用 App 身份注册；User-only 的 key 未登录时报错并提示 auth login。
 

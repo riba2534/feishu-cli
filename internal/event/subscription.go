@@ -165,7 +165,16 @@ func ResolveAutoIdentity(defs []KeyDefinition, hasUser bool) string {
 
 // CheckIdentity 校验显式 --as user|bot 与每个 EventKey 声明的身份一致。
 func CheckIdentity(defs []KeyDefinition, identity string) error {
+	// --as 只决定注册服务端订阅的身份；与订阅类 key 同时监听时，无需订阅的 key（如 IM 消息，
+	// 走长连接 App 凭证）不参与校验。全部是无需订阅的 key 时仍按其声明校验，避免无意义的 --as。
+	anySub := false
 	for _, def := range defs {
+		anySub = anySub || def.HasSubscription()
+	}
+	for _, def := range defs {
+		if anySub && !def.HasSubscription() {
+			continue
+		}
 		if !def.AllowsIdentity(identity) {
 			return fmt.Errorf("EventKey %s 不支持 --as %s（支持: %s）", def.Key, identity, strings.Join(def.IdentityTypes(), ", "))
 		}

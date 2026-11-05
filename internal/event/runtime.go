@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -186,6 +187,7 @@ func (r *Runtime) Run(ctx context.Context) (reason string, err error) {
 				JQExpr:     r.opts.JQExpr,
 				MaxEvents:  r.opts.MaxEvents,
 				TimeoutSec: int(r.opts.Timeout.Seconds()),
+				Scope:      r.subscriptionScope(def),
 			}
 			if _, claimErr := r.opts.Bus.ClaimConsumer(entry); claimErr != nil {
 				if def.SubscribePath != "" || def.UnsubscribePath != "" {
@@ -276,7 +278,8 @@ func (r *Runtime) Run(ctx context.Context) (reason string, err error) {
 // releaseConsumer 从 bus.json 移除 (PID, EventKey)；若本进程是该 key 的最后一个 consumer
 // 且本进程注册过服务端订阅，则注销订阅（并复检竞态，必要时恢复）。
 func (r *Runtime) releaseConsumer(pid int, def KeyDefinition, weSubscribed map[string]bool) {
-	last, relErr := r.opts.Bus.ReleaseConsumer(pid, def.Key)
+	scope := r.subscriptionScope(def)
+	last, relErr := r.opts.Bus.ReleaseConsumer(pid, def.Key, scope)
 	if relErr != nil {
 		fmt.Fprintf(r.opts.ErrOut, "[event] 警告: 从 bus.json 移除失败: %v\n", relErr)
 		return
@@ -288,12 +291,32 @@ func (r *Runtime) releaseConsumer(pid int, def KeyDefinition, weSubscribed map[s
 	// 注销是锁外的网络调用，期间可能有新 consumer 完成注册并订阅。
 	// 复检：若此刻已有存活 consumer，说明我们刚把它的服务端订阅抹掉了，
 	// 必须补回去——否则它仍在运行且已 ready，却静默收不到任何事件。
-	if n, cntErr := r.opts.Bus.CountEventKeyConsumers(def.Key); cntErr == nil && n > 0 {
+	if n, cntErr := r.opts.Bus.CountEventKeyConsumers(def.Key, scope); cntErr == nil && n > 0 {
 		fmt.Fprintf(r.opts.ErrOut, "[event] 注销后检测到 %d 个新 consumer，正在恢复服务端订阅\n", n)
 		if subErr := r.registerSubscriptions(context.Background(), def); subErr != nil {
 			fmt.Fprintf(r.opts.ErrOut, "[event] 警告: 恢复订阅失败，存活 consumer 可能收不到事件: %v\n", subErr)
 		}
 	}
+}
+
+// subscriptionScope 返回该 key 在本进程的订阅范围：订阅身份 + 该 key 声明的参数（按名排序）。
+// 默认身份且无参数时为空串，与旧版 bus.json 条目一致。
+func (r *Runtime) subscriptionScope(def KeyDefinition) string {
+	var parts []string
+	if r.opts.SubscribeAsBot && def.HasSubscription() {
+		parts = append(parts, "as=bot")
+	}
+	names := make([]string, 0, len(def.Params))
+	for _, p := range def.Params {
+		names = append(names, p.Name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if v := r.opts.Params[name]; v != "" {
+			parts = append(parts, name+"="+v)
+		}
+	}
+	return strings.Join(parts, ";")
 }
 
 // buildDispatcher 在同一个 dispatcher 上注册本进程订阅的全部事件类型；AckUnsubscribed 时
@@ -321,10 +344,15 @@ func (r *Runtime) buildDispatcher(defs []KeyDefinition) *dispatcher.EventDispatc
 			})
 			continue
 		}
-		match := def.Match
+		match, eventType := def.Match, def.EventType
 		dis.OnCustomizedEvent(def.EventType, func(ctx context.Context, ev *larkevent.EventReq) error {
 			if match != nil && (ev == nil || !match(ev.Body, r.opts.Params)) {
-				// 不属于本次 --param 指定对象（如其他画板）的事件：ACK 后本地丢弃
+				// 不属于本次 --param 指定对象（如其他画板）的事件：与未订阅类型同一策略——
+				// 确认本连接是唯一长连接时 ACK 丢弃；否则返回错误让服务端重投给订阅了该对象的连接
+				if !r.opts.AckUnsubscribed {
+					return fmt.Errorf("事件不属于本连接的 --param 过滤范围，交由服务端重投")
+				}
+				r.noteDropped(eventType)
 				return nil
 			}
 			return r.emit(ev)

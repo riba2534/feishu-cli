@@ -178,14 +178,14 @@ func TestBus_ReleaseConsumerLastOnlyAfterAllGone(t *testing.T) {
 	_, _ = bus.ClaimConsumer(ConsumerEntry{PID: 201, EventKey: key, StartedAt: time.Now()})
 	_, _ = bus.ClaimConsumer(ConsumerEntry{PID: 202, EventKey: key, StartedAt: time.Now()})
 
-	last, err := bus.ReleaseConsumer(201, key)
+	last, err := bus.ReleaseConsumer(201, key, "")
 	if err != nil {
 		t.Fatalf("Release 201: %v", err)
 	}
 	if last {
 		t.Fatal("先退出者还有同伴，不得视为 last-consumer")
 	}
-	last, err = bus.ReleaseConsumer(202, key)
+	last, err = bus.ReleaseConsumer(202, key, "")
 	if err != nil {
 		t.Fatalf("Release 202: %v", err)
 	}
@@ -224,5 +224,25 @@ func TestConsumerEntry_IsAlive(t *testing.T) {
 	zero := ConsumerEntry{PID: 0}
 	if zero.IsAlive() {
 		t.Errorf("PID 0 不应判定为存活")
+	}
+}
+
+// 同一 EventKey 不同 Scope（如不同画板）各自独立判定 last consumer。
+func TestReleaseConsumerScopedByParams(t *testing.T) {
+	stubConsumerAlive(t)
+	bus := setupBus(t)
+	key := "board.whiteboard.updated_v1"
+	if _, err := bus.ClaimConsumer(ConsumerEntry{PID: 301, EventKey: key, StartedAt: time.Now(), Scope: "whiteboard_id=wb_a"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bus.ClaimConsumer(ConsumerEntry{PID: 302, EventKey: key, StartedAt: time.Now(), Scope: "whiteboard_id=wb_b"}); err != nil {
+		t.Fatal(err)
+	}
+	last, err := bus.ReleaseConsumer(301, key, "whiteboard_id=wb_a")
+	if err != nil || !last {
+		t.Fatalf("wb_a 只有一个 consumer，释放后应为 last: last=%v err=%v", last, err)
+	}
+	if n, _ := bus.CountEventKeyConsumers(key, "whiteboard_id=wb_b"); n != 1 {
+		t.Fatalf("wb_b consumer 不应受影响，n=%d", n)
 	}
 }
