@@ -173,6 +173,7 @@ URL 输入（/wiki/, /docx/, /sheets/ 等）自动推断文档类型；裸 token
   --obj-type            文档类型（裸 token 必填，URL 输入自动推断；可选: wiki, doc, docx, sheet, bitable, mindnote, slides, file）
   --include-children    是否级联删除子节点（默认 true）
   --force, -f           跳过确认直接删除
+  --dry-run             只打印将要发出的请求（不读取凭据、不联网、不确认）
   --output, -o          输出格式 (json)
 
 示例:
@@ -210,6 +211,22 @@ URL 输入（/wiki/, /docx/, /sheets/ 等）自动推断文档类型；裸 token
 		}
 		includeChildren, _ := cmd.Flags().GetBool("include-children")
 		force, _ := cmd.Flags().GetBool("force")
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			planSpace := spaceID
+			if planSpace == "" {
+				planSpace = "<space_id>"
+			}
+			return printDryRunPlan(cmd, "Delete wiki node", map[string]any{
+				"node_token":       nodeToken,
+				"obj_type":         objType,
+				"include_children": includeChildren,
+			}, []dryRunStep{
+				{Method: "GET", URL: client.WikiNodeByTokenPath, Params: map[string]any{"token": nodeToken}, Desc: "Resolve node and verify space_id (always, even with --space-id)"},
+				{Method: "DELETE", URL: "/open-apis/wiki/v2/spaces/" + planSpace + "/nodes/<node_token|obj_token>", Body: map[string]any{"obj_type": objType, "include_children": includeChildren}},
+				{Method: "GET", URL: "/open-apis/wiki/v2/tasks/<task_id>", Params: map[string]any{"task_type": "delete_node"}, Desc: "Poll when task_id is returned"},
+			})
+		}
 
 		if err := config.Validate(); err != nil {
 			return err
@@ -442,6 +459,7 @@ func init() {
 	deleteWikiNodeCmd.Flags().String("as", "auto", "操作身份：bot|user|auto（默认 auto: User 优先，回退 Bot）")
 	deleteWikiNodeCmd.Flags().Bool("include-children", true, "是否级联删除子节点（默认 true）")
 	deleteWikiNodeCmd.Flags().BoolP("force", "f", false, "跳过确认直接删除")
+	deleteWikiNodeCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	deleteWikiNodeCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	deleteWikiNodeCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问个人知识库）")
 }

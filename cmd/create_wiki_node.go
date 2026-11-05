@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -21,6 +22,7 @@ var createWikiNodeCmd = &cobra.Command{
   --parent-node   父节点 Token（可选，不指定则创建在根目录）
   --obj-type      文档类型（可选，默认 docx）
   --node-type     节点类型（可选，默认 origin）
+  --dry-run       只打印将要发出的请求（不读取凭据、不联网）
 
 文档类型（--obj-type）:
   docx      新版文档（默认）
@@ -59,6 +61,27 @@ Bot 身份创建时自动给当前 CLI 登录用户授予节点 full_access（�
 		}
 		if nodeType != "shortcut" && originNodeToken != "" {
 			return clierr.Usagef("--origin-node-token 仅在 --node-type=shortcut 时可用")
+		}
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			if objType == "" {
+				objType = "docx"
+			}
+			if nodeType == "" {
+				nodeType = "origin"
+			}
+			node := map[string]any{"title": title, "obj_type": objType, "node_type": nodeType}
+			if parentNode != "" {
+				node["parent_node_token"] = parentNode
+			}
+			if originNodeToken != "" {
+				node["origin_node_token"] = originNodeToken
+			}
+			return printDryRunPlan(cmd, "Create wiki node", nil, []dryRunStep{{
+				Method: "POST",
+				URL:    fmt.Sprintf("/open-apis/wiki/v2/spaces/%s/nodes", url.PathEscape(spaceID)),
+				Body:   node,
+			}})
 		}
 
 		if err := config.Validate(); err != nil {
@@ -121,6 +144,7 @@ func init() {
 	createWikiNodeCmd.Flags().String("node-type", "origin", "节点类型：origin/shortcut（默认 origin）")
 	createWikiNodeCmd.Flags().String("origin-node-token", "", "快捷方式指向的源节点 Token（当 --node-type=shortcut 时必填）")
 	createWikiNodeCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	createWikiNodeCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	mustMarkFlagRequired(createWikiNodeCmd, "space-id", "title")
 	createWikiNodeCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问个人知识库）")
 }
