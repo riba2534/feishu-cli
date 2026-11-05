@@ -539,9 +539,6 @@ var mailRuleCreateCmd = &cobra.Command{
   feishu-cli mail rule-create --name "老板邮件加旗标" --condition from:contains:boss@example.com --action star --dry-run
   feishu-cli mail rule-create --name "周报归档" --condition subject:starts_with:[周报] --action mark_read --action move_folder:folder_id=7001`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		mailbox, _ := cmd.Flags().GetString("mailbox")
 		output, _ := cmd.Flags().GetString("output")
 		name, _ := cmd.Flags().GetString("name")
@@ -575,6 +572,9 @@ var mailRuleCreateCmd = &cobra.Command{
 		}
 		if dryRun {
 			return printJSON(map[string]any{"dry_run": true, "method": "POST", "path": client.MailRulesPath(mailbox), "body": body, "description": describeMailRule(normalizeMailRuleBody(body))})
+		}
+		if err := config.Validate(); err != nil {
+			return err
 		}
 		token, err := requireUserToken(cmd, "mail rule-create")
 		if err != nil {
@@ -703,9 +703,6 @@ var mailRuleUpdateCmd = &cobra.Command{
 }
 
 func runMailRuleUpdate(cmd *cobra.Command, cmdName string, forceEnable *bool) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
 	mailbox, _ := cmd.Flags().GetString("mailbox")
 	output, _ := cmd.Flags().GetString("output")
 	ruleID, _ := cmd.Flags().GetString("rule-id")
@@ -735,6 +732,9 @@ func runMailRuleUpdate(cmd *cobra.Command, cmdName string, forceEnable *bool) er
 			plan["patch"] = patch
 		}
 		return printJSON(plan)
+	}
+	if err := config.Validate(); err != nil {
+		return err
 	}
 	token, err := requireUserToken(cmd, cmdName)
 	if err != nil {
@@ -802,9 +802,6 @@ var mailRuleDeleteCmd = &cobra.Command{
   feishu-cli mail rule-delete --rule-id 701xxx --dry-run
   feishu-cli mail rule-delete --rule-id 701xxx --yes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		mailbox, _ := cmd.Flags().GetString("mailbox")
 		output, _ := cmd.Flags().GetString("output")
 		ruleID, _ := cmd.Flags().GetString("rule-id")
@@ -815,6 +812,9 @@ var mailRuleDeleteCmd = &cobra.Command{
 		}
 		if dryRun {
 			return printJSON(map[string]any{"dry_run": true, "method": "DELETE", "path": client.MailRulesPath(mailbox, ruleID)})
+		}
+		if err := config.Validate(); err != nil {
+			return err
 		}
 		token, err := requireUserToken(cmd, "mail rule-delete")
 		if err != nil {
@@ -932,9 +932,6 @@ var mailRuleReorderCmd = &cobra.Command{
   feishu-cli mail rule-reorder --move-rule-id 701b --to-top --dry-run
   feishu-cli mail rule-reorder --rule-ids 701b,701a,701c`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		mailbox, _ := cmd.Flags().GetString("mailbox")
 		output, _ := cmd.Flags().GetString("output")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
@@ -952,6 +949,9 @@ var mailRuleReorderCmd = &cobra.Command{
 				{"method": "GET", "path": client.MailRulesPath(mailbox), "note": "读取当前顺序并校验"},
 				{"method": "POST", "path": client.MailRulesPath(mailbox, "reorder"), "body": body},
 			}})
+		}
+		if err := config.Validate(); err != nil {
+			return err
 		}
 		token, err := requireUserToken(cmd, "mail rule-reorder")
 		if err != nil {

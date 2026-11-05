@@ -2,8 +2,9 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
+
+	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
 // post 附件区（对齐官方 --attachment / +messages-edit --set-attachments/--clear-attachments）：
@@ -17,23 +18,23 @@ func (input messageContentInput) validateAttachments() error {
 	}
 	for _, v := range input.attachments {
 		if strings.TrimSpace(v) == "" {
-			return fmt.Errorf("--attachment 的取值不能为空")
+			return clierr.Usagef("--attachment 的取值不能为空")
 		}
 	}
 	switch {
 	case input.text != "":
-		return fmt.Errorf("--attachment 把文件放进 post 的附件区，不能与 --text 同时使用；正文请改用 --markdown（或 --msg-type post + --content）")
+		return clierr.Usagef("--attachment 把文件放进 post 的附件区，不能与 --text 同时使用；正文请改用 --markdown（或 --msg-type post + --content）")
 	case input.file != "" || input.image != "" || input.audio != "" || input.video != "":
-		return fmt.Errorf("--attachment 不能与 --file/--image/--audio/--video 同时使用")
+		return clierr.Usagef("--attachment 不能与 --file/--image/--audio/--video 同时使用")
 	}
 	if (input.content != "" || input.contentFile != "") && input.msgType != "post" {
-		return fmt.Errorf("--attachment 只适用于 post 消息：配合 --content/--content-file 时需指定 --msg-type post")
+		return clierr.Usagef("--attachment 只适用于 post 消息：配合 --content/--content-file 时需指定 --msg-type post")
 	}
 	if input.msgTypeChanged && input.markdown == "" && input.msgType != "post" {
-		return fmt.Errorf("--attachment 会发送 post 消息，与 --msg-type %q 冲突", input.msgType)
+		return clierr.Usagef("--attachment 会发送 post 消息，与 --msg-type %q 冲突", input.msgType)
 	}
 	if input.content != "" && postContentHasFiles(input.content) {
-		return fmt.Errorf("--content 已包含 files 附件区，不能再与 --attachment 同时使用")
+		return clierr.Usagef("--content 已包含 files 附件区，不能再与 --attachment 同时使用")
 	}
 	for _, v := range input.attachments {
 		v = strings.TrimSpace(v)

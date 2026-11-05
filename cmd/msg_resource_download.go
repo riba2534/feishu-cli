@@ -43,10 +43,6 @@ var msgResourceDownloadCmd = &cobra.Command{
   feishu-cli msg resource-download om_xxx file_xxx --type file -o large.zip --timeout 30m`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		messageID := args[0]
 		fileKey := args[1]
 		resourceType, _ := cmd.Flags().GetString("type")
@@ -64,16 +60,19 @@ var msgResourceDownloadCmd = &cobra.Command{
 		if err := validateOutputPath(outputPath, ""); err != nil {
 			return err
 		}
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
-
 		var timeout time.Duration
 		if timeoutStr != "" {
 			var err error
 			timeout, err = time.ParseDuration(timeoutStr)
 			if err != nil {
-				return fmt.Errorf("无效的超时时间格式: %s（示例: 10m, 1h）", timeoutStr)
+				return clierr.Usagef("无效的超时时间格式: %s（示例: 10m, 1h）", timeoutStr)
 			}
 		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		userToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		meta, err := client.DownloadMessageResourceWithMeta(messageID, fileKey, resourceType, outputPath, userToken, timeout)
 		if err != nil {
