@@ -61,13 +61,72 @@ func (c *conciseRenderer) message(m *larkim.Message, indent string) {
 	}
 	fmt.Fprintf(c.w, "%s- %s · %s\n", indent, head, strings.Join(ids, " · "))
 	body := conciseMessageBody(m)
+	inFence := false
 	for _, line := range strings.Split(body, "\n") {
 		line = strings.TrimRight(line, " \t\r")
 		if line == "" {
 			continue
 		}
+		// 代码围栏内的行原样输出，围栏外的行转义行首 Markdown 语法
+		if strings.HasPrefix(strings.TrimLeft(line, " \t"), "```") {
+			inFence = !inFence
+		} else if !inFence {
+			line = escapeConciseBodyLine(line)
+		}
 		fmt.Fprintf(c.w, "%s  %s\n", indent, line)
 	}
+}
+
+// escapeConciseBodyLine 转义正文行首的 Markdown 块级语法（列表、标题、引用、有序列表、分隔线），
+// 避免正文里的 "- xxx" 被读成嵌套列表项、"> xxx" 与话题标记混淆。代码围栏保持原样。
+func escapeConciseBodyLine(line string) string {
+	trimmed := strings.TrimLeft(line, " \t")
+	if trimmed == "" {
+		return line
+	}
+	lead := line[:len(line)-len(trimmed)]
+	needs := false
+	switch trimmed[0] {
+	case '#', '>':
+		needs = true
+	case '-', '*', '+':
+		// 列表标记（后跟空白或行尾）或分隔线 / setext 下划线（---、***）
+		needs = len(trimmed) == 1 || trimmed[1] == ' ' || trimmed[1] == '\t' || isThematicBreak(trimmed)
+	case '=':
+		needs = isThematicBreak(trimmed)
+	case '_':
+		needs = isThematicBreak(trimmed)
+	default:
+		// 有序列表：1. / 1) 后跟空白或行尾
+		i := 0
+		for i < len(trimmed) && i < 9 && trimmed[i] >= '0' && trimmed[i] <= '9' {
+			i++
+		}
+		if i > 0 && i < len(trimmed) && (trimmed[i] == '.' || trimmed[i] == ')') &&
+			(i+1 == len(trimmed) || trimmed[i+1] == ' ' || trimmed[i+1] == '\t') {
+			return lead + trimmed[:i] + "\\" + trimmed[i:]
+		}
+	}
+	if needs {
+		return lead + "\\" + trimmed
+	}
+	return line
+}
+
+// isThematicBreak 判断整行是否只由同一种 -、*、_、= 字符（可夹空格）组成且至少 3 个。
+func isThematicBreak(s string) bool {
+	ch := s[0]
+	n := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case ch:
+			n++
+		case ' ', '\t':
+		default:
+			return false
+		}
+	}
+	return n >= 3
 }
 
 func (c *conciseRenderer) sender(m *larkim.Message) string {

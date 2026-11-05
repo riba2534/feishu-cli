@@ -119,7 +119,7 @@ feishu-cli mail draft-create --to user@example.com --subject "合同" --body "�
 
 # 定时发送：Unix 秒，至少晚于当前 5 分钟，必须同时 --confirm-send
 feishu-cli mail send --to user@example.com --subject "周报" --body "..." --confirm-send --send-time $(( $(date +%s) + 3600 ))
-feishu-cli mail draft-send --draft-id <draft_id> --confirm-send --send-time 1793870000
+feishu-cli mail draft-send --draft-id <draft_id> --confirm-send --send-time $(( $(date +%s) + 600 ))
 ```
 
 - **输出字段**：`send/draft-create` 的 JSON 含 `draft_id`（`send` 另有 `confirmed`、`tip`）；`reply/reply-all` 含 `draft_id/confirmed/to/cc`；

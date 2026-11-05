@@ -12,13 +12,14 @@ import (
 )
 
 var driveSearchCmd = &cobra.Command{
-	Use:   "search",
+	Use:   "search [query]",
 	Short: "在云盘 / 知识库范围内搜索文档（v2 doc_wiki/search，扁平 filter）",
 	Long: `走 /open-apis/search/v2/doc_wiki/search v2 端点，比 search docs（v1）支持更丰富的扁平 filter：
 folder-tokens、space-ids、creator-ids、sharer-ids、only-title、sort 排序等。
 
 可选:
-  --query           关键字（可空，纯按 filter 浏览）
+  --query           关键字（可空，纯按 filter 浏览）；也可写成唯一的位置参数 [query]，
+                    与 --query 同时使用或位置参数多于 1 个时报用法错误（退出码 2）
   --creator-ids     CSV，所有者 open_id 列表（接口字段名为 creator_ids，实际按所有者匹配）；与 --mine 互斥
   --mine            只看我拥有的文档（等价 --creator-ids <当前用户 open_id>）
   --original-creator-ids  CSV，原始创建者 open_id 列表（创建者不随所有权转移变化）；与 --created-by-me 互斥
@@ -54,7 +55,10 @@ folder-tokens、space-ids、creator-ids、sharer-ids、only-title、sort 排序�
   feishu-cli drive search --edited-since 2026-10-01 --edited-until 2026-10-31 --doc-types DOCX
   feishu-cli drive search --opened-since 6m --mine`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		query, _ := cmd.Flags().GetString("query")
+		query, err := resolveDriveSearchQuery(cmd, args)
+		if err != nil {
+			return err
+		}
 		creators, _ := cmd.Flags().GetString("creator-ids")
 		folders, _ := cmd.Flags().GetString("folder-tokens")
 		spaces, _ := cmd.Flags().GetString("space-ids")
@@ -236,4 +240,20 @@ func init() {
 	driveSearchCmd.Flags().String("page-token", "", "分页 token")
 	driveSearchCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	driveSearchCmd.Flags().String("user-access-token", "", "User Access Token（搜索 API 必需）")
+}
+
+// resolveDriveSearchQuery 关键字来源：--query，或唯一的位置参数（未显式传 --query 时）。
+// 位置参数多于 1 个、或与 --query 同时出现，都是用法错误（exit 2），避免关键字被静默忽略。
+func resolveDriveSearchQuery(cmd *cobra.Command, args []string) (string, error) {
+	query, _ := cmd.Flags().GetString("query")
+	if len(args) > 1 {
+		return "", clierr.Usagef("drive search 最多接受 1 个位置参数作为关键字，得到 %d 个；含空格的关键字请加引号或改用 --query", len(args))
+	}
+	if len(args) == 1 {
+		if cmd.Flags().Changed("query") {
+			return "", clierr.Usagef("位置参数 %q 与 --query 不能同时使用，只保留一个", args[0])
+		}
+		return args[0], nil
+	}
+	return query, nil
 }

@@ -259,6 +259,9 @@ var vcBotCountdownCmd = &cobra.Command{
 		if err := validateVCEventsMeetingID(meetingID); err != nil {
 			return err
 		}
+		if err := validateVCBotAs(cmd); err != nil {
+			return err
+		}
 		in := vcCountdownInput{MeetingID: meetingID}
 		in.Action, _ = cmd.Flags().GetString("action")
 		in.Duration, _ = cmd.Flags().GetInt("duration")
@@ -323,6 +326,9 @@ var vcBotMessageSendCmd = &cobra.Command{
 		if err := validateVCEventsMeetingID(meetingID); err != nil {
 			return err
 		}
+		if err := validateVCBotAs(cmd); err != nil {
+			return err
+		}
 		msgType, _ := cmd.Flags().GetString("msg-type")
 		text, _ := cmd.Flags().GetString("text")
 		emoji, _ := cmd.Flags().GetString("emoji-type")
@@ -380,6 +386,9 @@ var vcBotScreenshotCmd = &cobra.Command{
 		meetingID, _ := cmd.Flags().GetString("meeting-id")
 		meetingID = strings.TrimSpace(meetingID)
 		if err := validateVCEventsMeetingID(meetingID); err != nil {
+			return err
+		}
+		if err := validateVCBotAs(cmd); err != nil {
 			return err
 		}
 		output, _ := cmd.Flags().GetString("output")

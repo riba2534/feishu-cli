@@ -299,6 +299,9 @@ var vcBotEventsCmd = &cobra.Command{
 		if err := validateVCEventsMeetingID(meetingID); err != nil {
 			return err
 		}
+		if err := validateVCBotAs(cmd); err != nil {
+			return err
+		}
 
 		startSec, err := vcParseTimeToUnixSec(startStr, false)
 		if err != nil {
@@ -564,6 +567,16 @@ func init() {
 	vcBotEventsCmd.Flags().String("as", "auto", "身份：bot | user | auto（默认 auto；须与 meeting_id 来源一致）")
 	vcBotEventsCmd.Flags().String("user-access-token", "", "User Access Token（仅 --as user/auto 使用；--as bot 忽略）")
 	mustMarkFlagRequired(vcBotEventsCmd, "meeting-id")
+}
+
+// validateVCBotAs 在 dry-run 与 config.Validate 之前校验 --as 取值，非法值 exit 2（不读凭据、不联网）。
+func validateVCBotAs(cmd *cobra.Command) error {
+	as, _ := cmd.Flags().GetString("as")
+	switch strings.ToLower(strings.TrimSpace(as)) {
+	case "", "auto", "bot", "tenant", "app", "user":
+		return nil
+	}
+	return clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", as)
 }
 
 // peekVCBotEventsIdentity 供 dry-run：只静态探测身份，不刷新、不联网、不写 token。

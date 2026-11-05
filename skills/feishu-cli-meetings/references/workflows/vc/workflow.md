@@ -262,7 +262,9 @@ feishu-cli minutes word-replace obcnxxx --replace-words '[{"source_word":"飞树
 ```
 
 - 全部只支持 User；token 位置参数可写妙记链接（`https://example.feishu.cn/minutes/obcnxxx`）；全部支持 `--dry-run`
-  （不读取凭据、不联网）。没有确认门禁（官方均为普通写操作），但会改写他人可见的妙记内容，执行前须征得用户同意。
+  （不读取凭据、不联网）。`summary`（整体覆盖 AI 摘要）、含 `delete` 的 `todo`（单条或批量）、`speaker-replace`、`word-replace`
+  带确认门禁：非交互环境未带 `--yes` 以 exit 10 结束、不发请求，征得用户同意后追加 `--yes` 重跑；`upload`、`update`、只含
+  add/update 的 `todo` 没有门禁。所有妙记写命令都会改写他人可见的内容，执行前须征得用户同意。
 - 请求：`upload` POST `/minutes/v1/minutes/upload`（输出 `minute_url` 与解析出的 `minute_token`；ASR/AI 配额不足 `2091008`
   单独提示；文件 ≤6GB、≤6 小时）；`update` PATCH `/minutes/{token}`；`summary` PUT `.../summary`；`todo` POST `.../todo`；
   `speaker-replace` PUT `.../transcript/speaker`；`word-replace` PUT `.../transcript/word`。
@@ -440,7 +442,7 @@ Bot 路径的 scope 在飞书开放平台的应用权限管理页面开通并发
 | `120003` | 当前身份不在该会议中（实测对已结束会议也返回） | 核对 `--as` 与 `meeting_id` 来源；会议已结束改用 `vc detail` / `vc notes` |
 
 - 业务错误码随 HTTP 4xx 下发时也按业务码处理，错误信息附 `log_id` 便于排查；退出码：用法错误 2、鉴权或权限 3、
-  `meeting-end` 未确认 10。
+  `meeting-end` 与上述妙记覆盖/删除类写命令未确认 10。
 - 批量命令的退出码：`vc notes` 任一条目失败为 1；`vc recording`、`minutes download` 部分失败仍为 0、全部失败才非 0。都要逐项检查 `ok` / `error`。
 - 所有逗号分隔的批量参数先去重，去重后超过 50 条直接报错；`minute_token` 前置校验为字母数字且至少 5 位（妙记链接自动取末段），
   参数错误一律为用法错误（退出码 2），且先于身份解析。
