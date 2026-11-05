@@ -126,13 +126,13 @@ var sheetCondFormatCreateCmd = &cobra.Command{
 示例:
   # 数值在 1~10 之间时加粗、绿色背景
   feishu-cli sheet cond-format create shtcnxxxxxx 0b12 --range C2:C100 \
-    --rule-type cellIs --operator between --formula 1 --formula 10 --bold --back-color "#d9f5d6"
+    --rule-type cellIs --operator between --formula 1 --formula 10 --bold --back-color "#e0f6dd"
 
   # 包含“紧急”时红字
   feishu-cli sheet cond-format create shtcnxxxxxx Sheet1 --range A:A --rule-type containsText --text 紧急 --fore-color "#f54a45"
 
   # 重复值标黄（先预览请求体）
-  feishu-cli sheet cond-format create shtcnxxxxxx 0b12 --range B2:B50 --rule-type duplicateValues --back-color "#fff258" --dry-run`,
+  feishu-cli sheet cond-format create shtcnxxxxxx 0b12 --range B2:B50 --rule-type duplicateValues --back-color "#fdecd1" --dry-run`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSheetCondFormatWrite(cmd, args, false)
@@ -144,10 +144,13 @@ var sheetCondFormatUpdateCmd = &cobra.Command{
 	Short: "更新条件格式（整条覆盖）",
 	Long: `更新一条条件格式。接口为整条覆盖：范围、规则与样式都要完整给出，未传的样式会被清除。
 cf_id 用 sheet cond-format list 查询。flag 含义与 create 相同；--data 只能是单个对象，cf_id 取位置参数。
+整条覆盖带确认门禁：交互终端需确认，非交互环境需追加 --yes（否则 exit 10，不执行）；建议先 --dry-run 核对请求体。
 
 示例:
   feishu-cli sheet cond-format update shtcnxxxxxx 0b12 cfxxxxxxxx --range C2:C100 \
-    --rule-type cellIs --operator greaterThan --formula 60 --back-color "#d9f5d6" --dry-run`,
+    --rule-type cellIs --operator greaterThan --formula 60 --back-color "#e0f6dd" --dry-run
+  feishu-cli sheet cond-format update shtcnxxxxxx 0b12 cfxxxxxxxx --range C2:C100 \
+    --rule-type cellIs --operator greaterThan --formula 60 --back-color "#e0f6dd" --yes`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runSheetCondFormatWrite(cmd, args, true)
@@ -624,7 +627,7 @@ func condFormatStyleFromFlags(cmd *cobra.Command) (*client.CondFormatStyle, erro
 		}
 		v := strings.TrimSpace(flagString(cmd, c.flag))
 		if !condFormatHexColor.MatchString(v) {
-			return nil, clierr.Usagef("--%s 必须是 #RRGGBB 十六进制颜色（如 #d9f5d6），得到 %q", c.flag, v)
+			return nil, clierr.Usagef("--%s 必须是 #RRGGBB 十六进制颜色（如 #e0f6dd），得到 %q", c.flag, v)
 		}
 		*c.dst = strings.ToLower(v)
 		used = true

@@ -309,9 +309,67 @@ func readSheetDataInput(cmd *cobra.Command) ([]byte, error) {
 	}
 }
 
+// sheetRangePendingDesc 是 --dry-run 预览中范围子表前缀需在执行时才能确定时的步骤说明。
+const sheetRangePendingDesc = "范围的子表前缀在执行时确定：子表名换算为 sheetId；未带前缀时按 --sheet-name 或唯一子表补全"
+
+// previewSheetRange 离线推算 --dry-run 预览中的范围，可离线确定的部分与执行时 qualifyRange 的结果一致：
+// 已带前缀且等于 knownSheetID、或未带前缀但有 --sheet-id / URL ?sheet= 时补成「<sheetId>!<A1>」。
+// 需要读取子表列表才能确定的（前缀可能是子表名、--sheet-name、唯一子表、整个子表的名称）原样返回并置 pending=true，
+// 调用方在预览中标注 sheetRangePendingDesc。参数错误与 qualifyRange 同样报用法错误。
+func previewSheetRange(rangeStr, knownSheetID, sheetName, urlSheetID string) (string, bool, error) {
+	rangeStr = strings.TrimSpace(unescapeSheetRange(rangeStr))
+	knownSheetID = strings.TrimSpace(knownSheetID)
+	sheetName = strings.TrimSpace(sheetName)
+	if rangeStr == "" {
+		return "", false, clierr.Usagef("范围不能为空")
+	}
+	if prefix, rest, ok := client.SplitSheetRangePrefix(rangeStr); ok {
+		return prefix + "!" + rest, prefix != knownSheetID, nil
+	}
+	if strings.ContainsAny(rangeStr, "!！") {
+		return "", false, clierr.Usagef("范围 %q 格式错误：子表前缀或单元格部分为空", rangeStr)
+	}
+	if rangeStr == knownSheetID {
+		return rangeStr, false, nil
+	}
+	if !client.LooksLikeA1Range(rangeStr) {
+		return rangeStr, true, nil
+	}
+	switch {
+	case knownSheetID != "":
+		return knownSheetID + "!" + rangeStr, false, nil
+	case sheetName != "":
+		return rangeStr, true, nil
+	case urlSheetID != "":
+		return urlSheetID + "!" + rangeStr, false, nil
+	}
+	return rangeStr, true, nil
+}
+
+// previewSheetRanges 对多个范围逐个调用 previewSheetRange，任一 pending 即返回 pending=true。
+func previewSheetRanges(ranges []string, knownSheetID, urlSheetID string) ([]string, bool, error) {
+	out := make([]string, len(ranges))
+	pending := false
+	for i, r := range ranges {
+		q, p, err := previewSheetRange(r, knownSheetID, "", urlSheetID)
+		if err != nil {
+			return nil, false, err
+		}
+		out[i] = q
+		pending = pending || p
+	}
+	return out, pending, nil
+}
+
 // sheetDryRunIfRequested 处理写命令的 --dry-run：离线解析表格参数并打印单步请求计划，不读凭据、不联网。
-// 未传 --dry-run 时返回 handled=false。范围里的子表名前缀在执行时才换算为 sheetId，预览按原样展示。
+// 未传 --dry-run 时返回 handled=false。请求里带范围的命令先用 previewSheetRange 规整，
+// 并通过 sheetDryRunWithStepDesc 标注执行时才能确定的子表前缀。
 func sheetDryRunIfRequested(cmd *cobra.Command, rawToken, argName, desc string, extra map[string]any, method, urlFormat string, body map[string]any) (bool, error) {
+	return sheetDryRunWithStepDesc(cmd, rawToken, argName, desc, "", extra, method, urlFormat, body)
+}
+
+// sheetDryRunWithStepDesc 与 sheetDryRunIfRequested 相同，stepDesc 非空时写入请求步骤的 desc。
+func sheetDryRunWithStepDesc(cmd *cobra.Command, rawToken, argName, desc, stepDesc string, extra map[string]any, method, urlFormat string, body map[string]any) (bool, error) {
 	if dryRun, _ := cmd.Flags().GetBool("dry-run"); !dryRun {
 		return false, nil
 	}
@@ -330,6 +388,7 @@ func sheetDryRunIfRequested(cmd *cobra.Command, rawToken, argName, desc string, 
 	return true, printDryRunPlan(cmd, desc, plan, []dryRunStep{{
 		Method: method,
 		URL:    fmt.Sprintf(urlFormat, token),
+		Desc:   stepDesc,
 		Body:   body,
 	}})
 }
