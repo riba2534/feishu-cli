@@ -22,7 +22,7 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 | 静态画板：SVG/Mermaid/PlantUML 导入、手写节点、取回源码、克隆、质检、导出 | `references/workflows/board/workflow.md` |
 | Slides 幻灯片/PPT：创建、读 XML、按页增删改、截图预览、上传图片 | `references/workflows/slides/workflow.md` |
 | 文档内动态、交互、CSS/JS、ECharts、3D、window.magic 小程序 | `references/workflows/htmlbox/workflow.md` |
-| 妙搭 HTML 应用：创建、发布、查发布状态、访问范围 | `references/workflows/apps/workflow.md` |
+| 妙搭 HTML 应用：创建、修改（含图标）、删除、发布与按分支发布、查发布状态、功能开关、访问范围 | `references/workflows/apps/workflow.md` |
 
 ## 载体边界
 
@@ -37,7 +37,7 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 1. **身份**：board、`doc htmlbox`、slides 的写命令默认 Bot；操作用户已有的文档、画板或演示文稿时显式传
    `--user-access-token`（或 `FEISHU_USER_ACCESS_TOKEN`）。Slides 新建优先用 User：应用未开通 tenant 的
    `slides:presentation:create` 时 Bot 创建报 99991672（exit 3）。`apps` 全部命令必须 User Token + spark scope。
-2. **破坏性操作先问用户**：`board delete`、`slides delete-slide`、把妙搭应用设为 `--scope public` 前先向用户确认。
+2. **破坏性操作先问用户**：`board delete`、`slides delete-slide`、`apps delete`、把妙搭应用设为 `--scope public` 前先向用户确认。
    `board import/update/create-notes --overwrite` 会清空整张画板（含其他图表），`board update --overwrite` 先加
    `--snapshot old.json` 留备份；`board delete` 没有确认门禁、立即执行。删除类命令以退出码 10 返回时是在等确认，
    不要自行补 `--yes`，先取得用户同意。

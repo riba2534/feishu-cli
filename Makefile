@@ -107,13 +107,11 @@ release-package:
 run: build
 	./$(BUILD_DIR)/$(BINARY_NAME)
 
-## update-meta: Fetch latest API metadata from open.feishu.cn (build-time embed baseline)
+## update-meta: 从官方 larksuite/cli 仓库的内嵌 catalog 重生成 meta_data.json（OFFICIAL=官方仓库路径）
 update-meta:
-	@echo "Fetching API metadata from open.feishu.cn..."
-	@curl -sS --max-time 10 "https://open.feishu.cn/api/tools/open/api_definition?protocol=meta" | \
-		python3 -c "import sys,json; json.dump(json.load(sys.stdin)['data'], open('internal/registry/meta_data.json','w'), ensure_ascii=False)" \
-		&& echo "Done. $$(wc -c < internal/registry/meta_data.json | tr -d ' ') bytes written."
-	@echo "Runtime overlay still uses the same public endpoint (opt-out: FEISHU_CLI_REMOTE_META=off)."
+	@test -n "$(OFFICIAL)" || (echo "用法: make update-meta OFFICIAL=/path/to/larksuite/cli [ALLOW_REMOVE='--allow-remove a.b.c']"; exit 2)
+	scripts/sync_official_catalog.py "$(OFFICIAL)" --output internal/registry/meta_data.json $(ALLOW_REMOVE)
+	@echo "重生成后同步 internal/registry/catalog_snapshot_test.go 的 service/method 计数。运行时 overlay 仍可用 FEISHU_CLI_REMOTE_META=off 关闭。"
 
 ## init-config: Initialize configuration file
 init-config: build
