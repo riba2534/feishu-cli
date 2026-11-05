@@ -9,7 +9,6 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 )
 
 // runCondFormatCmd 与 runSheetCmdForTest 相同，但 flag 按顺序设置（--formula/--range 可重复）。
@@ -29,14 +28,7 @@ func runCondFormatCmd(t *testing.T, c *cobra.Command, args []string, flags [][2]
 
 // resetCondFormatFlags 复位 flag；StringArray 的 DefValue 是 "[]"，Set 会追加，需用 Replace 清空。
 func resetCondFormatFlags(c *cobra.Command) {
-	c.Flags().VisitAll(func(f *pflag.Flag) {
-		if sv, ok := f.Value.(pflag.SliceValue); ok {
-			_ = sv.Replace(nil)
-		} else {
-			_ = f.Value.Set(f.DefValue)
-		}
-		f.Changed = false
-	})
+	resetFlagValues(c.Flags())
 }
 
 func condFormatOf(t *testing.T, body []byte) (string, map[string]any) {

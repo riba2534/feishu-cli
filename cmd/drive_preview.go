@@ -294,16 +294,6 @@ var drivePreviewCmd = &cobra.Command{
 	},
 }
 
-// printDryRunJSON 以与 printDryRunPlan 相同的 JSON 结构输出预览。drive preview/cover 的 -o 是保存路径，
-// 不能复用 printDryRunPlan（它把 --output 当输出格式）。
-func printDryRunJSON(desc string, extra map[string]any, steps []dryRunStep) error {
-	plan := map[string]any{"dry_run": true, "desc": desc, "api": steps}
-	for k, v := range extra {
-		plan[k] = v
-	}
-	return printJSON(plan)
-}
-
 // downloadDrivePreview 下载 preview_type 指定的产物。服务端返回空 body（Content-Length: 0）时报错且不写文件。
 func downloadDrivePreview(fileToken, typeCode, typeName, version, output string, overwrite bool, token string) error {
 	params := url.Values{"preview_type": {typeCode}}

@@ -3,6 +3,7 @@ package event
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -90,13 +91,13 @@ func TestKeyDefinition_ScopesContainsExpected(t *testing.T) {
 	if len(def.Scopes) == 0 {
 		t.Fatal("im.message.receive_v1 应至少有一个 scope")
 	}
-	if !containsString(def.Scopes, "im:message.p2p_msg:readonly") {
+	if !slices.Contains(def.Scopes, "im:message.p2p_msg:readonly") {
 		t.Fatalf("im.message.receive_v1 scopes = %v, want im:message.p2p_msg:readonly", def.Scopes)
 	}
-	if !containsString(def.AuthTypes, "bot") {
+	if !slices.Contains(def.AuthTypes, "bot") {
 		t.Fatalf("im.message.receive_v1 auth_types = %v, want bot", def.AuthTypes)
 	}
-	if !containsString(def.RequiredConsoleEvents, "im.message.receive_v1") {
+	if !slices.Contains(def.RequiredConsoleEvents, "im.message.receive_v1") {
 		t.Fatalf("im.message.receive_v1 console events = %v, want im.message.receive_v1", def.RequiredConsoleEvents)
 	}
 }
@@ -106,10 +107,10 @@ func TestIMKeyDefinitionsIncludeOfficialMetadata(t *testing.T) {
 		if !strings.HasPrefix(def.Key, "im.") {
 			continue
 		}
-		if !containsString(def.AuthTypes, "bot") {
+		if !slices.Contains(def.AuthTypes, "bot") {
 			t.Errorf("%s AuthTypes = %v, want bot", def.Key, def.AuthTypes)
 		}
-		if !containsString(def.RequiredConsoleEvents, def.EventType) {
+		if !slices.Contains(def.RequiredConsoleEvents, def.EventType) {
 			t.Errorf("%s RequiredConsoleEvents = %v, want %s", def.Key, def.RequiredConsoleEvents, def.EventType)
 		}
 	}
@@ -214,13 +215,13 @@ func TestVCEventKeyCatalogOfficial(t *testing.T) {
 		if def.Domain != "vc" {
 			t.Errorf("%s Domain = %q, want vc", key, def.Domain)
 		}
-		if !containsString(def.Scopes, w.scope) {
+		if !slices.Contains(def.Scopes, w.scope) {
 			t.Errorf("%s Scopes = %v, want %s", key, def.Scopes, w.scope)
 		}
-		if !containsString(def.AuthTypes, "user") {
+		if !slices.Contains(def.AuthTypes, "user") {
 			t.Errorf("%s AuthTypes = %v, want user", key, def.AuthTypes)
 		}
-		if !containsString(def.RequiredConsoleEvents, key) {
+		if !slices.Contains(def.RequiredConsoleEvents, key) {
 			t.Errorf("%s RequiredConsoleEvents = %v", key, def.RequiredConsoleEvents)
 		}
 		if def.SubscribePath != w.subPath {

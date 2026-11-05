@@ -167,6 +167,14 @@ func NormalizeOKRWeights(items []OKRItem, ops []OKRWeightOp) ([]OKRWeightResult,
 	return out, nil
 }
 
+// OKRLevelPath 返回周期下目标列表或目标下关键结果列表的路径；权重 / 排序写入在其后追加 _weight / _position。
+func OKRLevelPath(level, cycleID, objectiveID string) string {
+	if level == OKRLevelObjective {
+		return "/open-apis/okr/v2/cycles/" + url.PathEscape(cycleID) + "/objectives"
+	}
+	return "/open-apis/okr/v2/objectives/" + url.PathEscape(objectiveID) + "/key_results"
+}
+
 // OKRWeightRequest 构造权重更新请求（PUT 完整列表）
 func OKRWeightRequest(level, cycleID, objectiveID string, weights []OKRWeightResult) *OKRWriteRequest {
 	if level == OKRLevelObjective {
@@ -174,13 +182,13 @@ func OKRWeightRequest(level, cycleID, objectiveID string, weights []OKRWeightRes
 		for _, w := range weights {
 			list = append(list, map[string]any{"objective_id": w.ID, "weight": w.Weight})
 		}
-		return &OKRWriteRequest{Method: "PUT", Path: "/open-apis/okr/v2/cycles/" + url.PathEscape(cycleID) + "/objectives_weight", Body: map[string]any{"objective_weights": list}}
+		return &OKRWriteRequest{Method: "PUT", Path: OKRLevelPath(level, cycleID, objectiveID) + "_weight", Body: map[string]any{"objective_weights": list}}
 	}
 	list := make([]any, 0, len(weights))
 	for _, w := range weights {
 		list = append(list, map[string]any{"key_result_id": w.ID, "weight": w.Weight})
 	}
-	return &OKRWriteRequest{Method: "PUT", Path: "/open-apis/okr/v2/objectives/" + url.PathEscape(objectiveID) + "/key_results_weight", Body: map[string]any{"key_result_weights": list}}
+	return &OKRWriteRequest{Method: "PUT", Path: OKRLevelPath(level, cycleID, objectiveID) + "_weight", Body: map[string]any{"key_result_weights": list}}
 }
 
 // ---------------------------------------------------------------- 排序
@@ -264,9 +272,9 @@ func BuildOKRReorderedIDs(items []OKRItem, ops []OKRReorderOp) ([]string, error)
 // OKRReorderRequest 构造排序请求（PUT 完整 ID 列表）
 func OKRReorderRequest(level, cycleID, objectiveID string, ids []string) *OKRWriteRequest {
 	if level == OKRLevelObjective {
-		return &OKRWriteRequest{Method: "PUT", Path: "/open-apis/okr/v2/cycles/" + url.PathEscape(cycleID) + "/objectives_position", Body: map[string]any{"objective_ids": ids}}
+		return &OKRWriteRequest{Method: "PUT", Path: OKRLevelPath(level, cycleID, objectiveID) + "_position", Body: map[string]any{"objective_ids": ids}}
 	}
-	return &OKRWriteRequest{Method: "PUT", Path: "/open-apis/okr/v2/objectives/" + url.PathEscape(objectiveID) + "/key_results_position", Body: map[string]any{"key_result_ids": ids}}
+	return &OKRWriteRequest{Method: "PUT", Path: OKRLevelPath(level, cycleID, objectiveID) + "_position", Body: map[string]any{"key_result_ids": ids}}
 }
 
 // ListOKRLevelItems 读取周期下的目标或目标下的关键结果（权重 / 排序计算用）

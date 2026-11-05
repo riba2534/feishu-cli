@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -125,10 +126,10 @@ func TestNewKeysNotInCommonAckList(t *testing.T) {
 		"board.whiteboard.updated_v1", "mail.user_mailbox.event.message_received_v1"}
 	for _, k := range newKeys {
 		mustLookup(t, k)
-		if containsString(commonAckEventTypes, k) {
+		if slices.Contains(commonAckEventTypes, k) {
 			t.Errorf("%s 已注册为 EventKey，应从 commonAckEventTypes 移出", k)
 		}
-		if !containsString(ackOnlyEventTypes(), k) {
+		if !slices.Contains(ackOnlyEventTypes(), k) {
 			t.Errorf("%s 仍应在 ACK 集合内（来自 keyRegistry）", k)
 		}
 	}

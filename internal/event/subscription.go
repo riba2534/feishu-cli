@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -68,7 +69,7 @@ func ParseParams(defs []KeyDefinition, raw []string) (map[string]string, error) 
 			values = splitMulti(v)
 		}
 		for _, one := range values {
-			if !containsString(p.Values, one) {
+			if !slices.Contains(p.Values, one) {
 				return nil, fmt.Errorf("--param %s 取值 %q 无效（可选: %s）", name, one, strings.Join(p.Values, ", "))
 			}
 		}
@@ -122,7 +123,7 @@ func SubscriptionPlan(def KeyDefinition, params map[string]string) ([]Subscripti
 		want := splitMulti(selected)
 		filtered := bodies[:0:0]
 		for _, b := range bodies {
-			if containsString(want, b["subscription_type"]) {
+			if slices.Contains(want, b["subscription_type"]) {
 				filtered = append(filtered, b)
 			}
 		}
@@ -245,18 +246,9 @@ func splitMulti(v string) []string {
 func dedupInOrder(values, order []string) []string {
 	var out []string
 	for _, o := range order {
-		if containsString(values, o) {
+		if slices.Contains(values, o) {
 			out = append(out, o)
 		}
 	}
 	return out
-}
-
-func containsString(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }

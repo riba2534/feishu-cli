@@ -29,10 +29,7 @@ func visualAsChanged(cmd *cobra.Command) bool {
 // resolveVisualWriteToken 解析 slides / board 写命令的身份。返回空串表示 App Token。
 // 调用顺序：validateIdentityAs（dry-run 之前）→ config.Validate（dry-run 之后）→ 本函数。
 func resolveVisualWriteToken(cmd *cobra.Command) (string, error) {
-	if !visualAsChanged(cmd) {
-		return resolveOptionalUserToken(cmd), nil
-	}
-	return resolveIdentityToken(cmd)
+	return resolveIdentityWithLegacyDefault(cmd, legacyBotUnlessExplicitUserToken)
 }
 
 // visualDryRunIdentity 在显式传了 --as 时返回 dry-run 预览要展示的身份（不解析、不刷新 token）。

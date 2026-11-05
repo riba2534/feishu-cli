@@ -55,6 +55,19 @@ func runCLI(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	return string(ob), string(eb), err
 }
 
+// resetFlagValues 把 fs 里所有 flag 复位到默认值并清除 Changed 标记。
+// Slice / Array 类 flag 的 Set 是追加语义，Set(DefValue) 会把字面量 "[]" 追加成一个元素，必须用 Replace 清空。
+func resetFlagValues(fs *pflag.FlagSet) {
+	fs.VisitAll(func(f *pflag.Flag) {
+		if sv, ok := f.Value.(pflag.SliceValue); ok {
+			_ = sv.Replace(nil)
+		} else {
+			_ = f.Value.Set(f.DefValue)
+		}
+		f.Changed = false
+	})
+}
+
 // resetCommandTreeFlags 把整棵命令树的 flag 复位到默认值并清除 Changed 标记。
 func resetCommandTreeFlags(cmd *cobra.Command) {
 	reset := func(f *pflag.Flag) {
