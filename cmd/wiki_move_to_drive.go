@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"time"
 
@@ -33,6 +34,7 @@ wiki move-docs（云盘 → 知识库）的反向操作。
   --folder-token        目标云盘文件夹 token；省略则移动到调用方个人空间根目录
   --wait                是否轮询等待任务完成（默认 true；传 --wait=false 时提交后立即返回 task_id）
   --timeout             轮询最长等待秒数（默认 60）
+  --dry-run             只打印将要发出的请求（不读取凭据、不联网）
   --output / -o         输出格式（json）
   --user-access-token   User Access Token（覆盖登录态；移动到个人空间根目录通常需要用户身份）
 
@@ -69,6 +71,18 @@ wiki move-docs（云盘 → 知识库）的反向操作。
 		}
 		if timeout <= 0 {
 			timeout = 60
+		}
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			body := map[string]any{}
+			if folderToken != "" {
+				body["folder_token"] = folderToken
+			}
+			steps := []dryRunStep{{Method: "POST", URL: fmt.Sprintf("/open-apis/wiki/v2/nodes/%s/move_wiki_to_docs", url.PathEscape(nodeToken)), Body: body}}
+			if wait {
+				steps = append(steps, dryRunStep{Method: "GET", URL: "/open-apis/wiki/v2/tasks/<task_id>", Params: map[string]any{"task_type": "move_wiki_to_docs"}, Desc: "Poll async task until done or timeout"})
+			}
+			return printDryRunPlan(cmd, "Move wiki node out to Drive folder", map[string]any{"node_token": nodeToken}, steps)
 		}
 
 		if err := config.Validate(); err != nil {
@@ -221,6 +235,7 @@ func init() {
 	wikiMoveToDriveCmd.Flags().String("folder-token", "", "目标云盘文件夹 token（省略则移动到个人空间根目录）")
 	wikiMoveToDriveCmd.Flags().Bool("wait", true, "是否轮询等待任务完成（默认 true）")
 	wikiMoveToDriveCmd.Flags().Int("timeout", 60, "轮询最长等待秒数（默认 60）")
+	wikiMoveToDriveCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	wikiMoveToDriveCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	wikiMoveToDriveCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(wikiMoveToDriveCmd, "node-token")

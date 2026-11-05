@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -16,6 +17,7 @@ var updateWikiNodeCmd = &cobra.Command{
 参数:
   node_token    节点 Token（必填）
   --title       新标题（必填）
+  --dry-run     只打印将要发出的请求（不读取凭据、不联网；space_id 以占位符表示）
 
 注意:
   - 此接口需要先获取节点所在的知识空间 ID
@@ -26,15 +28,22 @@ var updateWikiNodeCmd = &cobra.Command{
   feishu-cli wiki update wikcnXXXXXX --title "新标题"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		nodeToken, err := extractWikiLookupToken(args[0])
+		if err != nil {
+			return clierr.Usage(err)
+		}
+		title, _ := cmd.Flags().GetString("title")
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Update wiki node title", map[string]any{"node_token": nodeToken}, []dryRunStep{
+				{Method: "GET", URL: client.WikiNodeByTokenPath, Params: map[string]any{"token": nodeToken}, Desc: "Resolve space_id and real node_token"},
+				{Method: "POST", URL: "/open-apis/wiki/v2/spaces/<space_id>/nodes/<node_token>/update_title", Body: map[string]any{"title": title}},
+			})
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
-
-		nodeToken, err := extractWikiLookupToken(args[0])
-		if err != nil {
-			return err
-		}
-		title, _ := cmd.Flags().GetString("title")
 
 		// 先通过 node_by_token 获取 space_id 与真实 node_token（输入可能是文档 obj_token）
 		token := resolveOptionalUserToken(cmd)
@@ -59,6 +68,7 @@ var updateWikiNodeCmd = &cobra.Command{
 func init() {
 	wikiCmd.AddCommand(updateWikiNodeCmd)
 	updateWikiNodeCmd.Flags().String("title", "", "新标题（必填）")
+	updateWikiNodeCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	mustMarkFlagRequired(updateWikiNodeCmd, "title")
 	updateWikiNodeCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问个人知识库）")
 }

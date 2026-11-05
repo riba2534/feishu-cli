@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -25,6 +26,7 @@ var moveDocsToWikiCmd = &cobra.Command{
   --obj-type            文档类型：docx/doc/sheet/mindnote/bitable/file（默认 docx）
   --parent-node         目标父节点 Token（可选，不指定则挂在空间根目录）
   --apply               无权限时提交迁入申请（默认 false）
+  --dry-run             只打印将要发出的请求（不读取凭据、不联网）
   --user-access-token   User Access Token（可选，用于访问个人知识库）
 
 权限要求:
@@ -53,16 +55,28 @@ var moveDocsToWikiCmd = &cobra.Command{
   feishu-cli wiki move-docs doccnXXXXXX --space-id 7012345678901234567 --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		objToken := args[0]
 		spaceID, _ := cmd.Flags().GetString("space-id")
 		objType, _ := cmd.Flags().GetString("obj-type")
 		parentNode, _ := cmd.Flags().GetString("parent-node")
 		apply, _ := cmd.Flags().GetBool("apply")
 		output, _ := cmd.Flags().GetString("output")
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			body := map[string]any{"obj_type": objType, "obj_token": objToken, "apply": apply}
+			if parentNode != "" {
+				body["parent_wiki_token"] = parentNode
+			}
+			return printDryRunPlan(cmd, "Move Drive document into wiki space", nil, []dryRunStep{{
+				Method: "POST",
+				URL:    fmt.Sprintf("/open-apis/wiki/v2/spaces/%s/nodes/move_docs_to_wiki", url.PathEscape(spaceID)),
+				Body:   body,
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 
 		userToken := resolveOptionalUserToken(cmd)
 		moveDocsIdentity := "bot"
@@ -112,6 +126,7 @@ func init() {
 	moveDocsToWikiCmd.Flags().String("obj-type", "docx", "文档类型：docx/doc/sheet/mindnote/bitable/file")
 	moveDocsToWikiCmd.Flags().String("parent-node", "", "目标父节点 Token（可选）")
 	moveDocsToWikiCmd.Flags().Bool("apply", false, "无权限时提交迁入申请")
+	moveDocsToWikiCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	moveDocsToWikiCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	moveDocsToWikiCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问个人知识库）")
 	mustMarkFlagRequired(moveDocsToWikiCmd, "space-id")

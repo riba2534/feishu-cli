@@ -32,6 +32,7 @@ var wikiDeleteSpaceCmd = &cobra.Command{
   --as                   身份: bot|user|auto（默认 auto：User 优先，未配置 User 时用 Bot；
                          已配置 User 但解析/刷新失败时 fail-closed 报错，不会静默降级为 Bot）
   --output / -o          输出格式（json）
+  --dry-run              只打印将要发出的请求（不读取凭据、不联网，无需 --yes）
   --user-access-token    覆盖登录态
 
 权限:
@@ -54,6 +55,13 @@ var wikiDeleteSpaceCmd = &cobra.Command{
 		}
 		yes, _ := cmd.Flags().GetBool("yes")
 		output, _ := cmd.Flags().GetString("output")
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Delete wiki space", map[string]any{"space_id": spaceID}, []dryRunStep{
+				{Method: "DELETE", URL: "/open-apis/wiki/v2/spaces/" + spaceID},
+				{Method: "GET", URL: "/open-apis/wiki/v2/tasks/<task_id>", Params: map[string]any{"task_type": "delete_space"}, Desc: "Poll when task_id is returned"},
+			})
+		}
 
 		if !yes {
 			return clierr.ConfirmationRequiredf("delete-space 是高危且不可逆操作，请加 --yes 确认")
@@ -186,6 +194,7 @@ func printDeleteSpaceResult(result map[string]any, output string) error {
 func init() {
 	wikiCmd.AddCommand(wikiDeleteSpaceCmd)
 	wikiDeleteSpaceCmd.Flags().Bool("yes", false, "确认高危操作（必填）")
+	wikiDeleteSpaceCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	wikiDeleteSpaceCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	wikiDeleteSpaceCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	addAsFlag(wikiDeleteSpaceCmd)

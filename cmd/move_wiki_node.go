@@ -21,6 +21,7 @@ var moveWikiNodeCmd = &cobra.Command{
   node_token       节点 Token（必填，也接受挂载在知识库中的文档 obj_token）
   --target-space   目标知识空间 ID（未传 --target-parent 时必填；传了 --target-parent 时可省略，自动取父节点所在空间）
   --target-parent  目标父节点 Token（可选，不指定则移动到根目录；也接受文档 obj_token）
+  --dry-run        只打印将要发出的请求（不读取凭据、不联网；需解析的值以占位符表示）
 
 校验:
   传了 --target-parent 时，会先通过 node_by_token 解析父节点；若 --target-space 与父节点实际所在空间不一致，
@@ -50,7 +51,7 @@ var moveWikiNodeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		nodeToken, err := extractWikiLookupToken(args[0])
 		if err != nil {
-			return err
+			return clierr.Usage(err)
 		}
 		targetSpace, _ := cmd.Flags().GetString("target-space")
 		targetParent, _ := cmd.Flags().GetString("target-parent")
@@ -60,6 +61,25 @@ var moveWikiNodeCmd = &cobra.Command{
 		targetParent = strings.TrimSpace(targetParent)
 		if targetSpace == "" && targetParent == "" {
 			return clierr.Usagef("--target-space 与 --target-parent 至少传一个（只传 --target-parent 时自动取父节点所在空间）")
+		}
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			steps := []dryRunStep{{Method: "GET", URL: client.WikiNodeByTokenPath, Params: map[string]any{"token": nodeToken}, Desc: "Resolve source node space_id / node_token"}}
+			planSpace := targetSpace
+			body := map[string]any{}
+			if targetParent != "" {
+				steps = append(steps, dryRunStep{Method: "GET", URL: client.WikiNodeByTokenPath, Params: map[string]any{"token": targetParent}, Desc: "Resolve target parent node and verify target space"})
+				body["target_parent_token"] = "<parent_node_token>"
+				if planSpace == "" {
+					planSpace = "<parent_space_id>"
+				}
+			}
+			if targetSpace == wikiMyLibrarySpaceID && targetParent != "" {
+				steps = append(steps, dryRunStep{Method: "GET", URL: "/open-apis/wiki/v2/spaces/my_library", Desc: "Resolve my_library alias (User only)"})
+			}
+			body["target_space_id"] = planSpace
+			steps = append(steps, dryRunStep{Method: "POST", URL: "/open-apis/wiki/v2/spaces/<space_id>/nodes/<node_token>/move", Body: body})
+			return printDryRunPlan(cmd, "Move wiki node", map[string]any{"node_token": nodeToken}, steps)
 		}
 
 		if err := config.Validate(); err != nil {
@@ -147,6 +167,7 @@ func init() {
 	wikiCmd.AddCommand(moveWikiNodeCmd)
 	moveWikiNodeCmd.Flags().String("target-space", "", "目标知识空间 ID（未传 --target-parent 时必填）")
 	moveWikiNodeCmd.Flags().String("target-parent", "", "目标父节点 Token（可选）")
+	moveWikiNodeCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	moveWikiNodeCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	moveWikiNodeCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问个人知识库）")
 }
