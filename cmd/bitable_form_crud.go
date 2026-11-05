@@ -127,6 +127,11 @@ var bitableFormListCmd = &cobra.Command{
 // 因 bitableRun 强制要求 --base-token，这里用独立的 runFormShareToken。
 
 func runFormShareToken(cmd *cobra.Command, segments []string, body any) error {
+	// --format/--jq 在任何请求之前校验（非法即 exit 2），实调与 dry-run 共用同一份选项
+	o, err := bitableOutputOptions(cmd)
+	if err != nil {
+		return err
+	}
 	if err := validateIdentityAs(cmd); err != nil {
 		return err
 	}
@@ -135,10 +140,6 @@ func runFormShareToken(cmd *cobra.Command, segments []string, body any) error {
 
 	if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
 		// dry-run 预览尊重 --format/--jq（与实调路径 renderBitableResult 一致）。
-		o, oerr := output.ParseOptions(cmd)
-		if oerr != nil {
-			return clierr.Usage(oerr)
-		}
 		return output.Render(o, map[string]any{
 			"api":    "base/v3",
 			"method": req.method,
@@ -158,7 +159,7 @@ func runFormShareToken(cmd *cobra.Command, segments []string, body any) error {
 	if err != nil {
 		return err
 	}
-	return renderBitableResult(cmd, data)
+	return renderBitableWith(o, data)
 }
 
 var bitableFormDetailCmd = &cobra.Command{

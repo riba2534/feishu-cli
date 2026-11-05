@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -43,6 +44,56 @@ func bitableFieldExtensionPath(cmd *cobra.Command, baseToken string, extra ...st
 	tableID, _ := cmd.Flags().GetString("table-id")
 	fieldID, _ := cmd.Flags().GetString("field-id")
 	return bitableFieldPath(baseToken, strings.TrimSpace(tableID), append([]string{strings.TrimSpace(fieldID), "field_extensions"}, extra...)...)
+}
+
+// resolveBitableTableRef 把 --table-id（名称或 ID）解析为规范 tbl ID：tbl 前缀视为 ID 原样返回，
+// 否则 GET 数据表（base/v3 的表路径接受名称）取规范 ID。update_cells、button_rule 端点路径里不认名称。
+func resolveBitableTableRef(baseToken, tableRef, token string) (string, error) {
+	if strings.HasPrefix(tableRef, "tbl") {
+		return tableRef, nil
+	}
+	table, err := client.BaseV3Call("GET", bitableTablePath(baseToken, tableRef), nil, nil, token)
+	if err != nil {
+		return "", fmt.Errorf("解析 --table-id %q 失败: %w", tableRef, err)
+	}
+	tableID := bitableStr(table, "id", "table_id")
+	if !strings.HasPrefix(tableID, "tbl") {
+		return "", fmt.Errorf("数据表解析响应缺少规范数据表 ID（得到 %q）", tableID)
+	}
+	return tableID, nil
+}
+
+// resolveBitableFieldRef GET 字段把 --field-id（名称或 ID）解析为规范 fld ID。
+func resolveBitableFieldRef(baseToken, tableID, fieldRef, token string) (string, error) {
+	field, err := client.BaseV3Call("GET", bitableFieldPath(baseToken, tableID, fieldRef), nil, nil, token)
+	if err != nil {
+		return "", err
+	}
+	fieldID := bitableStr(field, "id", "field_id")
+	if !strings.HasPrefix(fieldID, "fld") {
+		return "", fmt.Errorf("字段解析响应缺少规范字段 ID（得到 %q）", fieldID)
+	}
+	return fieldID, nil
+}
+
+// bitableResolveSteps 构造「名称→规范 ID→目标调用」的 dry-run 计划：
+// --table-id 非 tbl 前缀时先加一步数据表解析，再解析字段，最后是目标调用（target 的 path 由 tablePath 回调生成）。
+func bitableResolveSteps(baseToken, tableRef, fieldRef string, target func(fieldPath string) map[string]any) []map[string]any {
+	var steps []map[string]any
+	tablePath := bitableTablePath(baseToken, tableRef)
+	if !strings.HasPrefix(tableRef, "tbl") {
+		steps = append(steps, map[string]any{"method": "GET", "path": tablePath, "desc": "把 --table-id（数据表名称）解析为规范 tbl ID"})
+		// 占位符不经 PathEscape，与 <resolved_field_id> 保持同一可读形式
+		tablePath = bitableTablePath(baseToken) + "/<resolved_table_id>"
+	}
+	steps = append(steps,
+		map[string]any{"method": "GET", "path": tablePath + "/fields/" + url.PathEscape(fieldRef), "desc": "把 --field-id（字段名或 ID）解析为规范 fld ID"},
+		target(tablePath+"/fields/<resolved_field_id>"),
+	)
+	for i, st := range steps {
+		st["desc"] = fmt.Sprintf("[%d] %s", i+1, st["desc"])
+	}
+	return steps
 }
 
 // requireTableAndField 本地校验 --table-id / --field-id 非空白（cobra required 只拦未传，不拦空白）。
@@ -196,12 +247,17 @@ var bitableFieldExtensionUpdateCellsCmd = &cobra.Command{
   --type column   整列重算（可用 --view-id 限定视图内可见记录）；会改写视图内每条记录的该字段
   --type row      指定行重算（--record-id 可重复，必填）
 
+update_cells 端点路径只认规范 ID：--table-id / --field-id 传名称时，CLI 先 GET 数据表 / 字段
+解析出 tbl / fld ID 再提交（tbl 前缀的 --table-id 视为 ID，不再解析）。
+
 会批量改写单元格，属于高危写操作：交互终端会二次确认；非交互环境必须加 --yes，否则 exit 10。
-scope: base:record:update
+scope: base:table:read、base:field:read、base:record:update
 
 示例:
   feishu-cli bitable field extension update-cells --base-token bascnxxx --table-id tblxxx --field-id fldxxx --type column --view-id vewxxx --yes
-  feishu-cli bitable field extension update-cells --base-token bascnxxx --table-id tblxxx --field-id fldxxx --type row --record-id recA --record-id recB --yes`,
+  feishu-cli bitable field extension update-cells --base-token bascnxxx --table-id tblxxx --field-id fldxxx --type row --record-id recA --record-id recB --yes
+  # 名称同样可用（先解析为规范 ID）
+  feishu-cli bitable field extension update-cells --base-token bascnxxx --table-id 任务 --field-id AI总结 --type column --yes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireTableAndField(cmd); err != nil {
 			return err
@@ -210,15 +266,34 @@ scope: base:record:update
 		if err != nil {
 			return err
 		}
-		fieldID, _ := cmd.Flags().GetString("field-id")
+		tableRef, _ := cmd.Flags().GetString("table-id")
+		tableRef = strings.TrimSpace(tableRef)
+		fieldRef, _ := cmd.Flags().GetString("field-id")
+		fieldRef = strings.TrimSpace(fieldRef)
+		resolvedBT := ""
 		return bitableExecuteConfirmed(cmd, func(bt string) bitableReq {
-			return bitableReq{method: "POST", path: bitableFieldExtensionPath(cmd, bt, "update_cells"), body: body}
+			resolvedBT = bt
+			// update_cells 路径只认 tbl/fld ID：先把名称解析为规范 ID（与 button-rule 一致）
+			steps := bitableResolveSteps(bt, tableRef, fieldRef, func(fieldPath string) map[string]any {
+				return map[string]any{"method": "POST", "path": fieldPath + "/field_extensions/update_cells", "body": body, "desc": "用规范 ID 触发重算"}
+			})
+			return bitableReq{method: "POST", path: bitableFieldExtensionPath(cmd, bt, "update_cells"), body: body, steps: steps}
 		}, func(bitableReq) string {
 			if body["type"] == "column" {
-				return fmt.Sprintf("确认对字段 %s 整列重算（会改写视图内全部记录的该字段）？", strings.TrimSpace(fieldID))
+				return fmt.Sprintf("确认对字段 %s 整列重算（会改写视图内全部记录的该字段）？", fieldRef)
 			}
-			return fmt.Sprintf("确认对字段 %s 的 %d 条记录重算？", strings.TrimSpace(fieldID), len(body["record_ids"].([]string)))
-		}, nil)
+			return fmt.Sprintf("确认对字段 %s 的 %d 条记录重算？", fieldRef, len(body["record_ids"].([]string)))
+		}, func(req bitableReq, token string) (any, error) {
+			tableID, err := resolveBitableTableRef(resolvedBT, tableRef, token)
+			if err != nil {
+				return nil, err
+			}
+			fieldID, err := resolveBitableFieldRef(resolvedBT, tableID, fieldRef, token)
+			if err != nil {
+				return nil, err
+			}
+			return client.BaseV3Call("POST", bitableFieldPath(resolvedBT, tableID, fieldID, "field_extensions", "update_cells"), nil, req.body, token)
+		})
 	},
 }
 
@@ -266,6 +341,7 @@ func buildFieldExtensionUpdateCellsBody(cmd *cobra.Command) (map[string]any, err
 
 // ==================== field button-rule：按钮字段与工作流绑定 ====================
 // 对齐官方 base +button-rule-bind/get/unbind（shortcuts/base/button_rule.go）：
+//   [0] GET /bases/{bt}/tables/{table}               --table-id 不是 tbl 前缀时解析为规范 tbl ID（button_rule 路径不认表名）
 //   [1] GET /bases/{bt}/tables/{tid}/fields/{field}   把 --field-id（字段名或 ID）解析为规范 fld ID
 //   [2] PUT|GET /bases/{bt}/tables/{tid}/fields/{fld}/button_rule   body {workflow_id}（unbind 传空串）
 
@@ -281,7 +357,9 @@ func newButtonRuleCmd(action string) *cobra.Command {
 		c.Short = "把按钮字段绑定到工作流（点按钮触发该工作流）"
 		c.Long = `PUT /open-apis/base/v3/bases/{base_token}/tables/{table_id}/fields/{field_id}/button_rule  body {"workflow_id":"wkf..."}
 
-先 GET 字段把 --field-id（字段名或 ID）解析成规范 fld ID，再写绑定。
+先 GET 字段把 --field-id（字段名或 ID）解析成规范 fld ID，再写绑定；--table-id 传表名时先 GET 数据表解析出 tbl ID。
+按钮字段用 field create 新建，button_config.title 必填（只传 type=button 报 800010701 Required）:
+  --config '{"name":"审批按钮","type":"button","button_config":{"title":"点击按钮"}}'
 --workflow-id 必须是 workflow create/list 返回的公开 wkf 前缀 ID（不是内部数字 ID）。
 绑定与工作流启停无关：绑定后用 button-rule get 读回确认，需要生效时再 workflow enable。
 绑定失败时保留已建的工作流和字段，直接重试本命令，不要重建。
@@ -336,36 +414,33 @@ scope: base:field:read、base:field:update
 		resolvedBT := ""
 		return bitableExecute(cmd, func(bt string) bitableReq {
 			resolvedBT = bt
-			second := map[string]any{
-				"method": method,
-				"path":   bitableFieldPath(bt, tableID) + "/<resolved_field_id>/button_rule",
-				"desc":   "[2] 用第 1 步返回的规范字段 ID 读写按钮绑定",
-			}
-			if body != nil {
-				second["body"] = body
-			}
+			// button_rule 路径只认 tbl ID：--table-id 传表名时先解析（字段 GET 本身接受表名）
+			steps := bitableResolveSteps(bt, tableID, fieldRef, func(fieldPath string) map[string]any {
+				last := map[string]any{"method": method, "path": fieldPath + "/button_rule", "desc": "用规范 ID 读写按钮绑定"}
+				if body != nil {
+					last["body"] = body
+				}
+				return last
+			})
 			req := bitableReq{
 				method: method,
 				path:   bitableFieldPath(bt, tableID, fieldRef),
-				steps: []map[string]any{
-					{"method": "GET", "path": bitableFieldPath(bt, tableID, fieldRef), "desc": "[1] 把 --field-id（字段名或 ID）解析为规范 fld ID"},
-					second,
-				},
+				steps:  steps,
 			}
 			if body != nil {
 				req.body = body // 避免 GET 带上 typed-nil body
 			}
 			return req
 		}, func(req bitableReq, token string) (any, error) {
-			field, err := client.BaseV3Call("GET", req.path, nil, nil, token)
+			resolvedTable, err := resolveBitableTableRef(resolvedBT, tableID, token)
 			if err != nil {
 				return nil, err
 			}
-			fieldID := bitableStr(field, "id", "field_id")
-			if !strings.HasPrefix(fieldID, "fld") {
-				return nil, fmt.Errorf("字段解析响应缺少规范字段 ID（得到 %q）", fieldID)
+			fieldID, err := resolveBitableFieldRef(resolvedBT, resolvedTable, fieldRef, token)
+			if err != nil {
+				return nil, err
 			}
-			return client.BaseV3Call(req.method, bitableFieldPath(resolvedBT, tableID, fieldID, "button_rule"), nil, req.body, token)
+			return client.BaseV3Call(req.method, bitableFieldPath(resolvedBT, resolvedTable, fieldID, "button_rule"), nil, req.body, token)
 		})
 	}
 	return c

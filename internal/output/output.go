@@ -91,13 +91,18 @@ func NewOptions(format, jq string) (*Options, error) {
 	return &Options{Format: format, JQ: jq}, nil
 }
 
-// ValidateJQ 在发网前校验 jq 表达式语法；空表达式视为未启用。
+// ValidateJQ 在发网前校验 jq 表达式；空表达式视为未启用。
+// 除语法外还做编译（与渲染时 query.Run 的隐式编译一致），未定义函数/变量（如误写 -r → r/0）也在发网前拦下。
 func ValidateJQ(expr string) error {
 	if strings.TrimSpace(expr) == "" {
 		return nil
 	}
-	if _, err := gojq.Parse(expr); err != nil {
+	query, err := gojq.Parse(expr)
+	if err != nil {
 		return fmt.Errorf("jq 表达式解析失败: %w", err)
+	}
+	if _, err := gojq.Compile(query); err != nil {
+		return fmt.Errorf("jq 表达式编译失败: %w", err)
 	}
 	return nil
 }
@@ -154,6 +159,10 @@ func ParseOptions(cmd *cobra.Command) (*Options, error) {
 	}
 	if !isValidFormat(o.Format) {
 		return nil, fmt.Errorf("不支持的 --format %q，可选值: %s", o.Format, strings.Join(validFormats, ", "))
+	}
+	// --jq 与 --format 一样在发请求前校验，避免写命令先执行写入、渲染时才报错
+	if err := ValidateJQ(o.JQ); err != nil {
+		return nil, err
 	}
 	// -o 结果文件：命令通常在发请求前解析选项，此处即拒绝敏感目录（用法错误），写入时另有兜底校验
 	if o.OutputFile != "" {
