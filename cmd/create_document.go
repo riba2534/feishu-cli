@@ -62,10 +62,6 @@ JSON 输出 permission_grant（granted/skipped/failed）；以 User 身份创建
   # 带本地图片、附件、HTML 组件与 Mermaid 画板创建（XML），先预览
   feishu-cli doc create --doc-format xml --content-file report.xml --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		title, _ := cmd.Flags().GetString("title")
 		folder, _ := cmd.Flags().GetString("folder")
 		userAccessToken := resolveOptionalUserToken(cmd)
@@ -89,6 +85,9 @@ JSON 输出 permission_grant（granted/skipped/failed）；以 User 身份创建
 					Desc: "条件：Bot 身份创建成功后，为当前 CLI 登录用户授予 full_access", Params: map[string]any{"type": "docx"}})
 			}
 			return printDryRunPlan(cmd, "doc create 预览：未发送任何请求", nil, steps)
+		}
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		doc, err := client.CreateDocument(title, folder, userAccessToken)

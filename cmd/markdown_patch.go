@@ -36,10 +36,6 @@ var markdownPatchCmd = &cobra.Command{
   feishu-cli markdown patch --file-token boxcnxxx --pattern "TODO" --content "DONE"
   feishu-cli markdown patch --file-token boxcnxxx --regex --pattern "v[0-9]+" --content "v2"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken, _ := cmd.Flags().GetString("file-token")
 		pattern, _ := cmd.Flags().GetString("pattern")
 		useRegex, _ := cmd.Flags().GetBool("regex")
@@ -132,6 +128,10 @@ var markdownPatchCmd = &cobra.Command{
 			return printDryRunPlan(cmd, "Download the current Markdown file, apply the replacement locally, and overwrite only when matches are found", map[string]any{
 				"mode": mode,
 			}, steps)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveIdentityToken(cmd)

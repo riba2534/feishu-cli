@@ -163,9 +163,6 @@ func (t *docResourceTarget) dryRunSteps(steps ...dryRunStep) []dryRunStep {
 func docPath(docID string) string { return "/open-apis/docx/v1/documents/" + docID }
 
 func runDocResourceDownload(cmd *cobra.Command, args []string) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
 	output, _ := cmd.Flags().GetString("output")
 	overwrite, _ := cmd.Flags().GetBool("overwrite")
 	timeoutStr, _ := cmd.Flags().GetString("timeout")
@@ -200,6 +197,10 @@ func runDocResourceDownload(cmd *cobra.Command, args []string) error {
 				dryRunStep{Method: "GET", URL: "/open-apis/drive/v1/medias/<cover.token>/download", Desc: "下载封面图片"},
 			),
 		})
+	}
+
+	if err := config.Validate(); err != nil {
+		return err
 	}
 
 	userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
@@ -246,9 +247,6 @@ type docCoverSource struct {
 }
 
 func runDocResourceUpdate(cmd *cobra.Command, args []string) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
 	filePath, _ := cmd.Flags().GetString("file")
 	rawURL, _ := cmd.Flags().GetString("url")
 	fromClipboard, _ := cmd.Flags().GetBool("from-clipboard")
@@ -342,6 +340,10 @@ func runDocResourceUpdate(cmd *cobra.Command, args []string) error {
 		}
 		src.data = data
 	}
+	if err := config.Validate(); err != nil {
+		return err
+	}
+
 	userAccessToken := resolveOptionalUserToken(cmd)
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {
@@ -389,9 +391,6 @@ func runDocResourceUpdate(cmd *cobra.Command, args []string) error {
 }
 
 func runDocResourceDelete(cmd *cobra.Command, args []string) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	output, _ := cmd.Flags().GetString("output")
 	target, err := parseDocResourceTarget(cmd, args[0])
@@ -404,6 +403,10 @@ func runDocResourceDelete(cmd *cobra.Command, args []string) error {
 			dryRunStep{Method: "PATCH", URL: docPath(target.docID), Desc: "删除文档封面（仅在存在封面时发送）",
 				Body: map[string]any{"update_cover": map[string]any{"cover": nil}}},
 		))
+	}
+
+	if err := config.Validate(); err != nil {
+		return err
 	}
 
 	userAccessToken := resolveOptionalUserToken(cmd)

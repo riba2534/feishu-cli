@@ -538,18 +538,18 @@ func parseDocScriptDecision(raw string) (docScriptDecision, error) {
 	decoder := json.NewDecoder(strings.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&decision); err != nil {
-		return docScriptDecision{}, clierr.Usage(fmt.Errorf("--presentation-decision 必须是合法的 Presentation Decision JSON 对象: %w", err))
+		return docScriptDecision{}, clierr.Usagef("--presentation-decision 必须是合法的 Presentation Decision JSON 对象: %w", err)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		if err == nil {
 			return docScriptDecision{}, docScriptDecisionError("只能包含一个 JSON 对象，当前提供了多个 JSON 值")
 		}
-		return docScriptDecision{}, clierr.Usage(fmt.Errorf("--presentation-decision 只能包含一个 JSON 对象: %w", err))
+		return docScriptDecision{}, clierr.Usagef("--presentation-decision 只能包含一个 JSON 对象: %w", err)
 	}
 	var rawFields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &rawFields); err != nil {
-		return docScriptDecision{}, clierr.Usage(fmt.Errorf("--presentation-decision 必须是合法的 Presentation Decision JSON 对象: %w", err))
+		return docScriptDecision{}, clierr.Usagef("--presentation-decision 必须是合法的 Presentation Decision JSON 对象: %w", err)
 	}
 	if rawFields == nil {
 		return docScriptDecision{}, docScriptDecisionError("必须是 JSON 对象；没有任何约束时传 {}")

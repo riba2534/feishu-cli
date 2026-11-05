@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -41,31 +42,29 @@ func init() {
 }
 
 func runDocTableMergeCells(cmd *cobra.Command, args []string) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
-
 	tableBlockID := args[1]
 	rowStart, _ := cmd.Flags().GetInt("row-start")
 	rowEnd, _ := cmd.Flags().GetInt("row-end")
 	colStart, _ := cmd.Flags().GetInt("col-start")
 	colEnd, _ := cmd.Flags().GetInt("col-end")
 	output, _ := cmd.Flags().GetString("output")
+	if rowStart < 0 || colStart < 0 {
+		return clierr.Usagef("起始索引不能为负数")
+	}
+	if rowEnd <= rowStart {
+		return clierr.Usagef("行结束索引必须大于起始索引")
+	}
+	if colEnd <= colStart {
+		return clierr.Usagef("列结束索引必须大于起始索引")
+	}
+	if err := config.Validate(); err != nil {
+		return err
+	}
 	userAccessToken := resolveOptionalUserToken(cmd)
 	// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {
 		return err
-	}
-
-	if rowStart < 0 || colStart < 0 {
-		return fmt.Errorf("起始索引不能为负数")
-	}
-	if rowEnd <= rowStart {
-		return fmt.Errorf("行结束索引必须大于起始索引")
-	}
-	if colEnd <= colStart {
-		return fmt.Errorf("列结束索引必须大于起始索引")
 	}
 
 	err = client.MergeTableCells(documentID, tableBlockID, rowStart, rowEnd, colStart, colEnd, userAccessToken)
