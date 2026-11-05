@@ -132,3 +132,27 @@ func TestUnsupportedCellAddrs(t *testing.T) {
 		t.Errorf("addrs = %v", addrs)
 	}
 }
+
+// 纯文本读取返回的范围起点与原范围不同时，按下标回填会错位：告警且不回填。
+func TestReadTable_BackfillRangeMismatchSkips(t *testing.T) {
+	warn := captureSheetsWarn(t)
+	rec := &sheetsRecorder{}
+	newSheetsServer(t, rec, func(w http.ResponseWriter, r *http.Request, body []byte) {
+		if strings.HasSuffix(r.URL.Path, "/batch_get_plain") {
+			_, _ = io.WriteString(w, `{"code":0,"msg":"ok","data":{"value_ranges":[{"range":"s1!B3:C4","values":[["任务一","P1"],["任务二","P2"]]}]}}`)
+			return
+		}
+		_, _ = io.WriteString(w, unsupportedRichResp)
+	})
+	res, err := ReadTable(context.Background(), "shtTok", "s1", "B2:C4", false, "u-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh := res.Sheets[0]
+	if sh.Data[0][1] == "任务二" || sh.Data[0][1] == "P2" {
+		t.Fatalf("范围起点不同不得错位回填，得到 %v", sh.Data)
+	}
+	if !strings.Contains(warn.String(), "起点") || !strings.Contains(warn.String(), "C3") {
+		t.Fatalf("应告警并列出单元格地址: %s", warn.String())
+	}
+}

@@ -235,6 +235,13 @@ func backfillUnsupportedCells(ctx context.Context, spreadsheetToken, sheetID, fu
 			len(addrs), strings.Join(addrs, ", "), reason)
 		return
 	}
+	// 两个接口按同一 fullRange 读取；若返回的起点不同（如一侧裁掉了前导空行列），按下标回填会错位，宁可告警不回填
+	gc, gr := rangeOrigin(grid.Range, fullRange)
+	if pc, pr := rangeOrigin(plain[0].Range, fullRange); pc != gc || pr != gr {
+		fmt.Fprintf(sheetsWarnWriter, "警告: %d 个单元格为接口不支持的类型（如下拉框），纯文本读取的范围起点与原范围不一致，未回填，读作空值: %s\n",
+			len(addrs), strings.Join(addrs, ", "))
+		return
+	}
 	values := plain[0].Values
 	var failed []string
 	for k, c := range cells {

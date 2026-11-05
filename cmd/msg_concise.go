@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -226,7 +227,10 @@ func renderPostText(v map[string]any) string {
 }
 
 // replaceMentionKeys 把 @_user_1 这类占位替换为 @名字。
+// 用 strings.Replacer 一次扫描：较长的 key 优先匹配，@_user_1 不会误伤 @_user_10。
 func replaceMentionKeys(s string, mentions []*larkim.Mention) string {
+	type pair struct{ key, name string }
+	var pairs []pair
 	for _, mn := range mentions {
 		if mn == nil {
 			continue
@@ -234,10 +238,18 @@ func replaceMentionKeys(s string, mentions []*larkim.Mention) string {
 		key := client.StringVal(mn.Key)
 		name := client.StringVal(mn.Name)
 		if key != "" && name != "" {
-			s = strings.ReplaceAll(s, key, "@"+name)
+			pairs = append(pairs, pair{key, "@" + name})
 		}
 	}
-	return s
+	if len(pairs) == 0 {
+		return s
+	}
+	sort.SliceStable(pairs, func(i, j int) bool { return len(pairs[i].key) > len(pairs[j].key) })
+	args := make([]string, 0, 2*len(pairs))
+	for _, p := range pairs {
+		args = append(args, p.key, p.name)
+	}
+	return strings.NewReplacer(args...).Replace(s)
 }
 
 // renderHistoryConcise msg history --concise 输出。
