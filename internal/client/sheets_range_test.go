@@ -240,3 +240,16 @@ func TestAppendChunkRangeAndSpan(t *testing.T) {
 		t.Errorf("单范围 span = %q", got)
 	}
 }
+
+// 起止颠倒的范围给出明确原因，不报「只有 -1 行」。
+func TestCheckSheetWriteRangeFits_Reversed(t *testing.T) {
+	for _, r := range []string{"C3:A1", "s1!B2:A1"} {
+		err := CheckSheetWriteRangeFits(r, [][]any{{1}})
+		if err == nil || !strings.Contains(err.Error(), "写反") {
+			t.Fatalf("%s: %v", r, err)
+		}
+	}
+	if err := CheckSheetWriteRangeFits("A1:B2", [][]any{{1, 2}, {3, 4}}); err != nil {
+		t.Fatalf("合法范围不应报错: %v", err)
+	}
+}

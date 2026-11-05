@@ -29,6 +29,7 @@
 | 非法 `--format` / `--jq` 统一为用法错误，gojq 表达式在读配置与凭据之前校验 | 原先部分命令 exit 1，或写命令先执行写入再报错；`api --dry-run --jq '-r'` 0 → 2 | 修正表达式；`event consume` 的点路径 `--jq` 不受影响 |
 | `drive search` 单个位置参数作为关键字 | 原先位置参数被静默忽略、返回不相关结果；多于 1 个或与 `--query` 同用时 exit 2 | 关键字可写成唯一位置参数，或继续用 `--query` |
 | 本地前置校验：`sheet write` 显式范围小于数据、`sheet dropdown delete --ranges` 超过 100、`drive preview --type` 非法取值、`vc bot` 非法 `--as`、`task comment` 非法 ID | 原先联网后由服务端拒绝（exit 1）或先报缺凭据（exit 3），现在联网前 exit 2 | 服务端本就拒绝这些输入，合法调用不受影响 |
+| `msg history` / `thread-messages --concise` 正文行首的列表、标题、引用、分隔线语法加反斜杠转义 | 只影响显式 `--concise` 的输出文本 | 解析 concise 文本的脚本注意转义符；默认 JSON 不变 |
 | 飞书 SDK 日志不再写 stdout；换取 tenant token 的网络错误归为网络错误 | `-o json` 管道不再混入 `[Warn]` 日志；代理/DNS 失败 exit 3 → 4（可重试） | 无需改动 |
 | `slides media-upload` 文件类型/大小检查提前到 wiki 链接解析之前；`doc read --keyword` 正则在导出全文前校验；`doc export --engine docs_ai` 的 `--doc-format/--detail` 在 wiki 解析前校验 | — | 参数错误更早报出，不再先联网 |
 
@@ -43,7 +44,7 @@
 **云文档、画板与 Slides**
 - `slides history list / revert / revert-status`：历史版本与回滚。revert 带确认门禁，`--history-version-id` 须为正整数；`--wait` 按 `poll_after_ms` 只轮询不重放，整体 ≤5 分钟，超时仍 running 时 exit 0 并输出 `wait_timed_out: true`。
 - slides、board 写命令新增 `--as bot|user|auto`（默认 bot）：不传时身份解析与旧版一致，显式 `--as` 时 dry-run 预览多一个 `identity` 字段。
-- `--dry-run`：`doc media-insert`（多步计划，不读剪贴板）、`slides media-upload`、`board delete`、`board create-notes`。
+- `--dry-run`：`doc media-insert`（多步计划，不读剪贴板）、`slides media-upload`、`board delete`（仍无确认门禁，与其他存量删除命令一致，执行前先 `--dry-run`）、`board create-notes`。
 - feishu-cli-visual 技能收录官方 Slides 图表示例、XSD 图表节选与 IconPark 常用图标清单。
 
 **云盘、知识库与权限**
@@ -100,7 +101,7 @@
 - `msg history / thread-messages --concise`：`@_user_1` 不再误伤 `@_user_10`；正文行首的列表、标题、引用、分隔线语法加转义。
 - `sheet table-get` 下拉框回填在两个接口返回的范围起点不一致时告警且不回填，避免错位；`sheet write` / `clear` / `dropdown delete` 的 `--dry-run` 预览范围与真实请求一致（需要子表列表才能确定时在步骤说明中注明）。
 - 新增的覆盖 / 删除类命令补齐确认门禁：`minutes summary`、`minutes todo`（含 delete）、`minutes speaker-replace` / `word-replace`、`sheet cond-format update`。
-- `bitable table copy --wait`：服务端错误不再误报「--task-id 无效」；任务终态失败时提示可重新提交，不再提示续查；`copy-status` 遇到已清理的任务（800030110）给出处理提示。`field extension update-cells`、`field button-rule` 的 `--table-id` / `--field-id` 传名称时先解析为 ID。
+- `bitable table copy --wait`：服务端错误不再误报「--task-id 无效」；任务终态失败时提示可重新提交，不再提示续查；`copy-status` 遇到已清理的任务（800030110）给出处理提示。`field extension update-cells`、`field button-rule` 的 `--table-id` / `--field-id` 传名称时先解析为 ID（update-cells 传规范 tbl/fld ID 时仍只发一个请求，不新增 scope 依赖）。
 - `okr objective batch-create` 拿不到 objective_id 时，错误说明该目标可能残留、需手动清理，不再声称已全部回滚。
 - `calendar --description-format markdown` 不再上传代码块中的图片语法，支持带标题的图片写法。
 

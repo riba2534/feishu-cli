@@ -176,7 +176,8 @@ func errorEnvelope(err error) map[string]any {
 			env["missing_scopes"] = info.MissingScopes
 		}
 	}
-	if !hasAPI || info.Code == 0 || info.LogID == "" {
+	// 用法错误不做文本兜底：其文本常回显用户输入（如 --as "code=99991672"），会被误当成业务码
+	if (!hasAPI || info.Code == 0 || info.LogID == "") && !clierr.HasKind(err, clierr.KindUsage) {
 		// 兜底：apidiag 未记录（如 SDK 内部错误、非受控 Transport）时，从旧式错误文本里取 code=N / log_id=X
 		code, logID := legacyAPIFieldsFromText(err.Error())
 		if _, ok := env["code"]; !ok && code != 0 {

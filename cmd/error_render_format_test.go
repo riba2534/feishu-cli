@@ -194,3 +194,14 @@ func TestErrorRenderJSONViaCLI(t *testing.T) {
 		t.Fatalf("信封不符: %v", e)
 	}
 }
+
+// 用法错误回显的用户输入里即使形如 code=N，也不得被当成业务码写进 JSON 信封。
+func TestErrorEnvelopeUsageErrorNoLegacyCode(t *testing.T) {
+	env := errorEnvelope(clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", "code=99991672"))
+	if _, ok := env["code"]; ok {
+		t.Fatalf("用法错误不应带 code: %v", env)
+	}
+	if env := errorEnvelope(fmt.Errorf("API 失败: code=1254000, msg=bad")); env["code"] != 1254000 {
+		t.Fatalf("旧式 API 错误仍应解析 code: %v", env)
+	}
+}

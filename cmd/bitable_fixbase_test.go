@@ -139,8 +139,9 @@ func TestFieldExtensionUpdateCellsResolvesNames(t *testing.T) {
 	if _, _, err := runCaptured(t, func() error { return bitableFieldExtensionUpdateCellsCmd.RunE(c, nil) }); err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) != 2 || strings.HasSuffix(calls[0], "/tables/tblREAL") {
-		t.Errorf("tbl ID 不应再解析数据表: %v", calls)
+	// tbl + fld 都是规范 ID：与 v1.43 一致只发一个 POST，不新增 GET（不额外依赖 base:table:read / base:field:read）
+	if len(calls) != 1 || !strings.HasPrefix(calls[0], "POST ") || !strings.HasSuffix(calls[0], "/tables/tblREAL/fields/fldREAL/field_extensions/update_cells") {
+		t.Errorf("规范 ID 应直接 POST、不解析: %v", calls)
 	}
 }
 

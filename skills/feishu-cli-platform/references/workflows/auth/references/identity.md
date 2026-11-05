@@ -35,7 +35,7 @@
 | 命令 | 默认 | 特别要求 |
 |---|---|---|
 | bitable 全部 | auto | 定时/无人值守任务显式 `--as bot` |
-| okr 全部 | bot | `cycle list` 默认查 v2 用户周期（两种身份都支持），`--tenant` 查租户周期仅 Bot；部分端点只收 Bot（User 报 99991668，见各命令 `--help` 的权限说明）；`comment create/update/delete` 忽略 `--as`，必须 User；`weight/reorder/indicator update/objective batch-create/comment get` 同样默认 bot |
+| okr 全部 | bot | `cycle list` 默认查 v2 用户周期（两种身份都支持），`--tenant` 查租户周期仅 Bot；部分端点只收 Bot（User 报 99991668，见各命令 `--help` 的权限说明）；`comment create/update/delete` 必须 User，`--as` 只接受 `user|auto`（默认显示 user），显式 `--as bot` 报用法错误 exit 2；`weight/reorder/indicator update/objective batch-create/comment get` 同样默认 bot |
 | perm 全部 | 不传 = Bot | 操作用户自己的文档用 `--as user` 或显式 `--user-access-token`；不传 `--as` 时不读 `FEISHU_USER_ACCESS_TOKEN`。Bot 遇 1063002/1063004 会提示改用 User |
 | calendar create-event/update-event/delete-event/attendee add·remove/event-share/event-transfer、task/tasklist 写命令（含 set-ancestor、task comment update/delete） | auto | 日程与任务是个人资源；操作应用自己的日历/任务时显式 `--as bot`。`calendar create-event --meeting-owner-id` 仅 `--as bot`，否则退出码 2 |
 | calendar agenda、calendar event-search | auto | primary 日历与当前身份对应，不能混用两种身份的日历 ID |

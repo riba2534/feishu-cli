@@ -96,6 +96,11 @@ func bitableResolveSteps(baseToken, tableRef, fieldRef string, target func(field
 	return steps
 }
 
+// updateCellsNeedsResolve：--table-id / --field-id 任一不是规范 tbl / fld ID 时才需要先解析。
+func updateCellsNeedsResolve(tableRef, fieldRef string) bool {
+	return !strings.HasPrefix(tableRef, "tbl") || !strings.HasPrefix(fieldRef, "fld")
+}
+
 // requireTableAndField 本地校验 --table-id / --field-id 非空白（cobra required 只拦未传，不拦空白）。
 func requireTableAndField(cmd *cobra.Command) error {
 	tableID, _ := cmd.Flags().GetString("table-id")
@@ -251,7 +256,7 @@ update_cells 端点路径只认规范 ID：--table-id / --field-id 传名称时�
 解析出 tbl / fld ID 再提交（tbl 前缀的 --table-id 视为 ID，不再解析）。
 
 会批量改写单元格，属于高危写操作：交互终端会二次确认；非交互环境必须加 --yes，否则 exit 10。
-scope: base:table:read、base:field:read、base:record:update
+scope: base:record:update（--table-id / --field-id 传名称时另需 base:table:read、base:field:read 先解析 ID）
 
 示例:
   feishu-cli bitable field extension update-cells --base-token bascnxxx --table-id tblxxx --field-id fldxxx --type column --view-id vewxxx --yes
@@ -273,17 +278,24 @@ scope: base:table:read、base:field:read、base:record:update
 		resolvedBT := ""
 		return bitableExecuteConfirmed(cmd, func(bt string) bitableReq {
 			resolvedBT = bt
-			// update_cells 路径只认 tbl/fld ID：先把名称解析为规范 ID（与 button-rule 一致）
-			steps := bitableResolveSteps(bt, tableRef, fieldRef, func(fieldPath string) map[string]any {
-				return map[string]any{"method": "POST", "path": fieldPath + "/field_extensions/update_cells", "body": body, "desc": "用规范 ID 触发重算"}
-			})
-			return bitableReq{method: "POST", path: bitableFieldExtensionPath(cmd, bt, "update_cells"), body: body, steps: steps}
+			req := bitableReq{method: "POST", path: bitableFieldExtensionPath(cmd, bt, "update_cells"), body: body}
+			if updateCellsNeedsResolve(tableRef, fieldRef) {
+				// update_cells 路径只认 tbl/fld ID：传了名称时先解析为规范 ID（与 button-rule 一致）
+				req.steps = bitableResolveSteps(bt, tableRef, fieldRef, func(fieldPath string) map[string]any {
+					return map[string]any{"method": "POST", "path": fieldPath + "/field_extensions/update_cells", "body": body, "desc": "用规范 ID 触发重算"}
+				})
+			}
+			return req
 		}, func(bitableReq) string {
 			if body["type"] == "column" {
 				return fmt.Sprintf("确认对字段 %s 整列重算（会改写视图内全部记录的该字段）？", fieldRef)
 			}
 			return fmt.Sprintf("确认对字段 %s 的 %d 条记录重算？", fieldRef, len(body["record_ids"].([]string)))
 		}, func(req bitableReq, token string) (any, error) {
+			if !updateCellsNeedsResolve(tableRef, fieldRef) {
+				// 已是规范 ID：直接提交，不额外 GET（不新增 base:table:read / base:field:read 依赖）
+				return client.BaseV3Call("POST", req.path, nil, req.body, token)
+			}
 			tableID, err := resolveBitableTableRef(resolvedBT, tableRef, token)
 			if err != nil {
 				return nil, err

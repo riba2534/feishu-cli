@@ -44,7 +44,7 @@ feishu-cli calendar create-event \
 - `--description-format`：默认 `text`（写纯文本 `description`，与旧版一致）；`markdown` 写富文本 `description_rich`，
   支持粗体/斜体/链接/标题/列表/表格/图片。`![alt](./img/a.png)` 本地图片必须是**当前目录内的相对路径**（绝对路径、
   `../` 越界、不存在都在联网前 exit 2），执行时先上传到云空间（`parent_type=calendar`）再改写为图片 URL；`https://` 图片原样保留。
-  支持 `![alt](./a.png "标题")` 与 `![alt](<带空格.png>)` 写法（只改写路径、保留标题）；围栏代码块与行内代码里的图片语法按原文保留，不上传。
+  支持 `![alt](./a.png "标题")` 与 `![alt](<带空格.png>)` 写法（CLI 只改写路径、保留标题）；围栏代码块与行内代码里的图片语法按原文保留，不上传。注意服务端渲染时会丢弃图片标题，日程描述也不支持代码块排版（代码块按普通文本显示）。
   `markdown` 必须同时传 `--description`。读取时 `get-event` 只输出服务端生成的纯文本 `description`（图片显示为 `[图片]`），
   要看原始 Markdown 用 `feishu-cli api GET /open-apis/calendar/v4/calendars/<calendar_id>/events/<event_id> --as user` 的 `description_rich`。
 - `--dry-run` 只打印将发出的请求（不联网、不解析身份），带参与人时会列出第二步添加参与人的请求；`markdown` 描述含本地图片时

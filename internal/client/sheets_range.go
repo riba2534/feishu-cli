@@ -390,6 +390,9 @@ func CheckSheetWriteRangeFits(fullRange string, values [][]any) error {
 	if startRow < 0 {
 		startRow = 0
 	}
+	if (b.EndRow >= 0 && b.EndRow < startRow) || (b.EndCol >= 0 && b.EndCol < startCol) {
+		return fmt.Errorf("范围 %q 的起止位置写反了（终点在起点的左侧或上方），请写成左上角:右下角", fullRange)
+	}
 	anchor := fmt.Sprintf("%s%d", IndexToColumn(startCol), startRow+1)
 	if sheetID != "" {
 		anchor = sheetID + "!" + anchor
