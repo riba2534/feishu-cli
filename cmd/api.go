@@ -106,6 +106,7 @@ func init() {
 	apiCmd.Flags().IntVar(&apiTimeoutSec, "timeout", 30, "请求超时（秒）")
 	apiCmd.Flags().StringVar(&apiFormat, "format", "", "输出格式: json|pretty|table|ndjson|csv（指定后走内置渲染，覆盖默认 pretty）")
 	apiCmd.Flags().StringVar(&apiJQ, "jq", "", "用 jq 表达式过滤响应（内置 gojq，无需外部 jq）")
+	output.MarkJQFlag(apiCmd)
 	apiCmd.Flags().BoolVar(&apiPageAll, "page-all", false, "自动翻页（仅识别 data.has_more + page_token/next_page_token）")
 	apiCmd.Flags().IntVar(&apiPageLimit, "page-limit", 10, "配合 --page-all 的最大页数（0=不限；空/重复 cursor 仍会停止）")
 	apiCmd.Flags().IntVar(&apiPageDelayMs, "page-delay", 200, "翻页间隔毫秒")

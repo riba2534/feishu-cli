@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/riba2534/feishu-cli/internal/runctx"
 	"github.com/spf13/cobra"
@@ -107,6 +108,10 @@ var rootCmd = &cobra.Command{
 
 更多信息请访问: https://github.com/riba2534/feishu-cli`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// --jq 是纯本地参数：在读配置、解析身份之前校验，非法表达式不发任何请求、不先要求凭据
+		if err := output.ValidateMarkedJQ(cmd); err != nil {
+			return err
+		}
 		// --profile 必须在 skip / config.Init 之前生效，doctor/auth status/profile 才能看到覆盖。
 		if err := profile.SetCommandOverride(profileFlag); err != nil {
 			return err

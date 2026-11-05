@@ -15,6 +15,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"math/big"
 	"os"
 	"sort"
@@ -51,6 +52,26 @@ type Options struct {
 }
 
 // AddOutputFlags 给命令注册 --format/--jq/-o。
+// JQFlagAnnotation 标记值为完整 gojq 表达式的 --jq flag；根命令在读配置与凭据之前统一校验。
+const JQFlagAnnotation = "feishu-cli/gojq"
+
+// MarkJQFlag 给命令的 --jq 打上 gojq 标记（不存在时忽略）。
+func MarkJQFlag(cmd *cobra.Command) {
+	_ = cmd.Flags().SetAnnotation("jq", JQFlagAnnotation, []string{"true"})
+}
+
+// ValidateMarkedJQ 校验带 gojq 标记的 --jq：非法表达式返回用法错误（退出码 2）。
+func ValidateMarkedJQ(cmd *cobra.Command) error {
+	fl := cmd.Flags().Lookup("jq")
+	if fl == nil || !fl.Changed || fl.Annotations[JQFlagAnnotation] == nil {
+		return nil
+	}
+	if err := ValidateJQ(fl.Value.String()); err != nil {
+		return clierr.Usage(err)
+	}
+	return nil
+}
+
 // 若命令已存在 output flag（部分旧命令自带 -o），则不重复注册，避免 panic。
 func AddOutputFlags(cmd *cobra.Command) {
 	f := cmd.Flags()
@@ -59,6 +80,7 @@ func AddOutputFlags(cmd *cobra.Command) {
 	}
 	if f.Lookup("jq") == nil {
 		f.String("jq", "", "用 jq 表达式过滤 JSON 输出（内置 gojq，无需外部 jq）")
+		MarkJQFlag(cmd)
 	}
 	if f.Lookup("output") == nil {
 		f.StringP("output", "o", "", "输出写入文件（默认 stdout）")
@@ -74,6 +96,7 @@ func AddFormatFlags(cmd *cobra.Command) {
 	}
 	if f.Lookup("jq") == nil {
 		f.String("jq", "", "用 jq 表达式过滤 JSON 输出（内置 gojq，无需外部 jq）")
+		MarkJQFlag(cmd)
 	}
 }
 
@@ -158,11 +181,11 @@ func ParseOptions(cmd *cobra.Command) (*Options, error) {
 		o.Format = FormatJSON
 	}
 	if !isValidFormat(o.Format) {
-		return nil, fmt.Errorf("不支持的 --format %q，可选值: %s", o.Format, strings.Join(validFormats, ", "))
+		return nil, clierr.Usagef("不支持的 --format %q，可选值: %s", o.Format, strings.Join(validFormats, ", "))
 	}
-	// --jq 与 --format 一样在发请求前校验，避免写命令先执行写入、渲染时才报错
+	// --jq 与 --format 一样在发请求前校验，避免写命令先执行写入、渲染时才报错；两者都是用法错误（退出码 2）
 	if err := ValidateJQ(o.JQ); err != nil {
-		return nil, err
+		return nil, clierr.Usage(err)
 	}
 	// -o 结果文件：命令通常在发请求前解析选项，此处即拒绝敏感目录（用法错误），写入时另有兜底校验
 	if o.OutputFile != "" {
