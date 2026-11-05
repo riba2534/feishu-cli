@@ -18,8 +18,11 @@ var slidesCmd = &cobra.Command{
   update-slide  整页覆盖：把完整 <slide> XML 写回该页（保留 slide_id 与页序）
   screenshot    把页面或一段 slide XML 渲染成本地图片
   media-upload  上传本地图片到演示文稿，返回 file_token（可作为 <img src=...> 使用）
+  history       历史版本：list / revert（需确认，--wait 轮询结果）/ revert-status
 
 写页面的命令默认由服务端做 XML lint（error 级问题拒绝写入，错误码 4000153），--no-lint 跳过。
+写命令（create/add-slide/delete-slide/replace-slide/update-slide/media-upload/history revert）默认 Bot 身份，
+--as user 以当前登录用户身份执行，--as auto 为 User 优先、未登录回退 Bot。
 
 权限要求（User Token 推荐）:
   - slides:presentation:create / slides:presentation:write_only  创建/写入

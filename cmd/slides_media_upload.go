@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
@@ -24,6 +25,8 @@ var slidesMediaUploadCmd = &cobra.Command{
   --file                本地图片路径（必填，≤ 20 MB）
   --presentation-token  目标演示文稿的 xml_presentation_id、/slides/ URL 或 /wiki/ URL（必填）
   --output, -o          输出格式，可选 json
+  --as                  身份 bot|user|auto（默认 bot）
+  --dry-run             只打印将要发出的请求（不联网、不需要凭据；wiki 链接的解析步骤用占位符表示）
 
 注意:
   - slides 后端根据 presentation_id 自动选择 parent_type：普通 deck 为 slide_file，导入型 Office deck（fake_office_/local_office_ 前缀，或长度 ≥25 且第 5/10/15/20/25 位依次为 OFL0X）为 office_slide_file
@@ -31,27 +34,46 @@ var slidesMediaUploadCmd = &cobra.Command{
   - 权限: docs:document.media:upload
 
 示例:
-  feishu-cli slides media-upload --file ./cover.png --presentation-token <xml_presentation_id>`,
+  feishu-cli slides media-upload --file ./cover.png --presentation-token <xml_presentation_id>
+  feishu-cli slides media-upload --file ./cover.png --presentation-token <xml_presentation_id> --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		filePath, _ := cmd.Flags().GetString("file")
 		presentationToken, _ := cmd.Flags().GetString("presentation-token")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 		if filePath == "" {
-			return fmt.Errorf("--file 不能为空")
+			return clierr.Usagef("--file 不能为空")
 		}
 		if presentationToken == "" {
-			return fmt.Errorf("--presentation-token 不能为空")
+			return clierr.Usagef("--presentation-token 不能为空")
 		}
 		// 本地文件先于任何网络请求（含 wiki 链接解析）校验：敏感目录、不存在、是目录均为用法错误
 		stat, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("--file 无效: %w", err)
+			return clierr.Usagef("--file 无效: %w", err)
+		}
+		if !stat.Mode().IsRegular() {
+			return clierr.Usagef("--file 必须是普通文件: %s", filePath)
+		}
+		if stat.Size() > maxSlidesMediaUploadSize {
+			return clierr.Usagef("文件 %s 大小 %d 字节超过 slides 上传限制（20 MB）",
+				filepath.Base(filePath), stat.Size())
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+
+		if dryRun {
+			return printSlidesMediaUploadDryRun(cmd, presentationToken, filePath, stat.Size())
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
+			return err
 		}
 		// 与其他 slides 命令一致：接受 URL / wiki URL；图片必须上传到真实演示文稿（parent_node 不能是 wiki 节点 token）
 		resolved, err := resolvePresentationArg(presentationToken, userAccessToken)
@@ -59,14 +81,6 @@ var slidesMediaUploadCmd = &cobra.Command{
 			return err
 		}
 		presentationToken = resolved
-
-		if !stat.Mode().IsRegular() {
-			return fmt.Errorf("--file 必须是普通文件: %s", filePath)
-		}
-		if stat.Size() > maxSlidesMediaUploadSize {
-			return fmt.Errorf("文件 %s 大小 %d 字节超过 slides 上传限制（20 MB）",
-				filepath.Base(filePath), stat.Size())
-		}
 
 		fileName := filepath.Base(filePath)
 		fileToken, err := client.UploadSlidesMedia(filePath, fileName, presentationToken, userAccessToken)
@@ -95,10 +109,46 @@ var slidesMediaUploadCmd = &cobra.Command{
 	},
 }
 
+// printSlidesMediaUploadDryRun 静态预览上传请求：不联网、不解析身份；wiki 链接用占位符表示解析步骤。
+func printSlidesMediaUploadDryRun(cmd *cobra.Command, presentationArg, filePath string, size int64) error {
+	pres, wikiStep, err := slidesDryRunPresentation(presentationArg)
+	if err != nil {
+		return err
+	}
+	parentType := "<slide_file|office_slide_file，按解析出的演示文稿 token 选择>"
+	if wikiStep == nil {
+		parentType = client.SlidesMediaParentType(pres)
+	}
+	var steps []map[string]any
+	if wikiStep != nil {
+		steps = append(steps, wikiStep)
+	}
+	steps = append(steps, map[string]any{
+		"method": "POST",
+		"path":   "/open-apis/drive/v1/medias/upload_all",
+		"body": map[string]any{
+			"file_name":   filepath.Base(filePath),
+			"parent_type": parentType,
+			"parent_node": pres,
+			"size":        size,
+			"file":        "<binary>",
+		},
+	})
+	return printJSON(withVisualDryRunIdentity(cmd, map[string]any{
+		"dry_run":   true,
+		"file":      filePath,
+		"file_name": filepath.Base(filePath),
+		"size":      size,
+		"steps":     steps,
+	}))
+}
+
 func init() {
 	slidesCmd.AddCommand(slidesMediaUploadCmd)
 	slidesMediaUploadCmd.Flags().String("file", "", "本地图片路径（必填，≤ 20 MB）")
 	slidesMediaUploadCmd.Flags().String("presentation-token", "", "目标演示文稿的 xml_presentation_id（必填）")
 	slidesMediaUploadCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	slidesMediaUploadCmd.Flags().String("user-access-token", "", "User Access Token")
+	slidesMediaUploadCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求，不联网、不需要凭据")
+	addVisualWriteAsFlag(slidesMediaUploadCmd)
 }

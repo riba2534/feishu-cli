@@ -41,9 +41,6 @@ var docMediaPreviewCmd = &cobra.Command{
   feishu-cli doc media-preview boxcnXXX -o ./asset --output-format json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		token := args[0]
 		output, _ := cmd.Flags().GetString("output")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
@@ -65,6 +62,10 @@ var docMediaPreviewCmd = &cobra.Command{
 		}
 		// 输出路径在任何网络请求（含 token 刷新）之前校验
 		if err := checkMediaOutputPath(output, overwrite); err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
 			return err
 		}
 

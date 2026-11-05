@@ -26,11 +26,13 @@
 
 ### Step 1：理解读者任务、格式要求、硬约束和禁区
 
-### Step 2：选择体裁（genre contract）
+### Step 2（可选）：参考体裁模板（genre contract）
 
-以下文件位于 `references/genres/`。路由表只用于选候选；高置信命中后**必须读取**对应路由文件并按其中的消歧规则复核，
-确认后最多各读一个 contract 与一个 adapter，记下固定短名；未命中时可省略。contract 决定内容任务、证据和体裁边界，
-adapter 只调整与 contract 兼容的平台结构、文风和组件约束。
+这一步可以跳过。用户点名体裁（如"写个 PRD""出一份红头公文""周报"），或文档明显属于某个有固定结构的体裁时，
+再按需读取 `references/genres/` 下的模板；简单的说明、备忘、草稿直接进入 Step 3，不必读路由文件。
+需要时先用下表选候选，读对应路由文件按消歧规则复核，最多各读一个 contract 与一个 adapter，记下固定短名。
+contract 决定内容任务、证据和体裁边界，adapter 只调整与 contract 兼容的平台结构、文风和组件约束。
+没有参考体裁时，Presentation Decision 的 `genre_contract` / `adapter` 写 `null`。
 
 | 内容路由 | 独特任务 |
 |---|---|
@@ -75,7 +77,7 @@ adapter 只调整与 contract 兼容的平台结构、文风和组件约束。
 
 ### Step 4：提交 Presentation Decision 并初始化草稿
 
-生成完整 JSON，字段值必须来自 Step 1–3，不得照抄示例。`word_count` 只在用户明确提出字数要求时加入（"约 N 字"按 ±10%，
+生成完整 JSON，字段值必须来自 Step 1–3，不得照抄示例（示例假设已参考周报模板；跳过 Step 2 时 `genre_contract` 写 `null`）。`word_count` 只在用户明确提出字数要求时加入（"约 N 字"按 ±10%，
 单边不限写 `null`），无要求时省略整个字段：
 
 ```json

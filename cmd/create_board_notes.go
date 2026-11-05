@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -20,6 +23,8 @@ var createBoardNotesCmd = &cobra.Command{
   --client-token    操作唯一标识，用于幂等更新（长度至少 10 字符，建议使用 UUID）
   --overwrite       是否覆盖画板已有内容（服务端 overwrite: true 原子替换）
   --user-id-type    用户 ID 类型 (open_id/union_id/user_id)，默认 open_id
+  --as              身份 bot|user|auto（默认 bot）
+  --dry-run         只打印将要发出的请求（不联网、不需要凭据）
   --output, -o      输出格式 (json)
 
 节点 JSON 格式示例:
@@ -43,13 +48,12 @@ var createBoardNotesCmd = &cobra.Command{
   feishu-cli board create-notes <whiteboard_id> nodes.json --client-token 6d99f59c-4d7d-4452-98d6-3d0556393cf6
 
   # 覆盖创建
-  feishu-cli board create-notes <whiteboard_id> nodes.json --overwrite`,
+  feishu-cli board create-notes <whiteboard_id> nodes.json --overwrite
+
+  # 预览请求
+  feishu-cli board create-notes <whiteboard_id> nodes.json --dry-run`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		whiteboardID := args[0]
 		source := args[1]
 		sourceType, _ := cmd.Flags().GetString("source-type")
@@ -57,10 +61,13 @@ var createBoardNotesCmd = &cobra.Command{
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 		if clientToken != "" && len(clientToken) < 10 {
-			return fmt.Errorf("--client-token 长度至少为 10 个字符: %s", clientToken)
+			return clierr.Usagef("--client-token 长度至少为 10 个字符: %s", clientToken)
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
 		}
 
 		// Get nodes JSON
@@ -74,6 +81,39 @@ var createBoardNotesCmd = &cobra.Command{
 				return fmt.Errorf("读取节点文件失败: %w", err)
 			}
 			nodesJSON = string(data)
+		}
+
+		if dryRun {
+			var nodes []json.RawMessage
+			if err := json.Unmarshal([]byte(nodesJSON), &nodes); err != nil {
+				return clierr.Usagef("解析节点 JSON 失败（需要 JSON 数组格式）: %w", err)
+			}
+			q := url.Values{}
+			q.Set("user_id_type", markdownFirstNonEmpty(userIDType, "open_id"))
+			if clientToken != "" {
+				q.Set("client_token", clientToken)
+			}
+			body := map[string]any{"nodes": fmt.Sprintf("<%d nodes>", len(nodes))}
+			if overwrite {
+				body["overwrite"] = true
+			}
+			extra := map[string]any{"whiteboard_id": whiteboardID, "node_count": len(nodes)}
+			if label, ok := visualDryRunIdentity(cmd); ok {
+				extra["identity"] = label
+			}
+			return printDryRunPlan(cmd, "create whiteboard nodes", extra, []dryRunStep{{
+				Method: "POST",
+				URL:    fmt.Sprintf("/open-apis/board/v1/whiteboards/%s/nodes?%s", url.PathEscape(whiteboardID), q.Encode()),
+				Body:   body,
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
+			return err
 		}
 
 		opts := client.CreateBoardNotesOptions{
@@ -124,5 +164,7 @@ func init() {
 	createBoardNotesCmd.Flags().Bool("overwrite", false, "是否覆盖画板已有内容（服务端 overwrite: true）")
 	createBoardNotesCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型 (open_id/union_id/user_id)")
 	createBoardNotesCmd.Flags().String("user-access-token", "", "User Access Token")
+	createBoardNotesCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求，不联网、不需要凭据")
+	addVisualWriteAsFlag(createBoardNotesCmd)
 	createBoardNotesCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 }

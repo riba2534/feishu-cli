@@ -32,10 +32,6 @@ var markdownOverwriteCmd = &cobra.Command{
   feishu-cli markdown overwrite --file-token boxcnxxx --name existing.md --content "新内容"
   feishu-cli markdown overwrite --file-token boxcnxxx --file ./new.md`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken, _ := cmd.Flags().GetString("file-token")
 		name, _ := cmd.Flags().GetString("name")
 		content, _ := cmd.Flags().GetString("content")
@@ -79,7 +75,7 @@ var markdownOverwriteCmd = &cobra.Command{
 			// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
 			stat, err := safefile.StatInputFile(contentFile)
 			if err != nil {
-				return fmt.Errorf("--content-file 无效: %w", err)
+				return clierr.Usagef("--content-file 无效: %w", err)
 			}
 			size = stat.Size()
 		}
@@ -113,6 +109,10 @@ var markdownOverwriteCmd = &cobra.Command{
 				"file_token": fileToken,
 				"size":       size,
 			}, steps)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveIdentityToken(cmd)

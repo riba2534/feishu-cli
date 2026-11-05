@@ -34,12 +34,13 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 
 ## 执行规则
 
-1. **身份**：board、`doc htmlbox`、slides 的写命令默认 Bot；操作用户已有的文档、画板或演示文稿时显式传
-   `--user-access-token`（或 `FEISHU_USER_ACCESS_TOKEN`）。Slides 新建优先用 User：应用未开通 tenant 的
+1. **身份**：board、`doc htmlbox`、slides 的写命令默认 Bot；操作用户已有的画板或演示文稿时 board / slides 写命令加
+   `--as user`，`doc htmlbox` 显式传 `--user-access-token`（或 `FEISHU_USER_ACCESS_TOKEN`）。Slides 新建优先用 User：应用未开通 tenant 的
    `slides:presentation:create` 时 Bot 创建报 99991672（exit 3）。`apps` 全部命令必须 User Token + spark scope。
 2. **破坏性操作先问用户**：`board delete`、`slides delete-slide`、`apps delete`、把妙搭应用设为 `--scope public` 前先向用户确认。
    `board import/update/create-notes --overwrite` 会清空整张画板（含其他图表），`board update --overwrite` 先加
-   `--snapshot old.json` 留备份；`board delete` 没有确认门禁、立即执行。删除类命令以退出码 10 返回时是在等确认，
+   `--snapshot old.json` 留备份；`board delete` 没有确认门禁、立即执行，先 `--dry-run` 看要删的节点。
+   演示文稿误改用 `slides history revert` 回滚（需确认，非交互环境加 `--yes`）。删除类命令以退出码 10 返回时是在等确认，
    不要自行补 `--yes`，先取得用户同意。
 3. **不重复写入**：画板写入结果不明时，`board update/svg-import/create-notes/import --engine local` 用同一个
    `--client-token` 重跑；服务端 `board import` 不接受 client token（CLI 自动重试前会回读去重），

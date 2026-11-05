@@ -71,6 +71,10 @@ schema 告警透出在 issues 字段。
 			return withSlidesLint(cmd, body)
 		}
 
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
 			pres, wikiStep, err := slidesDryRunPresentation(args[0])
 			if err != nil {
@@ -93,13 +97,16 @@ schema 告警透出在 issues 字段。
 				"params": query,
 				"body":   buildBody(slideXML),
 			})
-			return printJSON(map[string]any{"dry_run": true, "steps": steps, "images_to_upload": len(placeholders)})
+			return printJSON(withVisualDryRunIdentity(cmd, map[string]any{"dry_run": true, "steps": steps, "images_to_upload": len(placeholders)}))
 		}
 
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
+			return err
+		}
 		presentationID, err := resolvePresentationArg(args[0], userAccessToken)
 		if err != nil {
 			return err
@@ -171,6 +178,10 @@ var slidesDeleteSlideCmd = &cobra.Command{
 		}
 		query := map[string]any{"slide_id": slideID, "revision_id": revisionID}
 
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
 			pres, wikiStep, err := slidesDryRunPresentation(args[0])
 			if err != nil {
@@ -185,7 +196,7 @@ var slidesDeleteSlideCmd = &cobra.Command{
 				"path":   client.SlidesPresentationPath(pres, "/slide"),
 				"params": query,
 			})
-			return printJSON(map[string]any{"dry_run": true, "slide_id": slideID, "steps": steps})
+			return printJSON(withVisualDryRunIdentity(cmd, map[string]any{"dry_run": true, "slide_id": slideID, "steps": steps}))
 		}
 
 		if err := confirmDangerousAction(cmd, fmt.Sprintf("确定要删除演示文稿 %s 中的页面 %s 吗？", args[0], slideID)); err != nil {
@@ -194,7 +205,10 @@ var slidesDeleteSlideCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
+			return err
+		}
 		presentationID, err := resolvePresentationArg(args[0], userAccessToken)
 		if err != nil {
 			return err
@@ -217,10 +231,12 @@ func init() {
 	addSlidesNoLintFlag(slidesAddSlideCmd)
 	slidesAddSlideCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求，不调用 API")
 	slidesAddSlideCmd.Flags().String("user-access-token", "", "User Access Token")
+	addVisualWriteAsFlag(slidesAddSlideCmd)
 
 	slidesCmd.AddCommand(slidesDeleteSlideCmd)
 	slidesDeleteSlideCmd.Flags().String("slide-id", "", "要删除的页面 slide_id（必填）")
 	slidesDeleteSlideCmd.Flags().Int("revision-id", -1, "基于的演示文稿版本（-1 表示最新；正整数用于乐观锁）")
 	slidesDeleteSlideCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求，不调用 API")
 	slidesDeleteSlideCmd.Flags().String("user-access-token", "", "User Access Token")
+	addVisualWriteAsFlag(slidesDeleteSlideCmd)
 }

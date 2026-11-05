@@ -30,7 +30,7 @@
 
 - **身份**：全部子命令支持 `--as bot|user|auto`（默认 auto）。User 优先；从未配置 User Token 时回退 Bot；**已配置但解析/刷新失败 fail-closed**，不会静默切 Bot。cron/无人值守显式 `--as bot`。
 - **Bot 创建自动授权**：以 Bot 身份 `create` 时，CLI 自动给当前 CLI 登录用户授予该文件 `full_access`，结果见输出的 `permission_grant`（`granted` / `skipped` / `failed`）。
-- **`--dry-run`**：只打印请求计划，不解析/刷新 token，不代表已访问飞书。
+- **`--dry-run`**：只打印请求计划，不解析/刷新 token、不需要 App 凭据（无凭据环境也是 exit 0），不代表已访问飞书。
 
 | 命令 | 所需 scope（User 身份；Bot 需应用开通同名权限） |
 |------|------|

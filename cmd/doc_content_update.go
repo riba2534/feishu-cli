@@ -193,10 +193,6 @@ var contentUpdateValidModes = map[string]bool{
 
 // runDocContentUpdate 是 content-update 命令的主入口
 func runDocContentUpdate(cmd *cobra.Command, args []string) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
-
 	p := &contentUpdateParams{stdout: cmd.OutOrStdout(), stderr: cmd.ErrOrStderr()}
 	flags := cmd.Flags()
 	p.mode, _ = flags.GetString("mode")
@@ -334,6 +330,10 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 		return printContentUpdateDryRun(cmd, p, args[0])
 	}
 
+	if err := config.Validate(); err != nil {
+		return err
+	}
+
 	// 参数校验通过后再解析文档（wiki URL 需要一次 node_by_token 请求）
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", p.userToken)
 	if err != nil {
@@ -346,7 +346,7 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 // resolveMarkdownContent 从 --markdown 或 --markdown-file 获取内容
 func resolveMarkdownContent(markdownStr, markdownFile string) (string, error) {
 	if markdownStr != "" && markdownFile != "" {
-		return "", fmt.Errorf("--markdown 和 --markdown-file 不能同时使用")
+		return "", clierr.Usagef("--markdown 和 --markdown-file 不能同时使用")
 	}
 	if markdownFile != "" {
 		return loadJSONInput("", markdownFile, "markdown", "markdown-file", "Markdown 内容")
