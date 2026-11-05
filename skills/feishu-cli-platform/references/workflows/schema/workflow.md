@@ -33,8 +33,8 @@ overlay 按 service 整体替换内嵌定义，之后再从内嵌基线补回 `l
 
 判断 overlay 是否生效看 `schema status --format json` 的 `source`：`runtime`（本次刚拉取）/ `cache`（命中缓存）/
 `embedded`（未生效，检查网络或 `FEISHU_CLI_REMOTE_META`）。`supplements` 列出 overlay 之后补回的方法
-（离线时为空，因为它们本就在内嵌基线里），pretty 行尾显示为 `supplements=N(local_supplements)`。`doctor --only catalog` 与 `auth status -o json`
-的 `catalog` 字段同样可读。
+（离线时为空，因为它们本就在内嵌基线里），pretty 行尾显示为 `supplements=N(local_supplements)`。`auth status -o json`
+的 `catalog` 字段同样带 `source` 与 `supplements`；`doctor --only catalog` 只在 message 里显示 source 与方法数。
 
 ## 命令速查
 

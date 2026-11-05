@@ -57,6 +57,7 @@ func buildAuthorizationCompleteEvent(token *auth.TokenStore, summary *loginScope
 	warnings := []string{}
 	hints := []string{}
 	if !refreshPresent {
+		appID = auth.NoRefreshTokenAppID(token, appID)
 		warnings = append(warnings, "未获取到 refresh_token，Access Token 过期后需要重新登录")
 		hints = append(hints, auth.NoRefreshTokenFix(baseURL, appID))
 		// 结构化归因（additive）：只申请 offline_access 不够，需开启应用安全设置里的「刷新 user_access_token」并发版
@@ -100,6 +101,7 @@ func printTokenSuccess(token *auth.TokenStore, summary *loginScopeSummary, appID
 		fmt.Fprintf(os.Stderr, "  提示:     确认飞书开放平台已开通后，执行 feishu-cli auth login --scope %q 重新授权\n", strings.Join(summary.Missing, " "))
 	}
 	if token.RefreshToken == "" {
+		appID = auth.NoRefreshTokenAppID(token, appID)
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "  ⚠ 警告: 未获取到 refresh_token")
 		fmt.Fprintln(os.Stderr, "    Access Token 过期（约 2 小时）后需要重新 feishu-cli auth login")

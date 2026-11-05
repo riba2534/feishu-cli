@@ -22,6 +22,15 @@ func NoRefreshTokenSettingsURL(baseURL, appID string) string {
 	return fmt.Sprintf("%s/app/%s/safe", config.OfficialOpenBase(config.ParseBrand(baseURL)), url.PathEscape(appID))
 }
 
+// NoRefreshTokenAppID 返回应去修改安全设置的应用：优先签发该 token 的 token.AppID
+// （是否下发 refresh_token 由签发应用的安全设置决定），为空时才回退到 fallback（通常是当前配置的 app_id）。
+func NoRefreshTokenAppID(token *TokenStore, fallback string) string {
+	if token != nil && token.AppID != "" {
+		return token.AppID
+	}
+	return fallback
+}
+
 // NoRefreshTokenFix 给出让后续登录可自动续期的处理步骤（含安全设置页链接，appID 已知时）。
 func NoRefreshTokenFix(baseURL, appID string) string {
 	fix := "在开发者后台「安全设置」中开启「刷新 user_access_token」，创建并发布新版本，然后重新执行 feishu-cli auth login"
