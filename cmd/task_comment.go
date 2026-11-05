@@ -190,6 +190,10 @@ func parseTaskCommentIDArg(raw string) (string, error) {
 	if id == "" {
 		return "", clierr.Usagef("comment_id 不能为空")
 	}
+	// 评论 ID 为纯数字或字母数字串；含路径分隔符、空白、? # 等字符的一律拒绝，避免拼进请求路径
+	if strings.ContainsAny(id, "/\\?#%& \t\n") {
+		return "", clierr.Usagef("comment_id 格式无效: %q", id)
+	}
 	return id, nil
 }
 

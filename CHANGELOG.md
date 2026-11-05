@@ -23,6 +23,7 @@
 | `apps update` 缺字段错误文本变为「至少提供 --name、--description、--icon-url 或 --icon-file 之一」 | 随新 flag 调整 | 匹配旧文本的脚本需更新 |
 | `mail template delete` / `mail thread-trash` 先解析身份再确认 | 未登录时 exit 3 先于 exit 10 | 非交互脚本先确认已登录再追加 `--yes` |
 | `board import --engine local` 缺 whiteboard-cli 由 exit 1 变为 2（文本不变），检查提前到凭据校验之前 | — | — |
+| 离线 catalog 补丁层：`schema status`、`auth status`、`doctor --only catalog` 的方法数多出 `local_supplements` 补回的 `task.comments.*`（联网模式下如 250 → 255），JSON 新增 `supplements` 字段 | 只新增 | 精确比对方法数的脚本需更新 |
 | `slides media-upload` 文件类型/大小检查提前到 wiki 链接解析之前；`doc read --keyword` 正则在导出全文前校验；`doc export --engine docs_ai` 的 `--doc-format/--detail` 在 wiki 解析前校验 | — | 参数错误更早报出，不再先联网 |
 
 ### 新增
@@ -43,7 +44,7 @@
 - `drive preview <file_token|url>`（`--list-only`、`--type pdf|pdf_lin|html|text|image|source_file`、`--version`、`-o`、`--overwrite`）与 `drive cover <file_token|url>`（`--spec default|icon|grid|small|middle|big|square`，`--list-only` 本地列出规格）。预览接口返回空内容时报错且不写空文件。
 - `drive search` 新增时间窗 `--edited-*`、`--commented-*`、`--opened-*`、`--created-*`（`-since/-until`，接受 7d/1m/1y/日期/RFC3339/unix 秒），`--mine`（所有者为自己）、`--created-by-me` / `--original-creator-ids`（原始创建者）。opened 窗口 >90 天只查最近切片并在 stderr 列出全部切片，>365 天 exit 2。不传新 flag 时请求体不变。
 - `drive push/pull --dry-run`：输出差集计划（create_folder/upload/overwrite/download/skip/conflict/delete_remote/delete_local），不上传、不下载、不删除，不要求 `--yes`；需要凭据只读列举远端。
-- perm 全家桶 `<doc_token>` 接受文档链接（/wiki/ → wiki，/minutes/ → minutes），显式 `--doc-type` 优先；`perm add/delete/update --member-kind wiki_space_member|wiki_space_viewer|wiki_space_editor`（仅 `--member-type wikispaceid`）。
+- perm 全家桶 `<doc_token>` 接受文档链接（/wiki/ → wiki，/minutes/ → minutes），显式 `--doc-type` 与链接推断的类型冲突时 exit 2；`perm add/delete/update --member-kind wiki_space_member|wiki_space_viewer|wiki_space_editor`（仅 `--member-type wikispaceid`）。
 - `--dry-run`：perm 全家桶；wiki create/delete/delete-space/move/move-docs/move-to-drive/update、wiki member remove；comment add/resolve/unresolve/reply add/reply delete；file copy/mkdir/move/shortcut/upload/version create/delete/revert；drive upload/secure-label set/add-comment；media upload；minutes apply-permission。
 
 **消息与事件**
@@ -75,7 +76,7 @@
 **会议与妙记**
 - `vc bot meeting-countdown`、`meeting-message-send`（`--uuid` 幂等）、`meeting-screenshot`（`--output` 在首个网络请求前校验，已存在默认拒绝）：`--as` 默认 auto。
 - `vc bot meeting-invite`（all_suggested/selected）、`vc bot meeting-end`（确认门禁）：仅 Bot。
-- `minutes upload --file-token`、`minutes update --topic`、`minutes summary`、`minutes todo`、`minutes speaker-replace`、`minutes word-replace`：仅 User，支持 `--dry-run`，token 可写妙记链接。
+- `minutes upload --file-token`、`minutes update --topic`、`minutes summary`、`minutes todo`、`minutes speaker-replace`、`minutes word-replace`：仅 User，支持 `--dry-run`，token 可写妙记链接；覆盖摘要、删除待办、批量替换说话人与词语带确认门禁（非交互未 `--yes` exit 10）。
 - `vc note transcript --overwrite`：目标已存在且未传时 stderr 告警，默认仍覆盖。
 
 **妙搭**

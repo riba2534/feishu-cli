@@ -239,3 +239,26 @@ func TestSheetCondFormatList_AllSheets(t *testing.T) {
 		t.Errorf("输出 = %q", out)
 	}
 }
+
+// TestSheetCondFormatUpdate_ConfirmGate 更新为整条覆盖：非交互且无 --yes 时 exit 10、不发写请求。
+func TestSheetCondFormatUpdate_ConfirmGate(t *testing.T) {
+	origInteractive := confirmIsInteractive
+	confirmIsInteractive = func() bool { return false }
+	t.Cleanup(func() { confirmIsInteractive = origInteractive })
+	origYes := assumeYes
+	assumeYes = false
+	t.Cleanup(func() { assumeYes = origYes })
+
+	m := newSheetMockServer(t)
+	_, err := runCondFormatCmd(t, sheetCondFormatUpdateCmd, []string{"shtTok", "s1", "cf1"}, [][2]string{
+		{"range", "A1:A3"}, {"rule-type", "uniqueValues"}, {"bold", "true"},
+	})
+	if err == nil || exitCodeFor(err) != clierr.ExitConfirmationRequired {
+		t.Fatalf("应 exit 10，得到 %v", err)
+	}
+	for _, r := range m.requests() {
+		if strings.Contains(r.Path, "batch_update") {
+			t.Fatalf("未确认不应发 batch_update: %+v", r)
+		}
+	}
+}

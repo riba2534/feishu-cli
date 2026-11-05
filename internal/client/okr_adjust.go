@@ -474,7 +474,8 @@ func BatchCreateOKRObjectives(cycleID, defaultCategoryID, userIDType string, obj
 			ObjectiveID string `json:"objective_id"`
 		}
 		if err := json.Unmarshal(data, &objResp); err != nil || objResp.ObjectiveID == "" {
-			return fail(fmt.Errorf("创建目标的响应缺少 objective_id"))
+			// 创建请求已成功但拿不到 ID：这个目标无法回滚，必须在错误里说明残留
+			return fail(fmt.Errorf("创建目标的响应缺少 objective_id（该目标「%s」可能已创建但无法自动回滚，请到 OKR 中手动检查并删除）", o.Text))
 		}
 		cur := OKRBatchCreated{ObjectiveID: objResp.ObjectiveID, KeyResultIDs: []string{}}
 		created = append(created, cur)

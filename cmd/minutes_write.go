@@ -49,8 +49,9 @@ func minuteTokenArg(args []string) (string, error) {
 	return normalizeMinuteTokenInput(args[0])
 }
 
-// runMinutesWrite 统一执行顺序：参数已校验 → --dry-run → config.Validate → 必需 User 身份 → 调用。
-func runMinutesWrite(cmd *cobra.Command, cmdName, desc, method, path string, body map[string]any, call func(token string) (json.RawMessage, error), onSuccess func(data json.RawMessage) error) error {
+// runMinutesWrite 统一执行顺序：参数已校验 → --dry-run → config.Validate → 必需 User 身份 → 确认门禁 → 调用。
+// confirm 非空时为覆盖 / 删除类写入，执行前走 confirmDangerousAction（非交互未 --yes 时 exit 10）。
+func runMinutesWrite(cmd *cobra.Command, cmdName, desc, method, path string, body map[string]any, confirm string, call func(token string) (json.RawMessage, error), onSuccess func(data json.RawMessage) error) error {
 	if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
 		return printDryRunPlan(cmd, desc, map[string]any{"as": "user"}, []dryRunStep{{Method: method, URL: path, Body: body}})
 	}
@@ -60,6 +61,11 @@ func runMinutesWrite(cmd *cobra.Command, cmdName, desc, method, path string, bod
 	token, err := requireUserToken(cmd, cmdName)
 	if err != nil {
 		return err
+	}
+	if confirm != "" {
+		if err := confirmDangerousAction(cmd, confirm); err != nil {
+			return err
+		}
 	}
 	data, err := call(token)
 	if err != nil {
@@ -119,7 +125,7 @@ var minutesUploadCmd = &cobra.Command{
 			return clierr.Usage(err)
 		}
 		body := map[string]any{"file_token": fileToken}
-		return runMinutesWrite(cmd, "minutes upload", "Generate a minute from a Drive media file", "POST", client.MinutesUploadPath, body,
+		return runMinutesWrite(cmd, "minutes upload", "Generate a minute from a Drive media file", "POST", client.MinutesUploadPath, body, "",
 			func(token string) (json.RawMessage, error) {
 				data, err := client.UploadMinute(fileToken, token)
 				return data, wrapMinutesWriteError(err, "")
@@ -176,7 +182,7 @@ var minutesUpdateCmd = &cobra.Command{
 		if strings.TrimSpace(topic) == "" {
 			return clierr.Usagef("--topic 必填")
 		}
-		return runMinutesWrite(cmd, "minutes update", "Update minute title", "PATCH", client.MinutePath(minuteToken, ""), map[string]any{"topic": topic},
+		return runMinutesWrite(cmd, "minutes update", "Update minute title", "PATCH", client.MinutePath(minuteToken, ""), map[string]any{"topic": topic}, "",
 			func(token string) (json.RawMessage, error) {
 				data, err := client.UpdateMinuteTopic(minuteToken, topic, token)
 				return data, wrapMinutesWriteError(err, minuteToken)
@@ -221,6 +227,7 @@ var minutesSummaryCmd = &cobra.Command{
 			return clierr.Usagef("--summary 必填且不能为空")
 		}
 		return runMinutesWrite(cmd, "minutes summary", "Replace minute AI summary", "PUT", client.MinutePath(minuteToken, "/summary"), map[string]any{"summary": summary},
+			fmt.Sprintf("确认用新内容整体覆盖妙记 %s 的 AI 摘要？原摘要不可恢复", minuteToken),
 			func(token string) (json.RawMessage, error) {
 				data, err := client.ReplaceMinuteSummary(minuteToken, summary, token)
 				return data, wrapMinutesWriteError(err, minuteToken)
@@ -232,6 +239,20 @@ var minutesSummaryCmd = &cobra.Command{
 }
 
 // ---------- minutes todo ----------
+
+// minuteTodoDeleteConfirm 待办写入里含 delete 操作时返回确认提示；只有 add / update 时不需要确认。
+func minuteTodoDeleteConfirm(minuteToken string, items []map[string]any) string {
+	n := 0
+	for _, it := range items {
+		if op, _ := it["operation"].(string); op == "delete" {
+			n++
+		}
+	}
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("确认删除妙记 %s 的 %d 条待办？此操作不可撤销", minuteToken, n)
+}
 
 type minuteTodoSpec struct {
 	Operation string `json:"operation"`
@@ -358,6 +379,7 @@ content 只支持纯文本。写之前可用 feishu-cli minutes get <token> --to
 			return err
 		}
 		return runMinutesWrite(cmd, "minutes todo", "Write minute todo items", "POST", client.MinutePath(minuteToken, "/todo"), map[string]any{"todo_items": items},
+			minuteTodoDeleteConfirm(minuteToken, items),
 			func(token string) (json.RawMessage, error) {
 				data, err := client.WriteMinuteTodos(minuteToken, items, token)
 				return data, wrapMinutesWriteError(err, minuteToken)
@@ -408,6 +430,7 @@ var minutesSpeakerReplaceCmd = &cobra.Command{
 		body := map[string]any{"from_speaker_id": from, "to_user_id": to}
 		path := client.MinutePath(minuteToken, "/transcript/speaker") + "?user_id_type=open_id"
 		return runMinutesWrite(cmd, "minutes speaker-replace", "Replace transcript speaker", "PUT", path, body,
+			fmt.Sprintf("确认批量替换妙记 %s 文字稿中的说话人？", minuteToken),
 			func(token string) (json.RawMessage, error) {
 				data, err := client.ReplaceMinuteSpeaker(minuteToken, body, token)
 				return data, wrapMinutesWriteError(err, minuteToken)
@@ -514,6 +537,7 @@ source_word 不能为空且不能重复（本地校验，exit 2）。
 		}
 		body := map[string]any{"minute_token": minuteToken, "replace_words": words}
 		return runMinutesWrite(cmd, "minutes word-replace", "Replace words in minute transcript", "PUT", client.MinutePath(minuteToken, "/transcript/word"), body,
+			fmt.Sprintf("确认批量替换妙记 %s 文字稿中的 %d 组词语？", minuteToken, len(words)),
 			func(token string) (json.RawMessage, error) {
 				data, err := client.ReplaceMinuteWords(minuteToken, words, token)
 				return data, wrapMinutesWriteError(err, minuteToken)

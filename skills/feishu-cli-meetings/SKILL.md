@@ -42,7 +42,8 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
    `artifacts_error` 并非零退出；`vc recording`、`minutes download` 部分失败仍为 0、全部失败才非 0——都要逐项检查 `ok` / `error`。
 6. `minutes apply-permission` 会通知妙记所有者，机器人入会/离会与会中控制对参会人可见，minutes 写命令直接改妙记内容：
    执行前征得用户同意，验证参数用 `--dry-run`。`vc bot meeting-end` 会把所有参会人移出会议，属于破坏性操作，带确认门禁
-   （非交互未带 `--yes` 退出码 10），先确认会议再执行。
+   （非交互未带 `--yes` 退出码 10），先确认会议再执行。`minutes summary`（整体覆盖摘要）、`minutes todo` 含 delete、
+   `minutes speaker-replace`、`minutes word-replace` 同样带确认门禁。
 7. 会议结束后不要再用 `meeting-events`，改读 `vc detail` / `vc notes` 的会后产物；会中事件先 `vc meeting list-active` 拿 `meeting_id`。
 
 User 路径业务命令前预检，例如搜索会议并读取妙记逐字稿（`auth check` 只检查 User Token；Bot 路径需确认应用侧已开通 scope，不能用它替代）：

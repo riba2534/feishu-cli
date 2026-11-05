@@ -254,7 +254,7 @@ feishu-cli minutes apply-permission --minute-token obcnxxxx --perm view --dry-ru
 # 从云盘音视频生成妙记（本地文件先 drive upload 得到 file_token）
 feishu-cli minutes upload --file-token boxcnxxx
 feishu-cli minutes update obcnxxx --topic "周会"
-feishu-cli minutes summary obcnxxx --summary @summary.md           # 整体替换 AI 摘要；也接受直接文本或 -（stdin）
+feishu-cli minutes summary obcnxxx --summary @summary.md           # 整体替换 AI 摘要（带确认门禁）；也接受直接文本或 -（stdin）
 feishu-cli minutes todo obcnxxx --operation add --todo "补充测试报告" --is-done=false
 feishu-cli minutes todo obcnxxx --todos @todos.json --dry-run      # 批量，可混合 add/update/delete
 feishu-cli minutes speaker-replace obcnxxx --from-speaker-id <speaker_id> --to-user-id ou_xxx

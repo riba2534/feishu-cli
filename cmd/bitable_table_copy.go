@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -113,7 +114,7 @@ var bitableTableCopyCmd = &cobra.Command{
 			}
 			fmt.Fprintf(os.Stderr, "数据表复制已提交: %s, task_id=%s\n", submit.state, submit.taskID)
 			state, timedOut, perr := pollTableCopy(client.Context(), timeout, func() (string, error) {
-				st, err := queryTableCopyState(baseToken, submit.taskID, token)
+				st, err := queryTableCopyState(baseToken, submit.taskID, token, false)
 				if err != nil {
 					return "", err
 				}
@@ -125,6 +126,14 @@ var bitableTableCopyCmd = &cobra.Command{
 			}
 			out["state"] = state
 			out["completed"] = state == tableCopyStateOK
+			if errors.Is(perr, errTableCopyFailed) {
+				// 终态失败：任务不会再完成，不提示续查；用户可以检查原表后重新提交
+				out["state"] = "failed"
+				if rerr := printJSON(out); rerr != nil {
+					return nil, rerr
+				}
+				return nil, fmt.Errorf("%w；可检查源表后重新提交复制", perr)
+			}
 			if perr != nil {
 				// 任务已提交：先把可续查的坐标打到 stdout，再返回错误
 				out["next_action"] = "poll_status"
@@ -214,10 +223,15 @@ type tableCopyState struct {
 	state   string
 }
 
-func queryTableCopyState(baseToken, taskID, token string) (tableCopyState, error) {
+// errTableCopyFailed 表示复制任务已在服务端终态失败（不是查询失败），可以重新提交。
+var errTableCopyFailed = errors.New("数据表复制任务失败（state=failed）")
+
+// queryTableCopyState 查询复制任务状态。userTaskID 为 true 时 task_id 来自用户输入（copy-status），
+// 服务端判定无效才是用法错误；--wait 轮询时 task_id 来自提交响应，按原错误返回。
+func queryTableCopyState(baseToken, taskID, token string, userTaskID bool) (tableCopyState, error) {
 	data, err := client.BaseV3Call("POST", client.BaseV3Path("bases", baseToken, "copy_table_state"), nil, map[string]any{"task_id": taskID}, token)
 	if err != nil {
-		if client.HasAPICode(err, tableCopyInvalidTaskCode) {
+		if userTaskID && client.HasAPICode(err, tableCopyInvalidTaskCode) {
 			return tableCopyState{}, clierr.Usage(fmt.Errorf("--task-id 无效: %w", err))
 		}
 		return tableCopyState{}, err
@@ -230,7 +244,7 @@ func queryTableCopyState(baseToken, taskID, token string) (tableCopyState, error
 	case tableCopyStateInit, tableCopyStateProc, tableCopyStateOK:
 		return st, nil
 	case "failed":
-		return st, fmt.Errorf("数据表复制任务失败（state=failed）")
+		return st, errTableCopyFailed
 	default:
 		return st, fmt.Errorf("复制任务状态无效: %q", st.state)
 	}
@@ -328,7 +342,7 @@ var bitableTableCopyStatusCmd = &cobra.Command{
 			resolvedBT = bt
 			return bitableReq{method: "POST", path: client.BaseV3Path("bases", bt, "copy_table_state"), body: map[string]any{"task_id": taskID}}
 		}, func(req bitableReq, token string) (any, error) {
-			st, err := queryTableCopyState(resolvedBT, taskID, token)
+			st, err := queryTableCopyState(resolvedBT, taskID, token, true)
 			if err != nil {
 				return nil, err
 			}

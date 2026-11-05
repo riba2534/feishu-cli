@@ -388,3 +388,48 @@ func TestBitableTemplateAndBlockDryRun(t *testing.T) {
 		}
 	}
 }
+
+// --wait 轮询：task_id 来自提交响应，800010109 不是用户的用法错误；终态 failed 不提示续查。
+func TestTableCopyWaitServerErrors(t *testing.T) {
+	oldInit, oldMax := tableCopyPollInitial, tableCopyPollMax
+	tableCopyPollInitial, tableCopyPollMax = time.Millisecond, 2*time.Millisecond
+	defer func() { tableCopyPollInitial, tableCopyPollMax = oldInit, oldMax }()
+	for _, tc := range []struct {
+		name  string
+		state func(w http.ResponseWriter)
+		check func(t *testing.T, out string, err error)
+	}{
+		{"invalid-task", func(w http.ResponseWriter) {
+			bitableWriteJSON(w, map[string]any{"code": 800010109, "msg": "invalid task id"})
+		}, func(t *testing.T, out string, err error) {
+			if err == nil || exitCodeFor(err) == clierr.ExitUsage || strings.Contains(err.Error(), "--task-id 无效") {
+				t.Fatalf("--wait 中服务端错误不应报 --task-id 用法错误: %v", err)
+			}
+		}},
+		{"failed", func(w http.ResponseWriter) {
+			bitableWriteJSON(w, map[string]any{"code": 0, "data": map[string]any{"table_id": "tblALL", "state": "failed"}})
+		}, func(t *testing.T, out string, err error) {
+			if err == nil || strings.Contains(err.Error(), "请勿重复提交") || !strings.Contains(err.Error(), "重新提交") {
+				t.Fatalf("终态失败应提示可重新提交: %v", err)
+			}
+			if strings.Contains(out, "poll_status") {
+				t.Fatalf("终态失败不应提示续查: %s", out)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cleanup := stubCmdFeishuServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/copy") {
+					bitableWriteJSON(w, map[string]any{"code": 0, "data": map[string]any{"table": map[string]any{"id": "tblALL"}, "state": "init", "task_id": "t1"}})
+					return
+				}
+				tc.state(w)
+			})
+			defer cleanup()
+			out, _, err := runCaptured(t, func() error {
+				return bitableTableCopyCmd.RunE(newTableCopyTestCmd("table-id", "tbl1", "name", "全量", "range", "all", "wait", "true"), nil)
+			})
+			tc.check(t, out, err)
+		})
+	}
+}

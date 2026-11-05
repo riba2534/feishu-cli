@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"encoding/json"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+	"io"
 	"net/http"
 	"reflect"
 	"strings"
@@ -13,6 +16,9 @@ import (
 // TestWikiMinutes_DryRunWithoutCredentials：wiki 写命令与妙记写命令的 --dry-run 在无凭据（TestMain 空 HOME）时
 // exit 0 并输出 dry_run；去掉 --dry-run 仍是鉴权类错误（exit 3）。
 func TestWikiMinutes_DryRunWithoutCredentials(t *testing.T) {
+	withCmdHome(t)
+	viper.Reset() // 清掉其他用例 stub 服务器留下的 app_id/base_url，模拟真正无配置的环境
+	t.Cleanup(viper.Reset)
 	cases := [][]string{
 		{"wiki", "create", "--space-id", "701", "--title", "t"},
 		{"wiki", "update", "wikcnAbc", "--title", "t"},
@@ -127,6 +133,7 @@ func TestMinutesExtractUploadedMinuteToken(t *testing.T) {
 
 // TestMinutesWriteRequests：真实执行路径（mock server）下各写命令的 method/path/body 与 dry-run 一致。
 func TestMinutesWriteRequests(t *testing.T) {
+	withAssumeYes(t)
 	m, srv := newSlidesMockServer(t)
 	t.Cleanup(setupCmdTestConfig(t, srv.URL))
 	ok := func(*http.Request, map[string]any) (int, string) { return 200, `{"code":0,"data":{}}` }
@@ -192,6 +199,7 @@ func TestMinutesWriteRequests(t *testing.T) {
 
 // TestMinutesWordReplaceAllMissed：全部未命中时报错（不当成功）。
 func TestMinutesWordReplaceAllMissed(t *testing.T) {
+	withAssumeYes(t)
 	m, srv := newSlidesMockServer(t)
 	t.Cleanup(setupCmdTestConfig(t, srv.URL))
 	m.on("PUT", "/transcript/word", func(*http.Request, map[string]any) (int, string) {
@@ -200,5 +208,59 @@ func TestMinutesWordReplaceAllMissed(t *testing.T) {
 	_, err := runSlidesCmd(t, minutesWordReplaceCmd, []string{"obcnAbc"}, map[string]string{"user-access-token": "u-test", "replace-words": `[{"source_word":"a","target_word":"b"}]`})
 	if err == nil || !strings.Contains(err.Error(), "未在妙记") {
 		t.Fatalf("全部未命中应报错，got %v", err)
+	}
+}
+
+// yesReader 每次读取都返回一行 "y"：confirmDangerousAction 每次调用都新建 bufio.Reader，会吞掉缓冲区剩余内容。
+type yesReader struct{}
+
+func (yesReader) Read(p []byte) (int, error) { return copy(p, "y\n"), nil }
+
+// withAssumeYes 让本测试内的确认门禁直接放行（等价于全局 --yes）。
+// runSlidesCmd 会复位命令上合并进来的全局 flag（含 --yes → assumeYes），所以用 confirmIsInteractive 之外的
+// 方式：把 confirmInput 设成 "y"，并假装是交互终端。
+func withAssumeYes(t *testing.T) {
+	t.Helper()
+	origInteractive, origInput, origOut := confirmIsInteractive, confirmInput, confirmPromptOut
+	confirmIsInteractive = func() bool { return true }
+	confirmInput = yesReader{}
+	confirmPromptOut = io.Discard
+	t.Cleanup(func() { confirmIsInteractive, confirmInput, confirmPromptOut = origInteractive, origInput, origOut })
+}
+
+// 覆盖 / 删除类妙记写命令：非交互未 --yes 时 exit 10 且不发写请求；只增改待办不需要确认。
+func TestMinutesOverwriteCommandsConfirmGate(t *testing.T) {
+	origInteractive := confirmIsInteractive
+	confirmIsInteractive = func() bool { return false }
+	t.Cleanup(func() { confirmIsInteractive = origInteractive })
+	origYes := assumeYes
+	assumeYes = false
+	t.Cleanup(func() { assumeYes = origYes })
+
+	m, srv := newSlidesMockServer(t)
+	t.Cleanup(setupCmdTestConfig(t, srv.URL))
+	ok := func(*http.Request, map[string]any) (int, string) { return 200, `{"code":0,"data":{}}` }
+	m.on("POST", "/minutes/obcnAbc/todo", ok)
+	cases := []struct {
+		c     *cobra.Command
+		flags map[string]string
+	}{
+		{minutesSummaryCmd, map[string]string{"summary": "x"}},
+		{minutesTodoCmd, map[string]string{"todos": `[{"operation":"delete","todo_id":"t1"}]`}},
+		{minutesWordReplaceCmd, map[string]string{"replace-words": `[{"source_word":"a","target_word":"b"}]`}},
+		{minutesSpeakerReplaceCmd, map[string]string{"from-speaker-id": "s1", "to-user-id": "ou_x"}},
+	}
+	for _, tc := range cases {
+		tc.flags["user-access-token"] = "u-test"
+		_, err := runSlidesCmd(t, tc.c, []string{"obcnAbc"}, tc.flags)
+		if exitCodeFor(err) != clierr.ExitConfirmationRequired {
+			t.Fatalf("%s 未确认应 exit 10，got %v", tc.c.Name(), err)
+		}
+	}
+	if n := len(m.find("PUT", "/minutes/obcnAbc")) + len(m.find("POST", "/minutes/obcnAbc")); n != 0 {
+		t.Fatalf("未确认不应发写请求，got %d", n)
+	}
+	if _, err := runSlidesCmd(t, minutesTodoCmd, []string{"obcnAbc"}, map[string]string{"user-access-token": "u-test", "todos": `[{"operation":"add","content":"c","is_done":false}]`}); err != nil {
+		t.Fatalf("只新增待办不需要确认: %v", err)
 	}
 }

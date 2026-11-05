@@ -353,6 +353,12 @@ func runSheetCondFormatWrite(cmd *cobra.Command, args []string, isUpdate bool) e
 		formats[i].Ranges = ranges
 	}
 	items := sheetCondFormats(sheetID, formats)
+	if isUpdate {
+		// 更新为整条覆盖（未传的样式会被清除），与删除同样走确认门禁
+		if err := confirmDangerousAction(cmd, fmt.Sprintf("确认整条覆盖子表 %s 上的 %d 条条件格式？未传的样式会被清除", sheetID, len(formats))); err != nil {
+			return err
+		}
+	}
 	var results []client.CondFormatResult
 	if isUpdate {
 		results, err = client.BatchUpdateCondFormats(client.Context(), target.Token, items, target.UAT)

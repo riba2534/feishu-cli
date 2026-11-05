@@ -142,7 +142,7 @@ feishu-cli sheet cond-format create shtcnxxxxxx Sheet1 --range A:A --rule-type c
   --operator beginsWith --text 2020 --italic --text-decoration 1
 feishu-cli sheet cond-format create shtcnxxxxxx 0b1212 --range B2:B --rule-type duplicateValues --fore-color "#f54a45"
 
-# update —— 整条覆盖，范围、规则、样式都要重新给全；cf_id 来自 list
+# update —— 整条覆盖，范围、规则、样式都要重新给全；cf_id 来自 list；带确认门禁（非交互需 --yes）
 feishu-cli sheet cond-format update shtcnxxxxxx 0b1212 <cf_id> --range C2:C100 \
   --rule-type cellIs --operator greaterThan --formula 60 --back-color "#fff258"
 
