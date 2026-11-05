@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -21,6 +22,7 @@ var minutesApplyPermissionCmd = &cobra.Command{
   --minute-token  妙记 Token 或妙记链接（https://xxx.feishu.cn/minutes/<token>），必填
   --perm          申请的权限类型：view（查看）/ edit（编辑），必填
   --output, -o    输出格式（json）
+  --dry-run       只打印将要发出的请求（不读取凭据、不联网）
 
 权限:
   默认 User 身份（--as user），可用 --as bot|auto 切换；需要 minutes:permission:apply 权限
@@ -30,7 +32,10 @@ var minutesApplyPermissionCmd = &cobra.Command{
   feishu-cli minutes apply-permission --minute-token obcnxxxx --perm view
 
   # 申请编辑权限（JSON 输出）
-  feishu-cli minutes apply-permission --minute-token obcnxxxx --perm edit -o json`,
+  feishu-cli minutes apply-permission --minute-token obcnxxxx --perm edit -o json
+
+  # 预览请求
+  feishu-cli minutes apply-permission --minute-token obcnxxxx --perm view --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rawMinute, _ := cmd.Flags().GetString("minute-token")
 		perm, _ := cmd.Flags().GetString("perm")
@@ -42,6 +47,13 @@ var minutesApplyPermissionCmd = &cobra.Command{
 		}
 		if err := validateEnum(perm, "权限类型", []string{"view", "edit"}); err != nil {
 			return err
+		}
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Apply for minute permission", nil, []dryRunStep{{
+				Method: "POST",
+				URL:    "/open-apis/minutes/v1/minutes/" + url.PathEscape(minuteToken) + "/permissions/apply",
+				Body:   map[string]any{"perm": perm},
+			}})
 		}
 
 		if err := config.Validate(); err != nil {
@@ -79,6 +91,7 @@ func init() {
 	minutesApplyPermissionCmd.Flags().String("minute-token", "", "妙记 Token 或妙记链接（必填）")
 	minutesApplyPermissionCmd.Flags().String("perm", "", "申请的权限类型：view / edit（必填）")
 	minutesApplyPermissionCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	minutesApplyPermissionCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求")
 	minutesApplyPermissionCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	addVCReadAsFlag(minutesApplyPermissionCmd)
 	mustMarkFlagRequired(minutesApplyPermissionCmd, "minute-token", "perm")

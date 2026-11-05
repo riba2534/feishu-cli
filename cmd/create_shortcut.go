@@ -32,17 +32,30 @@ var createShortcutCmd = &cobra.Command{
   feishu-cli file shortcut doccnXXX --target fldcnYYY --type docx
 
   # JSON 格式输出
-  feishu-cli file shortcut doccnXXX --target fldcnYYY --type docx --output json`,
+  feishu-cli file shortcut doccnXXX --target fldcnYYY --type docx --output json
+
+  # 预览请求（--dry-run 只打印将要发出的请求，不读取凭据、不联网）
+  feishu-cli file shortcut doccnXXX --target fldcnXXX --type docx --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken := args[0]
 		targetFolder, _ := cmd.Flags().GetString("target")
 		fileType, _ := cmd.Flags().GetString("type")
 		output, _ := cmd.Flags().GetString("output")
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Create shortcut", nil, []dryRunStep{{
+				Method: "POST",
+				URL:    "/open-apis/drive/v1/files/create_shortcut",
+				Body: map[string]any{
+					"parent_token": targetFolder,
+					"refer_entity": map[string]any{"refer_token": fileToken, "refer_type": fileType},
+				},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		info, err := client.CreateShortcut(targetFolder, fileToken, fileType, userAccessToken)
@@ -71,6 +84,7 @@ var createShortcutCmd = &cobra.Command{
 func init() {
 	fileCmd.AddCommand(createShortcutCmd)
 	createShortcutCmd.Flags().String("target", "", "目标文件夹 Token（必填）")
+	createShortcutCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	createShortcutCmd.Flags().String("type", "", "文件类型（必填）")
 	createShortcutCmd.Flags().String("user-access-token", "", "User Access Token（可选，使用用户身份访问文件）")
 	createShortcutCmd.Flags().StringP("output", "o", "", "输出格式（json）")
