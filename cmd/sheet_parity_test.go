@@ -22,7 +22,7 @@ func TestSheetWriteCommands_DryRun(t *testing.T) {
 		{"write", sheetWriteCmd, []string{"shtTok", "s1!A1"}, map[string]string{"data": `[["a",1]]`, "output": "json"},
 			[]string{`"PUT"`, "/spreadsheets/shtTok/values", `"rows": 1`}},
 		{"clear", sheetClearCmd, []string{"shtTok", "s1", "A1:B2"}, nil,
-			[]string{"/sheets/s1/values/batch_clear", `"A1:B2"`}},
+			[]string{"/sheets/s1/values/batch_clear", `"s1!A1:B2"`}},
 		{"unprotect", sheetUnprotectCmd, []string{"shtTok", "p1", "p2"}, nil,
 			[]string{"protected_range_batch_del", `"protectIds"`}},
 		{"filter delete", sheetFilterDeleteCmd, []string{"shtTok", "s1"}, nil,

@@ -117,7 +117,7 @@ feishu-cli sheet dropdown update --token shtcnxxxxxx --sheet-id 0b1212 \
 feishu-cli sheet dropdown update --token shtcnxxxxxx --sheet-id 0b1212 \
   --ranges "0b1212!A1:A100" --options "P0,P1,P2" --highlight
 
-# delete —— --ranges 逗号分隔，最多 100 个；--dry-run 预览请求
+# delete —— --ranges 逗号分隔，最多 100 个（超出本地报错，退出码 2）；--dry-run 预览请求
 feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100,0b1212!B1:B100"
 feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100" --dry-run
 ```
@@ -135,7 +135,7 @@ feishu-cli sheet cond-format list shtcnxxxxxx 0b1212 Sheet2 -o json
 
 # create —— 数值在 1~10 之间加粗、绿底（between / notBetween 需 2 个 --formula，其余 1 个）
 feishu-cli sheet cond-format create shtcnxxxxxx 0b1212 --range C2:C100 \
-  --rule-type cellIs --operator between --formula 1 --formula 10 --bold --back-color "#d9f5d6"
+  --rule-type cellIs --operator between --formula 1 --formula 10 --bold --back-color "#e0f6dd"
 
 # create —— 文本以“2020”开头时斜体加下划线；重复值标红字
 feishu-cli sheet cond-format create shtcnxxxxxx Sheet1 --range A:A --rule-type containsText \
@@ -144,7 +144,9 @@ feishu-cli sheet cond-format create shtcnxxxxxx 0b1212 --range B2:B --rule-type 
 
 # update —— 整条覆盖，范围、规则、样式都要重新给全；cf_id 来自 list；带确认门禁（非交互需 --yes）
 feishu-cli sheet cond-format update shtcnxxxxxx 0b1212 <cf_id> --range C2:C100 \
-  --rule-type cellIs --operator greaterThan --formula 60 --back-color "#fff258"
+  --rule-type cellIs --operator greaterThan --formula 60 --back-color "#fdecd1" --dry-run
+feishu-cli sheet cond-format update shtcnxxxxxx 0b1212 <cf_id> --range C2:C100 \
+  --rule-type cellIs --operator greaterThan --formula 60 --back-color "#fdecd1" --yes
 
 # delete —— 不可撤销，带确认门禁：交互终端询问，非交互必须加 --yes（否则退出码 10、不执行）
 feishu-cli sheet cond-format delete shtcnxxxxxx 0b1212 <cf_id> --dry-run
@@ -301,7 +303,7 @@ done
 > 整表结构化处理优先 `table-get` / `table-put`；只改已知区域时使用范围读写命令。
 > 删除类命令（`delete-rows/delete-cols/delete-sheet`、`filter delete`、`filter-view delete`、`condition delete`、`dropdown delete`、
 > `image delete`、`unprotect`、`clear`）没有确认门禁，执行即生效且不可撤销；都支持 `--dry-run`（不联网、不需要凭据），先预览再执行。
-> `cond-format delete` 带确认门禁，非交互环境须加 `--yes`。
+> `cond-format update`（整条覆盖）与 `cond-format delete` 带确认门禁，非交互环境须加 `--yes`（否则退出码 10、不执行）。
 
 ## 权限要求
 

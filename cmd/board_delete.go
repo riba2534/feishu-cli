@@ -15,6 +15,9 @@ var boardDeleteCmd = &cobra.Command{
 	Short: "删除画板节点",
 	Long: `批量删除画板中的节点。
 
+删除没有确认门禁：执行即生效、不可撤销（--all 清空整个画板）。先用 --dry-run 核对要删除的节点，
+或用 board nodes 回读确认后再执行。
+
 示例:
   # 删除指定节点
   feishu-cli board delete BOARD_ID --node-ids o1:1,o1:2,o1:3

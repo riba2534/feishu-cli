@@ -121,12 +121,16 @@ ranges 可指定多个范围（前缀可写 sheetId 或子表名，不带前缀�
 	},
 }
 
+// sheetDropdownDeleteMaxRanges 是删除下拉菜单单次请求的范围数上限（服务端实测 101 个报 90204 max size limit = 100）。
+const sheetDropdownDeleteMaxRanges = 100
+
 // dropdown delete
 var sheetDropdownDeleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "删除下拉菜单",
 	Long: `删除指定范围的下拉菜单（数据验证）。
-ranges 前缀可写 sheetId 或子表名（不带前缀时用唯一子表补全），最多 100 个，逗号分隔。
+ranges 前缀可写 sheetId 或子表名（不带前缀时用 URL ?sheet= 或唯一子表补全），最多 100 个（超出在本地报用法错误，exit 2），逗号分隔。
+--dry-run 不读凭据、不联网；子表名前缀与唯一子表补全在执行时才确定，预览保留原样并在请求步骤 desc 中注明。
 
 示例:
   feishu-cli sheet dropdown delete --token shtcnxxxxxx --ranges "0b1212!A1:A100"
@@ -146,12 +150,23 @@ ranges 前缀可写 sheetId 或子表名（不带前缀时用唯一子表补全�
 		if len(ranges) == 0 {
 			return clierr.Usagef("--ranges 至少需要一个范围")
 		}
-		dvRanges := make([]any, len(ranges))
-		for i, r := range ranges {
+		if len(ranges) > sheetDropdownDeleteMaxRanges {
+			return clierr.Usagef("--ranges 最多 %d 个范围，当前 %d 个；请分批删除", sheetDropdownDeleteMaxRanges, len(ranges))
+		}
+		previewRanges, pending, err := previewSheetRanges(ranges, "", urlSheetParam(spreadsheetToken))
+		if err != nil {
+			return err
+		}
+		dvRanges := make([]any, len(previewRanges))
+		for i, r := range previewRanges {
 			dvRanges[i] = map[string]any{"range": r}
 		}
-		if handled, err := sheetDryRunIfRequested(cmd, spreadsheetToken, "--token", fmt.Sprintf("删除 %d 个范围的下拉菜单", len(ranges)), map[string]any{
-			"ranges": ranges,
+		stepDesc := ""
+		if pending {
+			stepDesc = sheetRangePendingDesc
+		}
+		if handled, err := sheetDryRunWithStepDesc(cmd, spreadsheetToken, "--token", fmt.Sprintf("删除 %d 个范围的下拉菜单", len(ranges)), stepDesc, map[string]any{
+			"ranges": previewRanges,
 		}, "DELETE", "/open-apis/sheets/v2/spreadsheets/%s/dataValidation", map[string]any{
 			"dataValidationRanges": dvRanges,
 		}); handled {
