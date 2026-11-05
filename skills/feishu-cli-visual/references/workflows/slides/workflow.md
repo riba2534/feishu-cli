@@ -16,15 +16,18 @@
 - [编辑已有页面](#4-编辑已有页面)
 - [截图预览](#5-截图预览-slides-screenshot)
 - [图片](#6-图片)
+- [历史版本与回滚](#7-历史版本与回滚-slides-history)
 - [错误排查](#错误排查)
 
 ## 身份与权限
 
-- **身份**：写命令（create / add-slide / delete-slide / replace-slide / update-slide / media-upload）默认 **Bot**，
-  显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 切到用户身份；读命令（get / screenshot）优先 User Token、未配置回落 Bot。
-  演示文稿通常属于用户本人：编辑用户已有的 PPT 时用 User 身份，Bot 没有该文件权限会直接报错。
-  已登录时先取 User Token 再传入：`UAT=$(feishu-cli auth token --as user) && feishu-cli slides create ... --user-access-token "$UAT"`。
-  不要把 `$(...)` 直接内联进参数：取 Token 失败时会传入空值，命令静默回落 Bot。
+- **身份**：写命令（create / add-slide / delete-slide / replace-slide / update-slide / media-upload / history revert /
+  history revert-status）默认 **Bot**，用 `--as bot|user|auto` 切换：`--as user` 以当前登录用户身份执行（读取 `auth login`
+  的登录态，缺失时报错退出），`--as auto` 为 User 优先、未登录回退 Bot（已登录但 token 刷新失败时报错，不静默切 Bot）。
+  不传 `--as` 时与旧版一致：显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 仍切到用户身份。
+  读命令（get / screenshot / history list）优先 User Token、未配置回落 Bot。
+  演示文稿通常属于用户本人：编辑用户已有的 PPT 时加 `--as user`，Bot 没有该文件权限会直接报错。
+  显式 `--as` 时 dry-run 预览里多一个 `identity` 字段（不解析 token，只展示将使用的身份）。
 - **Bot 创建**：`slides create` 以 Bot 身份创建后自动给当前 CLI 登录用户授予 `full_access`，JSON 输出 `url` 与 `permission_grant`。
   应用未开通 tenant 的 `slides:presentation:create` 时报 99991672（exit 3，重新登录无效），改用 User 身份。
 - **scope**：
@@ -36,6 +39,8 @@
 | `slides get` | `slides:presentation:read` |
 | `slides screenshot` | `slides:presentation:screenshot` |
 | `slides media-upload` | `docs:document.media:upload` |
+| `slides history list` / `revert-status` | `slides:presentation:read` |
+| `slides history revert` | `slides:presentation:update` 或 `slides:presentation:write_only` |
 
 传 `/wiki/` URL 时额外需要 `wiki:node:read`。预检：`feishu-cli auth check --scope "slides:presentation:update slides:presentation:read"`。
 
@@ -43,9 +48,10 @@
 
 所有接收演示文稿的命令都接受 `xml_presentation_id`、`/slides/` URL 或 `/wiki/` URL（wiki 自动解析，底层不是 slides 时报错）。
 XML / JSON 参数（`--slide`、`--slides`、`--content`、`--parts`）都支持 `@file` 读文件、`-` 读 stdin，用来绕开 shell 转义——
-多层转义是 3350001 的头号来源。写页面的命令都有 `--dry-run`。
-只有 `create` / `get` / `media-upload` 有 `-o json`；`add-slide` / `delete-slide` / `replace-slide` / `update-slide` / `screenshot`
-固定输出 JSON，没有 `-o`（传了会报 unknown flag，exit 2）。
+多层转义是 3350001 的头号来源。所有写命令（含 `media-upload`、`history revert`）都有 `--dry-run`：静态预览，
+不联网、不需要凭据，wiki 链接的解析步骤用占位符表示。
+只有 `create` / `get` / `media-upload` 有 `-o json`；`add-slide` / `delete-slide` / `replace-slide` / `update-slide` / `screenshot` /
+`history *` 固定输出 JSON，没有 `-o`（传了会报 unknown flag，exit 2）。
 
 | 场景 | 命令 |
 |------|------|
@@ -57,6 +63,7 @@ XML / JSON 参数（`--slide`、`--slides`、`--content`、`--parts`）都支持
 | 整页改写（换背景 / 批量改样式 / 删多个元素） | `slides update-slide <id> --slide-id <sid> --content @page.xml` |
 | 截图核对 | `slides screenshot <id> --slide-number 1,2 --output-dir shots` |
 | 上传图片拿 file_token | `slides media-upload --file ./a.png --presentation-token <id> -o json` |
+| 查历史版本 / 回滚 | `slides history list <id>`、`slides history revert <id> --history-version-id N --wait --yes` |
 
 ## 1. 创建 `slides create`
 
@@ -97,7 +104,7 @@ feishu-cli slides get <id> --remove-attr-id               # 去掉 id 属性，�
 
 - 编辑前先读单页 XML，拿到页面 `slide_id` 和元素 `id`（`replace-slide` 的 `block_id`）
 - `--revision-id` 默认 `-1`（最新）。实测读取接口**忽略正整数版本号、始终返回最新版本**，`0` 会被服务端以 3350001 拒绝，
-  CLI 在本地直接报用法错误；需要历史版本请在飞书客户端的版本记录里查看
+  CLI 在本地直接报用法错误；需要回到历史版本用 `slides history`（见第 7 节）
 
 ## 3. 加页与删页
 
@@ -114,7 +121,7 @@ feishu-cli slides delete-slide <id> --slide-id <sid> --yes
 - 与已有页 XML 完全相同的 add-slide 不会新建页（服务端去重，返回原 `slide_id` 和当时的 `revision_id`，
   `--before-slide-id` 也不生效）；返回的 `revision_id` 没有增长时回读确认
 - delete-slide 是危险操作：交互终端会二次确认；非交互环境（Agent / 管道）必须显式 `--yes`，否则退出码 10 且不执行。
-  删前先 `slides get --slide-id` 确认是哪一页；删除无法原地撤销，误删在飞书客户端版本记录中恢复
+  删前先 `slides get --slide-id` 确认是哪一页；误删用 `slides history revert` 回滚到删除前的版本（见第 7 节）
 - add-slide / delete-slide / replace-slide 的 `--revision-id` 传具体版本号可做乐观锁（版本已变化时服务端拒绝）；
   update-slide 传旧版本号的语义不同：以该快照重建本页并丢弃之后的改动，通常保持默认 `-1`
 
@@ -198,6 +205,32 @@ feishu-cli slides screenshot --content @page.xml --output preview            # �
   （token 以 `fake_office_`/`local_office_` 开头，或长度 ≥25 且第 5/10/15/20/25 位依次为 `OFL0X`）用 `office_slide_file`
 - `<img>` 的 width:height 与原图比例不同会被自动裁剪
 
+## 7. 历史版本与回滚 `slides history`
+
+```bash
+feishu-cli slides history list <id> [--page-size 20] [--page-token TOKEN]      # 接口原始 data：entries / has_more / page_token
+feishu-cli slides history revert <id> --history-version-id 11 --dry-run       # 预览请求
+feishu-cli slides history revert <id> --history-version-id 11 --wait --yes     # 发起回滚并轮询到结束
+feishu-cli slides history revert-status <id> --task-id <task_id>               # 单独查询回滚状态
+```
+
+安全流程：
+
+1. `list` 找目标版本的 `history_version_id`（正整数字符串）。`entries[]` 每项含 `revision_id`、`history_version_id`、
+   `edit_time`（UTC RFC3339）、`name`、`description`、`editor_ids`。`has_more=true` 时 stderr 提示用 `--page-token` 翻页。
+2. **`revision_id` 不唯一，不要把它当 `history_version_id` 传给 revert**。用户说"回到 revision 42"时，先筛
+   `revision_id == 42` 的候选（未命中且 `has_more` 就翻页；命中后最多再拉一页补齐跨页候选），按 `edit_time` 与用户目标时间
+   最接近的一条取 `history_version_id`；多个候选无法区分时把候选（history_version_id / revision_id / edit_time / name）给用户确认。
+   用户只给时间时，选不晚于该时刻的最近一条。
+3. `revert` 是写操作：非交互环境不加 `--yes` 以退出码 10 结束且不执行；`--history-version-id` 非正整数时退出码 2。
+4. `revert` 立即返回 `task_id`，回滚在服务端异步执行。**任务创建后不要因为状态查询失败而重新 revert**。
+5. `--wait`：`status=running` 时按响应的 `poll_after_ms`（缺省或非法时 10 秒）轮询 `revert_status`，整体最多 5 分钟；
+   只调用状态接口，状态查询连续失败超过 3 次就停止并报错（错误里带 `task_id`）。5 分钟后仍 running 时以退出码 0 结束，
+   输出 `wait_timed_out: true` 并提示稍后用 `revert-status` 查询——这不是回滚失败。
+6. `done` 退出码 0，之后 `slides get` 回读确认；`partial_failed` / `failed` 以非零退出码结束并输出 `failed_block_tokens`，
+   未经用户确认不要再次 revert。
+7. `revert-status` 的身份默认与 `revert` 相同（Bot）；revert 用了 `--as user` 时查询也传 `--as user`。
+
 ## 错误排查
 
 | 错误 | 原因 | 处理 |
@@ -209,10 +242,13 @@ feishu-cli slides screenshot --content @page.xml --output preview            # �
 | `4001000 ... block is not NoteBlock` | 整页 XML 带了过期 note id | 用 `update-slide`（CLI 自动剥除），或删掉 `<note>` 的 id |
 | `99991672` | 应用缺 tenant scope（Bot 身份） | 用 User 身份，或让管理员为应用开通 |
 | `99991679` | 用户未授权该 scope | `feishu-cli auth login --scope "<scope>"` 增量补授 |
-| 退出码 10 | delete-slide 在非交互环境等待确认 | 向用户确认要删的页后再加 `--yes`，不要自行补 |
+| 退出码 10 | delete-slide / history revert 在非交互环境等待确认 | 向用户确认要删的页或要回滚的版本后再加 `--yes`，不要自行补 |
 | `<presentation> 的资源类型是 "docx"` | 传了文档 URL | 换成 `/slides/` 或指向 slides 的 `/wiki/` 链接 |
 | 图片不显示 | 写了外链或别的演示文稿的 token | 用 `@` 占位符或 media-upload 到当前演示文稿 |
 
 ## 参考
 
 - XML 速查：[`references/xml-schema-quick-ref.md`](references/xml-schema-quick-ref.md)
+- 图表示例与定义：[`references/slides_chart_demo.xml`](references/slides_chart_demo.xml)、
+  [`references/slides_chart_schema.xml`](references/slides_chart_schema.xml)（写 `<chart>` 时按需读取）
+- IconPark 图标常用清单：[`references/iconpark.md`](references/iconpark.md)

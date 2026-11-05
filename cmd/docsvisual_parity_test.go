@@ -53,7 +53,7 @@ func TestDocsVisualDryRunWithoutCredentials(t *testing.T) {
 		{[]string{"doc", "resource", "update", "doc123", "--type", "cover", "--file", f("a.png")}, []string{"upload_all"}},
 		{[]string{"doc", "resource", "download", "doc123", "--type", "cover", "-o", filepath.Join(dir, "cover.png")}, []string{"/download"}},
 		{[]string{"doc", "media-insert", "doc123", "--file", f("a.png")}, []string{`"docx_image"`, "upload_all", "replace_image", "/children"}},
-		{[]string{"doc", "media-insert", "https://x.feishu.cn/wiki/wikcnAbc", "--type", "file", "--file", f("a.md"), "--file-view", "preview"}, []string{"node_by_token", `"docx_file"`, "replace_file", `"view_type": 2`}},
+		{[]string{"doc", "media-insert", "https://xxx.feishu.cn/wiki/wikcnAbc", "--type", "file", "--file", f("a.md"), "--file-view", "preview"}, []string{"node_by_token", `"docx_file"`, "replace_file", `"view_type": 2`}},
 		{[]string{"markdown", "create", "--name", "a.md", "--content", "x"}, []string{"upload_all"}},
 		{[]string{"markdown", "diff", "--file-token", "boxcnxxx", "--file", f("a.md")}, nil},
 		{[]string{"markdown", "fetch", "--file-token", "boxcnxxx"}, nil},
@@ -67,7 +67,7 @@ func TestDocsVisualDryRunWithoutCredentials(t *testing.T) {
 		{[]string{"slides", "media-upload", "--presentation-token", "pres123", "--file", f("a.png")}, []string{"upload_all", `"slide_file"`, `"parent_node": "pres123"`}},
 		{[]string{"slides", "history", "list", "pres123"}, []string{"/histories", `"page_size": 20`}},
 		{[]string{"slides", "history", "revert", "pres123", "--history-version-id", "7"}, []string{"/history/revert", `"history_version_id": "7"`}},
-		{[]string{"slides", "history", "revert-status", "https://x.feishu.cn/wiki/wikcnAbc", "--task-id", "task_x"}, []string{"node_by_token", "/history/revert_status", `"task_id": "task_x"`}},
+		{[]string{"slides", "history", "revert-status", "https://xxx.feishu.cn/wiki/wikcnAbc", "--task-id", "task_x"}, []string{"node_by_token", "/history/revert_status", `"task_id": "task_x"`}},
 	}
 	for _, tc := range cases {
 		hits := isolateBitableNoCredEnv(t)
@@ -130,7 +130,7 @@ func TestDocsVisualParamErrorsAreUsageErrors(t *testing.T) {
 		{[]string{"slides", "history", "revert", "pres123", "--history-version-id", "abc"}, "不要传 revision_id"},
 		{[]string{"slides", "history", "list", "pres123", "--page-size", "21"}, "--page-size 必须在 1-20 之间"},
 		{[]string{"slides", "history", "revert-status", "pres123", "--task-id", " "}, "--task-id 不能为空"},
-		{[]string{"slides", "history", "list", "https://x.feishu.cn/docx/doxcnAbc"}, ""},
+		{[]string{"slides", "history", "list", "https://xxx.feishu.cn/docx/doxcnAbc"}, ""},
 		{[]string{"doc", "table", "insert-row", "doc123", "tbl123", "--index", "-2"}, "索引必须 >= 0 或 -1"},
 		{[]string{"doc", "table", "delete-rows", "doc123", "tbl123", "--start", "3", "--end", "1"}, "结束索引必须大于起始索引"},
 		{[]string{"doc", "delete", "doc123", "blk123", "--start", "0"}, "必须指定 --all 或 --end"},
