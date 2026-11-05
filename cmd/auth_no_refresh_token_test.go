@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // 登录未下发 refresh_token：只新增 no_refresh_token，既有字段（refresh_token_present / warnings / hint）保留，
@@ -83,8 +84,10 @@ func TestAuthStatusNoRefreshToken(t *testing.T) {
 			if tc.status == "valid" && (strings.Contains(note, "未开通 offline_access") || !strings.Contains(note, "刷新 user_access_token")) {
 				t.Fatalf("note 归因不符: %q", note)
 			}
+			// 期望链接按「当前生效的 app_id」拼（cmd 包测试的配置单例可能被前序用例改过，不写死）
+			wantURL := auth.NoRefreshTokenSettingsURL(config.Get().BaseURL, config.Get().AppID)
 			info, _ := out["no_refresh_token"].(map[string]any)
-			if info == nil || info["settings_url"] != "https://open.feishu.cn/app/cli_app/safe" {
+			if info == nil || wantURL == "" || info["settings_url"] != wantURL {
 				t.Fatalf("no_refresh_token 不符: %v", out["no_refresh_token"])
 			}
 
@@ -92,7 +95,7 @@ func TestAuthStatusNoRefreshToken(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(human, "offline_access）") || !strings.Contains(human, "https://open.feishu.cn/app/cli_app/safe") {
+			if strings.Contains(human, "offline_access）") || !strings.Contains(human, wantURL) {
 				t.Fatalf("文本输出不符:\n%s", human)
 			}
 		})
@@ -103,10 +106,14 @@ func TestDoctorUserTokenExpiredWithoutRefresh(t *testing.T) {
 	writeVerifyToken(t, &auth.TokenStore{AccessToken: "u-x", ExpiresAt: time.Now().Add(-time.Hour), AppID: "cli_app"})
 	t.Setenv("FEISHU_APP_ID", "cli_app")
 	t.Setenv("FEISHU_APP_SECRET", "secret_x")
+	wantURL := auth.NoRefreshTokenSettingsURL(config.Get().BaseURL, config.Get().AppID)
+	if wantURL == "" {
+		t.Fatal("应能解析出当前 app_id")
+	}
 	for _, r := range []checkResult{checkUserToken(), checkUserIdentity()} {
 		raw, _ := json.Marshal(r)
 		s := string(raw)
-		if strings.Contains(s, "均已过期") || !strings.Contains(s, "未下发 refresh_token") || !strings.Contains(s, "/app/cli_app/safe") {
+		if strings.Contains(s, "均已过期") || !strings.Contains(s, "未下发 refresh_token") || !strings.Contains(s, wantURL) {
 			t.Fatalf("doctor 文案不符: %s", s)
 		}
 	}
