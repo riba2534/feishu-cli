@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -74,5 +75,33 @@ func TestWarnSheetUnsupportedCells(t *testing.T) {
 	warnSheetUnsupportedCells(&buf, []*client.CellRangeV3{{Range: "s1!A1"}}, nil)
 	if buf.Len() != 0 {
 		t.Errorf("无不支持类型时不应告警: %q", buf.String())
+	}
+}
+
+// TestSheetReadRich_WarnsUnsupported read-rich 命令遇到 #UNSUPPORTED_TYPE 时 stderr 告警，stdout JSON 不变。
+func TestSheetReadRich_WarnsUnsupported(t *testing.T) {
+	m := newSheetMockServer(t)
+	m.respond = func(w http.ResponseWriter, r *http.Request, body []byte) bool {
+		_, _ = io.WriteString(w, `{"code":0,"msg":"ok","data":{"value_ranges":[{"range":"s1!C2:C3","values":[[[{"type":"#UNSUPPORTED_TYPE"}]],[[{"type":"#UNSUPPORTED_TYPE"}]]]}]}}`)
+		return true
+	}
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	out, runErr := runSheetCmdForTest(t, sheetReadRichCmd, []string{"shtTok", "s1", "C2:C3"}, map[string]string{"output": "json"})
+	os.Stderr = oldStderr
+	_ = w.Close()
+	errOut, _ := io.ReadAll(r)
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	if !strings.Contains(string(errOut), "C2, C3") {
+		t.Errorf("stderr 应列出不支持类型的单元格: %q", errOut)
+	}
+	if strings.Contains(out, "警告") || !strings.Contains(out, "#UNSUPPORTED_TYPE") {
+		t.Errorf("stdout 应只含原样 JSON: %s", out)
 	}
 }
