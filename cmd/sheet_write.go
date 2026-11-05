@@ -50,6 +50,13 @@ var sheetWriteCmd = &cobra.Command{
 		if err != nil {
 			return clierr.Usagef("解析数据失败（需要 JSON 二维数组）: %v", err)
 		}
+		if handled, err := sheetDryRunIfRequested(cmd, args[0], "", "覆盖写入单元格", map[string]any{
+			"range": args[1], "rows": len(values), "cols": client.MaxRowWidth(values),
+		}, "PUT", "/open-apis/sheets/v2/spreadsheets/%s/values", map[string]any{
+			"valueRange": map[string]any{"range": args[1], "values": values},
+		}); handled {
+			return err
+		}
 
 		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {
@@ -104,6 +111,7 @@ func init() {
 	addSheetNameFlag(sheetWriteCmd)
 	sheetWriteCmd.Flags().StringP("data", "d", "", "要写入的数据（JSON 二维数组）")
 	sheetWriteCmd.Flags().String("data-file", "", "数据文件路径")
+	sheetWriteCmd.Flags().Bool("dry-run", false, "只打印将要发送的写入请求，不执行（加 -o json 查看请求体；超过单次上限时执行时自动分批）")
 	sheetWriteCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
 	sheetWriteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

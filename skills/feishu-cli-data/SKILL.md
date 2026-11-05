@@ -15,7 +15,7 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 
 | 意图 | 读取文件 |
 |---|---|
-| Sheet 筛选视图与条件、下拉菜单、浮动图片 / 单元格图片、批量样式，以及全部 sheet 命令的决策要点 | `references/workflows/sheet/workflow.md` |
+| Sheet 筛选视图与条件、下拉菜单、条件格式（cond-format）、浮动图片 / 单元格图片、批量样式，以及全部 sheet 命令的决策要点 | `references/workflows/sheet/workflow.md` |
 | Sheet 创建与元信息、读写追加、`table-get` / `table-put` 类型保真、行列与子表管理、查找替换、筛选、保护、Markdown 互转 | `references/workflows/sheet/workflow.md`，再读 `references/workflows/sheet/references/basic-commands.md` |
 | Bitable/Base 链接解析（resolve、block）、表、字段、记录（含附件、批量、分页）、视图与视图配置、data-query | `references/workflows/bitable/workflow.md` |
 | Bitable 角色与协作者、高级权限、工作流、仪表盘与图表块、表单与分享 | `references/workflows/bitable/workflow.md` |
