@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/spf13/viper"
 )
 
 // storageDryRunFixture 写一个小文件供上传类命令的 --dry-run 使用。
@@ -75,6 +76,9 @@ func storageDryRunCases(file string) []storageDryRunCase {
 // TestDriveFileCommentMediaMinutes_DryRunWithoutCredentials 写命令的 --dry-run 在无凭据 HOME 下 exit 0、
 // 输出请求预览；去掉 --dry-run 后仍因缺凭据 exit 3（静态预览不读凭据、不联网）。
 func TestDriveFileCommentMediaMinutes_DryRunWithoutCredentials(t *testing.T) {
+	withCmdHome(t)
+	viper.Reset() // 清掉其他用例 stub 服务器留下的 app_id/base_url，模拟真正无配置的环境
+	t.Cleanup(viper.Reset)
 	file := storageDryRunFixture(t)
 	for _, tc := range storageDryRunCases(file) {
 		t.Run(tc.name, func(t *testing.T) {
