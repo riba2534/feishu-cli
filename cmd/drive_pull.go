@@ -45,6 +45,8 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
                          rename = 副本以 __lark_<哈希> 后缀另存；folder/在线文档与文件重名始终报错
   --delete-local         清理本地不存在于远端的 regular file（高危）
   --yes                  与 --delete-local 配套，确认删除
+  --dry-run              只输出差集计划（将下载/跳过的文件、--delete-local 将删除的本地文件），
+                         不下载、不写盘、不删除；需要凭据（会只读列举远端文件夹），不要求 --yes
   --as                   bot | user | auto（不传时保持旧行为：User 优先，不可用时告警回退 Bot；
                          --delete-local 下已配置 User 但不可用则 fail-closed）
   --output / -o          输出格式（json）
@@ -59,6 +61,7 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
   feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror
   feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --if-exists smart
   feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --as bot
+  feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --delete-local --dry-run
   feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --delete-local --yes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		folderToken, _ := cmd.Flags().GetString("folder-token")
@@ -68,6 +71,7 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
 		deleteLocal, _ := cmd.Flags().GetBool("delete-local")
 		yes, _ := cmd.Flags().GetBool("yes")
 		output, _ := cmd.Flags().GetString("output")
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		workers, _ := cmd.Flags().GetInt("workers")
 		if workers < 1 {
 			workers = 1
@@ -99,7 +103,8 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
 		if err != nil {
 			return err
 		}
-		if deleteLocal && !yes && !confirmationBypassed(cmd) {
+		// --dry-run 只预览差集计划、不下载不删除，因此不要求 --yes
+		if deleteLocal && !dryRun && !yes && !confirmationBypassed(cmd) {
 			return clierr.ConfirmationRequiredf("--delete-local 是高危操作，必须同时加 --yes 才执行")
 		}
 
@@ -126,6 +131,14 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
 		remoteFiles := view.Files
 		// remotePaths 含 folder/docx/sheet 等所有条目，用于 --delete-local 守门
 		remotePaths := view.Paths
+
+		if dryRun {
+			plan, planErr := planDrivePull(safeRoot, remoteFiles, remotePaths, ifExists, deleteLocal)
+			if planErr != nil {
+				return planErr
+			}
+			return printDriveMirrorPlan(cmd, output, "drive pull", folderToken, safeRoot, plan)
+		}
 
 		type item struct {
 			RelPath    string `json:"rel_path"`
@@ -311,6 +324,7 @@ func init() {
 	drivePullCmd.Flags().String("on-duplicate-remote", driveDuplicateRemoteFail, "远端重名处理: fail / rename / newest / oldest")
 	drivePullCmd.Flags().Bool("delete-local", false, "清理本地不存在于远端的文件（高危，需 --yes）")
 	drivePullCmd.Flags().Bool("yes", false, "与 --delete-local 配套确认删除")
+	drivePullCmd.Flags().Bool("dry-run", false, "只输出差集计划，不上传/下载/删除（需要凭据，只读列举远端）")
 	drivePullCmd.Flags().Int("workers", 4, "并发下载 worker 数")
 	drivePullCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	drivePullCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")

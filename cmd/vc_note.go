@@ -119,6 +119,7 @@ var vcNoteTranscriptCmd = &cobra.Command{
   --format     逐字稿格式: markdown（默认）/ plain_text（旧值 text 为 plain_text 的别名）
   --locale     逐字稿语言，如 zh_cn / en_us / ja_jp（默认飞书 zh_cn，Lark 品牌 en_us）
   --output     保存文件路径（缺省打印到 stdout）
+  --overwrite  确认覆盖已存在的 --output 文件。不传时仍会覆盖（保持历史行为），但会在 stderr 告警
 
 权限要求（User Token）: vc:note:read
 
@@ -172,6 +173,7 @@ var vcNoteTranscriptCmd = &cobra.Command{
 		}
 
 		if output != "" {
+			warnTranscriptOverwrite(cmd, output)
 			if err := safefile.AtomicWriteFile(output, content, 0600); err != nil {
 				return fmt.Errorf("写入文件失败: %w", err)
 			}
@@ -181,6 +183,17 @@ var vcNoteTranscriptCmd = &cobra.Command{
 		_, _ = os.Stdout.Write(content)
 		return nil
 	},
+}
+
+// warnTranscriptOverwrite 在 --output 目标已存在且未传 --overwrite 时向 stderr 告警。
+// 默认仍覆盖（兼容历史行为），告警只提醒调用方：重复导出会替换本地已修订过的逐字稿。
+func warnTranscriptOverwrite(cmd *cobra.Command, output string) {
+	if overwrite, _ := cmd.Flags().GetBool("overwrite"); overwrite {
+		return
+	}
+	if info, err := os.Stat(output); err == nil && !info.IsDir() {
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠️  %s 已存在，将被覆盖；确认覆盖请加 --overwrite（可消除本告警）\n", output)
+	}
 }
 
 // noteDetail 纪要详情中命令层关心的字段
@@ -463,6 +476,7 @@ func init() {
 	vcNoteDetailCmd.Flags().String("user-access-token", "", "User Access Token")
 	vcNoteTranscriptCmd.Flags().String("user-access-token", "", "User Access Token")
 	vcNoteTranscriptCmd.Flags().String("output", "", "保存文件路径（缺省打印到 stdout）")
+	vcNoteTranscriptCmd.Flags().Bool("overwrite", false, "确认覆盖已存在的 --output 文件（不传时仍覆盖，但 stderr 告警）")
 	vcNoteTranscriptCmd.Flags().String("format", "markdown", "逐字稿格式: markdown / plain_text（旧值 text 为 plain_text 的别名）")
 	vcNoteTranscriptCmd.Flags().String("locale", "", "逐字稿语言，如 zh_cn / en_us / ja_jp（默认飞书 zh_cn，Lark 品牌 en_us）")
 }
