@@ -31,6 +31,7 @@ Bot 身份的权限在开放平台为应用开通（`feishu-cli auth scopes --sc
 | `rule-list` / `rule-get` | `mail:user_mailbox.rule:read` |
 | `rule-create` / `rule-update` / `rule-enable` / `rule-disable` / `rule-delete` / `rule-reorder` | `mail:user_mailbox.rule:write`；除 create 外会先读取规则，另需 `mail:user_mailbox.rule:read` |
 | `template create/list/get/update/delete` | `mail:user_mailbox:readonly` + `mail:user_mailbox.message:modify` |
+| `share-to-chat` | `mail:user_mailbox.message:readonly` + `im:message` + `im:message.send_as_user`（卡片以本人身份发到会话） |
 
 ```bash
 # 只读分诊与读信
@@ -103,6 +104,7 @@ feishu-cli mail draft-edit --draft-id <draft_id> --body "新的回复内容"
 feishu-cli mail draft-edit --draft-id <draft_id> --body "只保留这段" --drop-quote
 
 # 发送已有草稿（不带 --confirm-send 只提示，不调用发送接口）
+# 写类命令的参数错误（如 --html 与 --plain-text 同时传、--to 为空）在读取凭据前 exit 2
 feishu-cli mail draft-send --draft-id <draft_id> --confirm-send
 
 # 回复 / 全部回复（默认存草稿，JSON 输出含实际收件人 to/cc）
@@ -111,10 +113,23 @@ feishu-cli mail reply-all --message-id <message_id> --body "+1" -o json
 
 # 转发（默认携带原附件；--no-original-attachments 只转正文；--attach 追加附件）
 feishu-cli mail forward --message-id <message_id> --to user@example.com --body "请关注此邮件" -o json
+
+# 请求已读回执（写 Disposition-Notification-To: 发件人；对方客户端可能提示、自动回执或忽略）
+feishu-cli mail draft-create --to user@example.com --subject "合同" --body "请查收" --request-receipt -o json
+
+# 定时发送：Unix 秒，至少晚于当前 5 分钟，必须同时 --confirm-send
+feishu-cli mail send --to user@example.com --subject "周报" --body "..." --confirm-send --send-time $(( $(date +%s) + 3600 ))
+feishu-cli mail draft-send --draft-id <draft_id> --confirm-send --send-time 1793870000
 ```
 
 - **输出字段**：`send/draft-create` 的 JSON 含 `draft_id`（`send` 另有 `confirmed`、`tip`）；`reply/reply-all` 含 `draft_id/confirmed/to/cc`；
-  `forward` 含 `draft_id/confirmed/attachments`；加 `--confirm-send` 后另含 `message_id/thread_id`。发送失败时草稿已保存，报错中给出 `draft_id`。
+  `forward` 含 `draft_id/confirmed/attachments`；加 `--confirm-send` 后另含 `message_id/thread_id`，带 `--send-time` 时再加 `send_time`。
+  发送失败时草稿已保存，报错中给出 `draft_id`。
+- **定时发送 `--send-time`**：`send/reply/reply-all/forward/draft-send` 支持；取值为 Unix 秒时间戳，至少晚于当前 5 分钟，
+  且必须配合 `--confirm-send`（定时发送同样不可随意撤回），否则在联网前 exit 2。服务端收到 `{"send_time": "<秒>"}` 后按时投递。
+  取消定时发送暂无专用命令，用 `feishu-cli schema mail.user_mailbox.drafts.cancel_scheduled_send` 查参数后 `feishu-cli api` 透传（未实测）。
+- **已读回执 `--request-receipt`**：`send/draft-create/reply/reply-all/forward` 支持，写入 `Disposition-Notification-To` 指向发件人地址；
+  拿不到发件人地址（`--from` 未传且邮箱 profile 读不到）时 exit 2。不带该 flag 时 EML 与之前一致。
 - **正文类型**：`--body` 含 `<html` `<body` `<div` `<p>` `<br` `<b>` `<i>` `<a ` `<table` `<h1` `<h2` `<h3` 之一时按 HTML 发送；
   `--html` / `--plain-text` 强制指定（二者互斥）。长 HTML 用 `--body "$(cat report.html)"` 传入。
 - **回复收件人**：`reply` 优先回复原邮件 Reply-To，否则回复原发件人；回复自己发出的邮件时改为回复原收件人。
@@ -173,6 +188,31 @@ feishu-cli mail thread-trash --thread-ids <t1> --yes
 - 删除前向用户展示目标与数量并取得确认；未带 `--yes` 的非交互调用以退出码 10 结束、不执行任何操作。
   标签与文件夹变更可反向执行还原；软删除的邮件可在飞书邮箱废纸篓内恢复。
 
+## 分享到会话
+
+```bash
+# 先预览两步请求（不读凭据、不联网）
+feishu-cli mail share-to-chat --message-id <message_id> --receive-id oc_xxx --dry-run
+# 把整个线程分享给某人（receive-id-type: chat_id 默认 / open_id / user_id / union_id / email）
+feishu-cli mail share-to-chat --thread-id <thread_id> --receive-id user@example.com --receive-id-type email -o json
+```
+
+- 以当前登录用户身份把邮件或线程卡片发进 IM 会话，属于对外发消息：执行前确认目标会话。
+- 先 `POST .../messages/share_token` 生成卡片（`card_id`），再 `POST .../share_tokens/{card_id}/send?receive_id_type=` 投递；
+  `--message-id` 与 `--thread-id` 二选一，参数错误 exit 2。投递失败时报错带 `card_id`。`-o json` 输出 `{card_id, im_message_id}`。
+
+## 新邮件监听
+
+实时接收新邮件用事件订阅，与其他事件共用同一条长连接（见 `feishu-cli-messaging` 的 event 工作流）：
+
+```bash
+feishu-cli event consume mail.user_mailbox.event.message_received_v1 --dry-run          # 预览订阅请求
+feishu-cli event consume mail.user_mailbox.event.message_received_v1 --max-events 1 --timeout 10m
+```
+
+仅 User 身份；`--param mailbox=<邮箱地址>` 默认 `me`；启动时订阅、退出时注销。事件只含 `mail_address`/`message_id` 等元数据，
+正文用 `mail message --message-id` 读取。
+
 ## 收信规则
 
 `rule-list/rule-get/rule-create/rule-update/rule-enable/rule-disable/rule-delete/rule-reorder` 的条件/动作语法、
@@ -223,8 +263,8 @@ feishu-cli mail draft-send --draft-id "$DRAFT_ID" --confirm-send   # 用户确�
 
 ## 不支持的能力
 
-CLI 没有专用命令：删除/列出草稿、定时发送、撤回、投递状态、已读回执、新邮件监听、分享邮件到会话、按时间范围或发件人结构化过滤 triage、
-发信时自动插入签名或套用模板、云盘超大附件卡片。确有需要时用 `feishu-cli schema mail` 查端点，再用
+CLI 没有专用命令：删除/列出草稿、取消定时发送、撤回、投递状态、回执确认/拒绝、按时间范围或发件人结构化过滤 triage、
+发信时自动插入签名或套用模板（`--template-id`）、日程邀请邮件（`--event-*`）、云盘超大附件卡片。确有需要时用 `feishu-cli schema mail` 查端点，再用
 `feishu-cli api` 透传（见 `feishu-cli-platform`），例如删除不再需要的草稿：
 
 ```bash
