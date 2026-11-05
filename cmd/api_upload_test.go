@@ -96,6 +96,17 @@ func TestRunAPI_FileDryRun(t *testing.T) {
 	if f["field"] != "doc" || f["file_name"] != "report.txt" || f["size"] != float64(14) || f["path"] != file {
 		t.Fatalf("file 预览不符（@ 前缀应被剥掉）: %v", f)
 	}
+	// dry-run 不读文件内容，但路径（不存在 / 敏感目录）仍在预览前校验，退出码 2
+	for _, bad := range []string{file + ".nope", filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa")} {
+		resetAPIFlags()
+		c2 := newTestAPICmd()
+		apiFile, apiDryRun, apiAs = bad, true, "bot"
+		var e2 error
+		captureStdout(t, func() { e2 = c2.RunE(c2, []string{"POST", "/open-apis/im/v1/files"}) })
+		if e2 == nil || exitCodeFor(e2) != clierr.ExitUsage {
+			t.Fatalf("dry-run 非法路径 %q 应 exit 2: %v", bad, e2)
+		}
+	}
 	fields := plan["form_fields"].(map[string]any)
 	if fields["file_type"] != "stream" || fields["size"] != "14" || plan["content_type"] != "multipart/form-data" {
 		t.Fatalf("表单字段不符: %v", plan)
