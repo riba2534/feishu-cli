@@ -200,3 +200,30 @@ func TestRunAPI_DryRunWithoutFileUnchanged(t *testing.T) {
 		t.Fatalf("dry-run 字段变化: %s", got)
 	}
 }
+
+// 含 "=" 的本地路径不得被误拆成 field=path；合法字段名前缀照常拆分。
+func TestParseAPIFileFlag_PathWithEquals(t *testing.T) {
+	dir := t.TempDir()
+	withEq := filepath.Join(dir, "report=v2.pdf")
+	if err := os.WriteFile(withEq, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	u, err := parseAPIFileFlag(withEq, http.MethodPost)
+	if err != nil {
+		t.Fatalf("含 = 的已存在文件应原样作为路径: %v", err)
+	}
+	if u.field != "file" || u.path != withEq {
+		t.Fatalf("不应拆分: field=%q path=%q", u.field, u.path)
+	}
+	plain := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(plain, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	u, err = parseAPIFileFlag("image="+plain, http.MethodPost)
+	if err != nil || u.field != "image" || u.path != plain {
+		t.Fatalf("field=path 应拆分: %+v %v", u, err)
+	}
+	if _, err := parseAPIFileFlag("./a b="+plain, http.MethodPost); err == nil {
+		t.Fatal("非法字段名前缀不应拆分（整串作为路径，不存在时报错）")
+	}
+}

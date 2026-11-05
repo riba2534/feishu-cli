@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -194,6 +195,8 @@ func matchWhiteboardID(payload []byte, params map[string]string) bool {
 		} `json:"event"`
 	}
 	if err := json.Unmarshal(payload, &envelope); err != nil {
+		// 解析失败不能静默丢弃：否则 consume 看起来正常却永远收不到该画板的事件
+		fmt.Fprintf(os.Stderr, "警告: board.whiteboard.updated_v1 事件体无法解析（%v），已跳过；若应用配置了 Encrypt Key 请先关闭加密\n", err)
 		return false
 	}
 	return envelope.Event.WhiteboardID == want

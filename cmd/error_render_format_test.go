@@ -156,9 +156,20 @@ func TestErrorFormatArgsFallback(t *testing.T) {
 	}
 	for name, c := range cases {
 		withErrorFormat(t, errorFormatText)
+		flagParseFailed = true
 		if got := errorFormatIsJSON(c.args); got != c.want {
 			t.Fatalf("%s: got %v", name, got)
 		}
+	}
+	flagParseFailed = false
+}
+
+// flag 正常解析时不再扫描原始参数：别的 flag 的取值里出现 --error-format=json 不得切换格式。
+func TestErrorFormatIgnoresFlagValuesWhenParsed(t *testing.T) {
+	withErrorFormat(t, errorFormatText)
+	flagParseFailed = false
+	if errorFormatIsJSON([]string{"msg", "send", "--text", "--error-format=json"}) {
+		t.Fatal("--text 的取值不应切换为 JSON 错误信封")
 	}
 }
 

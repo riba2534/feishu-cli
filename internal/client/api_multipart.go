@@ -94,12 +94,15 @@ func DoAPIMultipart(ctx context.Context, method, apiPath string, query url.Value
 	req.Header.Set("Content-Type", contentType)
 	resp, err := rawHTTPClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("API 调用失败: %w", err)
+		return nil, clierr.Network(fmt.Errorf("API 调用失败: %w", err))
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, apiMultipartMaxResponse))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, apiMultipartMaxResponse+1))
 	if err != nil {
-		return nil, fmt.Errorf("读取响应失败: %w", err)
+		return nil, clierr.Network(fmt.Errorf("读取响应失败: %w", err))
+	}
+	if int64(len(raw)) > apiMultipartMaxResponse {
+		return nil, fmt.Errorf("响应超过 %d 字节上限，已中止（避免输出被截断）", apiMultipartMaxResponse)
 	}
 	return &MultipartResponse{StatusCode: resp.StatusCode, Header: resp.Header, Body: raw}, nil
 }

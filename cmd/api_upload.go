@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -31,6 +32,9 @@ type apiUpload struct {
 	fields  map[string]string
 	content []byte
 }
+
+// apiFormFieldName 是 --file field=path 中允许的表单字段名
+var apiFormFieldName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.\[\]-]*$`)
 
 func (u *apiUpload) fileName() string {
 	if u.stdin {
@@ -56,8 +60,12 @@ func parseAPIFileFlag(raw, method string) (*apiUpload, error) {
 
 	u := &apiUpload{field: "file"}
 	value := raw
-	if idx := strings.IndexByte(raw, '='); idx > 0 {
-		u.field, value = raw[:idx], raw[idx+1:]
+	// 只有 = 前是合法表单字段名、且整串不是已存在的本地文件时才按 field=path 拆分，
+	// 避免 ./report=v2.pdf 这类含 = 的路径被误拆
+	if idx := strings.IndexByte(raw, '='); idx > 0 && apiFormFieldName.MatchString(raw[:idx]) {
+		if _, statErr := os.Stat(raw); statErr != nil {
+			u.field, value = raw[:idx], raw[idx+1:]
+		}
 	}
 	if value == "-" {
 		u.stdin = true

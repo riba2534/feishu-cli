@@ -90,6 +90,9 @@ func (v *errorFormatValue) Set(s string) error {
 
 var errorFormat = errorFormatValue(errorFormatText)
 
+// flagParseFailed 由 flagSuggestionErrorFunc 置位：本次 flag 解析失败，pflag 可能没解析到 --error-format
+var flagParseFailed bool
+
 func init() {
 	rootCmd.PersistentFlags().Var(&errorFormat, "error-format",
 		"错误输出格式：text（默认，中文文本）| json（stderr 输出一行 JSON 错误信封，stdout 不受影响）")
@@ -101,6 +104,10 @@ func init() {
 func errorFormatIsJSON(args []string) bool {
 	if errorFormat == errorFormatJSON {
 		return true
+	}
+	// flag 正常解析过时以解析结果为准：原始参数里的 "--error-format" 可能只是别的 flag 的取值（如 --text --error-format=json）
+	if !flagParseFailed {
+		return false
 	}
 	for i, a := range args {
 		if a == "--" {
