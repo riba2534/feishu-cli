@@ -1,9 +1,8 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +30,7 @@ base/v3 无更新多维表格本体的端点，走 bitable/v1（app_token 即 ba
 			body["is_advanced"] = v
 		}
 		if len(body) == 0 {
-			return fmt.Errorf("未提供任何更新字段（用 --name 或 --is-advanced）")
+			return clierr.Usagef("未提供任何更新字段（用 --name 或 --is-advanced）")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "PUT", path: client.BitableV1Path("apps", bt), body: body, useV1: true}
