@@ -27,7 +27,7 @@ func bitableWorkflowConfigBody(cmd *cobra.Command) (any, error) {
 	}
 	var body any
 	if err := json.Unmarshal([]byte(raw), &body); err != nil {
-		return nil, fmt.Errorf("解析 --config 失败: %w", err)
+		return nil, clierr.Usagef("解析 --config 失败: %w", err)
 	}
 	if m, ok := body.(map[string]any); ok {
 		if err := validateWorkflowAISteps(m); err != nil {
@@ -149,7 +149,7 @@ var bitableWorkflowGetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		workflowID, _ := cmd.Flags().GetString("workflow-id")
 		if workflowID == "" {
-			return fmt.Errorf("--workflow-id 必填")
+			return clierr.Usagef("--workflow-id 必填")
 		}
 		params := map[string]any{}
 		if uit, _ := cmd.Flags().GetString("user-id-type"); uit != "" {
@@ -171,7 +171,7 @@ var bitableWorkflowUpdateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		workflowID, _ := cmd.Flags().GetString("workflow-id")
 		if workflowID == "" {
-			return fmt.Errorf("--workflow-id 必填")
+			return clierr.Usagef("--workflow-id 必填")
 		}
 		body, err := bitableWorkflowConfigBody(cmd)
 		if err != nil {

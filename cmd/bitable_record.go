@@ -9,7 +9,6 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
-	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -111,26 +110,19 @@ sort（--sort-json）: [{"field":"字段名或ID","desc":true}]，数组顺序�
 			}
 			params["sort"] = sortJSON
 		}
-		if err := config.Validate(); err != nil {
-			return err
-		}
-		token, err := resolveIdentityToken(cmd)
-		if err != nil {
-			return err
-		}
-		baseToken, err := resolveBaseToken(cmd)
-		if err != nil {
-			return err
-		}
-		path := bitableRecordPath(baseToken, tableID)
-		fetch := func(p map[string]any) (map[string]any, error) {
-			return client.BaseV3Call("GET", path, p, nil, token)
-		}
-		data, err := fetchRecordList(fetch, params, recordListOptions{Offset: offset, Limit: limit, PageAll: pageAll}, os.Stderr)
-		if err != nil {
-			return err
-		}
-		return printJSON(data)
+		opts := recordListOptions{Offset: offset, Limit: limit, PageAll: pageAll}
+		return bitableExecute(cmd, func(bt string) bitableReq {
+			p := map[string]any{"offset": offset, "limit": limit}
+			for k, v := range params {
+				p[k] = v
+			}
+			return bitableReq{method: "GET", path: bitableRecordPath(bt, tableID), params: p, preview: map[string]any{"auto_paginate": pageAll}}
+		}, func(req bitableReq, token string) (any, error) {
+			fetch := func(p map[string]any) (map[string]any, error) {
+				return client.BaseV3Call("GET", req.path, p, nil, token)
+			}
+			return fetchRecordList(fetch, params, opts, os.Stderr)
+		})
 	},
 }
 
@@ -160,7 +152,7 @@ func recordSelectFields(cmd *cobra.Command, max int) ([]string, error) {
 		}
 	}
 	if len(fields) > max {
-		return nil, fmt.Errorf("--field-id 最多 %d 个，当前 %d 个", max, len(fields))
+		return nil, clierr.Usagef("--field-id 最多 %d 个，当前 %d 个", max, len(fields))
 	}
 	return fields, nil
 }
@@ -169,7 +161,7 @@ func recordSelectFields(cmd *cobra.Command, max int) ([]string, error) {
 func validateCompactJSON(s, flagName string) error {
 	var v any
 	if err := json.Unmarshal([]byte(s), &v); err != nil {
-		return fmt.Errorf("解析 %s 失败（需为合法 JSON）: %w", flagName, err)
+		return clierr.Usagef("解析 %s 失败（需为合法 JSON）: %w", flagName, err)
 	}
 	return nil
 }
@@ -181,7 +173,7 @@ var bitableRecordGetCmd = &cobra.Command{
 		tableID, _ := cmd.Flags().GetString("table-id")
 		recordID, _ := cmd.Flags().GetString("record-id")
 		if recordID == "" {
-			return fmt.Errorf("--record-id 必填")
+			return clierr.Usagef("--record-id 必填")
 		}
 		return runBaseV3Simple(cmd, "GET", func(baseToken string) string {
 			return bitableRecordPath(baseToken, tableID, recordID)
@@ -288,7 +280,7 @@ func loadRecordBody(cmd *cobra.Command) (any, error) {
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return nil, fmt.Errorf("解析 --config 失败: %w", err)
+		return nil, clierr.Usagef("解析 --config 失败: %w", err)
 	}
 	// 如果用户传了 {"fields": {...}}，提取 fields 的值作为 body
 	if fields, ok := parsed["fields"]; ok {
@@ -323,7 +315,7 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 
 	if configProvided {
 		if usedConvenience {
-			return nil, fmt.Errorf("--config/--config-file 与 --keyword/--search-field/--field-id/--filter-json/--sort-json/--view-id/--offset/--limit 互斥，请二选一")
+			return nil, clierr.Usagef("--config/--config-file 与 --keyword/--search-field/--field-id/--filter-json/--sort-json/--view-id/--offset/--limit 互斥，请二选一")
 		}
 		raw, err := loadJSONInput(configJSON, configFile, "config", "config-file", "搜索请求体")
 		if err != nil {
@@ -331,7 +323,7 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 		}
 		var parsed map[string]any
 		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-			return nil, fmt.Errorf("解析 --config 失败: %w", err)
+			return nil, clierr.Usagef("解析 --config 失败: %w", err)
 		}
 		// 友好检测：误传 upsert 的 {"fields":{...}} 格式（顶层只有 fields，无 filter/keyword/search_fields）
 		if _, hasFields := parsed["fields"]; hasFields {
@@ -339,7 +331,7 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 			_, hasKw := parsed["keyword"]
 			_, hasSf := parsed["search_fields"]
 			if !hasFilter && !hasKw && !hasSf {
-				return nil, fmt.Errorf("--config 顶层是 fields（这是 record upsert 的请求体格式），record search 需要 keyword/filter 结构\n建议改用关键词搜索: --keyword 值 --search-field 字段名（或参考 base/v3 records/search 文档构造 filter 请求体）")
+				return nil, clierr.Usagef("--config 顶层是 fields（这是 record upsert 的请求体格式），record search 需要 keyword/filter 结构\n建议改用关键词搜索: --keyword 值 --search-field 字段名（或参考 base/v3 records/search 文档构造 filter 请求体）")
 			}
 		}
 		return parsed, nil
@@ -348,10 +340,10 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 	// 便捷 flag 模式校验
 	kw := strings.TrimSpace(keyword)
 	if kw == "" {
-		return nil, fmt.Errorf("record search 便捷模式必须提供 --keyword（或用 --config 传完整请求体）")
+		return nil, clierr.Usagef("record search 便捷模式必须提供 --keyword（或用 --config 传完整请求体）")
 	}
 	if len(searchFields) == 0 {
-		return nil, fmt.Errorf("--keyword 必须配合至少一个 --search-field（指定在哪些字段里搜索）")
+		return nil, clierr.Usagef("--keyword 必须配合至少一个 --search-field（指定在哪些字段里搜索）")
 	}
 	offset, _ := cmd.Flags().GetInt("offset")
 	limit, _ := cmd.Flags().GetInt("limit")
@@ -359,7 +351,7 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 		offset = 0
 	}
 	if limit < 1 || limit > 200 {
-		return nil, fmt.Errorf("--limit 范围 1-200，当前 %d", limit)
+		return nil, clierr.Usagef("--limit 范围 1-200，当前 %d", limit)
 	}
 
 	body := map[string]any{"offset": offset, "limit": limit}
@@ -378,7 +370,7 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 	if raw := strings.TrimSpace(filterJSON); raw != "" {
 		var f any
 		if err := json.Unmarshal([]byte(raw), &f); err != nil {
-			return nil, fmt.Errorf("解析 --filter-json 失败: %w", err)
+			return nil, clierr.Usagef("解析 --filter-json 失败: %w", err)
 		}
 		body["filter"] = f
 	}
@@ -388,7 +380,7 @@ func buildRecordSearchBody(cmd *cobra.Command) (any, error) {
 		}
 		var s any
 		if err := json.Unmarshal([]byte(raw), &s); err != nil {
-			return nil, fmt.Errorf("解析 --sort-json 失败: %w", err)
+			return nil, clierr.Usagef("解析 --sort-json 失败: %w", err)
 		}
 		body["sort"] = s
 	}
@@ -455,7 +447,7 @@ var bitableRecordDeleteCmd = &cobra.Command{
 		tableID, _ := cmd.Flags().GetString("table-id")
 		recordID, _ := cmd.Flags().GetString("record-id")
 		if recordID == "" {
-			return fmt.Errorf("--record-id 必填")
+			return clierr.Usagef("--record-id 必填")
 		}
 		return runBaseV3Simple(cmd, "DELETE", func(baseToken string) string {
 			return bitableRecordPath(baseToken, tableID, recordID)
@@ -494,26 +486,22 @@ var bitableRecordBatchDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := config.Validate(); err != nil {
-			return err
-		}
-		token, err := resolveIdentityToken(cmd)
-		if err != nil {
-			return err
-		}
-		baseToken, err := resolveBaseToken(cmd)
-		if err != nil {
-			return err
-		}
-		path := bitableRecordPath(baseToken, tableID, "batch_delete")
-		call := func(chunk []string) (map[string]any, error) {
-			return client.BaseV3Call("POST", path, nil, map[string]any{"record_id_list": chunk}, token)
-		}
-		data, err := runRecordBatchDelete(ids, maxRecordBatchDelete, call, os.Stderr)
-		if err != nil {
-			return err
-		}
-		return printJSON(data)
+		return bitableExecute(cmd, func(bt string) bitableReq {
+			req := bitableReq{method: "POST", path: bitableRecordPath(bt, tableID, "batch_delete")}
+			if len(ids) <= maxRecordBatchDelete {
+				req.body = map[string]any{"record_id_list": ids}
+			} else {
+				// 超过单批上限：预览只展示第一批，并说明总批数
+				req.body = map[string]any{"record_id_list": ids[:maxRecordBatchDelete]}
+				req.preview = map[string]any{"batch_count": (len(ids) + maxRecordBatchDelete - 1) / maxRecordBatchDelete, "total_records": len(ids), "note": "按 200 条一批串行提交，body 仅展示第一批"}
+			}
+			return req
+		}, func(req bitableReq, token string) (any, error) {
+			call := func(chunk []string) (map[string]any, error) {
+				return client.BaseV3Call("POST", req.path, nil, map[string]any{"record_id_list": chunk}, token)
+			}
+			return runRecordBatchDelete(ids, maxRecordBatchDelete, call, os.Stderr)
+		})
 	},
 }
 
@@ -570,7 +558,7 @@ func loadBatchDeleteRecordIDs(csv, fromFile string) ([]string, error) {
 	if fromFile != "" {
 		data, err := readLocalInputFile(fromFile)
 		if err != nil {
-			return nil, fmt.Errorf("读取 --from-file 失败: %w", err)
+			return nil, clierr.Usagef("读取 --from-file 失败: %w", err)
 		}
 		for _, raw := range strings.Split(string(data), "\n") {
 			raw = strings.TrimSpace(raw)
@@ -580,7 +568,7 @@ func loadBatchDeleteRecordIDs(csv, fromFile string) ([]string, error) {
 		}
 	}
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("--record-ids 或 --from-file 至少需要提供一个")
+		return nil, clierr.Usagef("--record-ids 或 --from-file 至少需要提供一个")
 	}
 	return ids, nil
 }
@@ -603,7 +591,7 @@ var bitableRecordHistoryListCmd = &cobra.Command{
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		maxVersion, _ := cmd.Flags().GetInt("max-version")
 		if recordID == "" {
-			return fmt.Errorf("--record-id 必填")
+			return clierr.Usagef("--record-id 必填")
 		}
 		params := map[string]any{
 			"table_id":  tableID,
@@ -650,7 +638,7 @@ var bitableRecordShareLinkCmd = &cobra.Command{
 			return err
 		}
 		if len(ids) > 100 {
-			return fmt.Errorf("单次最多 100 条，当前传入 %d 条", len(ids))
+			return clierr.Usagef("单次最多 100 条，当前传入 %d 条", len(ids))
 		}
 
 		body := map[string]any{"record_ids": ids}
@@ -727,4 +715,6 @@ func init() {
 	bitableRecordSearchCmd.Flags().String("view-id", "", "限定视图 ID")
 	bitableRecordSearchCmd.Flags().Int("offset", 0, "分页 offset")
 	bitableRecordSearchCmd.Flags().Int("limit", 10, "分页大小（1-200，默认 10）")
+
+	addBitablePreviewFlags(recordSubs...)
 }

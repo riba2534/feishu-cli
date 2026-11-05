@@ -32,7 +32,7 @@ var bitableFormCreateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		if tableID == "" {
-			return fmt.Errorf("--table-id 必填")
+			return clierr.Usagef("--table-id 必填")
 		}
 		body, err := buildFormCreateBody(cmd)
 		if err != nil {
@@ -55,7 +55,7 @@ func buildFormCreateBody(cmd *cobra.Command) (map[string]any, error) {
 		}
 		var body map[string]any
 		if err := json.Unmarshal([]byte(raw), &body); err != nil {
-			return nil, fmt.Errorf("解析 --config 失败: %w", err)
+			return nil, clierr.Usagef("解析 --config 失败: %w", err)
 		}
 		return body, nil
 	}
@@ -70,7 +70,7 @@ func buildFormCreateBody(cmd *cobra.Command) (map[string]any, error) {
 		body["description"] = v
 	}
 	if len(body) == 0 {
-		return nil, fmt.Errorf("未提供任何字段（用 --name/--description 或 --config）")
+		return nil, clierr.Usagef("未提供任何字段（用 --name/--description 或 --config）")
 	}
 	return body, nil
 }
@@ -85,7 +85,7 @@ form_id 即表单视图 view_id。删除表单为不可逆操作。`,
 		tableID, _ := cmd.Flags().GetString("table-id")
 		formID, _ := cmd.Flags().GetString("form-id")
 		if tableID == "" || formID == "" {
-			return fmt.Errorf("--table-id 和 --form-id 必填")
+			return clierr.Usagef("--table-id 和 --form-id 必填")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "DELETE", path: formPath(bt, tableID, formID)}
@@ -107,7 +107,7 @@ var bitableFormListCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		if tableID == "" {
-			return fmt.Errorf("--table-id 必填")
+			return clierr.Usagef("--table-id 必填")
 		}
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		if pageSize < 0 || pageSize > 100 {
@@ -127,7 +127,7 @@ var bitableFormListCmd = &cobra.Command{
 // 因 bitableRun 强制要求 --base-token，这里用独立的 runFormShareToken。
 
 func runFormShareToken(cmd *cobra.Command, segments []string, body any) error {
-	if err := config.Validate(); err != nil {
+	if err := validateIdentityAs(cmd); err != nil {
 		return err
 	}
 	path := client.BaseV3Path(segments...)
@@ -137,7 +137,7 @@ func runFormShareToken(cmd *cobra.Command, segments []string, body any) error {
 		// dry-run 预览尊重 --format/--jq（与实调路径 renderBitableResult 一致）。
 		o, oerr := output.ParseOptions(cmd)
 		if oerr != nil {
-			return oerr
+			return clierr.Usage(oerr)
 		}
 		return output.Render(o, map[string]any{
 			"api":    "base/v3",
@@ -147,6 +147,9 @@ func runFormShareToken(cmd *cobra.Command, segments []string, body any) error {
 		})
 	}
 
+	if err := config.Validate(); err != nil {
+		return err
+	}
 	token, err := resolveIdentityToken(cmd)
 	if err != nil {
 		return err
@@ -169,7 +172,7 @@ var bitableFormDetailCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		shareToken, _ := cmd.Flags().GetString("share-token")
 		if shareToken == "" {
-			return fmt.Errorf("--share-token 必填")
+			return clierr.Usagef("--share-token 必填")
 		}
 		body := map[string]any{"share_token": shareToken}
 		return runFormShareToken(cmd, []string{"bases", "tables", "forms", "detail"}, body)
@@ -193,7 +196,7 @@ var bitableFormSubmitCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		shareToken, _ := cmd.Flags().GetString("share-token")
 		if shareToken == "" {
-			return fmt.Errorf("--share-token 必填")
+			return clierr.Usagef("--share-token 必填")
 		}
 		content, err := buildFormSubmitContent(cmd)
 		if err != nil {
@@ -218,7 +221,7 @@ func buildFormSubmitContent(cmd *cobra.Command) (any, error) {
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return nil, fmt.Errorf("解析 --content 失败: %w", err)
+		return nil, clierr.Usagef("解析 --content 失败: %w", err)
 	}
 	return parsed, nil
 }
@@ -243,7 +246,7 @@ item 字段: title(必填)/type(text/number/select/datetime/user/attachment/loca
 		tableID, _ := cmd.Flags().GetString("table-id")
 		formID, _ := cmd.Flags().GetString("form-id")
 		if tableID == "" || formID == "" {
-			return fmt.Errorf("--table-id 和 --form-id 必填")
+			return clierr.Usagef("--table-id 和 --form-id 必填")
 		}
 		body, err := buildFormQuestionsCreateBody(cmd)
 		if err != nil {
@@ -267,17 +270,17 @@ func buildFormQuestionsCreateBody(cmd *cobra.Command) (any, error) {
 		}
 		var body any
 		if err := json.Unmarshal([]byte(raw), &body); err != nil {
-			return nil, fmt.Errorf("解析 --config 失败: %w", err)
+			return nil, clierr.Usagef("解析 --config 失败: %w", err)
 		}
 		return body, nil
 	}
 	questionsJSON, _ := cmd.Flags().GetString("questions")
 	if questionsJSON == "" {
-		return nil, fmt.Errorf("需提供 --questions（问题数组）或 --config（完整请求体）")
+		return nil, clierr.Usagef("需提供 --questions（问题数组）或 --config（完整请求体）")
 	}
 	var questions any
 	if err := json.Unmarshal([]byte(questionsJSON), &questions); err != nil {
-		return nil, fmt.Errorf("解析 --questions 失败: %w", err)
+		return nil, clierr.Usagef("解析 --questions 失败: %w", err)
 	}
 	return map[string]any{"questions": questions}, nil
 }
@@ -307,7 +310,7 @@ var bitableFormQuestionsDeleteCmd = &cobra.Command{
 		tableID, _ := cmd.Flags().GetString("table-id")
 		formID, _ := cmd.Flags().GetString("form-id")
 		if tableID == "" || formID == "" {
-			return fmt.Errorf("--table-id 和 --form-id 必填")
+			return clierr.Usagef("--table-id 和 --form-id 必填")
 		}
 		body, err := buildFormQuestionsDeleteBody(cmd)
 		if err != nil {
@@ -368,12 +371,12 @@ func buildFormQuestionsDeleteBody(cmd *cobra.Command) (any, error) {
 		}
 		var body any
 		if err := json.Unmarshal([]byte(raw), &body); err != nil {
-			return nil, fmt.Errorf("解析 --config 失败: %w", err)
+			return nil, clierr.Usagef("解析 --config 失败: %w", err)
 		}
 		if keepField {
 			m, ok := body.(map[string]any)
 			if !ok {
-				return nil, fmt.Errorf("--config 必须是 JSON 对象才能与 --keep-field 一起使用")
+				return nil, clierr.Usagef("--config 必须是 JSON 对象才能与 --keep-field 一起使用")
 			}
 			m["keep_field"] = true
 		}
@@ -385,10 +388,10 @@ func buildFormQuestionsDeleteBody(cmd *cobra.Command) (any, error) {
 		return nil, err
 	}
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("需提供 --question-ids（逗号分隔或 JSON 数组）或 --config（完整请求体）")
+		return nil, clierr.Usagef("需提供 --question-ids（逗号分隔或 JSON 数组）或 --config（完整请求体）")
 	}
 	if len(ids) > 10 {
-		return nil, fmt.Errorf("单次最多 10 个，当前传入 %d 个", len(ids))
+		return nil, clierr.Usagef("单次最多 10 个，当前传入 %d 个", len(ids))
 	}
 	body := map[string]any{"question_ids": ids}
 	if keepField {
@@ -407,7 +410,7 @@ func parseQuestionIDs(s string) ([]string, error) {
 	if strings.HasPrefix(trimmed, "[") {
 		var ids []string
 		if err := json.Unmarshal([]byte(trimmed), &ids); err != nil {
-			return nil, fmt.Errorf("解析 --question-ids JSON 数组失败: %w", err)
+			return nil, clierr.Usagef("解析 --question-ids JSON 数组失败: %w", err)
 		}
 		out := make([]string, 0, len(ids))
 		for _, id := range ids {

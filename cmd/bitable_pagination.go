@@ -10,7 +10,6 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
-	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -315,18 +314,25 @@ func warnBitableHasMore(data map[string]any) {
 // runBitablePageTokenList 列表命令统一入口：未传 --page-token 时自动翻页取全部；
 // 显式传 --page-token 时只取该页（兼容旧用法），还有下一页时 stderr 提示。
 func runBitablePageTokenList(cmd *cobra.Command, build func(baseToken string) bitablePageTokenList) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
-	baseToken, err := resolveBaseToken(cmd)
+	o, err := bitableOutputOptions(cmd)
 	if err != nil {
 		return err
 	}
-	spec := build(baseToken)
+	if err := validateIdentityAs(cmd); err != nil {
+		return err
+	}
+	if err := validateBaseTokenOffline(cmd); err != nil {
+		return err
+	}
 	pageToken, _ := cmd.Flags().GetString("page-token")
 	pageToken = strings.TrimSpace(pageToken)
 
 	if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+		baseToken, err := resolveBaseToken(cmd) // dry-run 不联网，wiki 链接用占位符
+		if err != nil {
+			return err
+		}
+		spec := build(baseToken)
 		args := map[string]any{}
 		for k, v := range spec.Params {
 			args[k] = v
@@ -343,23 +349,29 @@ func runBitablePageTokenList(cmd *cobra.Command, build func(baseToken string) bi
 		} else {
 			preview["params"] = args
 		}
-		o, oerr := output.ParseOptions(cmd)
-		if oerr != nil {
-			return oerr
-		}
-		return output.Render(o, preview)
+		po := *o
+		po.OutputFile = ""
+		return renderBitableWith(&po, preview)
 	}
 
+	if err := config.Validate(); err != nil {
+		return err
+	}
 	token, err := resolveIdentityToken(cmd)
 	if err != nil {
 		return err
 	}
+	baseToken, err := resolveBaseToken(cmd)
+	if err != nil {
+		return err
+	}
+	spec := build(baseToken)
 	if pageToken == "" {
 		data, err := fetchBitablePageTokenList(spec, token)
 		if err != nil {
 			return err
 		}
-		return renderBitableResult(cmd, data)
+		return renderBitableWith(o, data)
 	}
 	args := map[string]any{"page_token": pageToken}
 	for k, v := range spec.Params {
@@ -378,5 +390,5 @@ func runBitablePageTokenList(cmd *cobra.Command, build func(baseToken string) bi
 		return err
 	}
 	warnBitableHasMore(data)
-	return renderBitableResult(cmd, data)
+	return renderBitableWith(o, data)
 }
