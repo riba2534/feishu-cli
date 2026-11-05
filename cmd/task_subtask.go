@@ -35,21 +35,28 @@ var taskSubtaskCreateCmd = &cobra.Command{
   feishu-cli task subtask create TASK_GUID --summary "完成单元测试"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		taskGuid, guidErr := parseTaskGUIDArg(args[0])
 		if guidErr != nil {
 			return guidErr
 		}
 		summary, _ := cmd.Flags().GetString("summary")
 		output, _ := cmd.Flags().GetString("output")
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "task subtask create 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: taskAPIPath("tasks", taskGuid, "subtasks"), Desc: "创建子任务", Params: taskOpenIDParams(), Body: map[string]any{"summary": summary},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		task, err := client.CreateSubtask(taskGuid, summary, token)
 		if err != nil {
@@ -143,6 +150,7 @@ func init() {
 	taskSubtaskCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	taskSubtaskCreateCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(taskSubtaskCreateCmd)
+	addTaskDryRunFlag(taskSubtaskCreateCmd)
 	mustMarkFlagRequired(taskSubtaskCreateCmd, "summary")
 
 	taskSubtaskCmd.AddCommand(taskSubtaskListCmd)
