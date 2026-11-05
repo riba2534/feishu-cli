@@ -54,6 +54,8 @@ var driveAddCommentCmd = &cobra.Command{
   --type          裸 token 的文档类型（docx/doc/sheet/slides/bitable/file；默认 docx）
   --block-id      局部评论锚点（格式见上）
   --full          强制全局评论（docx/doc/file）
+  --dry-run       只打印将要发出的请求，不创建评论。非 wiki 输入不读取凭据、不联网；
+                  wiki 输入需要 User 凭据，先只读解析 wiki 节点（node_by_token）再输出计划
   --user-access-token  覆盖登录态
 
 权限:
@@ -71,6 +73,9 @@ var driveAddCommentCmd = &cobra.Command{
   # wiki URL 自动解析
   feishu-cli drive add-comment --doc https://xxx.feishu.cn/wiki/zzz --content '[{"type":"text","text":"收到"}]'
 
+  # 预览请求（不创建评论）
+  feishu-cli drive add-comment --doc doccnxxxx --content '[{"type":"text","text":"收到"}]' --dry-run
+
   # 电子表格单元格评论
   feishu-cli drive add-comment --doc shtcnxxx --type sheet --block-id a281f9!D6 \
     --content '[{"type":"text","text":"这个数需要核对"}]'
@@ -87,21 +92,13 @@ var driveAddCommentCmd = &cobra.Command{
     {"type":"mention_user","mention_user":"ou_xxx"}
   ]'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, err := requireUserToken(cmd, "drive add-comment")
-		if err != nil {
-			return err
-		}
-
 		docInput, _ := cmd.Flags().GetString("doc")
 		content, _ := cmd.Flags().GetString("content")
 		blockID, _ := cmd.Flags().GetString("block-id")
 		forceFull, _ := cmd.Flags().GetBool("full")
 		output, _ := cmd.Flags().GetString("output")
 		explicitType, _ := cmd.Flags().GetString("type")
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		blockID = strings.TrimSpace(blockID)
 
 		if docInput == "" {
@@ -117,10 +114,44 @@ var driveAddCommentCmd = &cobra.Command{
 			return clierr.Usage(err)
 		}
 
-		// 解析 --doc 输入
+		// 离线解析 --doc：URL 格式、类型白名单在任何网络请求之前校验
+		docRef, err := parseResourceArg(docInput, commentDocArgOptions(explicitType, ""))
+		if err != nil {
+			return clierr.Usage(err)
+		}
+		needWiki := docRef.InputType == client.ResourceTypeWiki
+		if !needWiki {
+			// 非 wiki 输入：类型已知，锚点可离线校验
+			if _, err := buildCommentAnchor(docRef.Type, blockID, forceFull); err != nil {
+				return err
+			}
+		}
+
+		// 静态预览：非 wiki 输入无需凭据、不联网
+		if dryRun && !needWiki {
+			return printAddCommentDryRun(cmd, docRef.Token, docRef.Type, blockID, forceFull, replyElements, nil)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, err := requireUserToken(cmd, "drive add-comment")
+		if err != nil {
+			return err
+		}
+
+		// 解析 --doc 输入（wiki 节点经 node_by_token 解包，只读请求）
 		fileToken, fileType, resolvedBy, err := resolveCommentDocWithType(docInput, explicitType, token)
 		if err != nil {
 			return err
+		}
+
+		if dryRun {
+			// 计划预览：wiki 已解包（只读联网），不发写请求
+			return printAddCommentDryRun(cmd, fileToken, fileType, blockID, forceFull, replyElements, map[string]any{
+				"wiki_token":  docRef.InputToken,
+				"resolved_by": resolvedBy,
+			})
 		}
 
 		anchor, err := buildCommentAnchor(fileType, blockID, forceFull)
@@ -333,14 +364,7 @@ func resolveCommentDoc(input, userAccessToken string) (string, string, string, e
 // 只按 URL 路径前缀识别类型（query 中的 /wiki/ 等字样不会劫持解析）；wiki 经 node_by_token 换出底层文档；
 // 裸 token 用 explicitType（为空时默认 docx，保持历史行为）。
 func resolveCommentDocWithType(input, explicitType, userAccessToken string) (string, string, string, error) {
-	res, err := resolveResourceArg(input, resourceArgOptions{
-		ArgName:         "--doc",
-		ExplicitType:    explicitType,
-		DefaultType:     client.ResourceTypeDocx,
-		Allowed:         commentTargetTypes,
-		ResolveWiki:     true,
-		UserAccessToken: userAccessToken,
-	})
+	res, err := resolveResourceArg(input, commentDocArgOptions(explicitType, userAccessToken))
 	if err != nil {
 		return "", "", "", err
 	}
@@ -353,6 +377,37 @@ func resolveCommentDocWithType(input, explicitType, userAccessToken string) (str
 		// 裸 token：resolved_by 反映实际类型（docx 时仍为 docx_token，保持兼容）
 		return res.Token, res.Type, res.Type + "_token", nil
 	}
+}
+
+// commentDocArgOptions 是 drive add-comment --doc 的解析选项（离线预检与真实解析共用）。
+func commentDocArgOptions(explicitType, userAccessToken string) resourceArgOptions {
+	return resourceArgOptions{
+		ArgName:         "--doc",
+		ExplicitType:    explicitType,
+		DefaultType:     client.ResourceTypeDocx,
+		Allowed:         commentTargetTypes,
+		ResolveWiki:     true,
+		UserAccessToken: userAccessToken,
+	}
+}
+
+// printAddCommentDryRun 打印 new_comments 请求预览；body 与真实请求同源（client.BuildNewCommentBody）。
+func printAddCommentDryRun(cmd *cobra.Command, fileToken, fileType, blockID string, forceFull bool, elements []map[string]any, extra map[string]any) error {
+	anchor, err := buildCommentAnchor(fileType, blockID, forceFull)
+	if err != nil {
+		return err
+	}
+	body := client.BuildNewCommentBody(client.CreateNewCommentReq{FileToken: fileToken, FileType: fileType, ReplyElements: elements, Anchor: anchor})
+	if extra == nil {
+		extra = map[string]any{}
+	}
+	extra["file_token"] = fileToken
+	extra["file_type"] = fileType
+	return printDryRunPlan(cmd, "Create a rich-text comment (new_comments)", extra, []dryRunStep{{
+		Method: "POST",
+		URL:    client.NewCommentAPIPath(fileToken),
+		Body:   body,
+	}})
 }
 
 // extractURLSegmentToken 从 URL 里提取某个路径段后面紧跟的 token
@@ -385,6 +440,7 @@ func init() {
 	driveAddCommentCmd.Flags().String("type", "", "裸 token 的文档类型（docx/doc/sheet/slides/bitable/file；默认 docx）")
 	driveAddCommentCmd.Flags().String("block-id", "", "局部评论锚点（docx: block_id；sheet: <sheetId>!<cell>；slides: <type>!<xml-id>；bitable: <table>!<record>!<view>）")
 	driveAddCommentCmd.Flags().Bool("full", false, "强制全局评论")
+	driveAddCommentCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（wiki 输入需凭据做只读解析）")
 	driveAddCommentCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	driveAddCommentCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(driveAddCommentCmd, "doc", "content")

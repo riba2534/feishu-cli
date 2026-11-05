@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
@@ -103,6 +104,7 @@ var secureLabelSetCmd = &cobra.Command{
 可选:
   --type         文档类型：doc/docx/sheet/file/bitable/mindnote/slides（默认 docx）
   --output / -o  输出格式（json）
+  --dry-run      只打印将要发出的请求（不读取凭据、不联网）
 
 必填:
   --label-id     要设置的密级标签 ID（从 secure-label list 获取，不要用显示名）
@@ -113,7 +115,8 @@ var secureLabelSetCmd = &cobra.Command{
   - 密级降级可能需要在文档界面完成审批，重试 API 不会绕过审批（错误码 1063013）
 
 示例:
-  feishu-cli drive secure-label set doxcnXXXX --type docx --label-id 7217780879644737539`,
+  feishu-cli drive secure-label set doxcnXXXX --type docx --label-id 7217780879644737539
+  feishu-cli drive secure-label set doxcnXXXX --type docx --label-id 7217780879644737539 --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fileToken := args[0]
@@ -123,6 +126,15 @@ var secureLabelSetCmd = &cobra.Command{
 
 		if labelID == "" {
 			return clierr.Usagef("--label-id 必填（从 secure-label list 获取标签 ID，不要使用显示名）")
+		}
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Set document secure label", nil, []dryRunStep{{
+				Method: "PATCH",
+				URL:    "/open-apis/drive/v2/files/" + url.PathEscape(fileToken) + "/secure_label",
+				Params: map[string]any{"type": docType},
+				Body:   map[string]any{"id": labelID},
+			}})
 		}
 
 		if err := config.Validate(); err != nil {
@@ -168,6 +180,7 @@ func init() {
 	secureLabelCmd.AddCommand(secureLabelSetCmd)
 	secureLabelSetCmd.Flags().String("type", "docx", "文档类型：doc/docx/sheet/file/bitable/mindnote/slides")
 	secureLabelSetCmd.Flags().String("label-id", "", "要设置的密级标签 ID（必填）")
+	secureLabelSetCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求")
 	secureLabelSetCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mustMarkFlagRequired(secureLabelSetCmd, "label-id")
 }

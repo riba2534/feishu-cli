@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -129,7 +130,10 @@ var addReplyCmd = &cobra.Command{
 
   # 显式传入 User Token
   feishu-cli comment reply add doccnXXX 6916106822734578184 \
-    --text "回复内容" --user-access-token "u-xxxxx"`,
+    --text "回复内容" --user-access-token "u-xxxxx"
+
+  # 预览请求（不读取凭据、不联网）
+  feishu-cli comment reply add doccnXXX 6916106822734578184 --text "回复内容" --dry-run`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fileToken := args[0]
@@ -140,6 +144,17 @@ var addReplyCmd = &cobra.Command{
 
 		if text == "" {
 			return clierr.Usagef("回复内容不能为空，请通过 --text 提供")
+		}
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Add a reply to an existing comment", nil, []dryRunStep{{
+				Method: "POST",
+				URL:    "/open-apis/drive/v1/files/" + url.PathEscape(fileToken) + "/comments/" + url.PathEscape(commentID) + "/replies",
+				Params: map[string]any{"file_type": fileType},
+				Body: map[string]any{"content": map[string]any{"elements": []map[string]any{
+					{"type": "text_run", "text_run": map[string]any{"text": text}},
+				}}},
+			}})
 		}
 
 		if err := config.Validate(); err != nil {
@@ -184,17 +199,25 @@ var deleteReplyCmd = &cobra.Command{
 同一 App 创建的 Bot 回复；删除用户回复时需显式提供该作者的 --user-access-token。
 
 示例:
-  feishu-cli comment reply delete doccnXXX 6916106822734578184 6916106822734594568 --type docx`,
+  feishu-cli comment reply delete doccnXXX 6916106822734578184 6916106822734594568 --type docx
+  feishu-cli comment reply delete doccnXXX 6916106822734578184 6916106822734594568 --dry-run`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken := args[0]
 		commentID := args[1]
 		replyID := args[2]
 		fileType, _ := cmd.Flags().GetString("type")
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Delete a comment reply", nil, []dryRunStep{{
+				Method: "DELETE",
+				URL:    "/open-apis/drive/v1/files/" + url.PathEscape(fileToken) + "/comments/" + url.PathEscape(commentID) + "/replies/" + url.PathEscape(replyID),
+				Params: map[string]any{"file_type": fileType},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		// 删除属于写操作：默认保持当前 App/Bot 身份，仅显式 flag/env 时切换为 User。
 		userAccessToken := resolveOptionalUserToken(cmd)
 
@@ -224,7 +247,9 @@ func init() {
 	replyCmd.AddCommand(addReplyCmd)
 	addReplyCmd.Flags().String("text", "", "回复内容（必填）")
 	addReplyCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	addReplyCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	_ = addReplyCmd.MarkFlagRequired("text")
 
 	replyCmd.AddCommand(deleteReplyCmd)
+	deleteReplyCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 }

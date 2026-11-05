@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -25,16 +26,25 @@ var revertVersionCmd = &cobra.Command{
 
 示例:
   feishu-cli file version revert doccnXXX 7633658129540910621
-  feishu-cli file version revert doccnXXX 7633658129540910621 --user-access-token u-xxx`,
+  feishu-cli file version revert doccnXXX 7633658129540910621 --user-access-token u-xxx
+  feishu-cli file version revert doccnXXX 7633658129540910621 --dry-run   # 只预览请求（不读取凭据、不联网）`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		fileToken := args[0]
+		version := args[1]
+		output, _ := cmd.Flags().GetString("output")
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Revert file to a history version", nil, []dryRunStep{{
+				Method: "POST",
+				URL:    "/open-apis/drive/v1/files/" + url.PathEscape(fileToken) + "/revert",
+				Body:   map[string]any{"version": version},
+			}})
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
 
-		fileToken := args[0]
-		version := args[1]
-		output, _ := cmd.Flags().GetString("output")
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		if err := client.RevertFileVersion(fileToken, version, userAccessToken); err != nil {
@@ -61,4 +71,5 @@ func init() {
 	// 仅在此新文件中挂载 revert 子命令，不改动 cmd/file_version.go。
 	versionCmd.AddCommand(revertVersionCmd)
 	revertVersionCmd.Flags().StringP("output", "o", "", "输出格式（json）")
+	revertVersionCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 }
