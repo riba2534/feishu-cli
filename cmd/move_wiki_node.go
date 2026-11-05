@@ -48,10 +48,6 @@ var moveWikiNodeCmd = &cobra.Command{
   feishu-cli wiki move wikcnXXXXXX --target-space 7012345678901234567 --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		nodeToken, err := extractWikiLookupToken(args[0])
 		if err != nil {
 			return err
@@ -64,6 +60,10 @@ var moveWikiNodeCmd = &cobra.Command{
 		targetParent = strings.TrimSpace(targetParent)
 		if targetSpace == "" && targetParent == "" {
 			return clierr.Usagef("--target-space 与 --target-parent 至少传一个（只传 --target-parent 时自动取父节点所在空间）")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// 先通过 node_by_token 获取节点信息（当前 space_id 与真实 node_token）。

@@ -127,9 +127,6 @@ var vcNoteTranscriptCmd = &cobra.Command{
   feishu-cli vc note transcript 7690848884788907213 --format plain_text --output transcript.txt`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		format, _ := cmd.Flags().GetString("format")
 		format, err := normalizeNoteTranscriptFormat(format)
 		if err != nil {
@@ -146,6 +143,10 @@ var vcNoteTranscriptCmd = &cobra.Command{
 		noteID := strings.TrimSpace(args[0])
 		if noteID == "" {
 			return clierr.Usagef("note_id 不能为空")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := requireUserToken(cmd, "vc note transcript")

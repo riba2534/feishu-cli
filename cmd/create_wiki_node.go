@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -45,10 +46,6 @@ Bot 身份创建时自动给当前 CLI 登录用户授予节点 full_access（�
   # JSON 格式输出
   feishu-cli wiki create --space-id 7012345678901234567 --title "新文档" --output json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		spaceID, _ := cmd.Flags().GetString("space-id")
 		title, _ := cmd.Flags().GetString("title")
 		parentNode, _ := cmd.Flags().GetString("parent-node")
@@ -58,10 +55,14 @@ Bot 身份创建时自动给当前 CLI 登录用户授予节点 full_access（�
 		output, _ := cmd.Flags().GetString("output")
 
 		if nodeType == "shortcut" && originNodeToken == "" {
-			return fmt.Errorf("--origin-node-token 在 --node-type=shortcut 时必填")
+			return clierr.Usagef("--origin-node-token 在 --node-type=shortcut 时必填")
 		}
 		if nodeType != "shortcut" && originNodeToken != "" {
-			return fmt.Errorf("--origin-node-token 仅在 --node-type=shortcut 时可用")
+			return clierr.Usagef("--origin-node-token 仅在 --node-type=shortcut 时可用")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		userAccessToken := resolveOptionalUserToken(cmd)

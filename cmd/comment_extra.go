@@ -144,9 +144,6 @@ var updateReplyCmd = &cobra.Command{
   feishu-cli comment reply update doccnXXX <comment_id> <reply_id> --text "x" --dry-run`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		fileToken, commentID, replyID := args[0], args[1], args[2]
 		fileType, _ := cmd.Flags().GetString("type")
 		text, _ := cmd.Flags().GetString("text")
@@ -171,6 +168,10 @@ var updateReplyCmd = &cobra.Command{
 		}
 
 		// 写操作：默认保持当前 App/Bot 身份，仅显式 flag/env 时切换为 User（需与回复作者身份一致）
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
 		userAccessToken := resolveOptionalUserToken(cmd)
 		if err := client.UpdateCommentReply(fileToken, commentID, replyID, fileType, elements, userAccessToken); err != nil {
 			if client.HasAPICode(err, 1069303) {
@@ -248,9 +249,6 @@ var reactReplyCmd = &cobra.Command{
   feishu-cli comment reply react doccnXXX 6916106822734594568 --emoji THUMBSUP --action delete`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		fileToken, replyID := args[0], args[1]
 		fileType, _ := cmd.Flags().GetString("type")
 		emoji, _ := cmd.Flags().GetString("emoji")
@@ -275,6 +273,10 @@ var reactReplyCmd = &cobra.Command{
 				"query":   map[string]string{"file_type": fileType},
 				"body":    body,
 			})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		userAccessToken := resolveOptionalUserToken(cmd)

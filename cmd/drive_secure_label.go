@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -44,17 +45,17 @@ var secureLabelListCmd = &cobra.Command{
   feishu-cli drive secure-label list --output json`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		lang, _ := cmd.Flags().GetString("lang")
 		output, _ := cmd.Flags().GetString("output")
 
 		if pageSize < 1 || pageSize > 10 {
-			return fmt.Errorf("--page-size 取值范围为 1-10")
+			return clierr.Usagef("--page-size 取值范围为 1-10")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := requireUserToken(cmd, "drive secure-label list")
@@ -115,17 +116,17 @@ var secureLabelSetCmd = &cobra.Command{
   feishu-cli drive secure-label set doxcnXXXX --type docx --label-id 7217780879644737539`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken := args[0]
 		docType, _ := cmd.Flags().GetString("type")
 		labelID, _ := cmd.Flags().GetString("label-id")
 		output, _ := cmd.Flags().GetString("output")
 
 		if labelID == "" {
-			return fmt.Errorf("--label-id 必填（从 secure-label list 获取标签 ID，不要使用显示名）")
+			return clierr.Usagef("--label-id 必填（从 secure-label list 获取标签 ID，不要使用显示名）")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := requireUserToken(cmd, "drive secure-label set")

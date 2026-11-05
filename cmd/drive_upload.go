@@ -44,10 +44,6 @@ var driveUploadCmd = &cobra.Command{
   feishu-cli drive upload --file /tmp/big.zip --folder-token fldxxx --name "大文件.zip"
   feishu-cli drive upload --file /tmp/report.pdf --file-token boxcnXXXX   # 原地覆盖为新版本`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
@@ -68,7 +64,11 @@ var driveUploadCmd = &cobra.Command{
 		// 本地文件在任何网络请求（含 token 刷新）之前校验：敏感目录、不存在、是目录、无权限读取均为用法错误
 		stat, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("--file 无效: %w", err)
+			return clierr.Usagef("--file 无效: %w", err)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveIdentityWithLegacyDefault(cmd, func(c *cobra.Command) (string, error) {

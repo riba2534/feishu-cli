@@ -54,10 +54,6 @@ var minutesSearchCmd = &cobra.Command{
   # 组合过滤 + JSON 输出
   feishu-cli minutes search --query "周会" --owner-ids ou_xxx -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		query, _ := cmd.Flags().GetString("query")
 		keyword, _ := cmd.Flags().GetString("keyword")
 		participantRaw, _ := cmd.Flags().GetString("participant-ids")
@@ -116,6 +112,11 @@ var minutesSearchCmd = &cobra.Command{
 		}
 		if pageSize == 0 {
 			pageSize = 15
+		}
+
+		// me 需要读取当前登录态：先检查配置，未配置时保持 exit 3
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		ownerIDs, err := resolveMinutesUserIDs(cmd, "--owner-ids", ownerList)

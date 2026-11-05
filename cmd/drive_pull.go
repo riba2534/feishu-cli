@@ -61,10 +61,6 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
   feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --as bot
   feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --delete-local --yes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		folderToken, _ := cmd.Flags().GetString("folder-token")
 		localDir, _ := cmd.Flags().GetString("local-dir")
 		ifExists, _ := cmd.Flags().GetString("if-exists")
@@ -105,6 +101,10 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
 		}
 		if deleteLocal && !yes && !confirmationBypassed(cmd) {
 			return clierr.ConfirmationRequiredf("--delete-local 是高危操作，必须同时加 --yes 才执行")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// --delete-local 会删本地文件：身份意外降级到 Bot 时远端视图更小、差集更大，

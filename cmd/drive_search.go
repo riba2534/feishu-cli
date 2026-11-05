@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -64,7 +65,7 @@ folder-tokens、space-ids、creator-ids、sharer-ids、only-title、sort 排序�
 		output, _ := cmd.Flags().GetString("output")
 
 		if folders != "" && spaces != "" {
-			return fmt.Errorf("--folder-tokens 与 --space-ids 互斥")
+			return clierr.Usagef("--folder-tokens 与 --space-ids 互斥")
 		}
 
 		opts := client.DriveSearchOptions{

@@ -8,6 +8,7 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -23,10 +24,10 @@ var permApplyTypes = []string{
 // --type 与 URL 推断的类型冲突时报错，不再静默以 --type 覆盖。wiki 是申请接口的合法 type，不做解包。
 func resolvePermApplyTarget(raw, explicitType string) (token, docType string, err error) {
 	if strings.TrimSpace(raw) == "" {
-		return "", "", fmt.Errorf("--token 必填（可以是文档 token 或完整 URL）")
+		return "", "", clierr.Usagef("--token 必填（可以是文档 token 或完整 URL）")
 	}
 	if !client.LooksLikeURL(raw) && strings.TrimSpace(explicitType) == "" {
-		return "", "", fmt.Errorf("--type 必填（当 --token 是裸 token 时）。可选值: %s", strings.Join(permApplyTypes, ", "))
+		return "", "", clierr.Usagef("--type 必填（当 --token 是裸 token 时）。可选值: %s", strings.Join(permApplyTypes, ", "))
 	}
 	res, err := parseResourceArg(raw, resourceArgOptions{
 		ArgName:      "--token",
@@ -68,10 +69,6 @@ var drivePermApplyCmd = &cobra.Command{
   # 预览请求
   feishu-cli drive apply-permission --token <url> --perm view --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		token, _ := cmd.Flags().GetString("token")
 		explicitType, _ := cmd.Flags().GetString("type")
 		perm, _ := cmd.Flags().GetString("perm")
@@ -90,11 +87,6 @@ var drivePermApplyCmd = &cobra.Command{
 			return err
 		}
 
-		userToken, err := requireUserToken(cmd, "drive apply-permission")
-		if err != nil {
-			return err
-		}
-
 		body := map[string]any{"perm": perm}
 		if remark != "" {
 			body["remark"] = remark
@@ -110,6 +102,15 @@ var drivePermApplyCmd = &cobra.Command{
 				"query":   map[string]string{"type": docType},
 				"body":    body,
 			})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
+		userToken, err := requireUserToken(cmd, "drive apply-permission")
+		if err != nil {
+			return err
 		}
 
 		cli, err := client.GetClient()

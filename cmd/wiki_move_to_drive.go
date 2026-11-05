@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -57,10 +58,6 @@ wiki move-docs（云盘 → 知识库）的反向操作。
   feishu-cli drive task-result --scenario wiki_move_to_drive --task-id <task_id> --as bot`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		nodeToken, _ := cmd.Flags().GetString("node-token")
 		folderToken, _ := cmd.Flags().GetString("folder-token")
 		wait, _ := cmd.Flags().GetBool("wait")
@@ -68,10 +65,14 @@ wiki move-docs（云盘 → 知识库）的反向操作。
 		output, _ := cmd.Flags().GetString("output")
 
 		if nodeToken == "" {
-			return fmt.Errorf("--node-token 必填")
+			return clierr.Usagef("--node-token 必填")
 		}
 		if timeout <= 0 {
 			timeout = 60
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		userToken := resolveOptionalUserToken(cmd)

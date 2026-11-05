@@ -46,10 +46,6 @@ var uploadMediaCmd = &cobra.Command{
   feishu-cli media upload image.png --parent-type docx_image --parent-node BLOCK_ID --doc-id DOC_ID`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		filePath := args[0]
 		parentType, _ := cmd.Flags().GetString("parent-type")
 		parentNode, _ := cmd.Flags().GetString("parent-node")
@@ -61,7 +57,7 @@ var uploadMediaCmd = &cobra.Command{
 		}
 
 		if parentNode == "" {
-			return fmt.Errorf("必须指定 --parent-node（文档ID）")
+			return clierr.Usagef("必须指定 --parent-node（文档ID）")
 		}
 
 		if fileName == "" {
@@ -69,6 +65,10 @@ var uploadMediaCmd = &cobra.Command{
 		}
 		// 本地文件在任何网络请求之前校验：敏感目录、不存在、是目录、无权限读取均为用法错误
 		if _, err := safefile.StatInputFile(filePath); err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
 			return err
 		}
 

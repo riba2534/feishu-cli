@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"path/filepath"
 	"strings"
 )
@@ -70,11 +71,11 @@ func validateDriveExportFormat(docType, fileExtension, subID string, onlySchema 
 			docType, fileExtension, strings.Join(driveExportAllowedFileExtensions(docType), ", "))
 	}
 	if onlySchema && (docType != "bitable" || fileExtension != "base") {
-		return fmt.Errorf("--only-schema 仅在导出 bitable 为 base 时使用")
+		return clierr.Usagef("--only-schema 仅在导出 bitable 为 base 时使用")
 	}
 	if strings.TrimSpace(subID) != "" {
 		if fileExtension != "csv" || (docType != "sheet" && docType != "bitable") {
-			return fmt.Errorf("--sub-id 仅在 sheet/bitable 导出 csv 时使用")
+			return clierr.Usagef("--sub-id 仅在 sheet/bitable 导出 csv 时使用")
 		}
 	}
 	if fileExtension == "csv" && (docType == "sheet" || docType == "bitable") && strings.TrimSpace(subID) == "" {

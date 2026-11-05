@@ -46,10 +46,6 @@ var vcSearchCmd = &cobra.Command{
   # 组合过滤 + JSON 输出
   feishu-cli vc search --query "需求评审" --start 2026-03-01 -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		query, _ := cmd.Flags().GetString("query")
 		startStr, _ := cmd.Flags().GetString("start")
 		endStr, _ := cmd.Flags().GetString("end")
@@ -105,6 +101,10 @@ var vcSearchCmd = &cobra.Command{
 		}
 		roomIDs, err := parseCSVIDs(roomRaw, "room-ids")
 		if err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
 			return err
 		}
 

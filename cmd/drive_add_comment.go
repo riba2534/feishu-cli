@@ -105,10 +105,10 @@ var driveAddCommentCmd = &cobra.Command{
 		blockID = strings.TrimSpace(blockID)
 
 		if docInput == "" {
-			return fmt.Errorf("--doc 必填")
+			return clierr.Usagef("--doc 必填")
 		}
 		if content == "" {
-			return fmt.Errorf("--content 必填")
+			return clierr.Usagef("--content 必填")
 		}
 
 		// 解析 --content JSON
@@ -272,10 +272,10 @@ func parseSheetCellAnchor(input string) (string, int, int, error) {
 func parseReplyElements(raw string) ([]map[string]any, error) {
 	var inputs []commentReplyElementInput
 	if err := json.Unmarshal([]byte(raw), &inputs); err != nil {
-		return nil, fmt.Errorf("--content 不是合法 JSON: %w\n示例: --content '[{\"type\":\"text\",\"text\":\"评论内容\"}]'", err)
+		return nil, clierr.Usagef("--content 不是合法 JSON: %w\n示例: --content '[{\"type\":\"text\",\"text\":\"评论内容\"}]'", err)
 	}
 	if len(inputs) == 0 {
-		return nil, fmt.Errorf("--content 至少包含一个 reply element")
+		return nil, clierr.Usagef("--content 至少包含一个 reply element")
 	}
 
 	out := make([]map[string]any, 0, len(inputs))
@@ -285,12 +285,12 @@ func parseReplyElements(raw string) ([]map[string]any, error) {
 		switch strings.TrimSpace(input.Type) {
 		case "text":
 			if strings.TrimSpace(input.Text) == "" {
-				return nil, fmt.Errorf("--content 第 %d 个元素 type=text 的 text 不能为空", idx)
+				return nil, clierr.Usagef("--content 第 %d 个元素 type=text 的 text 不能为空", idx)
 			}
 			// 服务端按所有 text 元素的原始字符数合计计算上限（拆成多个元素不能绕过），超限返回不透明的 1069302
 			totalRunes += utf8.RuneCountInString(input.Text)
 			if totalRunes > maxCommentTotalRunes {
-				return nil, fmt.Errorf("--content 所有 text 元素合计 %d 字符（到第 %d 个元素），超过服务端上限 %d；请缩短评论内容（拆分为多个元素不能绕过合计上限）", totalRunes, idx, maxCommentTotalRunes)
+				return nil, clierr.Usagef("--content 所有 text 元素合计 %d 字符（到第 %d 个元素），超过服务端上限 %d；请缩短评论内容（拆分为多个元素不能绕过合计上限）", totalRunes, idx, maxCommentTotalRunes)
 			}
 			out = append(out, map[string]any{"type": "text", "text": input.Text})
 		case "mention_user":
@@ -299,7 +299,7 @@ func parseReplyElements(raw string) ([]map[string]any, error) {
 				target = input.Text
 			}
 			if target == "" {
-				return nil, fmt.Errorf("--content 第 %d 个元素 type=mention_user 需要 mention_user 或 text 字段", idx)
+				return nil, clierr.Usagef("--content 第 %d 个元素 type=mention_user 需要 mention_user 或 text 字段", idx)
 			}
 			out = append(out, map[string]any{"type": "mention_user", "mention_user": target})
 		case "link":
@@ -308,11 +308,11 @@ func parseReplyElements(raw string) ([]map[string]any, error) {
 				target = input.Text
 			}
 			if target == "" {
-				return nil, fmt.Errorf("--content 第 %d 个元素 type=link 需要 link 或 text 字段", idx)
+				return nil, clierr.Usagef("--content 第 %d 个元素 type=link 需要 link 或 text 字段", idx)
 			}
 			out = append(out, map[string]any{"type": "link", "link": target})
 		default:
-			return nil, fmt.Errorf("--content 第 %d 个元素不支持的 type=%q（合法值: text, mention_user, link）", idx, input.Type)
+			return nil, clierr.Usagef("--content 第 %d 个元素不支持的 type=%q（合法值: text, mention_user, link）", idx, input.Type)
 		}
 	}
 	return out, nil

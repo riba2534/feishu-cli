@@ -133,7 +133,7 @@ func parseWikiDeleteInput(rawInput, flagObjType string) (token, objType string, 
 		}
 
 		if flagObjType != "" && flagObjType != inferredType {
-			return "", "", fmt.Errorf("--obj-type %q 与从 URL 推断的文档类型 %q 冲突；请二选一", flagObjType, inferredType)
+			return "", "", clierr.Usagef("--obj-type %q 与从 URL 推断的文档类型 %q 冲突；请二选一", flagObjType, inferredType)
 		}
 		objType = inferredType
 	} else {
@@ -189,20 +189,16 @@ URL 输入（/wiki/, /docx/, /sheets/ 等）自动推断文档类型；裸 token
   feishu-cli wiki delete https://sample.feishu.cn/wiki/wikcnXXXXXX -o json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		output, _ := cmd.Flags().GetString("output")
 		output = strings.ToLower(strings.TrimSpace(output))
 		if output != "" && output != "json" {
-			return fmt.Errorf("不支持的 --output %q，仅支持 json（或留空使用默认格式）", output)
+			return clierr.Usagef("不支持的 --output %q，仅支持 json（或留空使用默认格式）", output)
 		}
 
 		rawObjType, _ := cmd.Flags().GetString("obj-type")
 		nodeToken, objType, err := parseWikiDeleteInput(args[0], rawObjType)
 		if err != nil {
-			return err
+			return clierr.Usage(err)
 		}
 
 		spaceID, _ := cmd.Flags().GetString("space-id")
@@ -214,6 +210,10 @@ URL 输入（/wiki/, /docx/, /sheets/ 等）自动推断文档类型；裸 token
 		}
 		includeChildren, _ := cmd.Flags().GetBool("include-children")
 		force, _ := cmd.Flags().GetBool("force")
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {

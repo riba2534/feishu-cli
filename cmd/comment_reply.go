@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -131,10 +132,6 @@ var addReplyCmd = &cobra.Command{
     --text "回复内容" --user-access-token "u-xxxxx"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken := args[0]
 		commentID := args[1]
 		fileType, _ := cmd.Flags().GetString("type")
@@ -142,7 +139,11 @@ var addReplyCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if text == "" {
-			return fmt.Errorf("回复内容不能为空，请通过 --text 提供")
+			return clierr.Usagef("回复内容不能为空，请通过 --text 提供")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// 添加属于写操作：默认保持当前 App/Bot 身份，仅显式 flag/env 时切换为 User。

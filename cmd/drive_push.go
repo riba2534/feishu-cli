@@ -67,10 +67,6 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
   feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --if-exists smart
   feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --delete-remote --yes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		folderToken, _ := cmd.Flags().GetString("folder-token")
 		localDir, _ := cmd.Flags().GetString("local-dir")
 		ifExists, _ := cmd.Flags().GetString("if-exists")
@@ -107,6 +103,10 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 		}
 		if deleteRemote && !yes && !confirmationBypassed(cmd) {
 			return clierr.ConfirmationRequiredf("--delete-remote 是高危操作，必须同时加 --yes 才执行")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// --delete-remote 会删远端文件：身份降级会让"本地不存在"的判定基于错误的远端视图，

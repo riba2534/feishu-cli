@@ -48,10 +48,6 @@ var wikiDeleteSpaceCmd = &cobra.Command{
   feishu-cli wiki delete-space SPACE_ID --yes -o json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		spaceID := strings.TrimSpace(args[0])
 		if err := validateResourceIdentifier(spaceID, "space_id"); err != nil {
 			return err
@@ -61,6 +57,10 @@ var wikiDeleteSpaceCmd = &cobra.Command{
 
 		if !yes {
 			return clierr.ConfirmationRequiredf("delete-space 是高危且不可逆操作，请加 --yes 确认")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// 删除空间是不可逆写操作：不能用读类 helper 在 User Token 不可用时静默降级为 Bot

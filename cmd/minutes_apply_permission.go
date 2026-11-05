@@ -32,10 +32,6 @@ var minutesApplyPermissionCmd = &cobra.Command{
   # 申请编辑权限（JSON 输出）
   feishu-cli minutes apply-permission --minute-token obcnxxxx --perm edit -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		rawMinute, _ := cmd.Flags().GetString("minute-token")
 		perm, _ := cmd.Flags().GetString("perm")
 		output, _ := cmd.Flags().GetString("output")
@@ -45,6 +41,10 @@ var minutesApplyPermissionCmd = &cobra.Command{
 			return err
 		}
 		if err := validateEnum(perm, "权限类型", []string{"view", "edit"}); err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
 			return err
 		}
 

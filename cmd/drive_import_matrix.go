@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"path/filepath"
 	"strings"
 )
@@ -93,7 +94,7 @@ func validateDriveImportSpec(filePath, docType, folderToken, targetToken, effect
 		return fmt.Errorf("文件类型不匹配: .%s 不能导入为 %s（允许: %s）", ext, docType, strings.Join(supported, ", "))
 	}
 	if strings.TrimSpace(targetToken) != "" && docType != "bitable" {
-		return fmt.Errorf("--target-token 仅在 --type bitable 时可用")
+		return clierr.Usagef("--target-token 仅在 --type bitable 时可用")
 	}
 	_ = folderToken
 	return nil
