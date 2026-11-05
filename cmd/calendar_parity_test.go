@@ -183,7 +183,7 @@ func TestCreateEventMarkdownUploadsThenCreates(t *testing.T) {
 		t.Fatalf("上传应带 parent_type=calendar: %s", reqs[0].Body)
 	}
 	evBody := reqs[1].Body
-	if strings.Contains(evBody, `"description":`) || !strings.Contains(evBody, `"description_rich":"## 议程\n![p](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/preview/boxcnxxx?preview_type=16`) {
+	if strings.Contains(evBody, `"description":`) || !strings.Contains(evBody, `"description_rich":"## 议程\n![p](https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/preview/boxcnxxx?preview_type=16`) { // 官方公共图片预览域名 privacy-scan: allow
 		t.Fatalf("创建请求应带改写后的 description_rich: %s", evBody)
 	}
 	if !strings.Contains(out, `"event_id": "evt_1"`) {

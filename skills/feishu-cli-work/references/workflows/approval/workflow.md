@@ -88,7 +88,7 @@ feishu-cli approval task query --topic todo --page-all
 feishu-cli approval task query --topic done
 feishu-cli approval task query --topic cc-unread
 feishu-cli approval task query --topic cc-read
-# 注意：topic=started 已被官方 tasks 接口下线，CLI 在本地直接报错（exit 1），查「我发起的」用下面的专用入口
+# 注意：topic=started 已被官方 tasks 接口下线，CLI 在本地直接报用法错误（exit 2），查「我发起的」用下面的专用入口
 
 # 查我发起的审批实例（专用入口，同样是稀疏分页）
 feishu-cli approval instance initiated --page-all

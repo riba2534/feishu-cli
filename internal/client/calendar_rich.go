@@ -116,9 +116,9 @@ func CalendarImagePreviewURL(host, fileToken string, width, height int, size int
 // calendarImageHost 按开放平台域名选择图片预览域名（Lark 国际版用 larksuite.com）
 func calendarImageHost() string {
 	if cfg := config.Get(); cfg != nil && strings.Contains(cfg.BaseURL, "larksuite.com") {
-		return "internal-api-drive-stream.larksuite.com"
+		return "internal-api-drive-stream.larksuite.com" // 官方公共图片预览域名，非企业域名 privacy-scan: allow
 	}
-	return "internal-api-drive-stream.feishu.cn"
+	return "internal-api-drive-stream.feishu.cn" // 官方公共图片预览域名，非企业域名 privacy-scan: allow
 }
 
 // imageDimensions 读取图片宽高；无法识别时返回 0,0（URL 不带尺寸参数）

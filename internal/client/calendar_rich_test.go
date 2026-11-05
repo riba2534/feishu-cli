@@ -31,8 +31,8 @@ func TestBuildEventBodyWithRich(t *testing.T) {
 
 // TestCalendarImagePreviewURL 预览 URL 带尺寸与大小
 func TestCalendarImagePreviewURL(t *testing.T) {
-	got := CalendarImagePreviewURL("internal-api-drive-stream.feishu.cn", "boxcnxxx", 10, 20, 30)
-	want := "https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/preview/boxcnxxx?preview_type=16&im_w=10&im_h=20&im_size=30"
+	got := CalendarImagePreviewURL("img.example.com", "boxcnxxx", 10, 20, 30)
+	want := "https://img.example.com/space/api/box/stream/download/preview/boxcnxxx?preview_type=16&im_w=10&im_h=20&im_size=30"
 	if got != want {
 		t.Fatalf("got %s", got)
 	}
