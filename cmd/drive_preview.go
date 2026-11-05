@@ -242,7 +242,7 @@ var drivePreviewCmd = &cobra.Command{
 				extra["requested_type"] = reqType
 				extra["output"] = output
 			}
-			return printDryRunPlan(cmd, "Preview Drive file", extra, steps)
+			return printDryRunJSON("Preview Drive file", extra, steps)
 		}
 
 		if err := config.Validate(); err != nil {
@@ -292,6 +292,16 @@ var drivePreviewCmd = &cobra.Command{
 		}
 		return downloadDrivePreview(fileToken, cand.TypeCode, cand.Type, version, output, overwrite, token)
 	},
+}
+
+// printDryRunJSON 以与 printDryRunPlan 相同的 JSON 结构输出预览。drive preview/cover 的 -o 是保存路径，
+// 不能复用 printDryRunPlan（它把 --output 当输出格式）。
+func printDryRunJSON(desc string, extra map[string]any, steps []dryRunStep) error {
+	plan := map[string]any{"dry_run": true, "desc": desc, "api": steps}
+	for k, v := range extra {
+		plan[k] = v
+	}
+	return printJSON(plan)
 }
 
 // downloadDrivePreview 下载 preview_type 指定的产物。服务端返回空 body（Content-Length: 0）时报错且不写文件。
@@ -458,7 +468,7 @@ var driveCoverCmd = &cobra.Command{
 				q[k] = v[0]
 			}
 			steps = append(steps, dryRunStep{Method: "GET", URL: client.DrivePreviewDownloadPath(fileToken), Params: q, Desc: "下载封面"})
-			return printDryRunPlan(cmd, "Download Drive file cover", map[string]any{"file_token": fileToken, "spec": spec.Name, "output": output}, steps)
+			return printDryRunJSON("Download Drive file cover", map[string]any{"file_token": fileToken, "spec": spec.Name, "output": output}, steps)
 		}
 
 		if err := config.Validate(); err != nil {
