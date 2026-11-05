@@ -2,7 +2,7 @@
 name: feishu-cli-docs
 description: >-
   飞书云文档正文：读取与总结 docx/wiki/sheet（含转成可直接发 IM 的 Markdown），从零创作文档（PRD、方案、报告、纪要等体裁模板，DocxXML 草稿与 doc script 预检），创建与编辑 docx（带内容新建并上传本地图片/附件/HTML 块/画板源文件、追加、覆盖、按章节或 block 精确替换/删除/移动、插入本地或剪贴板图片、设置文档封面、历史版本查看与回滚），Markdown 导入（Mermaid/PlantUML/SVG 转画板），导出 Markdown/PDF/Word/Excel 与下载或预览文档素材，云盘原生 .md 文件的上传、diff 与覆盖，以及读取和编辑已有思维笔记的节点。用户要阅读、总结、撰写、写入或改写飞书文档，把 Markdown 导入飞书，把文档导出到本地，设置文档封面，操作思维笔记节点，或把误改的文档回滚时使用。不用于：评论（即使请求提到文档）、协作者与权限、DOCX/XLSX 等二进制导入、上传文件的版本和云盘目录，使用 feishu-cli-storage；按单元格读写表格使用 feishu-cli-data；文档内 HTMLBox/ECharts 动态组件使用 feishu-cli-visual；获取会议的纪要、妙记与逐字稿使用 feishu-cli-meetings（撰写纪要类文档仍用本 Skill）。
-compatibility: Requires feishu-cli v1.43.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.44.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Bash(python3:*) Bash(sleep:*) Read Write
 ---
 

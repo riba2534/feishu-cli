@@ -4,6 +4,94 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [v1.44.0] - 2026-11-05
+
+对照官方 CLI（larksuite/cli v1.0.99）逐领域对齐：统一退出码与 `--dry-run` 语义，内嵌 OpenAPI catalog 改为从官方同步，
+并补齐妙搭、多维表格、Slides、会中控制、妙记编辑、条件格式、OKR 等能力。除下方「行为变化」外，已有命令不带新参数时的
+默认值、身份、stdout 输出结构与成功路径退出码均保持不变。
+
+### 行为变化（升级前请阅读）
+
+| 变化 | 影响范围 | 迁移建议 |
+|---|---|---|
+| 参数/用法错误退出码 1 → 2，错误文本不变 | auth/search/user/config/skills/update、doc/markdown/board/slides、drive/file/media/wiki/comment/perm、msg/chat/mail/event、sheet、bitable、calendar/task/tasklist/approval/attendance/okr、vc/minutes、apps | 按退出码 1 判断「参数写错」的脚本改为判断 2；2 表示不要重试 |
+| 本地参数校验前移到 `config.Validate()` 与身份解析之前 | 同上 | 「缺凭据且参数错」由 exit 3 变为 2；`task create/update --due` 非法、`search messages` 非法参数不再先触发 token 刷新；`user search --email` 与 `--query` 冲突不再先解析 User Token |
+| 无凭据 `--dry-run` 由 exit 3 变为 0（静态预览，不联网） | doc create/content-update/history revert/resource、markdown 全家桶、board import/update、bitable 全部叶子命令、apps update/access-scope-set/html-publish、mail rule-*/signature/template delete/thread-modify/thread-trash、okr progress update、drive export/import/move/update-title/apply-permission、file delete、comment reply update/react、vc bot meeting-join/leave/events、vc meeting list-active、wiki member add/node-copy/space-create | CI 中可直接用 `--dry-run` 校验命令构造；去掉 `--dry-run` 仍为 exit 3。`board clone`、`drive push/pull` 的 `--dry-run` 需要读取远端，仍需凭据 |
+| 离线 catalog（`FEISHU_CLI_REMOTE_META=off` 或远端不可达）由 12 service / 152 method 变为 15 / 256 | `schema`、`api`、离线 `auth login --domain [--recommend]` | 审批 7 个已下线的 `uat_*` 路径修正为当前端点（如 `approval.tasks.approve` → `/tasks/pass`），`approval.tasks.query` 的 topic 枚举去掉 3；移除无引用的陈旧方法 `calendar.events.search`（官方为 `search_event`）与 `im.chats.list`；离线推荐 scope 随之变化（chat/im/task/drive/okr 等域新增，drive 域去掉 `docs:event:subscribe`），用 `auth login --domain <d> --recommend` 前可先 `auth check` 对比 |
+| `sheet read` / `read-plain` 文本模式中富文本单元格渲染为 `text(link)` | 原先输出 Go `map[...]` 语法 | 解析文本输出的脚本改用 `-o json`（JSON 与旧版逐字节一致） |
+| `apps html-publish --wait` / `apps release create --wait` 轮询遇限流或网络错误时指数退避（2s 起、单次 ≤30s）继续查询 | 连续失败 >5 次或超出 `--wait-timeout` 才失败；发布提交本身不重放 | 无需改动；限流提示改为退避建议，不再追加 app_id / `--app-type` 参数提示 |
+| `apps update` 缺字段错误文本变为「至少提供 --name、--description、--icon-url 或 --icon-file 之一」 | 随新 flag 调整 | 匹配旧文本的脚本需更新 |
+| `mail template delete` / `mail thread-trash` 先解析身份再确认 | 未登录时 exit 3 先于 exit 10 | 非交互脚本先确认已登录再追加 `--yes` |
+| `board import --engine local` 缺 whiteboard-cli 由 exit 1 变为 2（文本不变），检查提前到凭据校验之前 | — | — |
+| `slides media-upload` 文件类型/大小检查提前到 wiki 链接解析之前；`doc read --keyword` 正则在导出全文前校验；`doc export --engine docs_ai` 的 `--doc-format/--detail` 在 wiki 解析前校验 | — | 参数错误更早报出，不再先联网 |
+
+### 新增
+
+**平台与认证**
+- 全局 `--error-format text|json`（默认 text，输出逐字节不变）：json 时 stderr 输出一行 `{"error":{message,exit_code,kind,code,log_id,missing_scopes,retryable,hint}}`，code/log_id/missing_scopes 取不到时省略。
+- `api --file [field=]path|-`：multipart/form-data 上传，`--data` 顶层键作为表单字段；与 `--data-file`、`--page-all` 互斥，仅 POST/PUT/PATCH/DELETE；路径在首个网络请求前校验，`--dry-run` 只显示文件名与大小。
+- `auth login --json` 的 authorization_complete 与 `auth status -o json` 在未下发 refresh_token 时新增 `no_refresh_token{cause,fix,settings_url}`。
+- `schema status` 新增补丁层：远端 overlay 之后按 `local_supplements` 白名单从内嵌基线补回公开 meta 缺失的方法（首批 `task.comments.*`），JSON 新增 `supplements` 字段；联网模式下 `schema task.comments.list` 恢复可用。离线 `--domain mindnotes` 可用。
+
+**云文档、画板与 Slides**
+- `slides history list / revert / revert-status`：历史版本与回滚。revert 带确认门禁，`--history-version-id` 须为正整数；`--wait` 按 `poll_after_ms` 只轮询不重放，整体 ≤5 分钟，超时仍 running 时 exit 0 并输出 `wait_timed_out: true`。
+- slides、board 写命令新增 `--as bot|user|auto`（默认 bot）：不传时身份解析与旧版一致，显式 `--as` 时 dry-run 预览多一个 `identity` 字段。
+- `--dry-run`：`doc media-insert`（多步计划，不读剪贴板）、`slides media-upload`、`board delete`、`board create-notes`。
+- feishu-cli-visual 技能收录官方 Slides 图表示例、XSD 图表节选与 IconPark 常用图标清单。
+
+**云盘、知识库与权限**
+- `drive preview <file_token|url>`（`--list-only`、`--type pdf|pdf_lin|html|text|image|source_file`、`--version`、`-o`、`--overwrite`）与 `drive cover <file_token|url>`（`--spec default|icon|grid|small|middle|big|square`，`--list-only` 本地列出规格）。预览接口返回空内容时报错且不写空文件。
+- `drive search` 新增时间窗 `--edited-*`、`--commented-*`、`--opened-*`、`--created-*`（`-since/-until`，接受 7d/1m/1y/日期/RFC3339/unix 秒），`--mine`（所有者为自己）、`--created-by-me` / `--original-creator-ids`（原始创建者）。opened 窗口 >90 天只查最近切片并在 stderr 列出全部切片，>365 天 exit 2。不传新 flag 时请求体不变。
+- `drive push/pull --dry-run`：输出差集计划（create_folder/upload/overwrite/download/skip/conflict/delete_remote/delete_local），不上传、不下载、不删除，不要求 `--yes`；需要凭据只读列举远端。
+- perm 全家桶 `<doc_token>` 接受文档链接（/wiki/ → wiki，/minutes/ → minutes），显式 `--doc-type` 优先；`perm add/delete/update --member-kind wiki_space_member|wiki_space_viewer|wiki_space_editor`（仅 `--member-type wikispaceid`）。
+- `--dry-run`：perm 全家桶；wiki create/delete/delete-space/move/move-docs/move-to-drive/update、wiki member remove；comment add/resolve/unresolve/reply add/reply delete；file copy/mkdir/move/shortcut/upload/version create/delete/revert；drive upload/secure-label set/add-comment；media upload；minutes apply-permission。
+
+**消息与事件**
+- `msg read-status om_xxx ...`：批量查询本人对消息的已读状态（1–50 个，仅 User）。
+- `msg history` / `msg thread-messages --concise`：紧凑 Markdown 视图，与 `-o json` 互斥。
+- `msg forward` 支持 `omt_` 话题 ID；`msg forward` / `msg merge-forward` 新增 `--dry-run`。
+- `event consume` 新增 `--param k=v`（可重复）、`--as user|bot|auto`、`--dry-run`（无凭据预览订阅计划）；新 EventKey `minutes.minute.generated_v1`、`drive.notice.comment_add_v1`、`task.task.update_user_access_v2`、`board.whiteboard.updated_v1`（必填 `--param whiteboard_id`）、`mail.user_mailbox.event.message_received_v1`（复用单连接）。`event list/schema --json` 对相关 key 新增 `params`、`subscribe_no_body`、`subscribe_body` 字段。
+
+**邮件**
+- `mail share-to-chat`：把邮件或线程以卡片分享到 IM 会话（仅 User，`--dry-run`）。
+- `mail send/reply/reply-all/forward/draft-send --send-time <unix 秒>`：定时发送（≥5 分钟，须 `--confirm-send`）；`mail send/reply/reply-all/forward/draft-create --request-receipt`：请求已读回执。
+
+**电子表格**
+- `sheet cond-format list/create/update/delete`：条件格式（cellIs / containsText / timePeriod / 空值 / 重复 / 唯一），规则、范围、颜色本地校验，子表名自动换算；delete 带确认门禁。
+- `--dry-run`：`sheet write`、`clear`、`table-put`、`unprotect`、`filter delete`、`image delete`、`dropdown delete`、`filter-view delete`、`filter-view condition delete`。
+
+**多维表格**
+- `bitable field extension get/update/update-cells`（字段 AI 扩展，`--config` 本地严格校验，写命令带确认门禁）、`bitable field button-rule bind/get/unbind`（按钮字段绑定工作流）。
+- `bitable table copy` / `copy-status`（`--range schema|all`、`--wait`；提交遇网络错误提示结果未知、不自动重放）。
+- `bitable template categories/list/search`（模板中心只读）、`bitable block create/move/rename/delete`（顶层块，delete 带确认门禁）、`bitable copy --time-zone`。
+- `bitable resolve` 离线解析 BaseApp `/app/` 链接；全部 bitable 叶子命令支持 `--dry-run`，多数命令支持 `--format/--jq`（不传时输出不变）。
+
+**日历、任务与 OKR**
+- `task create --assignee/--follower/--tasklist-id/--idempotency-key/--data`、`task update --data`、`tasklist task-add --section-guid`；task/tasklist 全部写命令支持 `--dry-run`。
+- `task comment get/update/delete`（delete 带确认门禁）。
+- `calendar create-event/update-event --description-format text|markdown`（markdown 写富文本描述，当前目录内本地图片自动上传）、`calendar create-event --meeting-owner-id`（仅 `--as bot`）；`calendar rsvp`、`calendar attendee add`、`okr upload-image` 新增 `--dry-run`。
+- `okr weight`、`okr reorder`、`okr indicator update`、`okr objective batch-create`（失败回滚）、`okr comment get/update/delete`（delete 带确认门禁）。
+
+**会议与妙记**
+- `vc bot meeting-countdown`、`meeting-message-send`（`--uuid` 幂等）、`meeting-screenshot`（`--output` 在首个网络请求前校验，已存在默认拒绝）：`--as` 默认 auto。
+- `vc bot meeting-invite`（all_suggested/selected）、`vc bot meeting-end`（确认门禁）：仅 Bot。
+- `minutes upload --file-token`、`minutes update --topic`、`minutes summary`、`minutes todo`、`minutes speaker-replace`、`minutes word-replace`：仅 User，支持 `--dry-run`，token 可写妙记链接。
+- `vc note transcript --overwrite`：目标已存在且未传时 stderr 告警，默认仍覆盖。
+
+**妙搭**
+- `apps delete`（`--confirm-name` 必填，先比对当前名称再删除，带确认门禁）、`apps release create`（按分支发布，`--wait`）、`apps features`（功能开关只读）、`apps list --owner-id`、`apps update --icon-url/--icon-file`、`apps access-scope-get --dry-run`。
+
+### 修复
+- 未下发 refresh_token 的提示改为归因应用安全设置（未开启「刷新 user_access_token」或开启后未发版），login/status/doctor 给出设置页链接；access_token 过期且从未下发 refresh_token 时给独立文案，退出码仍为 3。
+- `sheet table-get`：下拉框单元格（V3 返回 `#UNSUPPORTED_TYPE`）原先读成 null，get→put 往返会清空原值；现按纯文本回填，失败时 stderr 列出单元格地址。`sheet read-rich` 遇到该类型时 stderr 告警并提示改用 read-plain。
+- perm 命令遇到非 JSON 响应时不再外泄响应头，改为「服务端返回非 JSON 响应（HTTP 404）」与处理提示。
+- apps 限流（99991400 / HTTP 429）时提示退避重试，不再给出无关的参数提示。
+
+### 开发与测试
+- 新增契约门禁 `cmd/contract_gate_test.go`：静态扫描 RunE，拦截「`--dry-run` 前要求凭据」「`--` 开头参数错误未用 `clierr.Usagef`」「裸 HTTP 客户端」三类回归；存量例外登记在 `cmd/testdata/contract_gate_allowlist.txt`，只减不增。
+- 新增 `scripts/sync_official_catalog.py`：从官方仓库内嵌 catalog 重生成 `internal/registry/meta_data.json`，校验 manifest sha256、输出 method 级 diff，未授权删除时失败；`make update-meta OFFICIAL=/path/to/larksuite/cli [ALLOW_REMOVE='--allow-remove a.b.c']` 调用该脚本。`internal/registry/local_supplements.json` 维护补丁层白名单。
+- `scripts/check_skill_contracts.py`：考勤非法日期的离线契约断言随退出码规范改为 exit 2。
+
 ## [v1.43.0] - 2026-10-10
 
 对照官方 CLI（larksuite/cli）补齐云文档能力。本版本只做新增：已有命令不带新参数时的默认值、身份、输出结构与退出码均保持不变。
