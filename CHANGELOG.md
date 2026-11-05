@@ -58,7 +58,7 @@
 - `mail send/reply/reply-all/forward/draft-send --send-time <unix 秒>`：定时发送（≥5 分钟，须 `--confirm-send`）；`mail send/reply/reply-all/forward/draft-create --request-receipt`：请求已读回执。
 
 **电子表格**
-- `sheet cond-format list/create/update/delete`：条件格式（cellIs / containsText / timePeriod / 空值 / 重复 / 唯一），规则、范围、颜色本地校验，子表名自动换算；delete 带确认门禁。
+- `sheet cond-format list/create/update/delete`：条件格式（cellIs / containsText / timePeriod / 空值 / 重复 / 唯一），规则、范围、颜色本地校验，子表名自动换算；update（整条覆盖）与 delete 带确认门禁。
 - `--dry-run`：`sheet write`、`clear`、`table-put`、`unprotect`、`filter delete`、`image delete`、`dropdown delete`、`filter-view delete`、`filter-view condition delete`。
 
 **多维表格**
