@@ -14,12 +14,13 @@ import (
 
 var okrObjectiveCmd = &cobra.Command{
 	Use:   "objective",
-	Short: "OKR 目标（创建 / 更新）",
+	Short: "OKR 目标（创建 / 批量创建 / 更新）",
 	Long: `OKR 目标写入（v2 接口）。
 
 子命令:
-  create   在周期下创建目标
-  update   更新目标内容 / 备注 / 得分 / 截止时间
+  create         在周期下创建目标
+  batch-create   批量创建目标与关键结果（失败自动回滚）
+  update         更新目标内容 / 备注 / 得分 / 截止时间
 
 OKR 对组织可见，写入前先 --dry-run 预览。cycle_id 是 okr cycle list 默认返回的用户周期 ID。`,
 }
@@ -36,12 +37,15 @@ var okrKeyResultCmd = &cobra.Command{
 
 var okrCommentCmd = &cobra.Command{
 	Use:   "comment",
-	Short: "OKR 评论（列出 / 创建）",
+	Short: "OKR 评论（列出 / 查看 / 创建 / 修改 / 删除）",
 	Long: `OKR 评论（v2 /okr/v2/comments）。
 
 子命令:
   list     列出某个周期 / 进展 / 目标 / 关键结果上的评论
-  create   创建评论或回复（必需 User Token）`,
+  get      查看单条评论
+  create   创建评论或回复（必需 User Token）
+  update   修改评论内容（必需 User Token）
+  delete   删除评论（必需 User Token，需确认）`,
 }
 
 // okrContentFlags 读取 --<name> / --<name>-json

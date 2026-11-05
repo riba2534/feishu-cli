@@ -30,10 +30,6 @@ var calendarEventSearchCmd = &cobra.Command{
   feishu-cli calendar event-search -c CAL_xxx -q "评审" \
     --start 2024-01-01T00:00:00+08:00 --end 2024-12-31T23:59:59+08:00`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		calendarID, _ := cmd.Flags().GetString("calendar-id")
 		query, _ := cmd.Flags().GetString("query")
 		startTime, _ := cmd.Flags().GetString("start")
@@ -51,6 +47,9 @@ var calendarEventSearchCmd = &cobra.Command{
 			return err
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err

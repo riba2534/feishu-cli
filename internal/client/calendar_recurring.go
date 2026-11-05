@@ -915,7 +915,10 @@ func createFollowingSeries(calendarID string, master, pivot *CalendarEvent, pivo
 	if params.Summary != "" {
 		body["summary"] = params.Summary
 	}
-	if params.Description != "" {
+	if params.DescriptionRich != "" {
+		// description_rich 与 description 互斥：本次显式给了富文本描述就不再继承主日程的纯文本描述
+		body["description_rich"] = params.DescriptionRich
+	} else if params.Description != "" {
 		body["description"] = params.Description
 	} else if master.Description != "" {
 		body["description"] = master.Description

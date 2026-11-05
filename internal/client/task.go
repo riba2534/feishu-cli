@@ -868,16 +868,19 @@ func commentToInfo(c *larktask.Comment) *CommentInfo {
 	return info
 }
 
-// AddTaskToTasklist 将任务添加到任务清单
-func AddTaskToTasklist(taskGuid, tasklistGuid, userAccessToken string) (*TaskInfo, error) {
+// AddTaskToTasklist 将任务添加到任务清单；sectionGuid 非空时放入清单的指定分组
+func AddTaskToTasklist(taskGuid, tasklistGuid, sectionGuid, userAccessToken string) (*TaskInfo, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
 
-	body := larktask.NewAddTasklistTaskReqBodyBuilder().
-		TasklistGuid(tasklistGuid).
-		Build()
+	bodyBuilder := larktask.NewAddTasklistTaskReqBodyBuilder().
+		TasklistGuid(tasklistGuid)
+	if sectionGuid != "" {
+		bodyBuilder.SectionGuid(sectionGuid)
+	}
+	body := bodyBuilder.Build()
 
 	req := larktask.NewAddTasklistTaskReqBuilder().
 		TaskGuid(taskGuid).

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -38,15 +39,6 @@ var taskMemberAddCmd = &cobra.Command{
   feishu-cli task member add TASK_GUID --members ou_xxx --role follower`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		taskGuid, guidErr := parseTaskGUIDArg(args[0])
 		if guidErr != nil {
 			return guidErr
@@ -55,7 +47,7 @@ var taskMemberAddCmd = &cobra.Command{
 		role, _ := cmd.Flags().GetString("role")
 
 		if role != "assignee" && role != "follower" {
-			return fmt.Errorf("无效的角色: %s（仅支持 assignee 或 follower）", role)
+			return clierr.Usagef("无效的角色: %s（仅支持 assignee 或 follower）", role)
 		}
 
 		var memberIDs []string
@@ -67,7 +59,23 @@ var taskMemberAddCmd = &cobra.Command{
 		}
 
 		if len(memberIDs) == 0 {
-			return fmt.Errorf("成员列表不能为空")
+			return clierr.Usagef("成员列表不能为空")
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "task member add 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: taskAPIPath("tasks", taskGuid, "add_members"), Desc: "添加任务成员", Params: taskOpenIDParams(), Body: map[string]any{"members": taskMemberDryRunList(memberIDs, role)},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
 		}
 
 		if err := client.AddTaskMembers(taskGuid, memberIDs, role, token); err != nil {
@@ -94,15 +102,6 @@ var taskMemberRemoveCmd = &cobra.Command{
   feishu-cli task member remove TASK_GUID --members ou_xxx --role follower`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		taskGuid, guidErr := parseTaskGUIDArg(args[0])
 		if guidErr != nil {
 			return guidErr
@@ -111,7 +110,7 @@ var taskMemberRemoveCmd = &cobra.Command{
 		role, _ := cmd.Flags().GetString("role")
 
 		if role != "assignee" && role != "follower" {
-			return fmt.Errorf("无效的角色: %s（仅支持 assignee 或 follower）", role)
+			return clierr.Usagef("无效的角色: %s（仅支持 assignee 或 follower）", role)
 		}
 
 		var memberIDs []string
@@ -123,7 +122,23 @@ var taskMemberRemoveCmd = &cobra.Command{
 		}
 
 		if len(memberIDs) == 0 {
-			return fmt.Errorf("成员列表不能为空")
+			return clierr.Usagef("成员列表不能为空")
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "task member remove 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: taskAPIPath("tasks", taskGuid, "remove_members"), Desc: "移除任务成员", Params: taskOpenIDParams(), Body: map[string]any{"members": taskMemberDryRunList(memberIDs, role)},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
 		}
 
 		if err := client.RemoveTaskMembers(taskGuid, memberIDs, role, token); err != nil {
@@ -150,6 +165,7 @@ func init() {
 	taskMemberAddCmd.Flags().String("role", "assignee", "角色: assignee/follower")
 	taskMemberAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(taskMemberAddCmd)
+	addTaskDryRunFlag(taskMemberAddCmd)
 	mustMarkFlagRequired(taskMemberAddCmd, "members")
 
 	taskMemberCmd.AddCommand(taskMemberRemoveCmd)
@@ -157,5 +173,6 @@ func init() {
 	taskMemberRemoveCmd.Flags().String("role", "assignee", "角色: assignee/follower")
 	taskMemberRemoveCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(taskMemberRemoveCmd)
+	addTaskDryRunFlag(taskMemberRemoveCmd)
 	mustMarkFlagRequired(taskMemberRemoveCmd, "members")
 }

@@ -28,18 +28,27 @@ var completeTaskCmd = &cobra.Command{
   feishu-cli task complete e297ddff-06ca-4166-b917-4ce57cd3a7a0 --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		taskGuid, guidErr := parseTaskGUIDArg(args[0])
 		if guidErr != nil {
 			return guidErr
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "task complete 预览（未执行）", nil, []dryRunStep{
+				{Method: "GET", URL: taskAPIPath("tasks", taskGuid), Desc: "读取任务；已完成则不再写入（幂等）", Params: taskOpenIDParams()},
+				{Method: "PATCH", URL: taskAPIPath("tasks", taskGuid), Desc: "未完成时写入完成时间", Params: taskOpenIDParams(),
+					Body: map[string]any{"task": map[string]any{"completed_at": "<当前毫秒时间戳>"}, "update_fields": []string{"completed_at"}}},
+			})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
 		}
 
 		task, err := client.CompleteTask(taskGuid, token)
@@ -74,4 +83,5 @@ func init() {
 	completeTaskCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	completeTaskCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(completeTaskCmd)
+	addTaskDryRunFlag(completeTaskCmd)
 }

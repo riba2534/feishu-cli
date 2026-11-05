@@ -29,14 +29,6 @@ var approvalInstanceInitiatedCmd = &cobra.Command{
   feishu-cli approval instance initiated --definition-code <code> --output json
   feishu-cli approval instance initiated --page-size 20 --output raw-json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-		token, err := requireUserToken(cmd, "approval instance initiated")
-		if err != nil {
-			return err
-		}
-
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		locale, _ := cmd.Flags().GetString("locale")
@@ -51,6 +43,13 @@ var approvalInstanceInitiatedCmd = &cobra.Command{
 			return err
 		}
 		if err := validateApprovalPaging(pageAll, pageLimit, output); err != nil {
+			return err
+		}
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, err := requireUserToken(cmd, "approval instance initiated")
+		if err != nil {
 			return err
 		}
 

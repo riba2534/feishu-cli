@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -49,12 +50,6 @@ var calendarRoomFindCmd = &cobra.Command{
     --slot 2024-01-22T09:00:00+08:00~2024-01-22T10:00:00+08:00 \
     --attendee-ids ou_aaa,ou_bbb -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token := resolveOptionalUserTokenWithFallback(cmd)
-
 		// 解析 --slot 多值（StringSliceArray 支持重复传入 + 逗号分隔）
 		slotInputs, _ := cmd.Flags().GetStringSlice("slot")
 		slots, err := parseRoomFindSlots(slotInputs)
@@ -80,11 +75,16 @@ var calendarRoomFindCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if minCap < 0 || maxCap < 0 {
-			return fmt.Errorf("--min-capacity 和 --max-capacity 必须 >= 0")
+			return clierr.Usagef("--min-capacity 和 --max-capacity 必须 >= 0")
 		}
 		if minCap > 0 && maxCap > 0 && minCap > maxCap {
-			return fmt.Errorf("--min-capacity 必须 <= --max-capacity")
+			return clierr.Usagef("--min-capacity 必须 <= --max-capacity")
 		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		baseReq := &client.RoomFindRequest{
 			City:            strings.TrimSpace(city),
@@ -136,7 +136,7 @@ var calendarRoomFindCmd = &cobra.Command{
 // parseRoomFindSlots 解析 --slot 列表（每项 start~end，RFC3339）
 func parseRoomFindSlots(raws []string) ([]client.RoomFindSlot, error) {
 	if len(raws) == 0 {
-		return nil, fmt.Errorf("至少需要指定一个 --slot")
+		return nil, clierr.Usagef("至少需要指定一个 --slot")
 	}
 	var out []client.RoomFindSlot
 	for _, raw := range raws {
@@ -146,18 +146,18 @@ func parseRoomFindSlots(raws []string) ([]client.RoomFindSlot, error) {
 		}
 		parts := strings.Split(raw, "~")
 		if len(parts) != 2 {
-			return nil, fmt.Errorf("无效的 --slot 格式 %q，应为 start~end", raw)
+			return nil, clierr.Usagef("无效的 --slot 格式 %q，应为 start~end", raw)
 		}
 		startT, err := time.Parse(time.RFC3339, strings.TrimSpace(parts[0]))
 		if err != nil {
-			return nil, fmt.Errorf("--slot 起始时间 %q 解析失败: %w（RFC3339 格式）", parts[0], err)
+			return nil, clierr.Usagef("--slot 起始时间 %q 解析失败: %w（RFC3339 格式）", parts[0], err)
 		}
 		endT, err := time.Parse(time.RFC3339, strings.TrimSpace(parts[1]))
 		if err != nil {
-			return nil, fmt.Errorf("--slot 结束时间 %q 解析失败: %w（RFC3339 格式）", parts[1], err)
+			return nil, clierr.Usagef("--slot 结束时间 %q 解析失败: %w（RFC3339 格式）", parts[1], err)
 		}
 		if !endT.After(startT) {
-			return nil, fmt.Errorf("--slot %q 的结束时间必须晚于起始时间", raw)
+			return nil, clierr.Usagef("--slot %q 的结束时间必须晚于起始时间", raw)
 		}
 		out = append(out, client.RoomFindSlot{
 			Start: startT.Format(time.RFC3339),
@@ -165,7 +165,7 @@ func parseRoomFindSlots(raws []string) ([]client.RoomFindSlot, error) {
 		})
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("至少需要指定一个 --slot")
+		return nil, clierr.Usagef("至少需要指定一个 --slot")
 	}
 	return out, nil
 }

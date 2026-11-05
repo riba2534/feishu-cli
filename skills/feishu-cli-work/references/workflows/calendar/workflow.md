@@ -27,7 +27,10 @@
 | 没有明确时间的约会/排会 | 先 `suggestion` 推荐时段 | 再对选定时段 `room-find`；不要在没有明确时段时直接 `room-find` |
 | 只看忙闲或多人共同空闲 | `calendar freebusy --type busy\|free\|common_free` | 需要"推荐"时段时用 `suggestion`（会综合工作时间等因素） |
 | 创建并邀请 | `create-event --attendee-ids`（先 `--dry-run`） | 添加参与人会立即发邀请；参与人添加失败自动删除刚建的日程（回滚） |
-| 已有日程补人/会议室 | `attendee add` | 立即通知被添加者，无 `--dry-run`，执行前先向用户确认名单 |
+| 已有日程补人/会议室 | `attendee add`（先 `--dry-run`） | 立即通知被添加者，执行前先向用户确认名单 |
+| 议程要有格式（列表、表格、链接、截图） | `create-event` / `update-event --description-format markdown` | 本地图片须在当前目录内，自动上传；默认 text 原样写纯文本 |
+| Bot 在应用日历上建会并指定会议 owner | `create-event --as bot --meeting-owner-id ou_xxx` | 仅 Bot 身份、`ou_` 前缀，否则 exit 2 |
+| 日程关联的会议纪要 / 妙记 | `vc notes --calendar-event-ids <event_id>` | 在 feishu-cli-meetings 中，按日程反查会议与纪要 |
 | 分享日程给他人/群/文档 | `get-event --share-link` 或 `event-share` | 不要用 `app_link`（带查看者本人的 calendarId，只能本人打开） |
 | 转让组织者 | `event-transfer`（先 `--dry-run`） | 不可撤销，需 `--yes`；重复日程还需 `--transfer-series` |
 | 修改/删除重复日程 | `update-event` / `delete-event --apply-to` | 范围必须由用户确认，见[重复日程](#重复日程rrule操作指引) |
@@ -105,7 +108,7 @@ feishu-cli calendar rsvp --event-id <event_id> --action accept|decline|tentative
 feishu-cli calendar event-reply <calendar_id> <event_id> --status accept|decline|tentative
 ```
 
-- 两者等价，都必需 User Token。`rsvp` 省略 `--calendar-id` 时自动查主日历（多一次请求，批量时可先
+- 两者等价，都必需 User Token；`rsvp` 支持 `--dry-run`。`rsvp` 省略 `--calendar-id` 时自动查主日历（多一次请求，批量时可先
   `calendar primary -o json` 缓存）；`--rsvp-status` 是 `--action` 的兼容别名，同时传不同值报错。
 - 取值只有 `accept` / `decline` / `tentative`，其他值在本地报错（`accpet` / `declined` / `maybe` 是常见拼错）。
 - `rsvp` 只有文本输出。
@@ -228,7 +231,7 @@ feishu-cli calendar update-event <calendar_id> <master_event_id> --rrule "FREQ=W
 2. **`update-event` 的 `--start` 与 `--end` 必须成对**：只改一端服务端返回成功但不生效，CLI 在本地报用法错误（exit 2）。
 3. **`suggestion` / `room-find` / `--exclude` 只收 RFC3339**：传 `YYYY-MM-DD` 直接报错；`freebusy`、`event-search`
    的 `--start/--end` 才接受纯日期。
-4. **添加参与人即通知**：`create-event --attendee-ids` 与 `attendee add` 都会立即发邀请；`attendee remove` 可用 `--notify=false`。
+4. **添加参与人即通知**：`create-event --attendee-ids` 与 `attendee add` 都会立即发邀请（两者都可先 `--dry-run`）；`attendee remove` 可用 `--notify=false`。
    被移除的参与人仍会出现在 `attendee list` 中，`rsvp_status=removed`。
 5. **分享链接**：`get-event --share-link` / `event-share` 返回 `share_link`；`get-event -o json` 仍带 `app_link` 字段，
    但它只能本人打开，不要拿来分享或自行拼接。
@@ -264,4 +267,4 @@ Bot 身份缺 scope 报 99991672，需在开放平台为应用开通对应 tenan
 |------|------|
 | 给参会人发会议提醒消息 | `feishu-cli-messaging`（msg + card 工作流） |
 | 邮箱 / 手机号 / 姓名换 `ou_` open_id | `feishu-cli-platform` 的 directory 工作流（`user search`） |
-| 查历史会议、会议纪要、录制 | `feishu-cli-meetings` |
+| 查历史会议、会议纪要、录制；按日程反查会议纪要（`vc notes --calendar-event-ids`） | `feishu-cli-meetings` |
