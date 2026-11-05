@@ -163,8 +163,11 @@ var bitableResolveCmd = &cobra.Command{
   /record/<share_token>     记录分享链接：换出 base_token / table_id / record_id
   /share/base/form/<token>、/share/base/<token>
                             表单分享链接：输出 share_token（配合 form detail / form submit）
+  /app/<app_token>?pre_pathname=/base/workspace/<ws>&pageId=<page_id>
+                            多维表格应用（BaseApp）链接：离线输出 app_token / workspace_token / page_id
 
-视图分享、仪表盘分享、工作区、新增记录、BaseApp 链接无法解析，会明确报错。
+base 链接不带 table=、表单分享、BaseApp 链接都是离线解析，不需要凭据。
+视图分享、仪表盘分享、工作区、新增记录链接无法解析，会明确报错。
 
 示例:
   feishu-cli bitable resolve --url "https://example.feishu.cn/base/bascnxxx?table=tblxxx&view=vewxxx"
@@ -182,10 +185,8 @@ var bitableResolveCmd = &cobra.Command{
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
-		if err := config.Validate(); err != nil {
-			return err
-		}
-		o, err := output.ParseOptions(cmd)
+		// config.Validate 只在确实要联网时做（离线可解析的链接与 --dry-run 无需凭据）
+		o, err := bitableOutputOptions(cmd)
 		if err != nil {
 			return err
 		}
@@ -212,7 +213,7 @@ var bitableResolveCmd = &cobra.Command{
 					},
 				})
 			}
-			token, err := resolveIdentityToken(cmd)
+			token, err := resolveBitableNetworkToken(cmd)
 			if err != nil {
 				return err
 			}
@@ -238,7 +239,7 @@ var bitableResolveCmd = &cobra.Command{
 			if dryRun {
 				return output.Render(o, map[string]any{"input_type": "record_share_url", "api": []map[string]any{{"method": "GET", "path": path}}})
 			}
-			token, err := resolveIdentityToken(cmd)
+			token, err := resolveBitableNetworkToken(cmd)
 			if err != nil {
 				return err
 			}
@@ -274,12 +275,61 @@ var bitableResolveCmd = &cobra.Command{
 					"next_step": fmt.Sprintf("用 `feishu-cli bitable form detail --share-token %s` 查看表单，或 form submit 提交", shareToken),
 				},
 			})
-		case "view_share_url", "dashboard_share_url", "workspace_url", "add_record_url", "baseapp_url":
+		case "baseapp_url":
+			out, err := resolveBitableAppURL(u)
+			if err != nil {
+				return err
+			}
+			return output.Render(o, out)
+		case "view_share_url", "dashboard_share_url", "workspace_url", "add_record_url":
 			return clierr.Usagef("这是多维表格%s链接，CLI 无法解析；请在浏览器中打开，或提供多维表格本身的链接（/base/ 或 /wiki/）", classifyBaseShareURL(raw))
 		default:
 			return clierr.Usagef("不是受支持的多维表格链接；支持 /base/、/wiki/、/record/、/share/base/form/ 链接")
 		}
 	},
+}
+
+// resolveBitableNetworkToken 在 resolve 需要联网时才校验配置并解析身份。
+func resolveBitableNetworkToken(cmd *cobra.Command) (string, error) {
+	if err := config.Validate(); err != nil {
+		return "", err
+	}
+	return resolveIdentityToken(cmd)
+}
+
+// resolveBitableAppURL 离线解析多维表格应用（BaseApp）链接（对齐官方 base +url-resolve）：
+//
+//	/app/<app_token>?pre_pathname=/base/workspace/<workspace_token>&pageId=<page_id>
+//
+// 只做坐标提取，不调用接口；本 CLI 暂无 BaseApp 专用命令，提示用 api 透传。
+func resolveBitableAppURL(u *url.URL) (map[string]any, error) {
+	appToken := bitableURLSegment(u.Path, "/app/")
+	if err := checkResolvedToken("app_token", appToken); err != nil {
+		return nil, err
+	}
+	out := map[string]any{
+		"input_type":    "baseapp_url",
+		"resource_type": "baseapp",
+		"app_token":     appToken,
+		"resolution":    "local",
+		"hint": map[string]any{
+			"next_step": "BaseApp（多维表格应用）暂无专用命令；可用 `feishu-cli schema` 查找 base/v3 应用相关接口后，以 app_token 走 `feishu-cli api` 透传。BaseApp 不能用 bitable copy 复制",
+		},
+	}
+	q := u.Query()
+	if pageID := strings.TrimSpace(q.Get("pageId")); pageID != "" {
+		if err := checkResolvedToken("page_id", pageID); err != nil {
+			return nil, err
+		}
+		out["page_id"] = pageID
+	}
+	if ws := bitableURLSegment(q.Get("pre_pathname"), "/base/workspace/"); ws != "" {
+		if err := checkResolvedToken("workspace_token", ws); err != nil {
+			return nil, err
+		}
+		out["workspace_token"] = ws
+	}
+	return out, nil
 }
 
 // resolveBitableBaseURL 解析 /base/ 链接：base_token 离线取得；带 table= 时调 blocks/list 判型。
@@ -309,7 +359,7 @@ func resolveBitableBaseURL(cmd *cobra.Command, u *url.URL, dryRun bool) (map[str
 	token := ""
 	if selected != "" {
 		var err error
-		token, err = resolveIdentityToken(cmd)
+		token, err = resolveBitableNetworkToken(cmd)
 		if err != nil {
 			return nil, err
 		}
@@ -433,23 +483,16 @@ URL 中的 ?table=<id> 是"当前选中的顶层块"，不一定是数据表—�
 		if parentID, _ := cmd.Flags().GetString("parent-id"); strings.TrimSpace(parentID) != "" {
 			body["parent_id"] = strings.TrimSpace(parentID)
 		}
-		if err := config.Validate(); err != nil {
-			return err
-		}
-		baseToken, err := resolveBaseToken(cmd)
-		if err != nil {
-			return err
-		}
-		token, err := resolveIdentityToken(cmd)
-		if err != nil {
-			return err
-		}
-		data, err := client.BaseV3Call("POST", client.BaseV3Path("bases", baseToken, "blocks", "list"), nil, body, token)
-		if err != nil {
-			return err
-		}
-		filterBitableBlocks(data, blockType)
-		return renderBitableResult(cmd, data)
+		return bitableExecute(cmd, func(bt string) bitableReq {
+			return bitableReq{method: "POST", path: client.BaseV3Path("bases", bt, "blocks", "list"), body: body}
+		}, func(req bitableReq, token string) (any, error) {
+			data, err := client.BaseV3Call(req.method, req.path, nil, req.body, token)
+			if err != nil {
+				return nil, err
+			}
+			filterBitableBlocks(data, blockType)
+			return data, nil
+		})
 	},
 }
 
@@ -479,7 +522,7 @@ func init() {
 
 	bitableCmd.AddCommand(bitableBlockCmd)
 	bitableBlockCmd.AddCommand(bitableBlockListCmd)
-	addBitableCommonFlags(bitableBlockListCmd)
+	addBitableWriteFlags(bitableBlockListCmd)
 	bitableBlockListCmd.Flags().String("type", "", "只保留某类块: folder|table|docx|dashboard|workflow")
 	bitableBlockListCmd.Flags().String("parent-id", "", "文件夹块 ID（只列其直接子块）")
 }

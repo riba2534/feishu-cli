@@ -14,12 +14,14 @@ import (
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 // isolateBitableNoCredEnv 临时 HOME、无任何 App 凭证 / User Token，base_url 指向计数桩。
 // 静态 dry-run 与用法错误都不应发出任何请求。
 func isolateBitableNoCredEnv(t *testing.T) *int32 {
 	t.Helper()
+	viper.Reset() // 清掉前序用例 config.Init 留下的 app_id/base_url
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("FEISHU_PROFILE", "")
