@@ -30,6 +30,11 @@ def run_contracts(binary: Path) -> list[dict]:
             raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             body = json.loads(raw) if raw else None
             path = urlsplit(self.path).path
+            # 宿主机端口扫描器的探测（GET /、无 Authorization）不是 CLI 发出的请求，不计入
+            if path == "/" and not self.headers.get("Authorization"):
+                self.send_response(404)
+                self.end_headers()
+                return
             requests.append({"method": self.command, "path": path, "body": body})
             status = 200
             if path == "/open-apis/auth/v3/tenant_access_token/internal":
