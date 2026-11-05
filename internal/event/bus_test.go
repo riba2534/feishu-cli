@@ -246,3 +246,16 @@ func TestReleaseConsumerScopedByParams(t *testing.T) {
 		t.Fatalf("wb_b consumer 不应受影响，n=%d", n)
 	}
 }
+
+// 旧版本写入的无 Scope 条目保守计入：新进程退出时不得把它当成「已无人使用」而注销订阅。
+func TestReleaseConsumerCountsLegacyEntries(t *testing.T) {
+	stubConsumerAlive(t)
+	bus := setupBus(t)
+	key := "mail.user_mailbox.event.message_received_v1"
+	_, _ = bus.ClaimConsumer(ConsumerEntry{PID: 401, EventKey: key, StartedAt: time.Now()})
+	_, _ = bus.ClaimConsumer(ConsumerEntry{PID: 402, EventKey: key, StartedAt: time.Now(), Scope: "mailbox=me"})
+	last, err := bus.ReleaseConsumer(402, key, "mailbox=me")
+	if err != nil || last {
+		t.Fatalf("仍有旧版 consumer 时不应判为 last: last=%v err=%v", last, err)
+	}
+}

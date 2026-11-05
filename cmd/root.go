@@ -192,8 +192,10 @@ func Execute() {
 	// Ctrl-C 时进行中的请求与等待立即取消。
 	ctx, stopSignals := newSignalContext(context.Background(), interruptGracePeriod, os.Stderr)
 	runctx.Set(ctx)
-	err := rootCmd.ExecuteContext(ctx)
+	flagParseError = false
+	executed, err := rootCmd.ExecuteContextC(ctx)
 	stopSignals()
+	flagsParsed = executed != nil && executed.Flags().Parsed() && !flagParseError
 	if err != nil {
 		// 错误主文本 + log_id / 缺失 scope 等诊断与修复建议；--error-format json 时为一行 JSON 信封
 		writeCommandError(os.Stderr, err)

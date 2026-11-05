@@ -2,23 +2,24 @@ package client
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
-// 传输层失败标为网络错误（退出码 4，可重试）。
+// 传输层失败保留 net.OpError 错误链，交给 exitCodeFor 归为网络错误（退出码 4）。
 func TestDoAPIMultipart_NetworkErrorTagged(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	url := srv.URL
 	srv.Close()
 	setupTestConfig(t, url)
 	_, err := DoAPIMultipart(context.Background(), http.MethodPost, "/open-apis/im/v1/files", nil, nil, MultipartFile{Field: "file", FileName: "a.txt", Content: []byte("x")}, "u-test")
-	if err == nil || !clierr.HasKind(err, clierr.KindNetwork) {
-		t.Fatalf("连接失败应为网络错误: %v", err)
+	var opErr *net.OpError
+	if err == nil || !errors.As(err, &opErr) {
+		t.Fatalf("连接失败应保留 net.OpError: %v", err)
 	}
 }
 

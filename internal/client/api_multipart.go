@@ -94,7 +94,9 @@ func DoAPIMultipart(ctx context.Context, method, apiPath string, query url.Value
 	req.Header.Set("Content-Type", contentType)
 	resp, err := rawHTTPClient().Do(req)
 	if err != nil {
-		return nil, clierr.Network(fmt.Errorf("API 调用失败: %w", err))
+		// 不在这里一律标网络错误：host 白名单、拒绝降级跳转等本地策略错误同样经 Do 返回，
+		// 由 exitCodeFor 按错误链区分（真实网络错误 exit 4，策略拒绝不可重试）
+		return nil, fmt.Errorf("API 调用失败: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, apiMultipartMaxResponse+1))

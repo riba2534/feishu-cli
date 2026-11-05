@@ -90,8 +90,13 @@ func (v *errorFormatValue) Set(s string) error {
 
 var errorFormat = errorFormatValue(errorFormatText)
 
-// flagParseFailed 由 flagSuggestionErrorFunc 置位：本次 flag 解析失败，pflag 可能没解析到 --error-format
-var flagParseFailed bool
+// flagsParsed 由 Execute 设置：本次执行的命令是否完成了 flag 解析。未完成（未知命令、flag 解析失败）时
+// pflag 可能没解析到 --error-format，需要回头扫描原始参数。
+var flagsParsed bool
+
+// flagParseError 由 flagSuggestionErrorFunc 置位：pflag 在 Parse 一开始就标记 Parsed，解析失败时也为 true，
+// 需要单独记录失败。Execute 开始时复位。
+var flagParseError bool
 
 func init() {
 	rootCmd.PersistentFlags().Var(&errorFormat, "error-format",
@@ -106,7 +111,7 @@ func errorFormatIsJSON(args []string) bool {
 		return true
 	}
 	// flag 正常解析过时以解析结果为准：原始参数里的 "--error-format" 可能只是别的 flag 的取值（如 --text --error-format=json）
-	if !flagParseFailed {
+	if flagsParsed {
 		return false
 	}
 	for i, a := range args {

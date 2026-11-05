@@ -204,7 +204,8 @@ func pruneDeadConsumers(state *BusState) {
 func countEventKey(state *BusState, eventKey, scope string) int {
 	n := 0
 	for _, c := range state.Consumers {
-		if c.EventKey == eventKey && c.Scope == scope {
+		// 旧版本写入的条目没有 Scope，无法判断它订阅的对象：保守计入，宁可不注销也不误删别人的订阅
+		if c.EventKey == eventKey && (c.Scope == scope || c.Scope == "") {
 			n++
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 // SubscriptionCall 描述一次服务端订阅注册请求（dry-run 预览与真实注册共用）。
@@ -192,6 +193,9 @@ func AnySupportsBot(defs []KeyDefinition) bool {
 	return false
 }
 
+// whiteboardParseWarned 保证画板事件体解析失败的告警每个进程只打印一次
+var whiteboardParseWarned atomic.Bool
+
 // matchWhiteboardID 只放行 event.whiteboard_id 等于 --param whiteboard_id 的事件。
 func matchWhiteboardID(payload []byte, params map[string]string) bool {
 	want := params["whiteboard_id"]
@@ -204,7 +208,10 @@ func matchWhiteboardID(payload []byte, params map[string]string) bool {
 		} `json:"event"`
 	}
 	if err := json.Unmarshal(payload, &envelope); err != nil {
-		// 解析失败不能静默丢弃：否则 consume 看起来正常却永远收不到该画板的事件
+		// 解析失败不能静默丢弃：否则 consume 看起来正常却永远收不到该画板的事件。只提示一次，避免重投时刷屏
+		if !whiteboardParseWarned.CompareAndSwap(false, true) {
+			return false
+		}
 		fmt.Fprintf(os.Stderr, "警告: board.whiteboard.updated_v1 事件体无法解析（%v），已跳过；若应用配置了 Encrypt Key 请先关闭加密\n", err)
 		return false
 	}
