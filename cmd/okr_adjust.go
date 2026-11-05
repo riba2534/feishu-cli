@@ -23,18 +23,23 @@ func readJSONTextFlag(cmd *cobra.Command, name string) (string, error) {
 	if raw == "" {
 		return "", clierr.Usagef("--%s 不能为空", name)
 	}
-	if strings.HasPrefix(raw, "@") {
-		path := strings.TrimSpace(strings.TrimPrefix(raw, "@"))
-		if path == "" {
-			return "", clierr.Usagef("--%s 的 @ 后需要文件路径", name)
-		}
-		b, err := readLocalInputFile(path)
-		if err != nil {
-			return "", err
-		}
-		return string(b), nil
+	return readInlineOrAtFile(raw, name)
+}
+
+// readInlineOrAtFile 返回已 trim 的内联值；以 @ 开头时读取对应本地文件内容。
+func readInlineOrAtFile(raw, flagName string) (string, error) {
+	if !strings.HasPrefix(raw, "@") {
+		return raw, nil
 	}
-	return raw, nil
+	path := strings.TrimSpace(strings.TrimPrefix(raw, "@"))
+	if path == "" {
+		return "", clierr.Usagef("--%s 的 @ 后需要文件路径", flagName)
+	}
+	b, err := readLocalInputFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // validateOKRPositiveID 校验正整数 ID（cycle_id / objective_id 等）
@@ -63,13 +68,6 @@ func okrLevelArgs(cmd *cobra.Command) (level, cycleID, objectiveID string, err e
 	}
 	err = validateOKRPositiveID(objectiveID, "objective-id")
 	return
-}
-
-func okrLevelListPath(level, cycleID, objectiveID string) string {
-	if level == client.OKRLevelObjective {
-		return "/open-apis/okr/v2/cycles/" + cycleID + "/objectives"
-	}
-	return "/open-apis/okr/v2/objectives/" + objectiveID + "/key_results"
 }
 
 // okrResolveToken 统一的凭据解析（dry-run 之后调用）
@@ -128,7 +126,7 @@ var okrWeightCmd = &cobra.Command{
 			}
 			put := client.OKRWeightRequest(level, cycleID, objectiveID, preview)
 			return printDryRunPlan(cmd, "okr weight 预览（未执行）", nil, []dryRunStep{
-				{Method: "GET", URL: okrLevelListPath(level, cycleID, objectiveID), Desc: "读取现有项与原权重", Params: map[string]any{"page_size": 100}},
+				{Method: "GET", URL: client.OKRLevelPath(level, cycleID, objectiveID), Desc: "读取现有项与原权重", Params: map[string]any{"page_size": 100}},
 				{Method: put.Method, URL: put.Path, Desc: "提交完整权重列表：下面只列出指定项，其余项按原权重比例分摊剩余权重后一并提交", Body: put.Body},
 			})
 		}
@@ -200,7 +198,7 @@ var okrReorderCmd = &cobra.Command{
 			}
 			put := client.OKRReorderRequest(level, cycleID, objectiveID, ids)
 			return printDryRunPlan(cmd, "okr reorder 预览（未执行）", map[string]any{"ops": ops}, []dryRunStep{
-				{Method: "GET", URL: okrLevelListPath(level, cycleID, objectiveID), Desc: "读取现有顺序", Params: map[string]any{"page_size": 100}},
+				{Method: "GET", URL: client.OKRLevelPath(level, cycleID, objectiveID), Desc: "读取现有顺序", Params: map[string]any{"page_size": 100}},
 				{Method: put.Method, URL: put.Path, Desc: "提交完整 ID 顺序：下面只列出被移动的项，其余项按原顺序填入空位后一并提交", Body: put.Body},
 			})
 		}

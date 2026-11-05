@@ -54,20 +54,12 @@ func parseJSONObjectFlag(raw, flagName string) (map[string]any, error) {
 	if raw == "" {
 		return nil, nil
 	}
-	data := []byte(raw)
-	if strings.HasPrefix(raw, "@") {
-		path := strings.TrimSpace(strings.TrimPrefix(raw, "@"))
-		if path == "" {
-			return nil, clierr.Usagef("--%s 的 @ 后需要文件路径", flagName)
-		}
-		b, err := readLocalInputFile(path)
-		if err != nil {
-			return nil, err
-		}
-		data = b
+	text, err := readInlineOrAtFile(raw, flagName)
+	if err != nil {
+		return nil, err
 	}
 	var obj map[string]any
-	if err := json.Unmarshal(data, &obj); err != nil || obj == nil {
+	if err := json.Unmarshal([]byte(text), &obj); err != nil || obj == nil {
 		if err == nil {
 			err = fmt.Errorf("不是 JSON 对象")
 		}
@@ -76,21 +68,10 @@ func parseJSONObjectFlag(raw, flagName string) (map[string]any, error) {
 	return obj, nil
 }
 
-// splitCSV 按逗号切分并去掉空白与空项
-func splitCSV(raw string) []string {
-	var out []string
-	for _, s := range strings.Split(raw, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
 // buildTaskMembers 把 --assignee/--follower 的 ID 列表转成任务成员；ou_ 为用户，cli_ 为应用。
 func buildTaskMembers(raw, role, flagName string) ([]any, error) {
 	var members []any
-	for _, id := range splitCSV(raw) {
+	for _, id := range splitAndTrim(raw) {
 		var typ string
 		switch {
 		case strings.HasPrefix(id, "ou_"):
