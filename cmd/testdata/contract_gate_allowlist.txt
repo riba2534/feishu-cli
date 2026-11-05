@@ -1,0 +1,10 @@
+# 契约门禁存量例外（TestContractGate）。格式：<规则> <文件> <键>  # 原因
+# usage-errorf 按文件计数（棘轮）：修掉一处就把计数改小；数量增加会让测试失败。
+usage-errorf api.go count=3                # --params 由调用方包成 Usage；--as user 两处为鉴权错误（exit 3）
+usage-errorf api_upload.go count=1         # 读 stdin 失败，非参数错误
+usage-errorf auth_token.go count=1         # --as user 缺 User Token，鉴权错误
+usage-errorf bitable_pagination.go count=2 # --page-all 翻页中途的 API 失败，非参数错误
+usage-errorf bitable_table_copy.go count=1 # 已由 clierr.Usage 包装
+usage-errorf chat_member.go count=1        # --as user 缺 User Token，鉴权错误
+usage-errorf msg_content.go count=1        # 合并附件失败（上传/网络），非参数错误
+usage-errorf utils.go count=1              # --as user 缺 User Token，鉴权错误
