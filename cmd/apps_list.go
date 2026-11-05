@@ -22,6 +22,7 @@ var appsListCmd = &cobra.Command{
   --keyword      按应用名模糊搜索
   --ownership    all（默认：我创建的 + 共享给我的）/ mine / shared
   --app-type     html / frontend / full_stack
+  --owner-id     按应用所有者 open_id（ou_ 开头）过滤；服务端在可见范围内过滤，与 --ownership 正交
   --page-size    每页条数（默认 20）
   --page-token   上一页返回的分页游标（has_more=true 时 stderr 会提示）
 
@@ -33,6 +34,7 @@ is_published / online_url 只是发布态快照，不能证明最新内容已部
 示例:
   feishu-cli apps list --keyword "审批"
   feishu-cli apps list --ownership mine --app-type html
+  feishu-cli apps list --owner-id ou_xxx
   feishu-cli apps list --page-token <上一页返回的 page_token>`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := map[string]any{
@@ -55,6 +57,14 @@ is_published / online_url 只是发布态快照，不能证明最新内容已部
 				return clierr.Usagef("--app-type 取值 %q 不受支持，可选: html / frontend / full_stack", appType)
 			}
 			params["app_type"] = appType
+		}
+		// 显式传入 --owner-id 时必须是 ou_ 开头的 open_id；空值不能静默退化为「不过滤」（对齐官方）
+		if cmd.Flags().Changed("owner-id") {
+			owner := strings.TrimSpace(flagString(cmd, "owner-id"))
+			if !strings.HasPrefix(owner, "ou_") || owner == "ou_" {
+				return clierr.Usagef("--owner-id 必须是 ou_ 开头的用户 open_id，得到 %q", owner)
+			}
+			params["owner_id"] = owner
 		}
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
 			return appsDryRun(cmd, "GET", sparkBasePath+"/apps", params, nil)
@@ -83,6 +93,7 @@ func init() {
 	appsListCmd.Flags().String("keyword", "", "按应用名模糊搜索")
 	appsListCmd.Flags().String("ownership", "", "归属过滤: all / mine / shared（默认 all）")
 	appsListCmd.Flags().String("app-type", "", "类型过滤: html / frontend / full_stack")
+	appsListCmd.Flags().String("owner-id", "", "按应用所有者 open_id 过滤（ou_ 开头，与 --ownership 正交）")
 	appsListCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求")
 	addAppsCommonFlags(appsListCmd)
 }

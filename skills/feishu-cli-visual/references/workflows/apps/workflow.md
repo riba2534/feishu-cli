@@ -6,7 +6,7 @@
 ## 前置条件
 
 - **认证**：所有 `apps` 命令都需要 **User Access Token**
-- **scope**：`spark:app:write`（create / update / html-publish / access-scope-set）、`spark:app:read`（get / list / release get / release list / html-publish 校验 app_type、access-scope-get）
+- **scope**：`spark:app:write`（create / update / delete / html-publish / release create / access-scope-set）、`spark:app:read`（get / list / features / release get / release list / access-scope-get，以及 html-publish 校验 app_type、update 改图标前预检、delete 名称校验、`--wait` 轮询）
 - **登录**：`auth login` 是增量授权，补授 spark scope 不会丢掉已有授权：
 
 ```bash
@@ -65,8 +65,24 @@ feishu-cli apps html-publish --app-id app_xxx --path ./dist --allow-sensitive  #
 - **`--wait`**：每 20 秒查询一次（`--wait-timeout` 默认 5m），结果见下一节的状态表；输出为 release 详情 + `wait.outcome`
   （`finished` / `failed` / `pending_approval` / `timeout` / `stopped`）。只有 `failed` 非零退出，其余都是 exit 0，
   要读 `wait.outcome` 判断；`timeout` 表示仍在发布，用 `apps release get` 继续查同一 `release_id`，不要重新发布
+- **`--wait` 遇到限流 / 网络错误**：查询状态时碰到 99991400、HTTP 429 或网络抖动，会在 stderr 提示并指数退避（2s 起、单次 ≤30s）
+  后继续查同一 `release_id`；连续失败超过 5 次或超出 `--wait-timeout` 才非零退出。发布请求本身只发一次，绝不重放；
+  这时同样只需 `apps release get` 继续查，不要重新发布
 
-### 3. 发布结果 `apps release get` / `apps release list`
+### 3. 按分支发布 `apps release create`
+
+```bash
+feishu-cli apps release create --app-id app_xxx                                   # HTML 应用不带理由
+feishu-cli apps release create --app-id app_xxx --branch sprint/default --apply-reason "修复线上问题" --dry-run
+feishu-cli apps release create --app-id app_xxx --apply-reason "版本发布" --wait  # 等待结果，同 html-publish --wait
+```
+
+- 用于在妙搭编辑器或云端开发里改完代码后发布（frontend / full_stack 应用）；发本地 HTML 文件用 `apps html-publish`
+- `--app-id` 必须 `app_` 开头；`--apply-reason` frontend / full_stack 应用必填，≤1000 字符，不能为空白、不能含控制字符或 BiDi/零宽字符（违规 exit 2）
+- 不加 `--wait` 输出 `{"release_id","status","sync"}`；加 `--wait` 输出与 `html-publish --wait` 相同（release 详情 + `wait.outcome`）
+- 真实发布前取得用户明确同意
+
+### 4. 发布结果 `apps release get` / `apps release list`
 
 ```bash
 feishu-cli apps release get --app-id app_xxx --release-id <release_id>
@@ -85,17 +101,49 @@ feishu-cli apps get --app-id app_xxx --jq '.app.is_published'
 - `is_published=true`（`apps get` / `apps list`）只说明历史上发布过，不能证明最新内容已部署
 - `release list` 在 `has_more=true` 时会在 stderr 提示 `--page-token` 续翻
 
-### 4. 修改应用 `apps update`
+### 5. 修改应用 `apps update`
 
 ```bash
 feishu-cli apps update --app-id app_xxx --name "新名字"
-feishu-cli apps update --app-id app_xxx --description "更新后的描述"   # --name / --description 至少一个
+feishu-cli apps update --app-id app_xxx --description "更新后的描述"
+feishu-cli apps update --app-id app_xxx --icon-url https://example.com/icon.png
+feishu-cli apps update --app-id app_xxx --icon-file ./icon.png --dry-run   # 看 GET 预检 → 上传 → PATCH 三步计划
 ```
 
-### 5. 访问范围 `apps access-scope-get` / `apps access-scope-set`
+- `--name` / `--description` / `--icon-url` / `--icon-file` 至少一个；`--icon-url` 与 `--icon-file` 互斥
+- `--icon-url` 必须是带主机名的绝对 http(s) URL，不能含 `user:password@`
+- `--icon-file` 只收 png / jpeg（按文件内容识别，不看扩展名），≤2MB；`--dry-run` 也会读文件做这些校验
+- 改图标时先 GET 应用预检（需 `spark:app:read`），再上传、再 PATCH；`code=40002` 表示该应用类型不能用 CLI 改图标，去妙搭编辑器改
+- 响应里的 `icon_url` 与发送值不一致时 stderr 告警，用 `apps get` 核对
+
+### 6. 删除应用 `apps delete`
+
+```bash
+feishu-cli apps get --app-id app_xxx --jq '.app.name'                        # 先查准确名称
+feishu-cli apps delete --app-id app_xxx --confirm-name "我的页面" --dry-run   # 看两步计划
+feishu-cli apps delete --app-id app_xxx --confirm-name "我的页面" --yes
+```
+
+- 高危操作：**必须先取得用户明确同意**再加 `--yes`；非交互环境不加 `--yes` 时 exit 10、不发任何请求
+- `--confirm-name` 必填，先 GET 应用比对当前名称，不一致 exit 2 且不删除；`--app-id` 也接受 meta_token（按解析出的 app_id 删除）
+- 输出 `app_id` / `name` / `deleted`；服务端返回 `in_trash` 时一并输出：`true` 已移入回收站可恢复，`false` 已永久删除
+- `code=40002` 表示该应用类型不能用 CLI 管理（去网页控制台删）；DELETE 返回 40300 / 40400 多为应用已删除或已无权访问
+
+### 7. 功能开关 `apps features`（只读）
+
+```bash
+feishu-cli apps features --app-id app_xxx
+feishu-cli apps features --app-id app_xxx --jq '.features[] | select(.name=="database") | .enabled'
+```
+
+- 原样输出 `app_id`、`features[]`（`name` / `enabled`），传 `--operation-ref <idempotent_key>`（自动转小写）时还有该次开启操作的 `operation`
+- `enabled=true` 只说明业务开关已开，不代表本地开发环境就绪；开启功能（feature-enable）不在本 CLI 范围内
+
+### 8. 访问范围 `apps access-scope-get` / `apps access-scope-set`
 
 ```bash
 feishu-cli apps access-scope-get --app-id app_xxx
+feishu-cli apps access-scope-get --app-id app_xxx --dry-run
 
 feishu-cli apps access-scope-set --app-id app_xxx --scope tenant        # 组织内可见
 feishu-cli apps access-scope-set --app-id app_xxx --scope public --require-login=true   # 互联网公开（require-login 必填）
@@ -115,12 +163,17 @@ feishu-cli apps access-scope-set --app-id app_xxx --scope specific \
 - 自己刚 `apps create` 的：从返回的 `.app.app_id` 取（CLI 已剥掉 `data` 外层）
 - 别人/已有的应用：让用户给妙搭应用链接，从 `https://miaoda.feishu.cn/app/app_xxx` 里 `/app/` 后面那段提取，或直接给 `app_xxx` 字符串
 - 只知道应用名：`feishu-cli apps list --keyword <名称>`（可加 `--ownership mine|shared`、`--app-type html`；list 只收小写类型值），多个候选时展示名称、app_id、updated_at 让用户确认
+- 找某人名下的应用：`feishu-cli apps list --owner-id ou_xxx`（服务端在可见范围内过滤，与 `--ownership` 正交；显式传入时必须 `ou_` 开头，空值或其他格式 exit 2）
 
 ## 输出与排错
 
-- 所有命令支持 `--format json|pretty|table|ndjson|csv` + `--jq`；除 `access-scope-get` 外都有 `--dry-run`（同样尊重 `--format/--jq`）
-- 用法错误（`--app-type`/`--status`/`--page-size` 取值非法、`html-publish` 与 `release get` 的 `--app-id` 不是 `app_` 开头）exit 2；
-  缺 spark scope 报 99991679，exit 3
+- 所有命令支持 `--format json|pretty|table|ndjson|csv` + `--jq` 与 `--dry-run`（同样尊重 `--format/--jq`）
+- `--dry-run` 先做本地参数校验，再打印计划，不获取 token、不访问网络，未配置 App 凭证时也 exit 0；去掉 `--dry-run` 缺凭证时 exit 3
+- 用法错误一律 exit 2，且在凭证检查之前报出：`--app-type`/`--status`/`--page-size`/`--scope`/`--targets` 等取值非法、缺必填参数、
+  `html-publish` / `release get|create` / `features` 的 `--app-id` 不是 `app_` 开头、`html-publish` 的 `--path` 不可读或含凭证文件、
+  超出大小上限、缺 `index.html`（实跑时）；缺 spark scope 报 99991679，exit 3
+- 被限流（99991400 / HTTP 429）时错误后的提示是退避建议而不是「确认参数」：参数无需修改，停止立即重试，稍后退避重跑同一命令并减少并发
+  （`html-publish --wait` 查询状态被限流时仍提示「不要重新发布」，只需 `apps release get` 继续查）
 - 输出已剥掉飞书响应的 `data` 外层：`apps create` 直接是 `{"app":{"app_id":...}}`（jq 用 `.app.app_id`），`apps html-publish` 直接是 `{"release_id":...}`（jq 用 `.release_id`；加 `--wait` 时为 release 详情）
 - 业务错误 `code=400002577` / `90002` = 应用不存在或无权访问（核对 app_id）；`code=400000059` = app_type 不支持 html-publish；`code=90001` = 服务端构建失败（用 `--dry-run` 检查打包文件清单）
 - TOS PUT 4xx/5xx 会中止、不调用 release-create；5xx 可重试同一条命令换新预签名 URL。不要把飞书 Authorization 带到 TOS。
