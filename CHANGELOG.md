@@ -23,7 +23,13 @@
 | `apps update` 缺字段错误文本变为「至少提供 --name、--description、--icon-url 或 --icon-file 之一」 | 随新 flag 调整 | 匹配旧文本的脚本需更新 |
 | `mail template delete` / `mail thread-trash` 先解析身份再确认 | 未登录时 exit 3 先于 exit 10 | 非交互脚本先确认已登录再追加 `--yes` |
 | `board import --engine local` 缺 whiteboard-cli 由 exit 1 变为 2（文本不变），检查提前到凭据校验之前 | — | — |
-| 离线 catalog 补丁层：`schema status`、`auth status`、`doctor --only catalog` 的方法数多出 `local_supplements` 补回的 `task.comments.*`（联网模式下如 250 → 255），JSON 新增 `supplements` 字段 | 只新增 | 精确比对方法数的脚本需更新 |
+| 离线 catalog 补丁层：`schema status`、`auth status`、`doctor --only catalog` 的方法数多出 `local_supplements` 补回的 `task.comments.*`（联网模式下如 250 → 255）；`schema status --format json` 与 `auth status -o json` 的 catalog 新增 `supplements` 字段 | 只新增 | 精确比对方法数的脚本需更新 |
+| `approval task rollback` / `add-sign` / `remind` 先校验配置与 User Token 再确认 | 未登录且非交互时 exit 10 → exit 3 | 非交互脚本先确认已登录再追加 `--yes` |
+| `okr comment create` / `update` / `delete` 只支持 User | 显式 `--as bot` 原先被静默忽略，现在 exit 2；`--help` 中 `--as` 默认显示为 `user` | 去掉 `--as bot` |
+| 非法 `--format` / `--jq` 统一为用法错误，gojq 表达式在读配置与凭据之前校验 | 原先部分命令 exit 1，或写命令先执行写入再报错；`api --dry-run --jq '-r'` 0 → 2 | 修正表达式；`event consume` 的点路径 `--jq` 不受影响 |
+| `drive search` 单个位置参数作为关键字 | 原先位置参数被静默忽略、返回不相关结果；多于 1 个或与 `--query` 同用时 exit 2 | 关键字可写成唯一位置参数，或继续用 `--query` |
+| 本地前置校验：`sheet write` 显式范围小于数据、`sheet dropdown delete --ranges` 超过 100、`drive preview --type` 非法取值、`vc bot` 非法 `--as`、`task comment` 非法 ID | 原先联网后由服务端拒绝（exit 1）或先报缺凭据（exit 3），现在联网前 exit 2 | 服务端本就拒绝这些输入，合法调用不受影响 |
+| 飞书 SDK 日志不再写 stdout；换取 tenant token 的网络错误归为网络错误 | `-o json` 管道不再混入 `[Warn]` 日志；代理/DNS 失败 exit 3 → 4（可重试） | 无需改动 |
 | `slides media-upload` 文件类型/大小检查提前到 wiki 链接解析之前；`doc read --keyword` 正则在导出全文前校验；`doc export --engine docs_ai` 的 `--doc-format/--detail` 在 wiki 解析前校验 | — | 参数错误更早报出，不再先联网 |
 
 ### 新增
@@ -87,8 +93,19 @@
 - `sheet table-get`：下拉框单元格（V3 返回 `#UNSUPPORTED_TYPE`）原先读成 null，get→put 往返会清空原值；现按纯文本回填，失败时 stderr 列出单元格地址。`sheet read-rich` 遇到该类型时 stderr 告警并提示改用 read-plain。
 - perm 命令遇到非 JSON 响应时不再外泄响应头，改为「服务端返回非 JSON 响应（HTTP 404）」与处理提示。
 - apps 限流（99991400 / HTTP 429）时提示退避重试，不再给出无关的参数提示。
+- `--error-format json`：未知命令与 flag 解析失败时同样输出 JSON 信封；flag 正常解析时不再被其他 flag 取值里的 `--error-format=json` 误触发；仍以 `code=N` 文本返回的旧错误补回 `code` / `log_id`。默认文本输出逐字节不变。
+- `api --file`：含 `=` 的本地路径不再被误拆成 `field=path`；响应超过 32MiB 显式报错而非静默截断；真实网络错误 exit 4，host 白名单等本地策略拒绝不再被当成可重试的网络错误。
+- `no_refresh_token.settings_url` 指向签发该 token 的应用；`doctor` 在未下发 refresh_token 时给出与 `auth status` 一致的提示（JSON 新增 `hint`）。
+- 事件订阅：画板事件按 `whiteboard_id` 过滤未命中时遵循 ACK 策略（确认是唯一长连接才 ACK 丢弃，否则交由服务端重投）；订阅生命周期按「EventKey + 订阅身份 + `--param`」计数，旧版 bus.json 条目保守计入，不会误注销他人订阅；IM 等无需订阅的 key 与订阅类 key 同时监听时可以 `--as user`；画板事件体解析失败只告警一次。
+- `msg history / thread-messages --concise`：`@_user_1` 不再误伤 `@_user_10`；正文行首的列表、标题、引用、分隔线语法加转义。
+- `sheet table-get` 下拉框回填在两个接口返回的范围起点不一致时告警且不回填，避免错位；`sheet write` / `clear` / `dropdown delete` 的 `--dry-run` 预览范围与真实请求一致（需要子表列表才能确定时在步骤说明中注明）。
+- 新增的覆盖 / 删除类命令补齐确认门禁：`minutes summary`、`minutes todo`（含 delete）、`minutes speaker-replace` / `word-replace`、`sheet cond-format update`。
+- `bitable table copy --wait`：服务端错误不再误报「--task-id 无效」；任务终态失败时提示可重新提交，不再提示续查；`copy-status` 遇到已清理的任务（800030110）给出处理提示。`field extension update-cells`、`field button-rule` 的 `--table-id` / `--field-id` 传名称时先解析为 ID。
+- `okr objective batch-create` 拿不到 objective_id 时，错误说明该目标可能残留、需手动清理，不再声称已全部回滚。
+- `calendar --description-format markdown` 不再上传代码块中的图片语法，支持带标题的图片写法。
 
 ### 开发与测试
+- 修复 `internal/event` 竞态测试偶发失败：宿主机端口扫描器的探测请求打进 httptest 端口，测试现在识别并忽略这类请求，并主动注入一次做回归；全量测试中 slice flag 复位串扰同步修复。
 - 新增契约门禁 `cmd/contract_gate_test.go`：静态扫描 RunE，拦截「`--dry-run` 前要求凭据」「`--` 开头参数错误未用 `clierr.Usagef`」「裸 HTTP 客户端」三类回归；存量例外登记在 `cmd/testdata/contract_gate_allowlist.txt`，只减不增。
 - 新增 `scripts/sync_official_catalog.py`：从官方仓库内嵌 catalog 重生成 `internal/registry/meta_data.json`，校验 manifest sha256、输出 method 级 diff，未授权删除时失败；`make update-meta OFFICIAL=/path/to/larksuite/cli [ALLOW_REMOVE='--allow-remove a.b.c']` 调用该脚本。`internal/registry/local_supplements.json` 维护补丁层白名单。
 - `scripts/check_skill_contracts.py`：考勤非法日期的离线契约断言随退出码规范改为 exit 2。

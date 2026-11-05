@@ -926,7 +926,7 @@ feishu-cli drive push   --folder-token fldxxx --local-dir ./mirror --if-exists s
 feishu-cli drive pull   --folder-token fldxxx --local-dir ./mirror --delete-local --yes  # 高危：双确认
 
 # 云盘 v2 搜索（与 search docs 同一 Search v2 端点，drive search 暴露更多 filter 与排序）
-feishu-cli drive search --query "季度报告" --doc-types DOC,SHEET --sort edit_time
+feishu-cli drive search --query "季度报告" --doc-types DOC,SHEET --sort edit_time   # 关键字也可写成唯一位置参数
 feishu-cli drive search --folder-tokens fldxxx --only-title
 feishu-cli drive search --created-since 7d --created-by-me      # 时间窗：--edited/--commented/--opened/--created-since|until
 feishu-cli drive search --opened-since 1m --mine                 # --mine 按所有者，--created-by-me 按原始创建者

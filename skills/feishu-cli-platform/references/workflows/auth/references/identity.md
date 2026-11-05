@@ -28,7 +28,7 @@
 
 `drive pull --delete-local` / `drive push --delete-remote` 是读类回退的例外：已配置 User 但不可用时直接报错
 （Bot 视角的远端更少，会误删）；只有从未配置 User 的纯 Bot 场景才以 Bot 执行。
-不能根据命令组前缀推导所有子命令的身份（如 `msg history` 的单聊入口与群聊入口不同、`okr comment create` 忽略 `--as`）。
+不能根据命令组前缀推导所有子命令的身份（如 `msg history` 的单聊入口与群聊入口不同、`okr comment create/update/delete` 只接受 `--as user|auto`，显式 `--as bot` 报用法错误 exit 2）。
 
 ## 支持 --as 的入口
 
