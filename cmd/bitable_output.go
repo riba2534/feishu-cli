@@ -240,12 +240,13 @@ func bitableRunWithTransform(cmd *cobra.Command, build func(baseToken string) bi
 	})
 }
 
-// addBitableCommonFlags 给新增 bitable 子命令注册通用 flag：
-// --base-token / --user-access-token / --format / --jq。
+// addBitableCommonFlags 给 bitable 子命令注册通用 flag：
+// --base-token / --user-access-token / --format / --jq / --dry-run（读命令也可预览请求）。
 func addBitableCommonFlags(cmd *cobra.Command) {
 	addBaseTokenFlag(cmd)
 	cmd.Flags().String("user-access-token", "", "User Access Token")
 	output.AddFormatFlags(cmd)
+	output.AddDryRunFlag(cmd)
 }
 
 // addBitableWriteFlags 在通用 flag 基础上给写命令追加 --dry-run（mutating 操作预览）。
