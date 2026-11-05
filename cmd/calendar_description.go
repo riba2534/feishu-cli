@@ -82,10 +82,9 @@ func parseRichDescriptionFlags(cmd *cobra.Command, description string) (*richDes
 // prepareRichDescription 找出 Markdown 中的本地图片并校验路径（不联网）
 func prepareRichDescription(md string) (*richDescription, error) {
 	rd := &richDescription{Markdown: md}
-	for _, m := range markdownImageRe.FindAllStringSubmatchIndex(md, -1) {
-		srcStart, srcEnd := m[4], m[5]
-		raw := md[srcStart:srcEnd]
-		src := strings.TrimSpace(raw)
+	// 在遮掉代码的副本上匹配：代码块/行内代码里的图片语法只是文本，不上传；遮罩等长，下标可直接用于原文
+	for _, m := range markdownImageRe.FindAllStringSubmatchIndex(maskMarkdownCode(md), -1) {
+		off, src := imageDestination(md[m[4]:m[5]])
 		if !isLocalImageSrc(src) {
 			continue
 		}
@@ -93,11 +92,112 @@ func prepareRichDescription(md string) (*richDescription, error) {
 		if err != nil {
 			return nil, err
 		}
-		// 去掉 src 两侧空白后的精确位置，替换时保留原有空白
-		lead := len(raw) - len(strings.TrimLeft(raw, " \t"))
-		rd.Images = append(rd.Images, descriptionImage{Src: src, Path: path, srcStart: srcStart + lead, srcEnd: srcStart + lead + len(src)})
+		// 只记录路径本身的位置：替换时保留两侧空白、尖括号与 title
+		start := m[4] + off
+		rd.Images = append(rd.Images, descriptionImage{Src: src, Path: path, srcStart: start, srcEnd: start + len(src)})
 	}
 	return rd, nil
+}
+
+// imageDestination 从 ![alt](...) 括号内取出图片地址，返回其在 raw 中的偏移与内容。
+// 支持 <path> 尖括号写法与 "title" / 'title' / (title) 标题；不带标题的路径按原样（允许含空格）。
+func imageDestination(raw string) (int, string) {
+	off := len(raw) - len(strings.TrimLeft(raw, " \t\n"))
+	rest := raw[off:]
+	if strings.HasPrefix(rest, "<") {
+		if end := strings.IndexByte(rest, '>'); end > 0 {
+			return off + 1, rest[1:end]
+		}
+	}
+	rest = strings.TrimRight(rest, " \t\n")
+	for i := 0; i < len(rest); i++ {
+		if rest[i] != ' ' && rest[i] != '\t' && rest[i] != '\n' {
+			continue
+		}
+		tail := strings.TrimLeft(rest[i:], " \t\n")
+		if tail != "" && strings.ContainsRune(`"'(`, rune(tail[0])) {
+			return off, rest[:i]
+		}
+	}
+	return off, rest
+}
+
+// maskMarkdownCode 把围栏代码块（``` / ~~~）与行内代码 `...` 的内容替换为等长空格（保留换行），
+// 使后续正则不会匹配到代码里的语法，同时字节下标与原文一致。
+func maskMarkdownCode(md string) string {
+	b := []byte(md)
+	blank := func(from, to int) {
+		for i := from; i < to; i++ {
+			if b[i] != '\n' {
+				b[i] = ' '
+			}
+		}
+	}
+	// 围栏代码块：开栏行最多 3 个空格缩进，闭栏为同字符且不短于开栏；未闭合则到文末
+	lineStart := 0
+	fenceStart, fenceChar, fenceLen := -1, byte(0), 0
+	for lineStart <= len(md) {
+		lineEnd := strings.IndexByte(md[lineStart:], '\n')
+		if lineEnd < 0 {
+			lineEnd = len(md)
+		} else {
+			lineEnd += lineStart
+		}
+		line := md[lineStart:lineEnd]
+		trimmed := strings.TrimLeft(line, " ")
+		indent := len(line) - len(trimmed)
+		if indent <= 3 && len(trimmed) >= 3 && (trimmed[0] == '`' || trimmed[0] == '~') {
+			c := trimmed[0]
+			n := len(trimmed) - len(strings.TrimLeft(trimmed, string(c)))
+			switch {
+			case fenceStart < 0 && n >= 3:
+				fenceStart, fenceChar, fenceLen = lineStart, c, n
+			case fenceStart >= 0 && c == fenceChar && n >= fenceLen && strings.TrimSpace(trimmed[n:]) == "":
+				blank(fenceStart, lineEnd)
+				fenceStart = -1
+			}
+		}
+		if lineEnd == len(md) {
+			break
+		}
+		lineStart = lineEnd + 1
+	}
+	if fenceStart >= 0 {
+		blank(fenceStart, len(md))
+	}
+	// 行内代码：n 个反引号开头，到下一个恰好 n 个反引号结束；无闭合则按普通文本
+	s := string(b)
+	for i := 0; i < len(s); {
+		if s[i] != '`' {
+			i++
+			continue
+		}
+		n := 1
+		for i+n < len(s) && s[i+n] == '`' {
+			n++
+		}
+		closed := false
+		for j := i + n; j < len(s); {
+			if s[j] != '`' {
+				j++
+				continue
+			}
+			m := 1
+			for j+m < len(s) && s[j+m] == '`' {
+				m++
+			}
+			if m == n {
+				blank(i, j+m)
+				i, closed = j+m, true
+				break
+			}
+			j += m
+		}
+		if !closed {
+			i += n
+		}
+	}
+	return string(b)
 }
 
 // isLocalImageSrc 判断图片地址是否为本地文件（http/https/data 等远端地址原样保留）

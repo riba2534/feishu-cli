@@ -310,6 +310,9 @@ var okrCommentCreateCmd = &cobra.Command{
   feishu-cli okr comment create --target-type objective --target-id 7xxx \
     --content "这个目标的口径需要再对齐" --select-all --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateOKRUserOnlyAs(cmd, "okr comment create"); err != nil {
+			return err
+		}
 		content, err := okrContentFlags(cmd, "content")
 		if err != nil {
 			return err

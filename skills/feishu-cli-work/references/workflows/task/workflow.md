@@ -62,7 +62,8 @@ feishu-cli task section tasks <section_guid> --uncompleted
 - `task complete` 幂等：已完成的任务不会被重复改写完成时间（JSON 带 `already_completed=true`）。
 - 删除任务、清单不需要 `--yes`，执行前自行向用户确认 GUID；`task comment delete` 有确认门禁（非交互不带 `--yes` 时 exit 10）。
 - 所有写命令支持 `--dry-run`（不联网、不读凭据），写之前先预览请求体；`--data` 透传的自定义字段尤其要先预览。
-- 参数错误（`--due` 格式、成员前缀、角色、`--data` 不是 JSON 对象等）都是用法错误 exit 2，在解析身份前返回，不要重试。
+- 参数错误（`--due` 格式、`task create --assignee/--follower` 的成员前缀、角色、`--data` 不是 JSON 对象等）都是用法错误 exit 2，在解析身份前返回，不要重试。
+- `task member add/remove --members` 只接受用户 open_id（`ou_`），一律按 `type=user` 发送，本地不校验前缀；要把应用（`cli_`）设为关注者，在 `task create --follower` 时一并指定。
 
 ### 分页
 

@@ -130,3 +130,48 @@ func TestOKRCommentDeleteGates(t *testing.T) {
 		t.Fatalf("未确认不应删除: %+v", rec.apiReqs())
 	}
 }
+
+// TestOKRCommentUserOnlyAs comment create/update/delete 只支持 User：帮助默认 user，显式 --as bot 在 dry-run 与凭据检查前报用法错误
+func TestOKRCommentUserOnlyAs(t *testing.T) {
+	cases := []struct {
+		cmd   *cobra.Command
+		args  []string
+		flags map[string]string
+	}{
+		{okrCommentCreateCmd, nil, map[string]string{"target-type": "cycle", "target-id": "7001", "content": "x"}},
+		{okrCommentUpdateCmd, []string{"7001"}, map[string]string{"content": "x"}},
+		{okrCommentDeleteCmd, []string{"7001"}, nil},
+	}
+	run := func(c *cobra.Command, args []string, base map[string]string, as string) (*workRecorder, error) {
+		rec := setupNoCredsWorkTest(t)
+		resetCommandTreeFlags(okrCmd)
+		flags := map[string]string{"as": as, "dry-run": "true"}
+		for k, v := range base {
+			flags[k] = v
+		}
+		_, err := runWorkCmd(t, c, args, flags)
+		return rec, err
+	}
+	for _, c := range cases {
+		if f := c.cmd.Flags().Lookup("as"); f == nil || f.DefValue != "user" || strings.Contains(f.Usage, "bot(App Token") {
+			t.Fatalf("%s --as 帮助应为仅 user: %+v", c.cmd.CommandPath(), f)
+		}
+		for _, as := range []string{"bot", "tenant", "BOT"} {
+			rec, err := run(c.cmd, c.args, c.flags, as)
+			if err == nil || !clierr.HasKind(err, clierr.KindUsage) || !strings.Contains(err.Error(), "必需 User Token，不支持 --as") {
+				t.Fatalf("%s --as %s 应为用法错误，得到 %v", c.cmd.CommandPath(), as, err)
+			}
+			if len(rec.all()) != 0 {
+				t.Fatalf("%s 不应联网: %+v", c.cmd.CommandPath(), rec.all())
+			}
+		}
+		if _, err := run(c.cmd, c.args, c.flags, "nope"); err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+			t.Fatalf("%s --as nope 应为用法错误，得到 %v", c.cmd.CommandPath(), err)
+		}
+		for _, as := range []string{"user", "auto"} {
+			if _, err := run(c.cmd, c.args, c.flags, as); err != nil {
+				t.Fatalf("%s --as %s 无凭据 dry-run 应成功: %v", c.cmd.CommandPath(), as, err)
+			}
+		}
+	}
+}
