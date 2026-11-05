@@ -263,7 +263,12 @@ func (rd *richDescription) rewrite(urls []string) string {
 func (rd *richDescription) preview() string {
 	urls := make([]string, len(rd.Images))
 	for i, img := range rd.Images {
-		urls[i] = "<上传后的图片 URL: " + img.Src + ">"
+		ph := "上传后的图片 URL: " + img.Src
+		// 原文已是 <路径> 写法时，尖括号保留在原文中，占位符不再重复包一层
+		if img.srcStart == 0 || rd.Markdown[img.srcStart-1] != '<' {
+			ph = "<" + ph + ">"
+		}
+		urls[i] = ph
 	}
 	return rd.rewrite(urls)
 }

@@ -295,3 +295,18 @@ func TestUpdateEventMarkdownDryRun(t *testing.T) {
 		t.Fatalf("PATCH 请求体不对: %+v", last)
 	}
 }
+
+// <带空格.png> 写法的 dry-run 占位符不重复尖括号。
+func TestRichDescriptionPreviewAngleBracketPath(t *testing.T) {
+	dir := calendarChdirTemp(t)
+	if err := os.WriteFile(filepath.Join(dir, "a b.png"), []byte("\x89PNG"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rd, err := prepareRichDescription("![x](<a b.png>)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := rd.preview(); strings.Contains(p, "<<") || !strings.Contains(p, "(<上传后的图片 URL: a b.png>)") {
+		t.Fatalf("preview = %q", p)
+	}
+}
