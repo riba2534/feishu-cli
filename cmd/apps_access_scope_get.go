@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -20,22 +20,26 @@ var appsAccessScopeGetCmd = &cobra.Command{
 权限: User Access Token + spark:app:read
 
 示例:
-  feishu-cli apps access-scope-get --app-id app_xxx`,
+  feishu-cli apps access-scope-get --app-id app_xxx
+  feishu-cli apps access-scope-get --app-id app_xxx --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		appID := strings.TrimSpace(flagString(cmd, "app-id"))
+		if appID == "" {
+			return clierr.Usagef("--app-id 不能为空")
+		}
+		path := appsAppPath(appID, "/access-scope")
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return appsDryRun(cmd, "GET", path, nil, nil)
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
-
-		appID := strings.TrimSpace(flagString(cmd, "app-id"))
-		if appID == "" {
-			return fmt.Errorf("--app-id 不能为空")
-		}
-
 		token, err := requireUserToken(cmd, "apps access-scope-get")
 		if err != nil {
 			return err
 		}
-		data, err := client.SparkCall("GET", appsAppPath(appID, "/access-scope"), nil, nil, token)
+		data, err := client.SparkCall("GET", path, nil, nil, token)
 		if err != nil {
 			return err
 		}
@@ -46,5 +50,5 @@ var appsAccessScopeGetCmd = &cobra.Command{
 func init() {
 	appsCmd.AddCommand(appsAccessScopeGetCmd)
 	appsAccessScopeGetCmd.Flags().String("app-id", "", "妙搭应用 ID（必填）")
-	addAppsCommonFlags(appsAccessScopeGetCmd)
+	addAppsWriteFlags(appsAccessScopeGetCmd)
 }

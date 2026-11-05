@@ -76,6 +76,7 @@ var appsReleaseCmd = &cobra.Command{
 	Long: `查询妙搭应用的发布（release）状态与历史。
 
 子命令:
+  create 按分支创建一次发布（frontend / full_stack 应用；HTML 应用用 apps html-publish）
   get    按 release_id 查询单次发布详情（status / online_url / error_logs / 审批节点）
   list   列出发布历史（最近的在前）
 
@@ -221,8 +222,24 @@ func sparkStringValue(v any) string {
 	return ""
 }
 
+// appsRateLimitHint 限流（99991400 / HTTP 429）时的提示：请求未被服务端评估，参数无需修改（对齐官方 appRateLimitHint）。
+const appsRateLimitHint = "请求被限流，并非参数被拒绝，不要修改参数；停止立即重试，稍后按指数退避（加随机抖动）重跑同一命令，并减少并发调用"
+
 // appsWithHint 在错误后追加一行可执行的恢复建议（保留错误链与业务码）。
+// 限流错误的请求未被服务端评估，命令给出的「确认参数/app_id」类建议不成立，改为退避提示
+// （对齐官方 hintExplainsFailure 只拦限流类；鉴权错误照旧追加命令建议）。
 func appsWithHint(err error, hint string) error {
+	if err == nil {
+		return err
+	}
+	if client.IsRateLimitError(err) {
+		hint = appsRateLimitHint
+	}
+	return appsAppendHint(err, hint)
+}
+
+// appsAppendHint 无条件追加提示（用于对限流同样成立的提示，如「发布已提交，不要重新发布」）。
+func appsAppendHint(err error, hint string) error {
 	if err == nil || hint == "" {
 		return err
 	}
