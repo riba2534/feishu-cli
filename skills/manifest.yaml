@@ -77,7 +77,7 @@
     {"skill": "feishu-cli-docs", "workflow": "author", "prefixes": [["doc", "script"]]},
     {"skill": "feishu-cli-docs", "workflow": "mindnote", "prefixes": [["mindnote"]]},
 
-    {"skill": "feishu-cli-storage", "workflow": "drive", "prefixes": [["drive"], ["drive", "download"], ["drive", "export"], ["drive", "export-download"], ["drive", "import"], ["drive", "inspect"], ["drive", "move"], ["drive", "pull"], ["drive", "push"], ["drive", "status"], ["drive", "task-result"], ["drive", "update-title"], ["drive", "upload"], ["drive", "version-get"], ["drive", "version-history"], ["doc", "import-file"]]},
+    {"skill": "feishu-cli-storage", "workflow": "drive", "prefixes": [["drive"], ["drive", "download"], ["drive", "export"], ["drive", "export-download"], ["drive", "import"], ["drive", "inspect"], ["drive", "cover"], ["drive", "move"], ["drive", "preview"], ["drive", "pull"], ["drive", "push"], ["drive", "status"], ["drive", "task-result"], ["drive", "update-title"], ["drive", "upload"], ["drive", "version-get"], ["drive", "version-history"], ["doc", "import-file"]]},
     {"skill": "feishu-cli-storage", "workflow": "file-media", "prefixes": [["file"], ["media"]]},
     {"skill": "feishu-cli-storage", "workflow": "wiki", "prefixes": [["wiki"]]},
     {"skill": "feishu-cli-storage", "workflow": "comment", "prefixes": [["comment"], ["drive", "add-comment"]]},
