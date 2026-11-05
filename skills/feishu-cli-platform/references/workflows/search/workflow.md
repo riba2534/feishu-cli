@@ -56,8 +56,8 @@ feishu-cli search docs "季度报告" --count 10 --page-token "<上一页 PageTo
 
 两者底层与官方 CLI 一致，都使用 Search v2（`POST /open-apis/search/v2/doc_wiki/search`），都必须 User Token（没有 `--as`）、
 需要 `search:docs:read`；区别在 CLI 暴露的过滤参数：`search docs` 面向关键词粗筛（类型、所有者、所在群），
-`drive search` 提供文件夹（`--folder-tokens`）、知识空间（`--space-ids`）、创建者/分享者、仅标题/仅评论与排序等扁平 filter，
-按位置或维度精筛时用它。
+`drive search` 提供文件夹（`--folder-tokens`）、知识空间（`--space-ids`）、所有者/原始创建者/分享者、编辑/评论/打开/创建时间窗、
+仅标题/仅评论与排序等扁平 filter，按位置、人或时间精筛时用它。
 
 ```bash
 feishu-cli drive search --query "季度报告" --doc-types DOCX,SHEET --sort edit_time
@@ -75,6 +75,25 @@ feishu-cli drive search --query "项目" --page-token "<上一页 page_token>"
 - `--folder-tokens` 与 `--space-ids` 互斥；`--sort`：default / edit_time / edit_time_asc / open_time / create_time；
   `--page-size` 1-20（默认 15）；`--query` 可空（纯按 filter 浏览）。
 - 标题里的 `<h>...</h>` 高亮标记 CLI 自动剥离；JSON 顶层带 `total`、`has_more`、`page_token`、`items`。
+
+#### 按人与时间窗筛选
+
+```bash
+feishu-cli drive search --created-since 7d --created-by-me --page-size 3         # 我最近 7 天创建的文档
+feishu-cli drive search --opened-since 1m --mine --page-size 3                   # 我拥有、近 30 天打开过的
+feishu-cli drive search --edited-since 2026-10-01 --edited-until 2026-10-31 --doc-types DOCX
+feishu-cli drive search --query "评审" --commented-since 30d -o json
+feishu-cli drive search --original-creator-ids ou_xxx --created-since 1y
+```
+
+- 人：`--creator-ids` / `--mine` 按**所有者**匹配（接口字段名叫 creator_ids，所有权转移后跟着变）；`--original-creator-ids` /
+  `--created-by-me` 按**原始创建者**匹配（不随所有权转移变化）。`--mine` 与 `--creator-ids`、`--created-by-me` 与
+  `--original-creator-ids` 互斥；`--mine` / `--created-by-me` 会先解析当前登录用户的 open_id。
+- 时间窗：`--edited-*`（我编辑过）、`--commented-*`（我评论过）、`--opened-*`（我打开过）、`--created-*`（文档创建时间），
+  各有 `-since` / `-until`。取值 `7d`、`1m`（30 天）、`1y`（365 天）、`YYYY-MM-DD[ HH:MM:SS]`、RFC3339 或 unix 秒。
+- edited/commented 由服务端按小时聚合，非整点会向外取整并在 stderr 提示；opened 单次最多 3 个月，超过 90 天只查最近 90 天的
+  切片并在 stderr 列出全部切片的绝对时间（需要更早的切片时按提示改窗口逐段查），超过 365 天退出码 2。
+- 不传这些 flag 时请求体与旧版一致。
 
 ## 搜索消息
 

@@ -2,7 +2,7 @@
 name: feishu-cli-data
 description: >-
   飞书电子表格 Sheet 与多维表格 Bitable/Base：按范围读写单元格、类型保真整表读写、样式/合并/冻结/行列增删移动与隐藏、筛选与筛选视图、下拉框、原生单元格图片与浮动图片、Markdown 互转与 XLSX/CSV 导出；Bitable 表、字段、记录（结构化筛选、upsert、批量）、视图、链接解析、角色与成员、仪表盘、表单与分享、工作流和数据聚合，支持 --as bot 的 cron 无人值守。用户给出 /sheets/、/base/ 链接或要处理表格数据时使用。不用于：只需通读或总结整张表（feishu-cli-docs）、把本地 XLSX/CSV 文件导入成飞书表格和文档协作者权限（feishu-cli-storage）、图表可视化展示（feishu-cli-visual）、未封装 OpenAPI 透传（feishu-cli-platform）。
-compatibility: Requires feishu-cli v1.43.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.44.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Read Write
 ---
 
@@ -17,7 +17,7 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 |---|---|
 | Sheet 筛选视图与条件、下拉菜单、条件格式（cond-format）、浮动图片 / 单元格图片、批量样式，以及全部 sheet 命令的决策要点 | `references/workflows/sheet/workflow.md` |
 | Sheet 创建与元信息、读写追加、`table-get` / `table-put` 类型保真、行列与子表管理、查找替换、筛选、保护、Markdown 互转 | `references/workflows/sheet/workflow.md`，再读 `references/workflows/sheet/references/basic-commands.md` |
-| Bitable/Base 链接解析（resolve、block）、表、字段、记录（含附件、批量、分页）、视图与视图配置、data-query | `references/workflows/bitable/workflow.md` |
+| Bitable/Base 链接解析（resolve、block）、表（含复制）、字段（含 AI 扩展、按钮绑定工作流）、记录（含附件、批量、分页）、视图与视图配置、data-query、模板中心 | `references/workflows/bitable/workflow.md` |
 | Bitable 角色与协作者、高级权限、工作流、仪表盘与图表块、表单与分享 | `references/workflows/bitable/workflow.md` |
 
 ## 执行规则

@@ -19,10 +19,10 @@
 
 | 模式 | 典型命令 | 行为 |
 |---|---|---|
-| 读类：User 优先，可回退 Bot | doc read/export、doc history list/revert-status、msg list/get/mget/thread-messages/resource-download、chat list、task get/list、calendar get/list/get-event/list-events/freebusy、file meta/stats/download、wiki 读、board 读、slides get；以及不传 `--as` 的 sheet、drive pull/push/status、file list | 显式 flag → `FEISHU_USER_ACCESS_TOKEN` → profile token.json → config 的 `user_access_token` → Bot。已配置 User 但损坏、未绑定 App 或刷新失败时，stderr 告警后改用 Bot；此时结果是 Bot 视角（可能为空或无权限），不要当作本人的结果 |
-| 写类：默认 Bot | doc create/import/content-update/media-insert、doc add/add-callout/add-board、doc history revert、msg send/reply/forward/delete、comment reply、slides 写命令、file/wiki 写命令等 | 不读 token.json；仅显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到用户。日历/任务写命令例外（auto，见下表） |
-| 必须 User | search docs/apps、approval 全部、apps 全部、task my/search/related、calendar rsvp/event-reply、msg flag、vc note transcript、mail 写/规则/签名/模板/thread-modify/thread-trash、drive add-comment/search/secure-label/apply-permission、file quota、wiki space-create、user search `--query`、user search-bot、okr comment create | 无可用 User Token 时报错（退出码 3），不回退 Bot。drive upload/download 不传 `--as` 时同样要求 User，可显式 `--as bot` |
-| 仅 Bot | vc bot meeting-join/meeting-leave | 不读任何 User Token；显式传 `--user-access-token` 报用法错误（退出码 2） |
+| 读类：User 优先，可回退 Bot | doc read/export、doc history list/revert-status、msg list/get/mget/thread-messages/resource-download、chat list、task get/list、task comment get、calendar get/list/get-event/list-events/freebusy、file meta/stats/download、wiki 读、board 读、slides get、slides history list；以及不传 `--as` 的 sheet、drive pull/push/status、file list | 显式 flag → `FEISHU_USER_ACCESS_TOKEN` → profile token.json → config 的 `user_access_token` → Bot。已配置 User 但损坏、未绑定 App 或刷新失败时，stderr 告警后改用 Bot；此时结果是 Bot 视角（可能为空或无权限），不要当作本人的结果 |
+| 写类：默认 Bot | doc create/import/content-update/media-insert、doc add/add-callout/add-board、doc history revert、msg send/reply/forward（含 `omt_` 话题）/delete、comment reply、file/wiki 写命令；不传 `--as` 的 slides、board 写命令 | 不读 token.json；仅显式 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到用户。日历/任务写命令例外（auto，见下表） |
+| 必须 User | search docs/apps、approval 全部、apps 全部、task my/search/related、calendar rsvp/event-reply、msg flag、vc note transcript、mail 写/规则/签名/模板/thread-modify/thread-trash、drive add-comment/search/secure-label/apply-permission、file quota、wiki space-create、user search `--query`、user search-bot、okr comment create/update/delete、msg read-status、mail share-to-chat、minutes upload/update/summary/todo/speaker-replace/word-replace | 无可用 User Token 时报错（退出码 3），不回退 Bot。drive upload/download 不传 `--as` 时同样要求 User，可显式 `--as bot` |
+| 仅 Bot | vc bot meeting-join/meeting-leave/meeting-invite/meeting-end | 不读任何 User Token；显式传 `--user-access-token` 报用法错误（退出码 2） |
 | 仅 Bot（忽略 User Token） | msg merge-forward | 传入的 User Token（flag 或环境变量）被忽略并在 stderr 提示，仍以 Bot 执行 |
 | 固定 App | chat create/link、msg edit/urgent、user list、dept get/children | 没有 User Token 参数，只能用应用身份 |
 
@@ -35,9 +35,9 @@
 | 命令 | 默认 | 特别要求 |
 |---|---|---|
 | bitable 全部 | auto | 定时/无人值守任务显式 `--as bot` |
-| okr 全部 | bot | `cycle list` 默认查 v2 用户周期（两种身份都支持），`--tenant` 查租户周期仅 Bot；部分端点只收 Bot（User 报 99991668，见各命令 `--help` 的权限说明）；`comment create` 忽略 `--as`，必须 User |
+| okr 全部 | bot | `cycle list` 默认查 v2 用户周期（两种身份都支持），`--tenant` 查租户周期仅 Bot；部分端点只收 Bot（User 报 99991668，见各命令 `--help` 的权限说明）；`comment create/update/delete` 忽略 `--as`，必须 User；`weight/reorder/indicator update/objective batch-create/comment get` 同样默认 bot |
 | perm 全部 | 不传 = Bot | 操作用户自己的文档用 `--as user` 或显式 `--user-access-token`；不传 `--as` 时不读 `FEISHU_USER_ACCESS_TOKEN`。Bot 遇 1063002/1063004 会提示改用 User |
-| calendar create-event/update-event/delete-event/attendee add·remove/event-share/event-transfer、task/tasklist 写命令（含 set-ancestor） | auto | 日程与任务是个人资源；操作应用自己的日历/任务时显式 `--as bot` |
+| calendar create-event/update-event/delete-event/attendee add·remove/event-share/event-transfer、task/tasklist 写命令（含 set-ancestor、task comment update/delete） | auto | 日程与任务是个人资源；操作应用自己的日历/任务时显式 `--as bot`。`calendar create-event --meeting-owner-id` 仅 `--as bot`，否则退出码 2 |
 | calendar agenda、calendar event-search | auto | primary 日历与当前身份对应，不能混用两种身份的日历 ID |
 | msg reaction add/list/remove、msg pin/unpin/pins、chat get/update/delete | auto | reaction remove 只能删除同一身份添加的表情 |
 | msg read-users | auto | 只能查调用身份自己发出的消息：按消息发送者选身份，Bot 发的用 `--as bot`，本人发的用 `--as user`；auto 在已登录时走 User，查 Bot 发的消息必须显式 `--as bot` |
@@ -50,10 +50,14 @@
 | attendance user-task query | auto | 不传 `--user-ids` 查本人需要 User；Bot 查询需显式指定目标用户 |
 | mail triage/message/messages/thread | auto | Bot 不支持 `--mailbox me`，必须显式指定有权访问的邮箱 |
 | vc search/detail/recording/notes、vc note detail、vc meeting list-active、minutes search/get/download/apply-permission | user | 端点也接受 Bot，Bot 需应用开通对应 scope（否则 99991672） |
-| vc bot meeting-events | auto | meeting_id 来自用户发现选 user，来自机器人入会选 bot |
+| vc bot meeting-events/meeting-countdown/meeting-message-send/meeting-screenshot | auto | meeting_id 来自用户发现选 user，来自机器人入会选 bot；dry-run 只静态探测身份，不联网 |
+| slides、board 写命令（slides create/add-slide/delete-slide/replace-slide/update-slide/media-upload/history revert/history revert-status，board import/update/clone/svg-import/upload-image/delete/create-notes） | bot | 不传 `--as` 时与「写类：默认 Bot」一致；`--as user|auto` 改用本人身份 |
+| drive preview/cover | auto | 只处理上传文件（type=file）；/wiki/ 链接在凭据解析后解包 |
+| event consume | auto | 只含 user-only 订阅 key 时沿用读类回退；含可用 Bot 的 key 时已配置 User 但不可用直接失败；未登录且所有 key 支持 bot 时用 Bot 注册订阅。`--as bot` 要求所选 key 都支持 bot，否则退出码 2 |
 | user info | bot | `--as user` 走 basic_batch，只返回姓名类字段，适合应用通讯录范围外的同事 |
-| sheet 全部、drive pull/push/status、file list | 不传 = 读类回退 | 显式传 `--as` 后按下方共同规则 |
+| sheet 全部（含 cond-format）、drive pull/push/status、file list | 不传 = 读类回退 | 显式传 `--as` 后按下方共同规则 |
 | drive upload/download | 不传 = 必须 User | 可显式 `--as bot` 或 `--as auto` |
+| drive search `--mine` / `--created-by-me` | 必须 User | 额外解析当前登录用户 open_id 作为过滤条件 |
 | api | auto | `--as bot` 强制 Bot；仅 auto/user 路径解析 User Token |
 | auth token | auto | 导出 token 给外部工具；`--as bot` 不能与 `--user-access-token` 同用 |
 
