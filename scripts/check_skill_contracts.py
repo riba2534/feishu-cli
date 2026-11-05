@@ -124,7 +124,7 @@ def run_contracts(binary: Path) -> list[dict]:
                 assert request["path"] == "/open-apis/attendance/v1/user_tasks/query", request
                 assert request["body"]["check_date_from"] == 20260501 and request["body"]["check_date_to"] == 20260502, request
                 requests.clear()
-                run([*prefix, "--start", "2026-05-01T00:00:00+08:00", "--end", "2026-05-02"], 1)
+                run([*prefix, "--start", "2026-05-01T00:00:00+08:00", "--end", "2026-05-02"], 2)
                 no_requests()
 
             def field_payload():
