@@ -193,10 +193,10 @@ func runDeviceFlow(cfg *config.Config, jsonOutput bool, deviceCode string, noWai
 
 	summary := buildLoginScopeSummary(requestedScope, token.Scope)
 	if jsonOutput {
-		return printJSONLine(buildAuthorizationCompleteEvent(token, summary))
+		return printJSONLine(buildAuthorizationCompleteEvent(token, summary, appID, baseURL))
 	}
 
-	printTokenSuccess(token, summary)
+	printTokenSuccess(token, summary, appID, baseURL)
 	return nil
 }
 
