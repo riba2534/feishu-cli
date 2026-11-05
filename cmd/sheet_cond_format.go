@@ -9,6 +9,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
+	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -55,6 +56,9 @@ var sheetCondFormatListCmd = &cobra.Command{
 			return err
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {
 			return err
@@ -201,6 +205,9 @@ var sheetCondFormatDeleteCmd = &cobra.Command{
 			}})
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {
 			return err
@@ -327,6 +334,9 @@ func runSheetCondFormatWrite(cmd *cobra.Command, args []string, isUpdate bool) e
 		}})
 	}
 
+	if err := config.Validate(); err != nil {
+		return err
+	}
 	target, err := newSheetTarget(cmd, args[0])
 	if err != nil {
 		return err
