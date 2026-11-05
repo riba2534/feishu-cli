@@ -19,6 +19,11 @@ func isOfficePresentation(token string) bool {
 // slidesMediaParentType 根据演示文稿 token 返回上传 media 时使用的 parent_type。
 // 导入型 Office deck 使用 "office_slide_file"，原生 Slides 演示文稿使用 "slide_file"。
 // 同时只接受单分片 upload_all 接口（最大 20 MB），upload_prepare 不支持。
+// SlidesMediaParentType 是 slidesMediaParentType 的导出版本，供 dry-run 预览展示。
+func SlidesMediaParentType(presentationToken string) string {
+	return slidesMediaParentType(presentationToken)
+}
+
 func slidesMediaParentType(presentationToken string) string {
 	if isOfficePresentation(presentationToken) {
 		return "office_slide_file"
