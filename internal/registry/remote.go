@@ -723,6 +723,7 @@ func ResetForTest() {
 	embeddedVersion = ""
 	overlaySource = ""
 	runtimeVersion = ""
+	appliedSupplements = nil
 	refreshOnce = sync.Once{}
 	configuredBrand = brandFeishu
 	enableRemoteMeta = true
