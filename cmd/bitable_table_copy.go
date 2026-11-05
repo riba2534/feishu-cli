@@ -29,6 +29,8 @@ const (
 	tableCopyStateOK     = "success"
 	// tableCopyInvalidTaskCode copy_table_state 对无效 task_id 的业务码（官方归为参数错误）。
 	tableCopyInvalidTaskCode = 800010109
+	// tableCopyStateGoneCode 任务结束后状态已被清理（not_found: status is no longer available）。
+	tableCopyStateGoneCode = 800030110
 )
 
 // 轮询间隔：3s 起步指数退避，封顶 30s（测试可替换）。
@@ -234,6 +236,11 @@ func queryTableCopyState(baseToken, taskID, token string, userTaskID bool) (tabl
 		if userTaskID && client.HasAPICode(err, tableCopyInvalidTaskCode) {
 			return tableCopyState{}, clierr.Usage(fmt.Errorf("--task-id 无效: %w", err))
 		}
+		if client.HasAPICode(err, tableCopyStateGoneCode) {
+			// 任务结束后状态只保留很短时间：此时通常已复制完成，不要重新提交
+			return tableCopyState{}, fmt.Errorf("复制任务状态已不可查询（任务通常已完成，或状态已过期）：目标表即 table copy 输出中的 table.id，"+
+				"用 `feishu-cli bitable table list` 确认是否已存在，请勿重复提交复制: %w", err)
+		}
 		return tableCopyState{}, err
 	}
 	st := tableCopyState{tableID: bitableStr(data, "table_id"), state: strings.ToLower(bitableStr(data, "state"))}
@@ -325,7 +332,9 @@ var bitableTableCopyStatusCmd = &cobra.Command{
 	Long: `POST /open-apis/base/v3/bases/{base_token}/copy_table_state  body {"task_id":"..."}
 
 用 bitable table copy 返回的 task_id 查询一次任务状态；state 为 init/process 时稍后再查。
-无效的 task_id（800010109）按参数错误返回（exit 2）。scope: base:table:create
+无效的 task_id（800010109）按参数错误返回（exit 2）。
+任务结束一段时间后状态会被清理，再查返回 800030110（exit 1，附提示）：此时复制通常已完成，
+目标表即 table copy 输出中的 table.id，用 bitable table list 确认，不要重复提交。scope: base:table:create
 
 示例:
   feishu-cli bitable table copy-status --base-token bascnxxx --task-id <task_id>`,

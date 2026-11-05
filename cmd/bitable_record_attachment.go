@@ -59,7 +59,7 @@ func bitableAttachmentCellBody(recordID, fieldID string, fileTokens []string) ma
 func renderAttachmentDryRun(cmd *cobra.Command, desc string, steps []map[string]any, extra map[string]any) error {
 	o, err := output.ParseOptions(cmd)
 	if err != nil {
-		return err
+		return clierr.Usage(err)
 	}
 	o.OutputFile = "" // dry-run 预览只打 stdout，绝不写 --output（对 download-attachment 的下载路径语义尤其关键）
 	payload := map[string]any{

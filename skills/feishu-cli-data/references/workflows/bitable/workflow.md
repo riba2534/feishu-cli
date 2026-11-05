@@ -129,7 +129,7 @@ feishu-cli bitable copy --base-token <templates[].token> --name "我的项目管
 ```
 
 > 输出 `templates[].{name,introduction,scenarios,token,link,developer,created_at,updated_at}`、`has_more`、`offset`（续翻传 `--offset <offset>`，是不透明游标）；`--limit` 1-100，默认 10（实测）。`link` 含 `/app/` 的是应用模板（BaseApp），不能用 `bitable copy` 复制。用户要"建一个 CRM / 项目管理表"且没有现成 Base 时先搜模板；云盘搜索（drive search）搜不到模板中心。scope: `base:template:read`。
-> 模板 token 能否被 `bitable copy` 接受尚未实测；失败时改为从零建表。
+> 实测：模板中心返回的 token（`link` 不含 `/app/`）可直接用 `bitable copy` 复制成新 Base（可带 `--time-zone`）；`link` 含 `/app/` 的应用模板不能复制。
 
 ### 数据表 table（7 命令）
 
@@ -152,7 +152,7 @@ feishu-cli bitable table copy-status --base-token bscnxxxx --task-id <task_id>  
 
 > **列表分页（table / field / view list）**：服务端按 offset/limit 分页、只返回 `total`（不返回 has_more），不传 limit 时只给 20 条。CLI 默认按 `total` 自动取完（每页 500），输出 `{"tables|fields|views":[...],"total":N}`。实测**字段列表每次请求的顺序不稳定**，跨页拼接会重复/遗漏，因此 CLI 用服务端最大页一次取完并按 id 去重。`table list` 显式传 `--offset/--limit` 时只取单页，还有剩余时输出 `has_more`/`next_offset` 并在 stderr 提示。
 > `table create` 的响应是平铺的表对象 `{"id","name","fields","views"}`，取 ID 用 `jq -r '.id'`（不是 `.table.table_id`）。
-> `table copy` 输出 `{"table":{"id","name"},"range","state","completed","task_id"?,"next_command"?}`（实测 schema 复制直接 `state=success`；all 复制先返回 `state=init` 与 task_id）。**提交时遇网络错误，结果未知**：新表可能已经建好，CLI 不会自动重试，先 `table list` 确认再决定；`--wait` 轮询中断或出错时同样输出 `next_command`，用 `copy-status` 续查，不要重新提交。无效或过期的 task_id 报 800010109，按用法错误返回（退出码 2）。scope: `base:table:create`。
+> `table copy` 输出 `{"table":{"id","name"},"range","state","completed","task_id"?,"next_command"?}`（实测 schema 复制直接 `state=success`；all 复制先返回 `state=init` 与 task_id）。**提交时遇网络错误，结果未知**：新表可能已经建好，CLI 不会自动重试，先 `table list` 确认再决定；`--wait` 轮询中断或出错时同样输出 `next_command`，用 `copy-status` 续查，不要重新提交。无效的 task_id 报 800010109，按用法错误返回（退出码 2）。任务结束一段时间后状态会被清理，再查报 800030110（`status is no longer available`，退出码 1，附提示）：此时复制通常已完成，目标表就是 `table copy` 输出里的 `table.id`，用 `table list` 确认，不要重新提交。scope: `base:table:create`。
 
 ### 字段 field（6 命令 + AI 扩展 extension 3 命令 + 按钮绑定 button-rule 3 命令）
 
@@ -169,17 +169,21 @@ feishu-cli bitable field extension get    --base-token xxx --table-id tblxxx --f
 feishu-cli bitable field extension update --base-token xxx --table-id tblxxx --field-id 摘要 --yes \
   --config '{"extension_id":"builtin_llm_completion","inputs":{"prompt":[{"type":"text","text":"用一句话总结："},{"type":"field_ref","field":"描述"}]}}'
 feishu-cli bitable field extension update --base-token xxx --table-id tblxxx --field-id 摘要 --config '{}' --yes   # 清除
+# update-cells 的端点只认 ID：--table-id / --field-id 传名称时 CLI 先 GET 解析成 tbl / fld ID 再提交
 feishu-cli bitable field extension update-cells --base-token xxx --table-id tblxxx --field-id 摘要 --type column --view-id vewxxx --yes
-feishu-cli bitable field extension update-cells --base-token xxx --table-id tblxxx --field-id 摘要 --type row --record-id recA --record-id recB --yes
+feishu-cli bitable field extension update-cells --base-token xxx --table-id 任务 --field-id 摘要 --type row --record-id recA --record-id recB --yes
 
-# 按钮字段绑定工作流（点按钮触发）：--field-id 可传字段名，先 GET 解析成 fld ID；--workflow-id 必须 wkf 前缀
+# 按钮字段：button_config.title 必填（只传 type=button 报 800010701 invalid_request: Required）
+feishu-cli bitable field create --base-token xxx --table-id tblxxx \
+  --config '{"name":"审批按钮","type":"button","button_config":{"title":"点击按钮"}}'
+# 按钮字段绑定工作流（点按钮触发）：--table-id / --field-id 可传名称，先 GET 解析成 tbl / fld ID；--workflow-id 必须 wkf 前缀
 feishu-cli bitable field button-rule bind   --base-token xxx --table-id tblxxx --field-id 审批按钮 --workflow-id wkfxxx
 feishu-cli bitable field button-rule get    --base-token xxx --table-id tblxxx --field-id 审批按钮
 feishu-cli bitable field button-rule unbind --base-token xxx --table-id tblxxx --field-id 审批按钮
 ```
 
-> **AI 扩展（实测）**：`extension get` 返回 `{"current_extension":null}` 表示未配置；`update` 成功后返回新的 `current_extension`。`--config` 本地严格校验：`extension_id` 只接受 `builtin_llm_completion`，`inputs.prompt` 至少一段，`type=text` 带 `text`、`type=field_ref` 带 `field`（字段名或 ID），出现未知字段直接报用法错误（退出码 2）；`{}` 表示清除。`update` 与 `update-cells` 是高危写：交互终端会二次确认，非交互（Agent/cron）必须加 `--yes`，否则退出码 10、不执行。`update-cells --type column` 会改写视图内全部记录的该字段，`--type row` 必须给 `--record-id`。scope：get `base:field:read`、update `base:field:update`、update-cells `base:record:update`。
-> **按钮绑定**：先 `workflow create` 建工作流、`field create` 建按钮字段，再 `button-rule bind`；不要把 workflow_id 写进字段 JSON。绑定与启停无关，用 `button-rule get` 读回确认（未绑定时 `bound=false`、`target=null`），需要生效再 `workflow enable`。绑定失败时保留已建的工作流和字段直接重试。`get` 用在非按钮字段上报 800004098 `field is not button field`（实测）。scope：`base:field:read` + `base:field:update`。
+> **AI 扩展（实测）**：`extension get` 返回 `{"current_extension":null}` 表示未配置；`update` 成功后返回新的 `current_extension`。`--config` 本地严格校验：`extension_id` 只接受 `builtin_llm_completion`，`inputs.prompt` 至少一段，`type=text` 带 `text`、`type=field_ref` 带 `field`（字段名或 ID），出现未知字段直接报用法错误（退出码 2）；`{}` 表示清除。`update` 与 `update-cells` 是高危写：交互终端会二次确认，非交互（Agent/cron）必须加 `--yes`，否则退出码 10、不执行。`update-cells --type column` 会改写视图内全部记录的该字段，`--type row` 必须给 `--record-id`。`get`/`update` 的路径服务端直接接受表名和字段名；`update-cells` 的 `update_cells` 端点不认名称（直接传名称报 800004000 `field not exist` / `result length is 0`），CLI 会先 GET 数据表（`--table-id` 非 `tbl` 前缀时）和字段解析出规范 ID，`--dry-run` 的 `steps` 列出这几步。scope：get `base:field:read`、update `base:field:update`、update-cells `base:record:update`（名称解析另需 `base:table:read`/`base:field:read`）。
+> **按钮绑定**：先 `workflow create` 建工作流（`ButtonTrigger`，见下方「工作流」示例）、`field create` 建按钮字段（`button_config.title` 必填），再 `button-rule bind`；`button_rule` 端点同样不认表名，CLI 先把非 `tbl` 前缀的 `--table-id` 解析成 tbl ID；不要把 workflow_id 写进字段 JSON。绑定与启停无关，用 `button-rule get` 读回确认（未绑定时 `bound=false`、`target=null`），需要生效再 `workflow enable`。绑定失败时保留已建的工作流和字段直接重试。`get` 用在非按钮字段上报 800004098 `field is not button field`（实测）。scope：`base:field:read` + `base:field:update`。
 
 > **v3 字段 JSON 形状（实测）**：判别式是顶层 `type`，属性也在顶层（select 的 `options`/`multiple`、
 > auto_number 的 `style.rules`），**不要包 `property`**（v1 形状，v3 报 Unrecognized key）。
@@ -424,12 +428,17 @@ DSL 要点（官方 LiteQuery 协议，实测可用；旧示例 `{"dimensions":[
 feishu-cli bitable workflow list   --base-token xxx --status enabled           # 自动翻页取全部
 feishu-cli bitable workflow list   --base-token xxx --page-size 50 --page-token TOKEN   # 只取指定页
 feishu-cli bitable workflow get    --base-token xxx --workflow-id wkfxxxx          # 含 steps
-feishu-cli bitable workflow create --base-token xxx --config '{"title":"My Workflow","steps":[...]}'
+feishu-cli bitable workflow create --base-token xxx --config '{"client_token":"wf-20260101-0001","title":"My Workflow","steps":[...]}'
+# 按钮触发 → 新增记录（实测可建；建好后用 field button-rule bind 绑到按钮字段）
+feishu-cli bitable workflow create --base-token xxx --config '{"client_token":"wf-20260101-0002","title":"按钮新增记录","steps":[
+  {"id":"trigger_1","type":"ButtonTrigger","title":"点击按钮","next":"action_1","data":{"button_type":"buttonField","table_name":"任务"}},
+  {"id":"action_1","type":"AddRecordAction","title":"新增记录","next":null,"data":{"table_name":"任务","field_values":[{"field_name":"描述","value":[{"value_type":"text","value":"按钮触发"}]}]}}]}'
 feishu-cli bitable workflow update --base-token xxx --workflow-id wkfxxxx --config-file wf.json  # PUT 整体替换
 feishu-cli bitable workflow enable  --base-token xxx --workflow-id wkfxxxx
 feishu-cli bitable workflow disable --base-token xxx --workflow-id wkfxxxx
 ```
 
+> `create` 的 `client_token` **必填且每次创建唯一**（服务端幂等键，可用时间戳或 UUID；重试同一次创建沿用同一个值）。缺失时报 800004006 `client_token: does not validate as minstringlength(1)`（实测）。新建的工作流默认 `status=disabled`，需要时 `workflow enable`。
 > `update` 是 PUT 整体替换，未提供的字段不保留；`workflow_id` 为 `wkf` 前缀。
 > `create/update` 会本地预检 AI 步骤：`AIAnalysisAction` 的 `analysis_table_names` 必须是字符串数组、`identity_type` 只能是 `maker|triggerPersonal`；`AIClassificationBranch` 不支持 `mode`（只有互斥模式），`classes` 至少 2 个、`name` 非空不重复、`desc` 为字符串。
 > 提醒触发器 `ReminderTrigger` 的 `offset`：触发时间 = 日期字段时间 + `offset` × `unit`，**负数 = 提前、正数 = 延后**（如 `{"offset":-1,"unit":"DAY","hour":9}` 是截止前一天 9 点）。
@@ -617,7 +626,7 @@ Bot 身份需应用开通对应 scope，且 Bot 是目标多维表格的协作�
 
 - **base_token / app_token 是同一个值**：飞书新旧文档用两种叫法，CLI 只认 `--base-token`（`--app-token` 已删除）；base/v3 所需的 `X-App-Id` header 自动注入
 - **JSON 输入方式按命令区分**（以 `--help` 为准）：表/字段、记录 `upsert`/`batch-create`/`batch-update`/`search`、视图 `create` 与 `view-*-set`、角色 `create/update`、仪表盘与图表块 `create/update`、表单 `create/patch` 与 `form field create/patch/delete`、`workflow create/update`、`data-query` 用 `--config`（inline JSON）或 `--config-file`（文件路径）；`bitable create` 只有 `--table-name/--fields`，`table create` 另有 `--fields` 简写；`form submit` 用 `--content/--content-file`；`record upload-attachment` 用 `--file`；删除、`view rename`、`copy`、`advperm`、`role member`、`share update`、`bitable update` 等其余写命令用各自的专用 flag
-- **--dry-run 预览（全部命令支持）**：所有 bitable 叶子命令（读与写）都支持 `--dry-run`，打印 `{"api","method","path","params","body"}`（多步编排如 `button-rule`、`table copy --wait`、附件上传打印 `steps`/`api` 步骤列表），不发请求、不读凭据——没有配置 App 凭证或未登录时也能预览（退出码 0）。写前（尤其删除、批量写、`view-*-set` 全量替换）先 `--dry-run` 核对路径和请求体。传 `/wiki/` 链接作 `--base-token` 时 dry-run 不解析（路径里以 `<wiki:token>` 占位）。download-attachment 的 dry-run 只打 stdout，不写 `--output`
+- **--dry-run 预览（全部命令支持）**：所有 bitable 叶子命令（读与写）都支持 `--dry-run`，打印 `{"api","method","path","params","body"}`（多步编排如 `button-rule`、`table copy --wait`、附件上传打印 `steps`/`api` 步骤列表），不发请求、不读凭据——没有配置 App 凭证或未登录时也能预览（退出码 0）。写前（尤其删除、批量写、`view-*-set` 全量替换）先 `--dry-run` 核对路径和请求体。传 `/wiki/` 链接作 `--base-token` 时 dry-run 不解析（路径里以 URL 编码的 `%3Cwiki:token%3E` 占位）；`button-rule`、`field extension update-cells` 的后续步骤用未编码的 `<resolved_table_id>` / `<resolved_field_id>` 占位。`--jq` 在发请求前编译校验（语法错误、未定义函数如误写的 `-r`），非法即退出码 2、不发任何请求（含 `--dry-run`）。download-attachment 的 dry-run 只打 stdout，不写 `--output`
 - **--format / --jq 输出控制**：除 `bitable create/get/copy`（自带 `-o json`：create/copy 默认输出文本、加 `-o json` 输出 JSON，get 默认即 JSON）与 `record download-attachment` 外，全部命令支持 `--format json|pretty|table|ndjson|csv`（默认 json）+ `--jq`（内置 gojq），如 `field list --jq '.fields[] | {id,name,type}' --format table`。不传时输出与旧版逐字节一致
 - **退出码**：参数缺失或非法（如 `--record-id 必填`、`解析 --config 失败`、`--limit` 越界、非法 `--format`）一律退出码 2，且在读取凭据、联网之前报出；修正参数即可，不要重试。缺凭据退出码 3，需要确认未带 `--yes` 退出码 10
 - **确认门禁**：存量删除命令（`table/field/view/role/record delete`、`record batch-delete`、`dashboard/form delete`）执行即生效、不可恢复、**无确认门禁**（兼容既有 cron），删除前先 `--dry-run` 并读回确认目标。需要 `--yes`（非交互缺失时退出码 10、不执行）的是：不带 `--keep-field` 的 `form field delete`、`block delete`、`field extension update`、`field extension update-cells`

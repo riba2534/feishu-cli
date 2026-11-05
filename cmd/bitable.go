@@ -42,7 +42,8 @@ var bitableCmd = &cobra.Command{
 参数错误退出码 2；block delete、field extension update/update-cells 等高危写需 --yes（非交互缺失时退出码 10）。
 
 身份选择 --as（底层 API 同时支持 User / Tenant 身份）：
-  auto  默认。User 优先、Tenant 兜底——已登录用 User Token，未登录/过期自动回落 App Token
+  auto  默认。User 优先——已登录用 User Token（过期自动刷新）；未配置 User Token 时回落 App Token；
+        已配置但解析/刷新失败 fail-closed（exit 3，不静默切 Bot，按提示重新 auth login 或显式 --as bot）
   bot   强制 App Token（无需 auth login，永不过期，适合 cron 无人值守）
   user  强制 User Token（缺失报错，先 feishu-cli auth login）
 使用 --base-token 传入多维表格 token（从 URL 里的 /base/{token} 片段获取）。
@@ -58,7 +59,6 @@ func init() {
 	rootCmd.AddCommand(bitableCmd)
 	// --as 身份选择：persistent flag，所有 bitable 子命令继承。
 	// base/v3 与 bitable/v1 API 本身同时支持 User / Tenant 身份，
-	// 默认 auto（User 优先、Tenant 兜底）让未登录/cron 场景自动用 App Token。
-	bitableCmd.PersistentFlags().String("as", "auto",
-		"身份: bot(App Token) | user(User Token) | auto(User 优先 Tenant 兜底, 默认)")
+	// 默认 auto：未配置 User Token（cron 场景）自动用 App Token；已配置但不可用 fail-closed。
+	bitableCmd.PersistentFlags().String("as", "auto", identityAsFlagHelp)
 }

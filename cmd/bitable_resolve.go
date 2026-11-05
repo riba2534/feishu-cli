@@ -284,7 +284,7 @@ base 链接不带 table=、表单分享、BaseApp 链接都是离线解析，不
 		case "view_share_url", "dashboard_share_url", "workspace_url", "add_record_url":
 			return clierr.Usagef("这是多维表格%s链接，CLI 无法解析；请在浏览器中打开，或提供多维表格本身的链接（/base/ 或 /wiki/）", classifyBaseShareURL(raw))
 		default:
-			return clierr.Usagef("不是受支持的多维表格链接；支持 /base/、/wiki/、/record/、/share/base/form/ 链接")
+			return clierr.Usagef("不是受支持的多维表格链接；支持 /base/、/wiki/、/record/、/app/、/share/base/form/ 链接")
 		}
 	},
 }
