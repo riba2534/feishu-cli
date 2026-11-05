@@ -68,7 +68,7 @@ var sheetReadCmd = &cobra.Command{
 			for i, row := range cellRange.Values {
 				rowStrs := make([]string, len(row))
 				for j, cell := range row {
-					rowStrs[j] = fmt.Sprintf("%v", cell)
+					rowStrs[j] = formatSheetCellText(cell)
 				}
 				fmt.Printf("  [%d] %s\n", i+1, strings.Join(rowStrs, " | "))
 			}
@@ -76,6 +76,44 @@ var sheetReadCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// formatSheetCellText 把单元格值渲染为文本模式输出：富文本段（链接、@人等对象数组）拼成可读文本，
+// 带链接的段渲染为 text(link)；其余标量沿用 %v。只影响文本模式，JSON 输出不经过这里。
+func formatSheetCellText(cell any) string {
+	switch v := cell.(type) {
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, seg := range v {
+			parts = append(parts, formatSheetSegmentText(seg))
+		}
+		return strings.Join(parts, "")
+	case map[string]any:
+		return formatSheetSegmentText(v)
+	default:
+		return fmt.Sprintf("%v", cell)
+	}
+}
+
+// formatSheetSegmentText 渲染单个富文本段：有 text 与 link 时为 text(link)，只有 text 时为 text；
+// 无法识别的结构回退为 %v，不丢信息。
+func formatSheetSegmentText(seg any) string {
+	m, ok := seg.(map[string]any)
+	if !ok {
+		return fmt.Sprintf("%v", seg)
+	}
+	text, hasText := m["text"].(string)
+	link, _ := m["link"].(string)
+	switch {
+	case hasText && link != "" && link != text:
+		return text + "(" + link + ")"
+	case hasText:
+		return text
+	case link != "":
+		return link
+	default:
+		return fmt.Sprintf("%v", seg)
+	}
 }
 
 func init() {
