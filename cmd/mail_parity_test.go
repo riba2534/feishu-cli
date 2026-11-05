@@ -12,6 +12,7 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 func newMailSendTimeTestCmd(confirm bool, sendTime string) *cobra.Command {
@@ -235,6 +236,8 @@ func TestMailShareToChatTwoSteps(t *testing.T) {
 // 无凭据下静态预览类 --dry-run exit 0；去掉 --dry-run 仍 exit 3（A2：config.Validate 移到 dry-run 之后）。
 func TestImMailDryRunWithoutCredentials(t *testing.T) {
 	isolateMsgTokenTestEnv(t)
+	viper.Reset() // 清掉其他用例 stub 服务器留下的 app_id/base_url，模拟真正无配置的环境
+	t.Cleanup(viper.Reset)
 	cases := [][]string{
 		{"mail", "rule-create", "--name", "e2e", "--condition", "from:contains:a@example.com", "--action", "star"},
 		{"mail", "rule-update", "--rule-id", "1", "--name", "x"},
