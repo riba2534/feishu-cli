@@ -18,16 +18,8 @@ type CreateNewCommentReq struct {
 	Anchor map[string]any
 }
 
-// CreateNewComment 创建新评论（V2 API，支持富文本 + 局部评论）
-// API: POST /open-apis/drive/v1/files/{file_token}/new_comments
-// body: {file_type, reply_elements, [anchor.block_id]}
-// 返回原始 data 字段（含 comment_id、create_time、is_whole 等）
-func CreateNewComment(req CreateNewCommentReq, userAccessToken string) (json.RawMessage, error) {
-	client, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
+// BuildNewCommentBody 构造 new_comments 请求体（真实请求与 --dry-run 预览共用）。
+func BuildNewCommentBody(req CreateNewCommentReq) map[string]any {
 	body := map[string]any{
 		"file_type":      req.FileType,
 		"reply_elements": req.ReplyElements,
@@ -39,8 +31,26 @@ func CreateNewComment(req CreateNewCommentReq, userAccessToken string) (json.Raw
 			"block_id": req.BlockID,
 		}
 	}
+	return body
+}
 
-	apiPath := fmt.Sprintf("/open-apis/drive/v1/files/%s/new_comments", url.PathEscape(req.FileToken))
+// NewCommentAPIPath 返回 new_comments 端点路径（file_token 做 PathEscape）。
+func NewCommentAPIPath(fileToken string) string {
+	return fmt.Sprintf("/open-apis/drive/v1/files/%s/new_comments", url.PathEscape(fileToken))
+}
+
+// CreateNewComment 创建新评论（V2 API，支持富文本 + 局部评论）
+// API: POST /open-apis/drive/v1/files/{file_token}/new_comments
+// body: {file_type, reply_elements, [anchor.block_id]}
+// 返回原始 data 字段（含 comment_id、create_time、is_whole 等）
+func CreateNewComment(req CreateNewCommentReq, userAccessToken string) (json.RawMessage, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	body := BuildNewCommentBody(req)
+	apiPath := NewCommentAPIPath(req.FileToken)
 
 	tokenType, opts := resolveTokenOpts(userAccessToken)
 	resp, err := client.Post(Context(), apiPath, body, tokenType, opts...)

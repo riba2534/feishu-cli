@@ -49,10 +49,6 @@ var listCommentsCmd = &cobra.Command{
   feishu-cli comment list doccnXXX --type docx --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken := args[0]
 		fileType, _ := cmd.Flags().GetString("type")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
@@ -75,6 +71,10 @@ var listCommentsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		res, err := collectListPages(pageOpts, func(pageToken string) ([]*client.Comment, string, bool, error) {

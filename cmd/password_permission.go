@@ -47,12 +47,18 @@ var passwordCreateCmd = &cobra.Command{
   feishu-cli perm password create DOC_TOKEN --doc-type sheet`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		docToken, docType, err := resolvePermTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printPermDryRun(cmd, "Create document share password", "POST",
+				permAPIPath("/open-apis/drive/v1/permissions/%s/public/password", docToken), map[string]any{"type": docType}, nil)
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
-
-		docToken := args[0]
-		docType, _ := cmd.Flags().GetString("doc-type")
 
 		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {
@@ -84,12 +90,18 @@ var passwordUpdateCmd = &cobra.Command{
   feishu-cli perm password update DOC_TOKEN --doc-type sheet`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		docToken, docType, err := resolvePermTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printPermDryRun(cmd, "Refresh document share password", "PUT",
+				permAPIPath("/open-apis/drive/v1/permissions/%s/public/password", docToken), map[string]any{"type": docType}, nil)
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
-
-		docToken := args[0]
-		docType, _ := cmd.Flags().GetString("doc-type")
 
 		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {
@@ -121,12 +133,18 @@ var passwordDeleteCmd = &cobra.Command{
   feishu-cli perm password delete DOC_TOKEN --doc-type sheet`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		docToken, docType, err := resolvePermTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printPermDryRun(cmd, "Delete document share password", "DELETE",
+				permAPIPath("/open-apis/drive/v1/permissions/%s/public/password", docToken), map[string]any{"type": docType}, nil)
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
-
-		docToken := args[0]
-		docType, _ := cmd.Flags().GetString("doc-type")
 
 		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {

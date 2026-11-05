@@ -49,10 +49,6 @@ var deleteFileCmd = &cobra.Command{
   feishu-cli file delete fldcnXXX --type folder --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken := strings.TrimSpace(args[0])
 		fileType, _ := cmd.Flags().GetString("type")
 		force, _ := cmd.Flags().GetBool("force")
@@ -76,6 +72,10 @@ var deleteFileCmd = &cobra.Command{
 					{"method": "GET", "path": "/open-apis/drive/v1/files/task_check", "params": map[string]any{"task_id": "<task_id>"}, "desc": "返回 task_id 时轮询"},
 				},
 			})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		userAccessToken := resolveOptionalUserToken(cmd)

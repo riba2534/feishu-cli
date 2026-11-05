@@ -24,13 +24,14 @@
 ## 适用范围与边界
 
 - 本工作流：`vc search/detail/recording/notes`、`vc note detail/transcript`、`vc meeting list-active`、
-  `vc bot meeting-join/meeting-leave/meeting-events`、`minutes search/get/download/apply-permission`。
+  `vc bot meeting-join/meeting-leave/meeting-events`、会中控制 `vc bot meeting-countdown/meeting-message-send/
+  meeting-screenshot/meeting-invite/meeting-end`、`minutes search/get/download/apply-permission`，
+  以及妙记写命令 `minutes upload/update/summary/todo/speaker-replace/word-replace`。
 - 创建或修改日程、找共同空闲时间、预订会议室：`feishu-cli-work` 的 calendar 工作流
   （`feishu-cli-work/references/workflows/calendar/workflow.md`）。
 - 普通纪要的逐字稿是一篇云文档，用 `doc export` 导出（`feishu-cli-docs/references/workflows/export/workflow.md`）。
 - 订阅"会议开始/结束、纪要已生成、录制/逐字稿已生成"等实时事件（`vc.meeting.*`、`vc.note.generated_v1`、
   `vc.recording.*`）：`feishu-cli-messaging/references/workflows/event/workflow.md`。
-- CLI 不提供妙记编辑类命令，也不提供会中控制（邀请、结束会议、会中发消息、截图、倒计时）。
 
 ## 标识与对象关系
 
@@ -55,9 +56,14 @@
 | `vc note transcript` | 只支持 User（没有 `--as`） |
 | `vc bot meeting-join` / `meeting-leave` | 只支持 Bot：只用 App 凭证，不读取 `FEISHU_USER_ACCESS_TOKEN`；传 `--user-access-token` 报用法错误（exit 2） |
 | `vc bot meeting-events` | `--as bot\|user\|auto`，默认 auto；必须与 `meeting_id` 的来源身份一致 |
+| `vc bot meeting-countdown` / `meeting-message-send` / `meeting-screenshot` | `--as bot\|user\|auto`，默认 auto（规则同 `meeting-events`） |
+| `vc bot meeting-invite` / `meeting-end` | 只支持 Bot；传 `--user-access-token` 报用法错误（exit 2） |
+| `minutes upload/update/summary/todo/speaker-replace/word-replace` | 只支持 User（没有 `--as`） |
 
 - `--as auto`：User 优先、未配置时回退 Bot；已配置 User 但解析或刷新失败时直接报错，不静默切 Bot。
-  `meeting-events --dry-run` 只做静态身份探测（不联网、不刷新、不写 token），预览 JSON 含 `"as"`。
+  `meeting-events` 与会中控制命令的 `--dry-run` 只做静态身份探测（不联网、不刷新、不写 token），预览 JSON 含 `"as"`。
+- **预览**：本工作流的写命令与会中控制命令都支持 `--dry-run`，不读取凭据、不联网（无凭据环境 exit 0）；
+  参数校验先于预览与凭据检查，参数错误一律 exit 2。
 - `--as bot` 需要应用侧开通对应 scope，缺失时报 99991672（重新 `auth login` 无法解决）。即使 scope 齐全，
   Bot 对用户的会议和妙记通常也没有资源权限（实测 `minutes get --as bot` 读用户妙记返回 2091005），
   读取用户自己的会议、纪要和妙记时用默认的 user。
@@ -89,7 +95,9 @@ feishu-cli auth check --scope "vc:meeting.search:read vc:note:read minutes:minut
 4. **会中与会后**：进行中的会议用 `vc meeting list-active` + `vc bot meeting-events`；会议结束后不要再拉会中事件
    （实测返回 120002/120003），改用 `vc detail` / `vc notes` 读会后产物。会议刚结束时纪要和妙记可能还在生成。
 5. **需要用户同意的操作**：`minutes apply-permission` 会通知妙记所有者；`meeting-join` / `meeting-leave`
-   会让机器人进出会议、参会人可见。执行前说明影响并征得同意；验证参数只用 `--dry-run`。
+   会让机器人进出会议、参会人可见；会中控制（倒计时、会中发消息、截图、邀请、结束会议）对全体参会人可见，
+   `meeting-end` 会结束整场会议；妙记写命令会改写他人可见的标题、摘要、待办与逐字稿。执行前说明影响并征得同意；
+   验证参数只用 `--dry-run`。
 
 ## 命令：搜索与定位会议
 
@@ -165,6 +173,7 @@ feishu-cli vc notes --calendar-event-ids <event_id> -o json
 feishu-cli vc note detail <note_id>
 feishu-cli vc note transcript <note_id> --output transcript.md
 feishu-cli vc note transcript <note_id> --format plain_text --locale en_us --output transcript.txt
+feishu-cli vc note transcript <note_id> --output transcript.md --overwrite   # 明确覆盖已有文件（不告警）
 ```
 
 - `detail` 固定输出 JSON（没有 `-o`）：`note.note_display_type`（1=普通纪要，2=统一纪要）、`note.artifacts[]`
@@ -174,7 +183,9 @@ feishu-cli vc note transcript <note_id> --format plain_text --locale en_us --out
 - `--format` 取 `markdown`（默认）或 `plain_text`；旧值 `text` 按 `plain_text` 处理并在 stderr 提示。
   `--locale` 缺省时飞书品牌为 `zh_cn`、Lark 品牌为 `en_us`。
 - 自动翻页拉全量；任一页失败、游标不前进、超过 500 页或结果为空都会报错，不会输出半截逐字稿。
-- `--output` 写文件且会直接覆盖已有文件；不传时打印到 stdout。`121005` 表示当前身份无该纪要阅读权限（exit 3）。
+- `--output` 写文件；目标已存在时**默认仍覆盖**（保持历史行为），但未传 `--overwrite` 会在 stderr 告警
+  （提醒可能替换手工修订过的逐字稿）；传 `--overwrite` 表示确认覆盖、不告警。不传 `--output` 时打印到 stdout。
+  `121005` 表示当前身份无该纪要阅读权限（exit 3）。
 
 ## 命令：妙记
 
@@ -232,9 +243,34 @@ feishu-cli minutes download --minute-tokens obcnxxxx --url-only
 
 ```bash
 feishu-cli minutes apply-permission --minute-token obcnxxxx --perm view
+feishu-cli minutes apply-permission --minute-token obcnxxxx --perm view --dry-run
 ```
 
-- `--perm` 取 `view` 或 `edit`。申请会通知妙记所有者，执行前先征得用户同意；没有 `--dry-run`。
+- `--perm` 取 `view` 或 `edit`。申请会通知妙记所有者，执行前先征得用户同意；先用 `--dry-run` 预览（不读取凭据、不联网）。
+
+### 妙记写命令
+
+```bash
+# 从云盘音视频生成妙记（本地文件先 drive upload 得到 file_token）
+feishu-cli minutes upload --file-token boxcnxxx
+feishu-cli minutes update obcnxxx --topic "周会"
+feishu-cli minutes summary obcnxxx --summary @summary.md           # 整体替换 AI 摘要；也接受直接文本或 -（stdin）
+feishu-cli minutes todo obcnxxx --operation add --todo "补充测试报告" --is-done=false
+feishu-cli minutes todo obcnxxx --todos @todos.json --dry-run      # 批量，可混合 add/update/delete
+feishu-cli minutes speaker-replace obcnxxx --from-speaker-id <speaker_id> --to-user-id ou_xxx
+feishu-cli minutes word-replace obcnxxx --replace-words '[{"source_word":"飞树","target_word":"飞书"}]'
+```
+
+- 全部只支持 User；token 位置参数可写妙记链接（`https://example.feishu.cn/minutes/obcnxxx`）；全部支持 `--dry-run`
+  （不读取凭据、不联网）。没有确认门禁（官方均为普通写操作），但会改写他人可见的妙记内容，执行前须征得用户同意。
+- 请求：`upload` POST `/minutes/v1/minutes/upload`（输出 `minute_url` 与解析出的 `minute_token`；ASR/AI 配额不足 `2091008`
+  单独提示；文件 ≤6GB、≤6 小时）；`update` PATCH `/minutes/{token}`；`summary` PUT `.../summary`；`todo` POST `.../todo`；
+  `speaker-replace` PUT `.../transcript/speaker`；`word-replace` PUT `.../transcript/word`。
+- `--summary` / `--todo` / `--todos` / `--replace-words` 支持直接值、`@file` 与 `-`（stdin），`@@` 开头表示字面量 `@`。
+- `todo`：单条 `--operation add|update|delete`（add/update 需 `--todo` 与显式 `--is-done`，update/delete 需 `--todo-id`），
+  与 `--todos` 批量互斥；`todo_id` 先用 `minutes get <token> --todo` 读取。
+- `word-replace`：`source_word` 不能为空且不能重复（违反时 exit 2）；按服务端 `replace_word_counts` 输出命中与未命中的词，
+  全部未命中时报错。
 
 ## 命令：进行中的会议与会中事件
 
@@ -284,6 +320,31 @@ feishu-cli vc bot meeting-leave --meeting-id 6911188411932033028 --dry-run
 - `meeting-leave --meeting-id` 用长数字 `meeting_id`（入会返回结果或 `list-active` 中获取）。
 - `--dry-run` 只打印请求方法、路径、请求体和 `"as": "bot"`，不调用接口；`-o json` 输出原始响应。
 - 入会与离会对参会人可见，真实执行前必须得到用户明确同意。
+
+## 命令：会中控制
+
+```bash
+feishu-cli vc bot meeting-countdown --meeting-id 6911188411932033028 --action set --duration 10 --reminder-before-end 2 --dry-run
+feishu-cli vc bot meeting-countdown --meeting-id 6911188411932033028 --action close_window --dry-run
+feishu-cli vc bot meeting-message-send --meeting-id 6911188411932033028 --text "会议还剩 5 分钟" --uuid remind-5min --dry-run
+feishu-cli vc bot meeting-message-send --meeting-id 6911188411932033028 --emoji-type THUMBSUP --dry-run
+feishu-cli vc bot meeting-screenshot --meeting-id 6911188411932033028 --output ./shot.jpg --dry-run
+feishu-cli vc bot meeting-invite --meeting-id 6911188411932033028 --type selected --open-ids ou_xxx,ou_yyy --dry-run
+feishu-cli vc bot meeting-end --meeting-id 6911188411932033028 --dry-run
+```
+
+- 全部用长数字 `meeting_id`（9 位会议号 exit 2），端点均在 `POST /open-apis/vc/v1/bots/` 下，`--dry-run` 不读取凭据、不联网。
+- `meeting-countdown --action`：`set`（设置，`--duration` 分钟必填，可选 `--reminder-before-end`（须小于 duration）与
+  `--need-play-audio-at-end`）/ `prolong`（延长，`--duration` 必填）/ `end_in_advance`（提前结束）/ `close_window`（关闭窗口）；
+  非 set/prolong 传 `--duration`、非 set 传提醒或提示音参数都是用法错误。
+- `meeting-message-send`：`--text`（≤48KB）与 `--emoji-type` 二选一，未传 `--msg-type` 时按其推断；`--uuid` 幂等键（≤128 字节）。
+- `meeting-screenshot`：响应为 JPEG 原始字节（≤8MB，校验 JPEG 标记），保存到 `--output`（默认
+  `meeting-screenshots/<meeting_id>-<UTC 时间>.jpg`，父目录自动创建），输出 `{meeting_id, path, size_bytes, content_type, sha256}`。
+  输出路径在任何网络请求前校验：`~/.ssh` 等敏感目录直接 exit 2；目标已存在且未传 `--overwrite` 时 exit 2。
+- `meeting-invite`（仅 Bot）：`--type all_suggested`（邀请全部建议参会人，不能带 `--open-ids`）/ `selected`（`--open-ids`
+  必填，只接受 `ou_` 开头的用户 open_id，去重后最多 200 个）。
+- `meeting-end`（仅 Bot，机器人须为主持人）：**结束整场会议**、所有参会人被移出；只让机器人离开用 `meeting-leave`。
+  带确认门禁：非交互环境未带 `--yes` 以 exit 10 拒绝、不发请求。
 
 ## 典型工作流
 
@@ -352,7 +413,13 @@ feishu-cli vc bot meeting-events --meeting-id <meeting_id> --as user --page-all 
 | `minutes download` | `minutes:minutes.media:export` |
 | `minutes apply-permission` | `minutes:permission:apply` |
 | `vc meeting list-active` / `vc bot meeting-events` | User：`vc:meeting.meetingevent:read`；Bot：应用开通 `vc:meeting.meetingevent:read` 或 `vc:meeting.bot.join:write` 任一（99991672 提示实测） |
-| `vc bot meeting-join` / `meeting-leave` | 应用开通 `vc:meeting.bot.join:write` |
+| `vc bot meeting-join` / `meeting-leave` / `meeting-invite` | 应用开通 `vc:meeting.bot.join:write` |
+| `vc bot meeting-end` | 应用开通 `vc:meeting.bot.manage:write` |
+| `vc bot meeting-countdown` | `vc:meeting.interaction:write` |
+| `vc bot meeting-message-send` | `vc:meeting.message:write` |
+| `vc bot meeting-screenshot` | `vc:meeting.realtime:read` |
+| `minutes upload` | `minutes:minutes.upload:write` |
+| `minutes update/summary/todo/word-replace` | `minutes:minutes:update`（`speaker-replace` 另需 `minutes:minutes:readonly`） |
 
 User 路径缺 scope 时执行 `feishu-cli auth login --scope "<所需 scope>"`，或 `feishu-cli auth login --domain vc --domain minutes --recommend`；
 Bot 路径的 scope 在飞书开放平台的应用权限管理页面开通并发布版本，重新登录无法解决。
@@ -372,7 +439,8 @@ Bot 路径的 scope 在飞书开放平台的应用权限管理页面开通并发
 | `120002` | 读会中事件被拒：主持人未开启 AI 纪要或未允许 agent 入会 | 请主持人开启后重试；会议已结束时改读会后产物 |
 | `120003` | 当前身份不在该会议中（实测对已结束会议也返回） | 核对 `--as` 与 `meeting_id` 来源；会议已结束改用 `vc detail` / `vc notes` |
 
-- 业务错误码随 HTTP 4xx 下发时也按业务码处理，错误信息附 `log_id` 便于排查；退出码：用法错误 2、鉴权或权限 3。
+- 业务错误码随 HTTP 4xx 下发时也按业务码处理，错误信息附 `log_id` 便于排查；退出码：用法错误 2、鉴权或权限 3、
+  `meeting-end` 未确认 10。
 - 批量命令的退出码：`vc notes` 任一条目失败为 1；`vc recording`、`minutes download` 部分失败仍为 0、全部失败才非 0。都要逐项检查 `ok` / `error`。
 - 所有逗号分隔的批量参数先去重，去重后超过 50 条直接报错；`minute_token` 前置校验为字母数字且至少 5 位（妙记链接自动取末段），
   参数错误一律为用法错误（退出码 2），且先于身份解析。

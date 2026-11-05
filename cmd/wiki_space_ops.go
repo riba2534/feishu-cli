@@ -8,6 +8,7 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -45,15 +46,12 @@ var wikiSpaceCreateCmd = &cobra.Command{
   feishu-cli wiki space-create --name "我的新知识库"
   feishu-cli wiki space-create --name "项目 A" --description "项目 A 的文档归档"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		name, _ := cmd.Flags().GetString("name")
 		desc, _ := cmd.Flags().GetString("description")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		name = strings.TrimSpace(name)
 		if name == "" {
-			return fmt.Errorf("--name 不能为空")
+			return clierr.Usagef("--name 不能为空")
 		}
 
 		body := map[string]any{"name": name}
@@ -68,6 +66,10 @@ var wikiSpaceCreateCmd = &cobra.Command{
 				"path":    wikiSpacesAPIPath,
 				"body":    body,
 			})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		userToken, err := requireUserToken(cmd, "wiki space-create")
@@ -136,9 +138,6 @@ var wikiSpaceListCmd = &cobra.Command{
   feishu-cli wiki space-list --page-all               # 全部
   feishu-cli wiki space-list --page-all --page-limit 0 -o json | jq '.spaces[].name'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		startToken, _ := cmd.Flags().GetString("page-token")
 		pageAll, _ := cmd.Flags().GetBool("page-all")
@@ -147,16 +146,20 @@ var wikiSpaceListCmd = &cobra.Command{
 		asFlag, _ := cmd.Flags().GetString("as")
 
 		if pageSize < 1 || pageSize > 50 {
-			return fmt.Errorf("--page-size 必须在 1-50 之间")
+			return clierr.Usagef("--page-size 必须在 1-50 之间")
 		}
 		if pageLimit < 0 {
-			return fmt.Errorf("--page-limit 必须 >= 0")
+			return clierr.Usagef("--page-limit 必须 >= 0")
 		}
 
 		// 显式 --page-token 时禁用自动翻页（与官方对齐）
 		if strings.TrimSpace(startToken) != "" && pageAll {
 			fmt.Fprintln(cmd.ErrOrStderr(), "⚠️ --page-token 已指定，--page-all 被忽略")
 			pageAll = false
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveChatToken(cmd, asFlag)

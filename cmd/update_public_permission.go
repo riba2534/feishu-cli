@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -22,6 +23,9 @@ var updatePublicPermissionCmd = &cobra.Command{
   --share-entity       谁可以添加和管理协作者
   --link-share-entity  链接分享设置
   --invite-external    是否允许非管理权限的人分享到组织外（true/false）
+  --dry-run            只打印将要发出的请求（不读取凭据、不联网）
+
+<doc_token> 可传裸 token 或文档链接（自动推断 token 与类型）。
 
 常用值:
   security_entity: anyone_can_view, anyone_can_edit, only_full_access
@@ -43,12 +47,10 @@ var updatePublicPermissionCmd = &cobra.Command{
     --comment-entity anyone_can_view`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
+		docToken, docType, err := resolvePermTarget(cmd, args[0])
+		if err != nil {
 			return err
 		}
-
-		docToken := args[0]
-		docType, _ := cmd.Flags().GetString("doc-type")
 
 		update := client.PublicPermissionUpdate{}
 		hasUpdate := false
@@ -85,7 +87,17 @@ var updatePublicPermissionCmd = &cobra.Command{
 		}
 
 		if !hasUpdate {
-			return fmt.Errorf("请至少指定一个要更新的权限字段")
+			return clierr.Usagef("请至少指定一个要更新的权限字段")
+		}
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printPermDryRun(cmd, "Update public permission settings", "PATCH",
+				permAPIPath("/open-apis/drive/v1/permissions/%s/public", docToken),
+				map[string]any{"type": docType}, publicPermissionUpdateBody(update))
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		userToken, err := resolvePermIdentity(cmd)
@@ -101,6 +113,30 @@ var updatePublicPermissionCmd = &cobra.Command{
 		fmt.Printf("  文档: %s\n", docToken)
 		return printJSON(result)
 	},
+}
+
+// publicPermissionUpdateBody 返回只含已指定字段的 PATCH 请求体，供 --dry-run 预览。
+func publicPermissionUpdateBody(u client.PublicPermissionUpdate) map[string]any {
+	body := map[string]any{}
+	if u.ExternalAccess != nil {
+		body["external_access"] = *u.ExternalAccess
+	}
+	if u.SecurityEntity != nil {
+		body["security_entity"] = *u.SecurityEntity
+	}
+	if u.CommentEntity != nil {
+		body["comment_entity"] = *u.CommentEntity
+	}
+	if u.ShareEntity != nil {
+		body["share_entity"] = *u.ShareEntity
+	}
+	if u.LinkShareEntity != nil {
+		body["link_share_entity"] = *u.LinkShareEntity
+	}
+	if u.InviteExternal != nil {
+		body["invite_external"] = *u.InviteExternal
+	}
+	return body
 }
 
 func init() {

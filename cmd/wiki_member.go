@@ -55,10 +55,6 @@ var wikiMemberAddCmd = &cobra.Command{
   feishu-cli wiki member add SPACE_ID --member-type openid --member-id ou_xxx --role member --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		spaceID := args[0]
 		memberType, _ := cmd.Flags().GetString("member-type")
 		memberID, _ := cmd.Flags().GetString("member-id")
@@ -81,6 +77,10 @@ var wikiMemberAddCmd = &cobra.Command{
 					"member_role": role,
 				},
 			})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		if err := client.AddWikiSpaceMemberWithOptions(spaceID, memberType, memberID, role, needNotification, resolveOptionalUserToken(cmd)); err != nil {
@@ -158,21 +158,37 @@ var wikiMemberRemoveCmd = &cobra.Command{
   --member-type     成员类型（必填）
   --member-id       成员 ID（必填）
   --role            角色: admin/member（必填）
+  --dry-run         只打印将要发送的请求，不执行
 
 示例:
-  feishu-cli wiki member remove SPACE_ID --member-type email --member-id user@example.com --role member`,
+  feishu-cli wiki member remove SPACE_ID --member-type email --member-id user@example.com --role member
+  feishu-cli wiki member remove SPACE_ID --member-type openid --member-id ou_xxx --role member --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		spaceID := args[0]
 		memberType, _ := cmd.Flags().GetString("member-type")
 		memberID, _ := cmd.Flags().GetString("member-id")
 		role, _ := cmd.Flags().GetString("role")
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 		memberType = normalizePermMemberType(memberType)
+
+		if dryRun {
+			return printJSON(map[string]any{
+				"dry_run": true,
+				"method":  "DELETE",
+				"path":    fmt.Sprintf("/open-apis/wiki/v2/spaces/%s/members/%s", url.PathEscape(spaceID), url.PathEscape(memberID)),
+				"body": map[string]any{
+					"member_type": memberType,
+					"member_id":   memberID,
+					"member_role": role,
+				},
+			})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 
 		if err := client.RemoveWikiSpaceMember(spaceID, memberType, memberID, role, resolveOptionalUserToken(cmd)); err != nil {
 			return err
@@ -205,6 +221,7 @@ func init() {
 	wikiMemberRemoveCmd.Flags().String("member-type", "", "成员类型（必填）")
 	wikiMemberRemoveCmd.Flags().String("member-id", "", "成员 ID（必填）")
 	wikiMemberRemoveCmd.Flags().String("role", "", "角色: admin/member（必填）")
+	wikiMemberRemoveCmd.Flags().Bool("dry-run", false, "只打印将要发送的请求，不执行")
 	mustMarkFlagRequired(wikiMemberRemoveCmd, "member-type", "member-id", "role")
 	wikiMemberRemoveCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问个人知识库）")
 }
