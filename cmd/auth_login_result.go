@@ -32,7 +32,9 @@ func buildLoginScopeSummary(requestedScope, grantedScope string) *loginScopeSumm
 	}
 }
 
-func buildAuthorizationCompleteEvent(token *auth.TokenStore, summary *loginScopeSummary) map[string]any {
+// buildAuthorizationCompleteEvent 构造 auth login --json 的 authorization_complete 事件。
+// appID/baseURL 用于在未下发 refresh_token 时拼应用安全设置页链接。
+func buildAuthorizationCompleteEvent(token *auth.TokenStore, summary *loginScopeSummary, appID, baseURL string) map[string]any {
 	refreshPresent := token.RefreshToken != ""
 	event := map[string]any{
 		"event":                 "authorization_complete",
@@ -56,7 +58,9 @@ func buildAuthorizationCompleteEvent(token *auth.TokenStore, summary *loginScope
 	hints := []string{}
 	if !refreshPresent {
 		warnings = append(warnings, "未获取到 refresh_token，Access Token 过期后需要重新登录")
-		hints = append(hints, "请在飞书开放平台应用权限管理页面开通 offline_access 后重新 feishu-cli auth login")
+		hints = append(hints, auth.NoRefreshTokenFix(baseURL, appID))
+		// 结构化归因（additive）：只申请 offline_access 不够，需开启应用安全设置里的「刷新 user_access_token」并发版
+		event["no_refresh_token"] = noRefreshTokenInfo(baseURL, appID)
 	}
 	if len(summary.Missing) > 0 {
 		warnings = append(warnings, fmt.Sprintf("以下 scope 未授予: %s", strings.Join(summary.Missing, " ")))
@@ -74,7 +78,7 @@ func buildAuthorizationCompleteEvent(token *auth.TokenStore, summary *loginScope
 	return event
 }
 
-func printTokenSuccess(token *auth.TokenStore, summary *loginScopeSummary) {
+func printTokenSuccess(token *auth.TokenStore, summary *loginScopeSummary, appID, baseURL string) {
 	path, _ := auth.TokenPath()
 	fmt.Fprintln(os.Stderr, "\n✓ 授权成功！")
 	fmt.Fprintf(os.Stderr, "  Token 已保存到 %s\n", path)
@@ -99,12 +103,28 @@ func printTokenSuccess(token *auth.TokenStore, summary *loginScopeSummary) {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "  ⚠ 警告: 未获取到 refresh_token")
 		fmt.Fprintln(os.Stderr, "    Access Token 过期（约 2 小时）后需要重新 feishu-cli auth login")
-		fmt.Fprintln(os.Stderr, "    常见原因: 应用在飞书开放平台未开通 offline_access scope")
-		fmt.Fprintln(os.Stderr, "    排查步骤:")
-		fmt.Fprintln(os.Stderr, "      1. 登录飞书开放平台应用权限管理页面，确认已开通 offline_access")
-		fmt.Fprintln(os.Stderr, "      2. 执行 feishu-cli auth logout && feishu-cli auth login 重新授权")
-		fmt.Fprintln(os.Stderr, "      3. 仍失败请反馈: https://github.com/riba2534/feishu-cli/issues/94")
+		fmt.Fprintf(os.Stderr, "    原因: %s\n", auth.NoRefreshTokenCause)
+		fmt.Fprintln(os.Stderr, "    处理步骤:")
+		fmt.Fprintln(os.Stderr, "      1. 在开发者后台「安全设置」中开启「刷新 user_access_token」")
+		if u := auth.NoRefreshTokenSettingsURL(baseURL, appID); u != "" {
+			fmt.Fprintf(os.Stderr, "         安全设置页面: %s\n", u)
+		}
+		fmt.Fprintln(os.Stderr, "      2. 创建并发布新的应用版本（开关改动发版后才生效）")
+		fmt.Fprintln(os.Stderr, "      3. 执行 feishu-cli auth login 重新授权")
+		fmt.Fprintln(os.Stderr, "      4. 仍失败请反馈: https://github.com/riba2534/feishu-cli/issues/94")
 	}
+}
+
+// noRefreshTokenInfo 构造 no_refresh_token{cause,fix,settings_url}；app_id 未知时省略 settings_url。
+func noRefreshTokenInfo(baseURL, appID string) map[string]any {
+	info := map[string]any{
+		"cause": auth.NoRefreshTokenCause,
+		"fix":   auth.NoRefreshTokenFix(baseURL, appID),
+	}
+	if u := auth.NoRefreshTokenSettingsURL(baseURL, appID); u != "" {
+		info["settings_url"] = u
+	}
+	return info
 }
 
 func emptyIfNil(items []string) []string {

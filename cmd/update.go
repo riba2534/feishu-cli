@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/selfupdate"
 	"github.com/spf13/cobra"
 )
@@ -68,7 +69,7 @@ type updateStatus struct {
 
 func runUpdate(ctx context.Context, out, errOut io.Writer) error {
 	if updateCheck && updateDryRun {
-		return errors.New("--check 与 --dry-run 不能同时使用：--check 只查询版本，--dry-run 预览更新步骤")
+		return clierr.Usagef("--check 与 --dry-run 不能同时使用：--check 只查询版本，--dry-run 预览更新步骤")
 	}
 	client := newUpdateClient()
 	st := updateStatus{DryRun: updateDryRun}
@@ -245,11 +246,11 @@ func resolveUpdateTarget(ctx context.Context) (string, string, error) {
 		}
 		real, err := filepath.EvalSymlinks(abs)
 		if err != nil {
-			return "", "", fmt.Errorf("--target %s 不存在或无法解析: %w", updateTarget, err)
+			return "", "", clierr.Usagef("--target %s 不存在或无法解析: %w", updateTarget, err)
 		}
 		current, _, err := selfupdate.BinaryVersion(ctx, real)
 		if err != nil {
-			return "", "", fmt.Errorf("--target 不是可运行的 feishu-cli: %w", err)
+			return "", "", clierr.Usagef("--target 不是可运行的 feishu-cli: %w", err)
 		}
 		return real, current, nil
 	}

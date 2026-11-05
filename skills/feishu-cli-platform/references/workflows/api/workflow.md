@@ -38,6 +38,11 @@ feishu-cli api <METHOD> <path> [flags]
   数字按原始字面量发送，19 位 ID 等大整数不会经 float64 舍入。
 - `--data-file` 拒绝读取 `~/.ssh`、`~/.aws`、`~/.feishu-cli`、`/etc` 等敏感目录；`-o` 拒绝写入敏感目录，
   也拒绝含 `..` 段的相对路径（越出当前目录）。均为用法错误（退出码 2）。
+- `--file [field=]path` 以 multipart/form-data 上传文件（未封装上传命令的端点用它，不要退回 curl）：`field` 默认 `file`，
+  `path` 为 `-` 时读 stdin，curl 风格的 `@./x.pdf` 也接受；part 的 filename 取本地文件名（stdin 为 `stdin`）。
+  此时 `--data` 必须是 JSON 对象，顶层键作为表单文本字段（嵌套对象按 JSON 文本发送）。只能用于 POST/PUT/PATCH/DELETE，
+  与 `--data-file`、`--page-all` 互斥；路径与 `--data-file` 同样做敏感目录与存在性校验。以上都在任何网络请求前报用法错误（退出码 2）。
+  `--dry-run` 只输出 `content_type`、`form_fields` 与 `file`（`field`/`file_name`/`path`/`size`），不读出文件内容。
 - `--dry-run` 不发请求、不刷新 token，只打印 `method`、`path`、`query`、`body`、`supported_tokens`、
   `will_use_user_tok`、`page_all`、`page_limit`；成功不代表服务端会接受。
 - 响应 JSON 用 `UseNumber` 解析，`message_id` / `chat_id` 等大整数不丢精度。
@@ -54,6 +59,8 @@ feishu-cli api <METHOD> <path> [flags]
 - **业务错误不进 stdout**：响应 `code != 0`（即使随 HTTP 400 下发）或 HTTP 非 2xx 时 stdout 为空，
   `--jq/--format/-o` 不处理错误体；stderr 输出 `飞书业务错误: code=..., msg=...`，并附 `log_id`、所需 scope、
   字段校验（`field_violations`）与修复建议。需要原始错误体调试时加 `--raw`（原样写 stdout / `-o`，退出码仍非 0）。
+- 需要按字段处理错误时加全局 `--error-format json`：stderr 改为一行 `{"error":{...}}`，含 `exit_code`、`kind`、
+  `code`、`log_id`、`missing_scopes`、`retryable`、`hint`（取不到的省略，见 [Agent 调用契约](../auth/references/agent-contract.md#机器可读错误--error-format-json)）。
 - 退出码：`0` 成功，`1` 业务错误（含资源不存在、资源级无权限），`2` 用法错误，`3` 鉴权/权限（token 无效、
   99991672 应用未开通 scope、99991679/99991676 用户未授权、App 凭证错误），`4` 网络错误（可重试）。
 
@@ -85,6 +92,10 @@ feishu-cli api POST /open-apis/im/v1/messages \
 
 # 请求体从文件读
 feishu-cli api POST /open-apis/bitable/v1/apps/xxx/tables --data-file body.json --dry-run
+
+# 上传文件（multipart）：--data 的键作为表单字段，先 dry-run 核对字段与文件
+feishu-cli api POST /open-apis/im/v1/files --as bot \
+  --file file=./report.pdf --data '{"file_type":"pdf","file_name":"report.pdf"}' --dry-run
 
 # 下载二进制到文件
 feishu-cli api GET /open-apis/drive/v1/medias/<token>/download -o file.bin

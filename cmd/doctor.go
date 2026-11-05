@@ -258,11 +258,25 @@ func checkUserToken() checkResult {
 	case "needs_refresh":
 		return checkPass("user_token", "access_token 过期但 refresh_token 有效（下次调用自动刷新）")
 	case "expired":
+		if token.RefreshToken == "" {
+			return checkFail("user_token", "access_token 已过期，且登录时未下发 refresh_token（"+auth.NoRefreshTokenCause+"）",
+				doctorNoRefreshTokenFix(token))
+		}
 		return checkFail("user_token", "access_token 与 refresh_token 均已过期",
 			"运行 feishu-cli auth login 重新授权")
 	default:
 		return checkWarn("user_token", "token 状态未知: "+status, "")
 	}
+}
+
+// doctorNoRefreshTokenFix 返回「从未下发 refresh_token」的修复建议（含应用安全设置页链接）。
+func doctorNoRefreshTokenFix(token *auth.TokenStore) string {
+	cfg := config.Get()
+	appID := cfg.AppID
+	if appID == "" {
+		appID = token.AppID
+	}
+	return auth.NoRefreshTokenFix(cfg.BaseURL, appID)
 }
 
 // checkUserIdentity 诊断用户身份就绪度：token.json 是否存在、access_token 是否有效、
@@ -286,6 +300,10 @@ func checkUserIdentity() checkResult {
 	case "needs_refresh":
 		return checkPass("user_identity", "用户身份就绪：access_token 已过期但 refresh_token 有效（下次调用自动刷新）")
 	case "expired":
+		if token.RefreshToken == "" {
+			return checkFail("user_identity", "用户身份未就绪：access_token 已过期，且登录时未下发 refresh_token",
+				doctorNoRefreshTokenFix(token))
+		}
 		return checkFail("user_identity", "用户身份未就绪：access_token 与 refresh_token 均已过期",
 			"运行 feishu-cli auth login 重新授权")
 	default:

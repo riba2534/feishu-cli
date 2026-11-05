@@ -165,11 +165,11 @@ func TestRunDeviceFlowResumeUses600sBudget(t *testing.T) {
 }
 
 func TestAuthorizationCompleteEventStatusMessage(t *testing.T) {
-	event := buildAuthorizationCompleteEvent(&auth.TokenStore{AccessToken: "u", RefreshToken: "r", StatusMessage: "scopes trimmed"}, buildLoginScopeSummary("a", "a"))
+	event := buildAuthorizationCompleteEvent(&auth.TokenStore{AccessToken: "u", RefreshToken: "r", StatusMessage: "scopes trimmed"}, buildLoginScopeSummary("a", "a"), "", "")
 	if event["status_message"] != "scopes trimmed" {
 		t.Fatalf("authorization_complete 应透传 status_message: %v", event)
 	}
-	event = buildAuthorizationCompleteEvent(&auth.TokenStore{AccessToken: "u", RefreshToken: "r"}, buildLoginScopeSummary("a", "a"))
+	event = buildAuthorizationCompleteEvent(&auth.TokenStore{AccessToken: "u", RefreshToken: "r"}, buildLoginScopeSummary("a", "a"), "", "")
 	if _, ok := event["status_message"]; ok {
 		t.Fatal("无 status_message 时不应出现该字段")
 	}

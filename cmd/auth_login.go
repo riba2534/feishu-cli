@@ -49,11 +49,6 @@ Token 保存位置: ~/.feishu-cli/token.json
   # 两步模式第二步：用已有的 device_code 继续轮询
   feishu-cli auth login --device-code <device_code> --json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		cfg := config.Get()
 		jsonOutput, _ := cmd.Flags().GetBool("json")
 		noWait, _ := cmd.Flags().GetBool("no-wait")
 		deviceCode, _ := cmd.Flags().GetString("device-code")
@@ -61,13 +56,23 @@ Token 保存位置: ~/.feishu-cli/token.json
 		domainFlags, _ := cmd.Flags().GetStringSlice("domain")
 		recommend, _ := cmd.Flags().GetBool("recommend")
 		excludeFlags, _ := cmd.Flags().GetStringSlice("exclude")
-
-		return runDeviceFlow(cfg, jsonOutput, deviceCode, noWait, loginScopeOptions{
+		scopeOpts := loginScopeOptions{
 			Scope:     scopeFlag,
 			Domains:   domainFlags,
 			Recommend: recommend,
 			Exclude:   excludeFlags,
-		})
+		}
+
+		// 纯本地参数校验先于 config.Validate：参数错误不因缺凭据被报成退出码 3
+		if err := precheckLoginArgs(scopeOpts, deviceCode, noWait); err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
+		return runDeviceFlow(config.Get(), jsonOutput, deviceCode, noWait, scopeOpts)
 	},
 }
 
@@ -81,6 +86,29 @@ type loginScopeOptions struct {
 
 func (o loginScopeOptions) hasAny() bool {
 	return o.Scope != "" || len(o.Domains) > 0 || o.Recommend || len(o.Exclude) > 0
+}
+
+// precheckLoginArgs 做 auth login 不依赖凭据、不交互的参数校验（错误文本与 runDeviceFlow /
+// resolveRequestedScope 中的同一校验一致，后者仍保留完整校验）。
+func precheckLoginArgs(opts loginScopeOptions, deviceCode string, noWait bool) error {
+	if deviceCode != "" {
+		if opts.hasAny() || noWait {
+			return clierr.Usagef("--device-code 模式下不能再同时传 --scope、--domain、--recommend、--exclude 或 --no-wait（授权范围已在第一步确定）")
+		}
+		return nil
+	}
+	domains, err := auth.ParseScopeDomains(opts.Domains)
+	if err != nil {
+		return clierr.Usage(err)
+	}
+	var excludes []string
+	for _, raw := range opts.Exclude {
+		excludes = append(excludes, auth.SplitScopes(raw)...)
+	}
+	if len(excludes) > 0 && len(auth.UniqueScopeList(opts.Scope)) == 0 && len(domains) == 0 && !opts.Recommend {
+		return clierr.Usagef("--exclude 需要与 --scope、--domain 或 --recommend 一起使用")
+	}
+	return nil
 }
 
 // resumePollExpiresIn 是 --device-code 续轮询的本地等待上限（秒）。
@@ -193,10 +221,10 @@ func runDeviceFlow(cfg *config.Config, jsonOutput bool, deviceCode string, noWai
 
 	summary := buildLoginScopeSummary(requestedScope, token.Scope)
 	if jsonOutput {
-		return printJSONLine(buildAuthorizationCompleteEvent(token, summary))
+		return printJSONLine(buildAuthorizationCompleteEvent(token, summary, appID, baseURL))
 	}
 
-	printTokenSuccess(token, summary)
+	printTokenSuccess(token, summary, appID, baseURL)
 	return nil
 }
 

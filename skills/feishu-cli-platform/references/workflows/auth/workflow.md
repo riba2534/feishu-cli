@@ -98,6 +98,7 @@ feishu-cli auth login --domain search --recommend --json
 
 → 上述字段常驻（`scope` 即落盘 `token.json` 的累积 scope；时间字段为带真实时区的 RFC3339）；
 `refresh_expires_at`（拿到 refresh token 时）、`warnings`/`hints`（refresh 缺失或 scope 未授予时）、
+`no_refresh_token`（未下发 refresh token 时：`cause`/`fix`/`settings_url`，`settings_url` 为应用安全设置页，app_id 未知时省略）、
 `status_message`（服务端附带的提示，如部分 scope 被裁剪）为条件字段，无对应情况时 key 不出现——解析勿假设必存。
 
 ## 授权结果判读
@@ -106,7 +107,7 @@ feishu-cli auth login --domain search --recommend --json
 
 | 字段 | 含义 | 处理 |
 |---|---|---|
-| `refresh_token_present: false` | 没拿到 refresh token | 应用未开通 `offline_access`；开通后重新 `auth login` |
+| `refresh_token_present: false` | 没拿到 refresh token（只申请 `offline_access` 不够） | 应用管理员在开发者后台「安全设置」开启「刷新 user_access_token」并**发布新版本**，然后重新 `auth login`；设置页见 `no_refresh_token.settings_url` |
 | `missing_scopes` 非空 | 部分申请的 scope 未授予（warning，不是失败） | 先 `auth scopes --scope "<缺失的>"` 确认应用侧是否开通；其余 `granted_scopes` 照常可用 |
 | `granted_scopes` | 实际拿到的 scope | 以此为准，可 `auth check` 复核 |
 
@@ -183,10 +184,11 @@ feishu-cli auth check --scope "search:docs:read" && feishu-cli search docs "关�
 | `logged_in` | 是否有本地 User Token |
 | `identity` | `user`（User Token 未过期或可刷新）/ `bot`（User Token 已过期，仅剩 App 身份） |
 | `token_status` | `valid` / `needs_refresh`（access 过期但 refresh 可用，下次调用自动刷新）/ `expired` |
-| `health` | `healthy` / `missing_refresh_token`（没拿到 refresh，对应未开 `offline_access`）/ `needs_relogin`（refresh 也过期，或有 `refresh_failure`） |
+| `health` | `healthy` / `missing_refresh_token`（没拿到 refresh：应用未开启安全设置里的「刷新 user_access_token」或开启后未发版）/ `needs_relogin`（refresh 也过期，或有 `refresh_failure`） |
 | `access_token` | 脱敏后的 access token |
 | `access_token_valid` / `expires_at` | access token 是否在有效期内 / 过期时间（RFC3339，带真实时区） |
 | `refresh_token_present` / `refresh_token_valid` / `refresh_expires_at` | refresh token 是否存在、是否有效（有 `refresh_failure` 时恒为 false）、过期时间 |
+| `no_refresh_token` | 仅 `refresh_token_present=false` 时出现：`cause`（真因）、`fix`（处理步骤）、`settings_url`（`https://open.feishu.cn/app/<app_id>/safe`，Lark 为 open.larksuite.com） |
 | `refresh_failure` | 仅当上次刷新被服务端判定 refresh_token 终态失效（20026/20037/20064/20073）时出现：`code`/`error`/`description`/`at`。CLI 不会再自动刷新，需重新 `auth login` |
 | `scope` | 当前 token 已授权 scope（空格分隔） |
 | `cached_user` | 本地有用户缓存时出现：`open_id`/`user_id`/`union_id`/`name`，可用于确认"当前登录的是谁" |
@@ -244,7 +246,7 @@ feishu-cli auth login --recommend                                # 全部域（�
 | `auth check` 返回 `not_logged_in` | 按任务选域或 scope 登录：`auth login --domain <域> --recommend --json`（Agent 用两步模式） |
 | `auth status` 的 `token_status=needs_refresh` | access 过期但 refresh 可用；业务命令会自动刷新，无需处理 |
 | `auth check` 的 `token_expired` / `auth status` 的 `needs_relogin` | refresh token 也已失效，重新登录 |
-| `missing_refresh_token` | 应用开通 `offline_access` 后重新 `auth login` |
+| `missing_refresh_token` / `User Access Token 已过期，且登录时未下发 refresh_token`（退出码 3） | 不是 `offline_access` 的问题：应用管理员在安全设置开启「刷新 user_access_token」并发布新版本后重新 `auth login`；只重新登录 2 小时后还会失效 |
 | 缺少 app_id / app_secret（退出码 3） | `config init`、`profile add`，或单次 `--bot-app-id/--bot-app-secret` |
 | `99991663` | access token 无效（通用码）：先确认本次实际身份；User 用 `auth status --verify` 或重新登录，Bot 用 `doctor --only bot_identity` 检查 App 凭证 |
 | `99991668` + `not support` | 该接口不支持 User Token（如部分 OKR v1 端点），改用 `--as bot` |

@@ -40,6 +40,7 @@ var (
 	apiPageAll        bool
 	apiPageLimit      int
 	apiPageDelayMs    int
+	apiFile           string // multipart 上传：[field=]path，path 为 - 表示 stdin
 )
 
 var apiCmd = &cobra.Command{
@@ -51,6 +52,8 @@ var apiCmd = &cobra.Command{
   • Token：复用 ~/.feishu-cli/token.json 中的 User Token（自动刷新），或回退到 App Token（Bot）
   • URL 规范化：自动剥离 https://open.feishu.cn 前缀；自动补 /open-apis/ 前缀
   • Body：--data 接受 JSON 字符串，--data-file 从文件/stdin 读取
+  • 上传：--file [field=]path 以 multipart/form-data 发送文件（field 默认 file，path 为 - 读 stdin），
+    此时 --data 必须是 JSON 对象，顶层键作为表单文本字段；与 --data-file、--page-all 互斥
   • Query：--params 接受 JSON 对象（值会转为字符串）
   • 输出：默认 pretty JSON；--raw 原样输出；--include-headers 附响应头
 
@@ -74,6 +77,10 @@ var apiCmd = &cobra.Command{
 
   # 预览将要发出的请求（不实际调用）
   feishu-cli api POST /open-apis/im/v1/messages --data '...' --dry-run
+
+  # 上传文件（multipart）：--data 的键作为表单字段
+  feishu-cli api POST /open-apis/im/v1/files --as bot \
+    --file file=./report.pdf --data '{"file_type":"pdf","file_name":"report.pdf"}'
 
   # 从 stdin 读 body
   cat body.json | feishu-cli api POST /open-apis/xxx --data-file -
@@ -102,6 +109,7 @@ func init() {
 	apiCmd.Flags().BoolVar(&apiPageAll, "page-all", false, "自动翻页（仅识别 data.has_more + page_token/next_page_token）")
 	apiCmd.Flags().IntVar(&apiPageLimit, "page-limit", 10, "配合 --page-all 的最大页数（0=不限；空/重复 cursor 仍会停止）")
 	apiCmd.Flags().IntVar(&apiPageDelayMs, "page-delay", 200, "翻页间隔毫秒")
+	apiCmd.Flags().StringVar(&apiFile, "file", "", "以 multipart/form-data 上传文件：[field=]path（field 默认 file，path 为 - 读 stdin，可带 curl 风格 @ 前缀）")
 	apiCmd.Flags().String("user-access-token", "", "显式 User Token（用于 auto/user；--as bot 固定应用身份）")
 
 	rootCmd.AddCommand(apiCmd)
@@ -170,6 +178,14 @@ func runAPI(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// --file：互斥与路径校验在任何网络请求（含 token 刷新）之前完成
+	var upload *apiUpload
+	if apiFile != "" {
+		if upload, err = parseAPIFileFlag(apiFile, method); err != nil {
+			return err
+		}
+	}
+
 	// 解析 body（在网络调用前验证合法 JSON）
 	bodyBytes, err := loadAPIBody(apiData, apiDataFile)
 	if err != nil {
@@ -190,6 +206,11 @@ func runAPI(cmd *cobra.Command, args []string) error {
 		}
 		body = parsed
 	}
+	if upload != nil {
+		if upload.fields, err = apiFormFields(body); err != nil {
+			return err
+		}
+	}
 
 	if apiPageAll && apiOutput != "" && apiFormat == "" && apiJQ == "" {
 		return clierr.Usagef("--output 与 --page-all 不能同时用于二进制下载；去掉其中一个，或给 --page-all 加上 --format/--jq")
@@ -201,13 +222,27 @@ func runAPI(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		if upload != nil {
+			return printAPIUploadDryRun(method, apiPath, queryParams, upload, tokenTypes, hasUserToken)
+		}
 		return printAPIDryRun(method, apiPath, queryParams, body, tokenTypes, hasUserToken)
+	}
+
+	// 文件内容在 token 解析（可能触发刷新）之前读入：stdin 为空、读失败都不应先联网
+	if upload != nil {
+		if err := upload.load(); err != nil {
+			return err
+		}
 	}
 
 	// 解析 token 策略（auto 模式下若检测到 User 身份但刷新/解析失败，将 fail-closed 报错，绝不静默切 Bot）
 	tokenTypes, userToken, err := resolveAPIToken(cmd, apiAs)
 	if err != nil {
 		return err
+	}
+
+	if upload != nil {
+		return runAPIUpload(method, apiPath, queryParams, upload, userToken)
 	}
 
 	if apiPageAll {

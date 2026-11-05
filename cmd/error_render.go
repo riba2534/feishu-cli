@@ -1,11 +1,16 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/apidiag"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 )
 
 // errorHinter 由命令返回的错误实现，提供领域专属的修复建议；
@@ -32,8 +37,16 @@ func renderErrorDiagnostics(err error) []string {
 			lines = append(lines, "  "+line)
 		}
 	}
+	if hint := errorHint(err, info, ok); hint != "" && !strings.Contains(msg, hint) {
+		lines = append(lines, hint)
+	}
+	return lines
+}
+
+// errorHint 返回修复建议：按业务码的跨领域建议优先，其次是错误自带的领域建议。
+func errorHint(err error, info apidiag.Info, hasInfo bool) string {
 	hint := ""
-	if ok {
+	if hasInfo {
 		hint = client.APIErrorHint(info)
 	}
 	if hint == "" {
@@ -42,10 +55,7 @@ func renderErrorDiagnostics(err error) []string {
 			hint = h.Hint()
 		}
 	}
-	if hint != "" && !strings.Contains(msg, hint) {
-		lines = append(lines, hint)
-	}
-	return lines
+	return hint
 }
 
 func diagnosticsFor(err error) (apidiag.Info, bool) {
@@ -55,4 +65,127 @@ func diagnosticsFor(err error) (apidiag.Info, bool) {
 	return apidiag.Lookup(func(info apidiag.Info) bool {
 		return client.HasAPICode(err, info.Code)
 	})
+}
+
+// ---------------- --error-format（opt-in 机器可读错误信封） ----------------
+
+const (
+	errorFormatText = "text"
+	errorFormatJSON = "json"
+)
+
+// errorFormatValue 是全局 --error-format 的取值；Set 拒绝非法值，cobra 会按用法错误（退出码 2）报出。
+type errorFormatValue string
+
+func (v *errorFormatValue) String() string { return string(*v) }
+func (v *errorFormatValue) Type() string   { return "string" }
+func (v *errorFormatValue) Set(s string) error {
+	switch s = strings.ToLower(strings.TrimSpace(s)); s {
+	case errorFormatText, errorFormatJSON:
+		*v = errorFormatValue(s)
+		return nil
+	}
+	return fmt.Errorf("仅支持 text|json")
+}
+
+var errorFormat = errorFormatValue(errorFormatText)
+
+func init() {
+	rootCmd.PersistentFlags().Var(&errorFormat, "error-format",
+		"错误输出格式：text（默认，中文文本）| json（stderr 输出一行 JSON 错误信封，stdout 不受影响）")
+}
+
+// errorFormatIsJSON 判断本次是否输出 JSON 错误信封。
+// flag 解析失败（如未知 flag 出现在 --error-format 之前）时 pflag 不会再解析后续 flag，
+// 因此再扫描一遍原始参数兜底；"--" 之后的参数属于位置参数，不参与判断。
+func errorFormatIsJSON(args []string) bool {
+	if errorFormat == errorFormatJSON {
+		return true
+	}
+	for i, a := range args {
+		if a == "--" {
+			break
+		}
+		if v, ok := strings.CutPrefix(a, "--error-format="); ok {
+			return strings.EqualFold(strings.TrimSpace(v), errorFormatJSON)
+		}
+		if a == "--error-format" && i+1 < len(args) {
+			return strings.EqualFold(strings.TrimSpace(args[i+1]), errorFormatJSON)
+		}
+	}
+	return false
+}
+
+// writeCommandError 把命令失败写到 stderr。默认文本格式与历史输出逐字节一致：
+// 错误主文本一行 + renderErrorDiagnostics 的诊断行；--error-format json 时改为一行 JSON 信封。
+func writeCommandError(w io.Writer, err error) {
+	if err == nil {
+		return
+	}
+	if errorFormatIsJSON(os.Args[1:]) {
+		raw, mErr := json.Marshal(map[string]any{"error": errorEnvelope(err)})
+		if mErr == nil {
+			fmt.Fprintln(w, string(raw))
+			return
+		}
+	}
+	if msg := err.Error(); msg != "" {
+		fmt.Fprintln(w, msg)
+	}
+	for _, line := range renderErrorDiagnostics(err) {
+		fmt.Fprintln(w, line)
+	}
+}
+
+// errorEnvelope 构造 JSON 错误信封的 error 对象。字段只取自已有的结构化信息：
+// exit_code/kind 来自 exitCodeFor 与 clierr 分类；code/log_id/missing_scopes 只取错误链上的
+// *client.APIError（不从文本猜）；hint 与文本模式的修复建议同源；取不到的字段省略。
+func errorEnvelope(err error) map[string]any {
+	code := exitCodeFor(err)
+	env := map[string]any{
+		"message":   err.Error(),
+		"exit_code": code,
+		"kind":      errorKindName(err, code),
+		"retryable": code == clierr.ExitNetwork || client.IsRateLimitError(err),
+	}
+	apiErr, hasAPI := client.AsAPIError(err)
+	var info apidiag.Info
+	if hasAPI {
+		info = apiErr.Info
+		if info.Code != 0 {
+			env["code"] = info.Code
+		}
+		if info.LogID != "" {
+			env["log_id"] = info.LogID
+		}
+		if len(info.MissingScopes) > 0 {
+			env["missing_scopes"] = info.MissingScopes
+		}
+	}
+	if hint := errorHint(err, info, hasAPI); hint != "" {
+		env["hint"] = hint
+	}
+	return env
+}
+
+// errorKindName 返回与退出码对应的稳定分类名（usage/auth/network/confirmation_required/cancelled/interrupted/general）。
+func errorKindName(err error, code int) string {
+	switch code {
+	case clierr.ExitUsage:
+		return clierr.KindUsage.String()
+	case clierr.ExitAuth:
+		return clierr.KindAuth.String()
+	case clierr.ExitNetwork:
+		return clierr.KindNetwork.String()
+	case clierr.ExitConfirmationRequired:
+		return clierr.KindConfirmationRequired.String()
+	case clierr.ExitInterrupted:
+		return "interrupted"
+	}
+	for _, k := range clierr.Kinds(err) {
+		if k == clierr.KindCancelled {
+			return k.String()
+		}
+	}
+	return clierr.KindGeneral.String()
 }
