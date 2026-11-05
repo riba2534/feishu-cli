@@ -34,6 +34,13 @@ var sheetClearCmd = &cobra.Command{
 		if len(args[2:]) > 10 {
 			return clierr.Usagef("单次最多只能清除 10 个范围，当前传入 %d 个", len(args[2:]))
 		}
+		if handled, err := sheetDryRunIfRequested(cmd, args[0], "", "清除单元格内容（保留样式）", map[string]any{
+			"sheet_id": sheetID, "ranges": args[2:],
+		}, "POST", "/open-apis/sheets/v3/spreadsheets/%s/sheets/"+sheetID+"/values/batch_clear", map[string]any{
+			"ranges": args[2:],
+		}); handled {
+			return err
+		}
 
 		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {
@@ -59,5 +66,6 @@ var sheetClearCmd = &cobra.Command{
 func init() {
 	sheetCmd.AddCommand(sheetClearCmd)
 
+	sheetClearCmd.Flags().Bool("dry-run", false, "只打印将要发送的请求，不执行")
 	sheetClearCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

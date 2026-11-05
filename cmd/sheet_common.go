@@ -308,3 +308,28 @@ func readSheetDataInput(cmd *cobra.Command) ([]byte, error) {
 		return nil, clierr.Usagef("请通过 --data 或 --data-file 指定数据")
 	}
 }
+
+// sheetDryRunIfRequested 处理写命令的 --dry-run：离线解析表格参数并打印单步请求计划，不读凭据、不联网。
+// 未传 --dry-run 时返回 handled=false。范围里的子表名前缀在执行时才换算为 sheetId，预览按原样展示。
+func sheetDryRunIfRequested(cmd *cobra.Command, rawToken, argName, desc string, extra map[string]any, method, urlFormat string, body map[string]any) (bool, error) {
+	if dryRun, _ := cmd.Flags().GetBool("dry-run"); !dryRun {
+		return false, nil
+	}
+	token, _, isWiki, err := parseSpreadsheetArg(rawToken, argName)
+	if err != nil {
+		return true, err
+	}
+	plan := map[string]any{"spreadsheet_token": token}
+	if isWiki {
+		plan["wiki_node_token"] = token
+		plan["note"] = "知识库链接在执行时换出底层表格 token"
+	}
+	for k, v := range extra {
+		plan[k] = v
+	}
+	return true, printDryRunPlan(cmd, desc, plan, []dryRunStep{{
+		Method: method,
+		URL:    fmt.Sprintf(urlFormat, token),
+		Body:   body,
+	}})
+}

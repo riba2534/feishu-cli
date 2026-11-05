@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +26,7 @@ var sheetFilterViewGetCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if spreadsheetToken == "" || sheetID == "" || filterViewID == "" {
-			return fmt.Errorf("--token、--sheet-id、--filter-view-id 均为必填项")
+			return clierr.Usagef("--token、--sheet-id、--filter-view-id 均为必填项")
 		}
 
 		target, err := newSheetTargetNamed(cmd, spreadsheetToken, "--token")
@@ -71,10 +72,10 @@ var sheetFilterViewUpdateCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if spreadsheetToken == "" || sheetID == "" || filterViewID == "" {
-			return fmt.Errorf("--token、--sheet-id、--filter-view-id 均为必填项")
+			return clierr.Usagef("--token、--sheet-id、--filter-view-id 均为必填项")
 		}
 		if name == "" && rangeStr == "" {
-			return fmt.Errorf("--name 和 --range 至少需要指定一个")
+			return clierr.Usagef("--name 和 --range 至少需要指定一个")
 		}
 
 		rangeStr = unescapeSheetRange(rangeStr)

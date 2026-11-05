@@ -65,9 +65,6 @@ dtype 映射（缺省/未知 → string）:
   feishu-cli sheet table-put shtcnxxx 0b12 --sheets-file table.json --start-cell C3 -o json`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		sheetID := args[1]
 		sheetsJSON, _ := cmd.Flags().GetString("sheets")
 		sheetsFile, _ := cmd.Flags().GetString("sheets-file")
@@ -108,6 +105,27 @@ dtype 映射（缺省/未知 → string）:
 			return clierr.Usagef("columns 为空")
 		}
 
+		// 数据单元格离线构造并校验（类型错误为用法错误，在联网之前拦截）
+		dataCells := make([][][]*client.CellElement, 0, len(spec.Rows))
+		for ri, row := range spec.Rows {
+			cells := make([][]*client.CellElement, numCols)
+			for c := 0; c < numCols; c++ {
+				cell, err := client.BuildTypedCell(spec.Columns[c], row[c])
+				if err != nil {
+					return clierr.Usagef("构造单元格失败（数据行 %d 列 %q）: %v", ri+1, spec.Columns[c].Name, err)
+				}
+				cells[c] = []*client.CellElement{cell}
+			}
+			dataCells = append(dataCells, cells)
+		}
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printTablePutDryRun(cmd, args[0], sheetID, spec, mode, header, headerExplicit, col0, row0, len(dataCells))
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {
 			return err
@@ -139,17 +157,7 @@ dtype 映射（缺省/未知 → string）:
 			}
 			rows = append(rows, hdr)
 		}
-		for ri, row := range spec.Rows {
-			cells := make([][]*client.CellElement, numCols)
-			for c := 0; c < numCols; c++ {
-				cell, err := client.BuildTypedCell(spec.Columns[c], row[c])
-				if err != nil {
-					return clierr.Usagef("构造单元格失败（数据行 %d 列 %q）: %v", ri+1, spec.Columns[c].Name, err)
-				}
-				cells[c] = []*client.CellElement{cell}
-			}
-			rows = append(rows, cells)
-		}
+		rows = append(rows, dataCells...)
 		if len(rows) == 0 {
 			return clierr.Usagef("无数据可写入（data 为空且未写表头）")
 		}
@@ -224,6 +232,53 @@ dtype 映射（缺省/未知 → string）:
 		fmt.Printf("table-put 完成：sheet=%s，%d 列 × %d 行（含表头 %v）已写入 %s（模式 %s）\n", sheetID, numCols, len(rows), header, fullRange, mode)
 		return nil
 	},
+}
+
+// printTablePutDryRun 打印 table-put 的静态写入计划（不联网）。append 模式的起始行需读取已有数据，执行时才确定。
+func printTablePutDryRun(cmd *cobra.Command, rawToken, sheetID string, spec client.TableSheetSpec, mode string, header, headerExplicit bool, col0, row0, dataRows int) error {
+	token, _, _, err := parseSpreadsheetArg(rawToken, "")
+	if err != nil {
+		return err
+	}
+	numCols := len(spec.Columns)
+	totalRows := dataRows
+	if header {
+		totalRows++
+	}
+	if totalRows == 0 && !(mode == "append" && !headerExplicit) {
+		return clierr.Usagef("无数据可写入（data 为空且未写表头）")
+	}
+	columns := make([]map[string]any, numCols)
+	for c, col := range spec.Columns {
+		item := map[string]any{"name": col.Name, "column": client.IndexToColumn(col0 + c), "type": col.Type}
+		if f := client.FormatterForType(col); f != "" {
+			item["formatter"] = f
+		}
+		columns[c] = item
+	}
+	startCol, lastCol := client.IndexToColumn(col0), client.IndexToColumn(col0+numCols-1)
+	extra := map[string]any{
+		"spreadsheet_token": token,
+		"sheet_id":          sheetID,
+		"mode":              mode,
+		"header":            header,
+		"columns":           columns,
+		"data_rows":         dataRows,
+	}
+	writeURL := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/batch_update", token, sheetID)
+	steps := []dryRunStep{}
+	if mode == "append" {
+		extra["range"] = fmt.Sprintf("%s!%s?:%s?", sheetID, startCol, lastCol)
+		extra["note"] = "append 的起始行在执行时读取 " + startCol + ":" + lastCol + " 列已有数据后确定；空子表且未显式传 --header 时会补写表头"
+		steps = append(steps, dryRunStep{Method: "GET", URL: fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/values/{range}", token), Desc: "读取目标列，定位最后一个有数据的行"})
+	} else {
+		extra["range"] = fmt.Sprintf("%s!%s%d:%s%d", sheetID, startCol, row0+1, lastCol, row0+totalRows)
+	}
+	steps = append(steps,
+		dryRunStep{Method: "PUT", URL: fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/style", token), Desc: "按列设置数据区 formatter（仅带格式的列与数值列）"},
+		dryRunStep{Method: "POST", URL: writeURL, Desc: fmt.Sprintf("写入 %d 行 × %d 列（单批 ≤ 5000 单元格，超出分批；子表网格不足时先自动追加行列）", totalRows, numCols)},
+	)
+	return printDryRunPlan(cmd, fmt.Sprintf("table-put（%s）写入 %s", mode, extra["range"]), extra, steps)
 }
 
 // parseTablePutStartCell 解析 --start-cell（单个单元格，如 A1、C5），返回 0 起始的列与行。
@@ -339,6 +394,7 @@ func init() {
 	sheetTablePutCmd.Flags().String("mode", "overwrite", "写入模式: overwrite（从 --start-cell 起覆盖）, append（写到已有数据最后一行之后）")
 	sheetTablePutCmd.Flags().String("start-cell", "A1", "写入起点单元格（append 模式只取其列）")
 	sheetTablePutCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
+	sheetTablePutCmd.Flags().Bool("dry-run", false, "只打印写入计划（范围、列格式、请求），不联网、不写入；加 -o json 查看完整计划")
 	sheetTablePutCmd.Flags().String("user-id-type", "", "用户 ID 类型: open_id, union_id, user_id")
 	sheetTablePutCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }
