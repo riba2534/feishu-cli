@@ -32,10 +32,6 @@ var okrProgressListCmd = &cobra.Command{
   # 列出某个 Key Result 的进展（JSON 输出）
   feishu-cli okr progress list --key-result-id 7xxx --output json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		objectiveID, _ := cmd.Flags().GetString("objective-id")
 		keyResultID, _ := cmd.Flags().GetString("key-result-id")
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
@@ -50,6 +46,9 @@ var okrProgressListCmd = &cobra.Command{
 			return err
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err

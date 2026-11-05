@@ -29,10 +29,6 @@ var calendarEventReplyCmd = &cobra.Command{
   feishu-cli calendar event-reply CAL_xxx EVENT_xxx --status tentative`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		calendarID := args[0]
 		eventID := args[1]
 		status, _ := cmd.Flags().GetString("status")
@@ -41,6 +37,9 @@ var calendarEventReplyCmd = &cobra.Command{
 			return clierr.Usagef("无效的回复状态: %s，有效值: accept/decline/tentative", status)
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		token, err := requireUserToken(cmd, "calendar event-reply")
 		if err != nil {
 			return err

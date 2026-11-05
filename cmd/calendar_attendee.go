@@ -62,9 +62,11 @@ var calendarAttendeeAddCmd = &cobra.Command{
   --chat-ids        群 ID 列表（oc_），逗号分隔
   --room-ids        会议室 ID 列表（omm_），逗号分隔；可先用 calendar room-find 查空闲会议室
   --attendee-ids    混合列表，按前缀识别：ou_ 用户 / oc_ 群 / omm_ 会议室 / 含 @ 为外部邮箱
+  --dry-run         只预览，不执行（不联网、不读凭据）
   --as              身份：auto（默认）| user | bot
 
 示例:
+  feishu-cli calendar attendee add CAL_xxx EVENT_xxx --user-ids ou_aaa,ou_bbb --dry-run
   feishu-cli calendar attendee add CAL_xxx EVENT_xxx --user-ids ou_aaa,ou_bbb
   feishu-cli calendar attendee add CAL_xxx EVENT_xxx --chat-ids oc_xxx --room-ids omm_xxx`,
 	Args: cobra.ExactArgs(2),
@@ -76,6 +78,16 @@ var calendarAttendeeAddCmd = &cobra.Command{
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
+		attendees := client.AttendeeRefsToEventAttendees(refs)
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return printDryRunPlan(cmd, "calendar attendee add 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST",
+				URL:    "/open-apis/calendar/v4/calendars/" + args[0] + "/events/" + args[1] + "/attendees",
+				Desc:   "添加日程参与人（通知参与人）",
+				Params: map[string]any{"user_id_type": "open_id"},
+				Body:   map[string]any{"attendees": attendees, "need_notification": true},
+			}})
+		}
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -84,7 +96,6 @@ var calendarAttendeeAddCmd = &cobra.Command{
 			return err
 		}
 
-		attendees := client.AttendeeRefsToEventAttendees(refs)
 		if err := client.AddEventAttendees(args[0], args[1], attendees, token); err != nil {
 			return err
 		}
@@ -290,6 +301,8 @@ func init() {
 	calendarAttendeeAddCmd.Flags().String("chat-ids", "", "群 ID 列表（oc_），逗号分隔")
 	calendarAttendeeAddCmd.Flags().String("room-ids", "", "会议室 ID 列表（omm_），逗号分隔")
 	calendarAttendeeAddCmd.Flags().String("attendee-ids", "", "混合 ID 列表，按前缀识别（ou_/oc_/omm_/邮箱）")
+	calendarAttendeeAddCmd.Flags().Bool("dry-run", false, "只预览将发出的请求，不执行")
+	calendarAttendeeAddCmd.Flags().StringP("output", "o", "", "输出格式（json，仅 dry-run 预览）")
 	calendarAttendeeAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(calendarAttendeeAddCmd)
 

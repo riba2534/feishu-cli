@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -24,6 +25,7 @@ var calendarRsvpCmd = &cobra.Command{
   --event-id           日程 ID（必填）
   --action             答复动作（必填）: accept / decline / tentative
   --rsvp-status        兼容别名，等价于 --action
+  --dry-run            只预览请求，不执行（不联网、不读凭据）
 
 权限:
   calendar:calendar.event:reply（必需 User Token，以本人身份答复；未登录时报错）
@@ -36,7 +38,10 @@ var calendarRsvpCmd = &cobra.Command{
   feishu-cli calendar rsvp --calendar-id CAL_xxx --event-id EVENT_xxx --action decline
 
   # 待定
-  feishu-cli calendar rsvp --event-id EVENT_xxx --action tentative`,
+  feishu-cli calendar rsvp --event-id EVENT_xxx --action tentative
+
+  # 只预览
+  feishu-cli calendar rsvp --event-id EVENT_xxx --action accept --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		calendarID, _ := cmd.Flags().GetString("calendar-id")
 		eventID, _ := cmd.Flags().GetString("event-id")
@@ -49,19 +54,35 @@ var calendarRsvpCmd = &cobra.Command{
 		rsvpStatus = strings.TrimSpace(rsvpStatus)
 
 		if eventID == "" {
-			return fmt.Errorf("--event-id 不能为空")
+			return clierr.Usagef("--event-id 不能为空")
 		}
 		if action != "" && rsvpStatus != "" && action != rsvpStatus {
-			return fmt.Errorf("--action 与 --rsvp-status 不能同时指定不同值")
+			return clierr.Usagef("--action 与 --rsvp-status 不能同时指定不同值")
 		}
 		if action == "" {
 			action = rsvpStatus
 		}
 		if action == "" {
-			return fmt.Errorf("必须指定 --action 或 --rsvp-status")
+			return clierr.Usagef("必须指定 --action 或 --rsvp-status")
 		}
 		if action != "accept" && action != "decline" && action != "tentative" {
-			return fmt.Errorf("无效的 --action: %s，有效值: accept/decline/tentative", action)
+			return clierr.Usagef("无效的 --action: %s，有效值: accept/decline/tentative", action)
+		}
+
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			steps := []dryRunStep{}
+			calPath := calendarID
+			if calendarID == "" {
+				calPath = "<primary_calendar_id>"
+				steps = append(steps, dryRunStep{Method: "POST", URL: "/open-apis/calendar/v4/calendars/primary", Desc: "未传 --calendar-id：先取当前用户主日历"})
+			}
+			steps = append(steps, dryRunStep{
+				Method: "POST",
+				URL:    "/open-apis/calendar/v4/calendars/" + calPath + "/events/" + eventID + "/reply",
+				Desc:   "以本人身份答复日程（需 User Token）",
+				Body:   map[string]any{"rsvp_status": action},
+			})
+			return printDryRunPlan(cmd, "calendar rsvp 预览（未执行）", nil, steps)
 		}
 
 		if err := config.Validate(); err != nil {
@@ -105,6 +126,7 @@ func init() {
 	calendarRsvpCmd.Flags().String("event-id", "", "日程 ID（必填）")
 	calendarRsvpCmd.Flags().String("action", "", "答复动作: accept/decline/tentative（必填）")
 	calendarRsvpCmd.Flags().String("rsvp-status", "", "答复动作，兼容别名：accept/decline/tentative")
+	calendarRsvpCmd.Flags().Bool("dry-run", false, "只预览将发出的请求，不执行")
 	calendarRsvpCmd.Flags().String("user-access-token", "", "User Access Token（必需，可显式传入或经 auth login 解析）")
 
 	mustMarkFlagRequired(calendarRsvpCmd, "event-id")

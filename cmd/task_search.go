@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -57,15 +58,6 @@ var taskSearchCmd = &cobra.Command{
   # 翻页拉取全部结果并输出 JSON
   feishu-cli task search --completed --page-all --output json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, err := resolveRequiredUserToken(cmd)
-		if err != nil {
-			return fmt.Errorf("搜索任务需要 User Access Token: %w\n提示: 请先执行 feishu-cli auth login 进行授权", err)
-		}
-
 		keyword, _ := cmd.Flags().GetString("keyword")
 		creator, _ := cmd.Flags().GetString("creator")
 		assignee, _ := cmd.Flags().GetString("assignee")
@@ -81,7 +73,7 @@ var taskSearchCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if completedFlag && uncompletedFlag {
-			return fmt.Errorf("--completed 与 --uncompleted 不能同时使用")
+			return clierr.Usagef("--completed 与 --uncompleted 不能同时使用")
 		}
 
 		var completed *bool
@@ -95,11 +87,11 @@ var taskSearchCmd = &cobra.Command{
 
 		dueStart, err := parseDueBoundToRFC3339(dueAfter, false)
 		if err != nil {
-			return fmt.Errorf("解析 --due-after 失败: %w", err)
+			return clierr.Usagef("解析 --due-after 失败: %w", err)
 		}
 		dueEnd, err := parseDueBoundToRFC3339(dueBefore, true)
 		if err != nil {
-			return fmt.Errorf("解析 --due-before 失败: %w", err)
+			return clierr.Usagef("解析 --due-before 失败: %w", err)
 		}
 
 		creatorIDs := splitAndTrim(creator)
@@ -108,7 +100,15 @@ var taskSearchCmd = &cobra.Command{
 
 		if strings.TrimSpace(keyword) == "" && len(creatorIDs) == 0 && len(assigneeIDs) == 0 &&
 			len(followerIDs) == 0 && completed == nil && dueStart == "" && dueEnd == "" {
-			return fmt.Errorf("请至少提供一个搜索条件（--keyword / --creator / --assignee / --follower / --completed / --uncompleted / --due-after / --due-before）")
+			return clierr.Usagef("请至少提供一个搜索条件（--keyword / --creator / --assignee / --follower / --completed / --uncompleted / --due-after / --due-before）")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, err := resolveRequiredUserToken(cmd)
+		if err != nil {
+			return fmt.Errorf("搜索任务需要 User Access Token: %w\n提示: 请先执行 feishu-cli auth login 进行授权", err)
 		}
 
 		opts := client.TaskSearchOptions{
@@ -190,7 +190,7 @@ func parseDueBoundToRFC3339(input string, endOfDay bool) (string, error) {
 		}
 		return t.Format(time.RFC3339), nil
 	}
-	return "", fmt.Errorf("无法识别的时间格式 %q（支持 RFC3339 / 2006-01-02 15:04:05 / 2006-01-02）", input)
+	return "", clierr.Usagef("无法识别的时间格式 %q（支持 RFC3339 / 2006-01-02 15:04:05 / 2006-01-02）", input)
 }
 
 func init() {

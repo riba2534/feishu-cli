@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -47,12 +48,6 @@ var calendarSuggestionCmd = &cobra.Command{
   # JSON 输出便于 AI Agent 解析
   feishu-cli calendar suggestion --attendee-ids ou_aaa --duration 30m -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token := resolveOptionalUserTokenWithFallback(cmd)
-
 		attendeeIDs, _ := cmd.Flags().GetString("attendee-ids")
 		durationStr, _ := cmd.Flags().GetString("duration")
 		startStr, _ := cmd.Flags().GetString("start")
@@ -85,6 +80,11 @@ var calendarSuggestionCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		req := &client.SuggestionRequest{
 			SearchStartTime:    startTime,
@@ -144,18 +144,18 @@ func parseDurationMinutes(s string) (int, error) {
 			mins = mins*10 + int(c-'0')
 		}
 		if mins < 1 || mins > 1440 {
-			return 0, fmt.Errorf("--duration 必须在 1-1440 分钟之间，当前: %d", mins)
+			return 0, clierr.Usagef("--duration 必须在 1-1440 分钟之间，当前: %d", mins)
 		}
 		return mins, nil
 	}
 
 	d, err := time.ParseDuration(s)
 	if err != nil {
-		return 0, fmt.Errorf("解析 --duration 失败: %w（支持 30m / 1h30m / 90）", err)
+		return 0, clierr.Usagef("解析 --duration 失败: %w（支持 30m / 1h30m / 90）", err)
 	}
 	mins := int(d / time.Minute)
 	if mins < 1 || mins > 1440 {
-		return 0, fmt.Errorf("--duration 必须在 1-1440 分钟之间，当前: %d 分钟", mins)
+		return 0, clierr.Usagef("--duration 必须在 1-1440 分钟之间，当前: %d 分钟", mins)
 	}
 	return mins, nil
 }
@@ -181,7 +181,7 @@ func resolveSearchWindow(startStr, endStr string) (string, string, error) {
 	} else {
 		t, err := time.Parse(time.RFC3339, startStr)
 		if err != nil {
-			return "", "", fmt.Errorf("解析 --start 失败: %w（RFC3339 格式，如 2024-01-21T14:00:00+08:00）", err)
+			return "", "", clierr.Usagef("解析 --start 失败: %w（RFC3339 格式，如 2024-01-21T14:00:00+08:00）", err)
 		}
 		start = t
 	}
@@ -192,13 +192,13 @@ func resolveSearchWindow(startStr, endStr string) (string, string, error) {
 	} else {
 		t, err := time.Parse(time.RFC3339, endStr)
 		if err != nil {
-			return "", "", fmt.Errorf("解析 --end 失败: %w（RFC3339 格式）", err)
+			return "", "", clierr.Usagef("解析 --end 失败: %w（RFC3339 格式）", err)
 		}
 		end = t
 	}
 
 	if !end.After(start) {
-		return "", "", fmt.Errorf("--end 必须晚于 --start")
+		return "", "", clierr.Usagef("--end 必须晚于 --start")
 	}
 
 	return start.Format(time.RFC3339), end.Format(time.RFC3339), nil
@@ -219,18 +219,18 @@ func parseExcludedTimes(s string) ([]*client.SuggestionEventTime, error) {
 		}
 		parts := strings.Split(r, "~")
 		if len(parts) != 2 {
-			return nil, fmt.Errorf("无效的 --exclude 段 %q，应为 start~end 格式", r)
+			return nil, clierr.Usagef("无效的 --exclude 段 %q，应为 start~end 格式", r)
 		}
 		startT, err := time.Parse(time.RFC3339, strings.TrimSpace(parts[0]))
 		if err != nil {
-			return nil, fmt.Errorf("--exclude 起始时间 %q 解析失败: %w", parts[0], err)
+			return nil, clierr.Usagef("--exclude 起始时间 %q 解析失败: %w", parts[0], err)
 		}
 		endT, err := time.Parse(time.RFC3339, strings.TrimSpace(parts[1]))
 		if err != nil {
-			return nil, fmt.Errorf("--exclude 结束时间 %q 解析失败: %w", parts[1], err)
+			return nil, clierr.Usagef("--exclude 结束时间 %q 解析失败: %w", parts[1], err)
 		}
 		if !endT.After(startT) {
-			return nil, fmt.Errorf("--exclude 段 %q 的结束时间必须晚于起始时间", r)
+			return nil, clierr.Usagef("--exclude 段 %q 的结束时间必须晚于起始时间", r)
 		}
 		out = append(out, &client.SuggestionEventTime{
 			EventStartTime: startT.Format(time.RFC3339),

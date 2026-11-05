@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -143,7 +144,7 @@ func loadNodeJSONArrayFlag(cmd *cobra.Command, inlineFlag, fileFlag, label strin
 	}
 	var arr []any
 	if err := json.Unmarshal([]byte(s), &arr); err != nil {
-		return nil, fmt.Errorf("--%s 必须是 JSON 数组: %w", inlineFlag, err)
+		return nil, clierr.Usagef("--%s 必须是 JSON 数组: %w", inlineFlag, err)
 	}
 	return json.RawMessage(s), nil
 }

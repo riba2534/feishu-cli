@@ -57,7 +57,7 @@ var taskUploadAttachmentCmd = &cobra.Command{
 		// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
 		stat, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("--file 无效: %w", err)
+			return clierr.Usagef("--file 无效: %w", err)
 		}
 		if err := validateIdentityAs(cmd); err != nil {
 			return err

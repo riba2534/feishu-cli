@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -37,10 +38,6 @@ var approvalGetCmd = &cobra.Command{
   feishu-cli approval get <approval_code> --locale zh-CN`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		approvalCode := args[0]
 		if err := validateApprovalCode(approvalCode); err != nil {
 			return err
@@ -48,6 +45,9 @@ var approvalGetCmd = &cobra.Command{
 
 		locale, _ := cmd.Flags().GetString("locale")
 		output, _ := cmd.Flags().GetString("output")
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		token, err := requireUserToken(cmd, "approval get")
 		if err != nil {
 			return err
@@ -91,7 +91,7 @@ var approvalGetCmd = &cobra.Command{
 
 func validateApprovalCode(approvalCode string) error {
 	if !isValidToken(approvalCode) {
-		return fmt.Errorf("无效的审批定义 code: %s", approvalCode)
+		return clierr.Usagef("无效的审批定义 code: %s", approvalCode)
 	}
 	return nil
 }

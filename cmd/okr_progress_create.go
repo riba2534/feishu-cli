@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -52,10 +53,6 @@ var okrProgressCreateCmd = &cobra.Command{
     --objective-id 7xxx \
     --content-json '{"blocks":[{"type":"paragraph","paragraph":{"elements":[{"type":"textRun","textRun":{"text":"加粗内容","style":{"bold":true}}}]}}]}'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		objectiveID, _ := cmd.Flags().GetString("objective-id")
 		keyResultID, _ := cmd.Flags().GetString("key-result-id")
 		contentText, _ := cmd.Flags().GetString("content")
@@ -104,6 +101,9 @@ var okrProgressCreateCmd = &cobra.Command{
 			}})
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
@@ -161,13 +161,13 @@ func pickOKRTarget(objectiveID, keyResultID string) (string, client.OKRProgressT
 	hasKR := keyResultID != ""
 	switch {
 	case hasObj && hasKR:
-		return "", 0, fmt.Errorf("--objective-id 和 --key-result-id 只能填一个")
+		return "", 0, clierr.Usagef("--objective-id 和 --key-result-id 只能填一个")
 	case hasObj:
 		return objectiveID, client.OKRTargetObjective, nil
 	case hasKR:
 		return keyResultID, client.OKRTargetKeyResult, nil
 	default:
-		return "", 0, fmt.Errorf("必须指定 --objective-id 或 --key-result-id 之一")
+		return "", 0, clierr.Usagef("必须指定 --objective-id 或 --key-result-id 之一")
 	}
 }
 
@@ -177,16 +177,16 @@ func buildOKRProgressContentJSON(text, raw string) (string, error) {
 	rawTrim := strings.TrimSpace(raw)
 	textTrim := strings.TrimSpace(text)
 	if rawTrim != "" && textTrim != "" {
-		return "", fmt.Errorf("--content 和 --content-json 只能填一个")
+		return "", clierr.Usagef("--content 和 --content-json 只能填一个")
 	}
 	if rawTrim == "" && textTrim == "" {
-		return "", fmt.Errorf("必须指定 --content 或 --content-json 之一")
+		return "", clierr.Usagef("必须指定 --content 或 --content-json 之一")
 	}
 	if rawTrim != "" {
 		// 校验是合法 JSON，避免下游报莫名错
 		var probe any
 		if err := json.Unmarshal([]byte(rawTrim), &probe); err != nil {
-			return "", fmt.Errorf("--content-json 不是合法 JSON: %w", err)
+			return "", clierr.Usagef("--content-json 不是合法 JSON: %w", err)
 		}
 		return rawTrim, nil
 	}
