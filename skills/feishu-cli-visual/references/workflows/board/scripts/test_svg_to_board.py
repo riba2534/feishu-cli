@@ -64,6 +64,29 @@ class ViewboxTests(unittest.TestCase):
             self.assertEqual(svg_to_board.step1_translate("drawing.svg", False), [node])
 
 
+class RichTextColorTests(unittest.TestCase):
+    def test_top_level_color_copied_into_rich_text(self):
+        nodes = [{"type": "text_shape", "text": {"text": "红字\n第二行", "font_size": 16,
+                                                 "font_weight": "bold", "text_color": "#f54a45"}}]
+        with contextlib.redirect_stdout(io.StringIO()):
+            svg_to_board.fill_rich_text_color(nodes)
+        paras = nodes[0]["text"]["rich_text"]["paragraphs"]
+        self.assertEqual([p["elements"][0]["text_element"]["text"] for p in paras], ["红字", "第二行"])
+        style = paras[0]["elements"][0]["text_element"]["text_style"]
+        self.assertEqual(style["text_color"], "#f54a45")
+        self.assertEqual(style["font_weight"], "bold")
+
+    def test_existing_rich_text_and_non_text_nodes_untouched(self):
+        rich = {"paragraphs": [{"elements": []}]}
+        nodes = [{"type": "text_shape", "text": {"text": "x", "rich_text": rich}},
+                 {"type": "connector"},
+                 {"type": "composite_shape", "text": {"text": ""}}]
+        before = copy.deepcopy(nodes)
+        with contextlib.redirect_stdout(io.StringIO()):
+            svg_to_board.fill_rich_text_color(nodes)
+        self.assertEqual(nodes, before)
+
+
 class UploadResultTests(unittest.TestCase):
     def test_only_complete_integer_count_confirms_batch(self):
         nodes = [{"type": "composite_shape"}, {"type": "text_shape"}]
