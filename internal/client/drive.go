@@ -1523,6 +1523,9 @@ func (v rawFileVersion) info() *FileVersionInfo {
 	}
 }
 
+// FileVersionsAPIPath 返回文件版本集合端点（/drive/v1/files/:token/versions），供 --dry-run 预览。
+func FileVersionsAPIPath(fileToken string) string { return fileVersionsPath(fileToken) }
+
 func fileVersionsPath(fileToken string) string {
 	return "/open-apis/drive/v1/files/" + url.PathEscape(fileToken) + "/versions"
 }

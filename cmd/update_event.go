@@ -24,6 +24,8 @@ var updateEventCmd = &cobra.Command{
   --start           开始时间（须与 --end 同时传：服务端对只改一端的请求返回成功但不生效）
   --end             结束时间（须与 --start 同时传）
   --description, -d 日程描述
+  --description-format 描述格式：text（默认，纯文本）| markdown（写入富文本 description_rich，
+                    ![alt](./a.png) 本地图片须在当前目录内，更新前自动上传）
   --location, -l    地点
   --rrule           重复规则（RFC5545 RRULE），更新为重复日程或修改重复规则
   --apply-to        重复日程的修改范围：single | all | this-and-following（见下文）
@@ -118,16 +120,28 @@ var updateEventCmd = &cobra.Command{
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
+		rich, err := parseRichDescriptionFlags(cmd, description)
+		if err != nil {
+			return err
+		}
 		if cmd.Flags().Changed("notify") {
 			params.NeedNotification = &notify
 		}
 
 		if dryRun {
+			preview := params
+			var steps []dryRunStep
+			if rich != nil {
+				preview.Description = ""
+				preview.DescriptionRich = rich.preview()
+				steps = append(steps, rich.uploadSteps(calendarID)...)
+			}
+			steps = append(steps, updateEventDryRunSteps(calendarID, eventID, applyTo, preview)...)
 			return printDryRunPlan(cmd, "update-event 预览（未执行）", map[string]any{
 				"calendar_id": calendarID,
 				"event_id":    eventID,
 				"apply_to":    applyTo,
-			}, updateEventDryRunSteps(calendarID, eventID, applyTo, params))
+			}, steps)
 		}
 
 		if err := config.Validate(); err != nil {
@@ -154,6 +168,14 @@ var updateEventCmd = &cobra.Command{
 			if err := confirmDangerousAction(cmd, fmt.Sprintf("将修改%s（日程 %s）", client.DescribeUpdateScope(kind, scope), eventID)); err != nil {
 				return err
 			}
+		}
+
+		if rich != nil {
+			// 确认之后、写日程之前上传描述中的本地图片
+			if params.DescriptionRich, err = rich.resolve(calendarID, token); err != nil {
+				return err
+			}
+			params.Description = ""
 		}
 
 		res, err := client.UpdateEventScoped(calendarID, eventID, current, scope, params, calendarProgress("calendar update-event"), token)
@@ -204,7 +226,9 @@ func updateEventDryRunSteps(calendarID, eventID, applyTo string, params client.U
 	if params.Summary != "" {
 		body["summary"] = params.Summary
 	}
-	if params.Description != "" {
+	if params.DescriptionRich != "" {
+		body["description_rich"] = params.DescriptionRich
+	} else if params.Description != "" {
 		body["description"] = params.Description
 	}
 	if params.Location != "" {
@@ -263,6 +287,7 @@ func init() {
 	updateEventCmd.Flags().String("start", "", "开始时间（须与 --end 同时传）")
 	updateEventCmd.Flags().String("end", "", "结束时间（须与 --start 同时传）")
 	updateEventCmd.Flags().StringP("description", "d", "", "日程描述")
+	addDescriptionFormatFlag(updateEventCmd)
 	updateEventCmd.Flags().StringP("location", "l", "", "地点")
 	updateEventCmd.Flags().String("rrule", "", "重复规则（RFC5545 RRULE，如 FREQ=WEEKLY;BYDAY=MO）")
 	updateEventCmd.Flags().String("apply-to", "", "重复日程修改范围：single | all | this-and-following（不传=服务端原生语义）")

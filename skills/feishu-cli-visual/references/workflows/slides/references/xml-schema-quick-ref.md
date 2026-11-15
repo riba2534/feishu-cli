@@ -56,9 +56,9 @@
 | `<line>` | `startX` `startY` `endX` `endY` | 不是 x1/y1/x2/y2；`<border color width>` 控制线 |
 | `<polyline>` | `topLeftX` `topLeftY` `width` `height` | 折线/曲线连接，`<border>` 必填 |
 | `<img src>` | `topLeftX` `topLeftY` `width` `height` | src 只能是 file_token 或 `@本地路径` 占位符；比例与原图不同会被裁剪；是 `<img>` 不是 `<image>` |
-| `<icon iconType>` | 同上 | IconPark 路径，如 `iconpark/Charts/chart-line.svg`，必须 `<fill>` 上色 |
+| `<icon iconType>` | 同上 | IconPark 路径，如 `iconpark/Charts/chart-line.svg`，必须 `<fill>` 上色；路径从 [`iconpark.md`](iconpark.md) 常用清单选，不要凭印象拼 |
 | `<table>` | `topLeftX` `topLeftY` `width` `height` | 子元素 `<colgroup><col width/></colgroup>` 与 `<tr height><td>…</td></tr>`；`<td>` 只放 `<fill>`、`<content>`；表头加背景色 |
-| `<chart>` | 同上 | 必须有 `<chartPlotArea>` 与 `<chartData>`；语法复杂，照官方 demo 改 |
+| `<chart>` | 同上 | 必须有 `<chartPlotArea>` 与 `<chartData>`；见下方「图表」一节，照 [`slides_chart_demo.xml`](slides_chart_demo.xml) 改 |
 | `<embed>` | 同上 | 内含一个标准 `<svg xmlns="http://www.w3.org/2000/svg">` |
 
 ## 颜色与背景
@@ -84,3 +84,38 @@
 - 字号显式设置，长文字加 `wrap="true" autoFit="normal-auto-fit"`
 - 图片用 `@` 占位符或当前演示文稿的 file_token
 - 写回前可 `slides screenshot --content @page.xml` 先看渲染效果
+
+## 图表 `<chart>`
+
+- 完整示例：[`slides_chart_demo.xml`](slides_chart_demo.xml)（7 页，覆盖 column / bar / line / area / pie / radar / combo，
+  含堆叠、平滑、双轴、数据标签、配色主题），复制其中一个 `<chart>` 改 `chartData` 最快。
+- 元素与属性定义：[`slides_chart_schema.xml`](slides_chart_schema.xml)（官方 XSD 的图表节选，按需搜索元素名，不必通读）。
+- `<chartPlot type>` 取值：`pie` `column` `bar` `line` `area` `radar` `combo` `bubble` `waterfall` `pareto`。
+  `bubble` / `waterfall` / `pareto` 不在 demo 里，配置分别写在 `<chartExtra>` 的 `<chartBubble>` / `<chartWaterfall>` /
+  `<chartPareto>` 下（定义见 schema 节选的 `ChartBubbleType` / `ChartWaterfallType` / `ChartParetoType`）。
+- 数据模型：`<chartData>` 下 `<dim1>` 是分类（一个 `<chartField>`，逗号分隔），`<dim2>` 是数值系列（每个系列一个 `<chartField>`），
+  dim1 第 i 个值对应每个系列的第 i 个值。
+
+瀑布图（实测通过服务端 lint 并正确渲染）：数值是**增减量**；`firstValueAsTotal="true"` 把首值画成起点总量柱，
+`lastValueAsSubtotal="true"` 在末尾自动追加一根「小计」柱（不要再手写期末值，否则会被当成又一次增量）。
+
+```xml
+<chart topLeftX="60" topLeftY="100" width="840" height="400">
+  <chartPlotArea>
+    <chartPlot type="waterfall">
+      <chartExtra>
+        <chartWaterfall firstValueAsTotal="true" lastValueAsSubtotal="true"/>
+      </chartExtra>
+    </chartPlot>
+    <chartAxes>
+      <chartAxis type="x"><chartLabel fontSize="10"/></chartAxis>
+      <chartAxis type="y" position="left"><chartGridLine color="rgb(226, 232, 240)"/><chartLabel fontSize="10"/></chartAxis>
+    </chartAxes>
+  </chartPlotArea>
+  <chartData>
+    <dim1><chartField name="项目">期初,收入增长,成本上升,汇率影响</chartField></dim1>
+    <dim2><chartField name="利润">100,40,-25,-5</chartField></dim2>
+  </chartData>
+  <chartTitle fontSize="12" bold="true">利润变化（万元）</chartTitle>
+</chart>
+```

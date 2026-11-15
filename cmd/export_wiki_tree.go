@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -61,10 +62,6 @@ var exportWikiTreeCmd = &cobra.Command{
   feishu-cli wiki export-tree <token> -o ./backup --expand-mentions=false`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		rootToken, err := extractWikiLookupToken(args[0])
 		if err != nil {
 			return err
@@ -75,13 +72,13 @@ var exportWikiTreeCmd = &cobra.Command{
 			outputDir = "./"
 		}
 		if err := validateOutputPath(outputDir, ""); err != nil {
-			return fmt.Errorf("输出目录不安全: %w", err)
+			return clierr.Usagef("输出目录不安全: %w", err)
 		}
 		// --assets-dir 同样在任何网络请求之前校验（仅 --download-images 时使用）
 		if downloadImages, _ := cmd.Flags().GetBool("download-images"); downloadImages {
 			assetsDir, _ := cmd.Flags().GetString("assets-dir")
 			if err := validateOutputPath(assetsDir, ""); err != nil {
-				return fmt.Errorf("--assets-dir 无效: %w", err)
+				return clierr.Usagef("--assets-dir 无效: %w", err)
 			}
 		}
 
@@ -89,6 +86,10 @@ var exportWikiTreeCmd = &cobra.Command{
 		includeTypes, _ := cmd.Flags().GetStringSlice("include-types")
 		skipExisting, _ := cmd.Flags().GetBool("skip-existing")
 		continueOnError, _ := cmd.Flags().GetBool("continue-on-error")
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 

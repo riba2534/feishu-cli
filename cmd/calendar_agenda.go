@@ -39,10 +39,6 @@ var calendarAgendaCmd = &cobra.Command{
   feishu-cli calendar agenda -o json`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		// 解析 calendar_id，默认 "primary"
 		calendarID := "primary"
 		if len(args) > 0 {
@@ -60,6 +56,9 @@ var calendarAgendaCmd = &cobra.Command{
 			return err
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err

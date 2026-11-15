@@ -44,12 +44,20 @@ var getPublicPermissionCmd = &cobra.Command{
   feishu-cli perm public-get DOC_TOKEN --as user`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		docToken, docType, err := resolvePermTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Get public permission settings (v2 primary, v1 for legacy fields)", nil, []dryRunStep{
+				{Method: "GET", URL: permAPIPath("/open-apis/drive/v2/permissions/%s/public", docToken), Params: map[string]any{"type": docType}},
+				{Method: "GET", URL: permAPIPath("/open-apis/drive/v1/permissions/%s/public", docToken), Params: map[string]any{"type": docType}, Desc: "补读 external_access / invite_external"},
+			})
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
-
-		docToken := args[0]
-		docType, _ := cmd.Flags().GetString("doc-type")
 
 		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {

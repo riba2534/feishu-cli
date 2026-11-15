@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/spf13/cobra"
@@ -59,10 +60,6 @@ query 可省略，仅用 filter 搜索。加 --enrich 才补全内容/发送者/
   feishu-cli search messages "项目" --enrich --chat-ids oc_xxx --page-all --page-limit 5 --format csv`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		query := ""
 		if len(args) == 1 {
 			query = args[0]
@@ -101,8 +98,9 @@ query 可省略，仅用 filter 搜索。加 --enrich 才补全内容/发送者/
 			PageSize:        pageSize,
 			PageToken:       pageToken,
 		}
+		// 本地参数校验（纯本地、不联网）先于 config.Validate 与身份解析，统一为用法错误（退出码 2）
 		if err := client.ValidateSearchMessagesOptions(opts); err != nil {
-			return err
+			return clierr.Usage(err)
 		}
 		pageLimit, err := client.ResolvePageLimit(pageLimit, client.SearchPageLimitMax, pageAll)
 		if err != nil {
@@ -119,9 +117,26 @@ query 可省略，仅用 filter 搜索。加 --enrich 才补全内容/发送者/
 		if useStructured {
 			o, oerr := output.NewOptions(formatVal, jq)
 			if oerr != nil {
-				return oerr
+				return clierr.Usage(oerr)
 			}
 			structuredOpts = o
+		}
+		// --card-content-type 只在 --enrich 路径消费：非 enrich 模式不因非法取值被提前 abort
+		cardContentType := ""
+		if enrich {
+			v, err := resolveCardContentType(cmd)
+			if err != nil {
+				return clierr.Usage(err)
+			}
+			cardContentType = v
+		}
+
+		if err := validateIdentityAsFlag(cmd); err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		userAccessToken, err := resolveIdentityToken(cmd)
@@ -159,12 +174,7 @@ query 可省略，仅用 filter 搜索。加 --enrich 才补全内容/发送者/
 			return nil
 		}
 
-		// --enrich（opt-in）：card-content-type 仅 enrich 路径消费，故校验下沉到此，
-		// 不让默认（非 enrich）模式因非法 --card-content-type 被提前 abort。
-		cardContentType, err := resolveCardContentType(cmd)
-		if err != nil {
-			return err
-		}
+		// --enrich（opt-in）：card-content-type 已在身份解析前校验
 		enriched, lastRes, err := collectEnrichedMessages(opts, userAccessToken, cardContentType, pageAll, pageLimit)
 		if err != nil {
 			return err

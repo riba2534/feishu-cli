@@ -60,6 +60,8 @@ feishu-cli sheet read <token> "<sheetId>!1:3"    # 整行
 feishu-cli sheet read <token> "A1:C10" --sheet-name "数据"
 ```
 
+文本模式下链接等富文本单元格显示为 `文本(链接)`，如 `官网(https://example.com/)`；`-o json` 保持接口原样（`type` / `text` / `link` 对象数组）。
+
 ### 写入单元格
 
 ```bash
@@ -67,10 +69,15 @@ feishu-cli sheet write <token> "Sheet1!A1:B2" --data '[["姓名","年龄"],["张
 
 # 大数据量：只写左上角单元格，超过 5000 行 / 100 列自动分批
 feishu-cli sheet write <token> "Sheet1!A1" --data-file rows.json
+
+# 覆盖写入前预览请求（不联网；加 -o json 才输出请求体）
+feishu-cli sheet write <token> "Sheet1!A1:B2" --data '[["姓名","年龄"]]' --dry-run -o json
 ```
 
 接口单次最多写 5000 行 × 100 列；超限时 CLI 以范围左上角为锚点自动拆批（stderr 提示批数，JSON 输出带 `batches`）。
-显式声明的范围小于数据时直接报错，不会越界写。
+显式声明的范围（如 `H1:I1`）行/列数小于数据时在本地报用法错误（退出码 2，`--dry-run` 同样校验），不会越界写。
+`--dry-run` 中，`--sheet-id` 或 URL `?sheet=` 能离线确定子表时预览范围已补好前缀，与执行一致；
+前缀为子表名、用 `--sheet-name` 或依赖唯一子表时预览保留原样范围，请求步骤的 `desc` 注明执行时换算（`clear`、`dropdown delete` 同理）。
 
 ### 追加数据
 
@@ -92,6 +99,7 @@ feishu-cli sheet table-get <token> <sheet_id> --range A1:D50 --no-header
 feishu-cli sheet table-put <token> <sheet_id> --sheets-file t.json      # 默认 overwrite，从 A1 起覆盖
 feishu-cli sheet table-put <token> <sheet_id> --sheets-file more.json --mode append      # 写到已有数据最后一行之后
 feishu-cli sheet table-put <token> <sheet_id> --sheets-file t.json --start-cell C3 -o json
+feishu-cli sheet table-put <token> <sheet_id> --sheets-file t.json --dry-run -o json   # 预览写入范围与列格式，不联网
 feishu-cli sheet table-put <token> <sheet_id> \
   --sheets '{"sheets":[{"columns":["id","amount","date"],"data":[["A001",12.5,"2024-01-15T08:30:00"]],"dtypes":{"amount":"float64","date":"datetime64[ns]"}}]}'
 ```
@@ -111,6 +119,9 @@ dtype 映射（实测）：
 - 一次只能写一个 sheet（payload 含多个 sheet 报错）。number / date 列的空字符串写为空单元格。
 - `table-get` 推断：数字 → `float64`，日期 → `datetime64[ns]`（带时间的列 `formats` 为 `yyyy-mm-dd hh:mm:ss`），
   全列 TRUE/FALSE → `bool`，混合类型 → `object`。
+- 下拉框单元格：V3 富文本接口返回 `#UNSUPPORTED_TYPE`，`table-get` 会对同一范围再读一次纯文本回填（读出 `P1` 等选项值）；
+  回填失败时 stderr 列出单元格地址并读作 `null`，退出码不变。实测 get → put 往返后下拉值与下拉设置都保留。
+- `table-put --dry-run` 只做本地校验（dtype 与数据不符为用法错误，退出码 2），`append` 的起始行要读取已有数据，执行时才确定。
 
 ## Markdown 互转
 
@@ -152,6 +163,8 @@ feishu-cli sheet read-plain <token> <sheet_id> "A1:C10"
 # 富文本模式（返回完整格式信息）
 feishu-cli sheet read-rich <token> <sheet_id> "<sheet_id>!A1:C10"
 ```
+
+下拉框单元格在 `read-rich` 中只返回 `{"type":"#UNSUPPORTED_TYPE"}`，CLI 会在 stderr 列出这些单元格；要读值用 `read-plain` 或 `table-get`。
 
 ### 写入富文本
 
@@ -205,8 +218,9 @@ feishu-cli sheet insert <token> <sheet_id> "Sheet1!A1:B2" --data-file data.json
 # 追加富文本
 feishu-cli sheet append-rich <token> <sheet_id> "A1:B2" --data-file data.json
 
-# 清除范围内容
+# 清除范围内容（保留样式；最多 10 个范围；--dry-run 预览请求）
 feishu-cli sheet clear <token> <sheet_id> "A1:C10"
+feishu-cli sheet clear <token> <sheet_id> "A1:C10" "E1:E10" --dry-run
 ```
 
 ## 行列操作
@@ -330,6 +344,7 @@ feishu-cli sheet protect <token> <sheet_id> --range "1:5"                       
 feishu-cli sheet protect <token> <sheet_id> --dimension ROWS --start 0 --end 5     # 同上
 feishu-cli sheet protect <token> <sheet_id> --range "A:C" --users ou_xxx,ou_yyy --lock-info "财务数据"
 feishu-cli sheet unprotect <token> <protect_id...>
+feishu-cli sheet unprotect <token> <protect_id...> --dry-run   # 预览删除请求
 ```
 
 > `protect` 返回 `protect_ids`，把它传给 `unprotect` 即可解除（可一次传多个）。`--users` 为除所有者外允许编辑的用户，

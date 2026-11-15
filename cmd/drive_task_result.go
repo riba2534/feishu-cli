@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -46,10 +47,6 @@ var driveTaskResultCmd = &cobra.Command{
   feishu-cli drive task-result --scenario wiki_delete_space --task-id xxx --as user
   feishu-cli drive task-result --scenario wiki_delete_node --task-id xxx --as bot`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		scenario, _ := cmd.Flags().GetString("scenario")
 		ticket, _ := cmd.Flags().GetString("ticket")
 		fileToken, _ := cmd.Flags().GetString("file-token")
@@ -59,7 +56,7 @@ var driveTaskResultCmd = &cobra.Command{
 		// 1. 先行完成所有本地参数校验（参数非法时零网络、零 token 刷新）
 		output = strings.ToLower(strings.TrimSpace(output))
 		if output != "" && output != "json" {
-			return fmt.Errorf("不支持的 --output %q，仅支持 json（或留空使用默认格式）", output)
+			return clierr.Usagef("不支持的 --output %q，仅支持 json（或留空使用默认格式）", output)
 		}
 
 		if err := validateEnum(scenario, "--scenario", driveTaskScenarios); err != nil {
@@ -69,31 +66,35 @@ var driveTaskResultCmd = &cobra.Command{
 		switch scenario {
 		case "import":
 			if ticket == "" {
-				return fmt.Errorf("--ticket 在 import 场景必填")
+				return clierr.Usagef("--ticket 在 import 场景必填")
 			}
 			if err := validateResourceIdentifier(ticket, "--ticket"); err != nil {
 				return err
 			}
 		case "export":
 			if ticket == "" {
-				return fmt.Errorf("--ticket 在 export 场景必填")
+				return clierr.Usagef("--ticket 在 export 场景必填")
 			}
 			if err := validateResourceIdentifier(ticket, "--ticket"); err != nil {
 				return err
 			}
 			if fileToken == "" {
-				return fmt.Errorf("--file-token 在 export 场景必填（原始文档 token）")
+				return clierr.Usagef("--file-token 在 export 场景必填（原始文档 token）")
 			}
 			if err := validateResourceIdentifier(fileToken, "--file-token"); err != nil {
 				return err
 			}
 		case "task_check", "wiki_move", "wiki_move_to_drive", "wiki_delete_space", "wiki_delete_node":
 			if taskID == "" {
-				return fmt.Errorf("--task-id 在 %s 场景必填", scenario)
+				return clierr.Usagef("--task-id 在 %s 场景必填", scenario)
 			}
 			if err := validateResourceIdentifier(taskID, "--task-id"); err != nil {
 				return err
 			}
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// 2. 本地参数全部合法后，才解析身份与可能触发刷新的 token

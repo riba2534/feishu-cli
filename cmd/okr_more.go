@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
@@ -75,11 +77,11 @@ var okrProgressGetCmd = &cobra.Command{
   feishu-cli okr progress get 7123456789012345678 -o json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		userIDType := flagString(cmd, "user-id-type")
 		if err := validateUserIDType(userIDType); err != nil {
+			return err
+		}
+		if err := config.Validate(); err != nil {
 			return err
 		}
 		token, err := resolveIdentityToken(cmd)
@@ -120,9 +122,6 @@ var okrProgressUpdateCmd = &cobra.Command{
   feishu-cli okr progress update 7xxx --content "已完成 9/10" --progress-percent 90 --progress-status normal`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		userIDType := flagString(cmd, "user-id-type")
 		if err := validateUserIDType(userIDType); err != nil {
 			return err
@@ -147,6 +146,9 @@ var okrProgressUpdateCmd = &cobra.Command{
 				Params: map[string]any{"user_id_type": userIDType},
 				Body:   okrProgressPreviewBody(contentJSON, rate, nil),
 			}})
+		}
+		if err := config.Validate(); err != nil {
+			return err
 		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
@@ -214,27 +216,39 @@ var okrUploadImageCmd = &cobra.Command{
   --file            本地图片路径（必填）
   --objective-id    目标 ID
   --key-result-id   关键结果 ID
+  --dry-run         只预览请求，不执行（不联网、不读凭据）
   --output, -o      输出格式：json
 
 权限要求: okr:okr 或 okr:okr.progress.file:upload
 
 示例:
-  feishu-cli okr upload-image --file chart.png --objective-id 7xxx`,
+  feishu-cli okr upload-image --file chart.png --objective-id 7xxx
+  feishu-cli okr upload-image --file chart.png --objective-id 7xxx --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		filePath := flagString(cmd, "file")
 		if filePath == "" {
-			return fmt.Errorf("请通过 --file 指定图片路径")
+			return clierr.Usagef("请通过 --file 指定图片路径")
 		}
 		targetID, targetType, err := pickOKRTarget(flagString(cmd, "objective-id"), flagString(cmd, "key-result-id"))
 		if err != nil {
 			return err
 		}
 		// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
-		if _, err := safefile.StatInputFile(filePath); err != nil {
-			return fmt.Errorf("--file 无效: %w", err)
+		stat, err := safefile.StatInputFile(filePath)
+		if err != nil {
+			return clierr.Usagef("--file 无效: %w", err)
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
+			return printDryRunPlan(cmd, "okr upload-image 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: "/open-apis/okr/v1/images/upload", Desc: "multipart 上传图片",
+				Body: map[string]any{"file": filepath.Base(filePath), "size": stat.Size(), "target_id": targetID, "target_type": targetType},
+			}})
+		}
+		if err := config.Validate(); err != nil {
+			return err
 		}
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
@@ -282,22 +296,22 @@ func printOKRProgressSummary(progress *client.OKRProgress) {
 func parseOKRProgressRate(percentStr, statusStr string) (*client.OKRProgressRateInput, error) {
 	if percentStr == "" {
 		if statusStr != "" {
-			return nil, fmt.Errorf("--progress-status 必须配合 --progress-percent 一起使用")
+			return nil, clierr.Usagef("--progress-status 必须配合 --progress-percent 一起使用")
 		}
 		return nil, nil
 	}
 	percent, err := strconv.ParseFloat(strings.TrimSpace(percentStr), 64)
 	if err != nil {
-		return nil, fmt.Errorf("--progress-percent 必须是数字: %w", err)
+		return nil, clierr.Usagef("--progress-percent 必须是数字: %w", err)
 	}
 	rate := &client.OKRProgressRateInput{Percent: percent}
 	if statusStr != "" {
 		if hint := client.OKRProgressStatusCompatHint(statusStr); hint != "" {
-			return nil, fmt.Errorf("%s", hint)
+			return nil, clierr.Usagef("%s", hint)
 		}
 		status, ok := client.ParseOKRProgressStatus(statusStr)
 		if !ok {
-			return nil, fmt.Errorf("--progress-status 必须为 normal / overdue / done")
+			return nil, clierr.Usagef("--progress-status 必须为 normal / overdue / done")
 		}
 		rate.Status = &status
 	}
@@ -327,5 +341,6 @@ func init() {
 	okrUploadImageCmd.Flags().String("file", "", "本地图片路径")
 	okrUploadImageCmd.Flags().String("objective-id", "", "目标 ID")
 	okrUploadImageCmd.Flags().String("key-result-id", "", "关键结果 ID")
+	okrUploadImageCmd.Flags().Bool("dry-run", false, "只预览将发出的请求，不执行（不联网、不读凭据）")
 	okrUploadImageCmd.Flags().StringP("output", "o", "", "输出格式：json")
 }

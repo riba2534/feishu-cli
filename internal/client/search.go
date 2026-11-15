@@ -469,6 +469,11 @@ type DriveSearchOptions struct {
 	OnlyTitle    bool     // 仅匹配标题
 	OnlyComment  bool     // 仅搜评论
 	Sort         string   // default / edit_time / edit_time_asc / open_time / create_time
+	// OriginalCreatorIDs 原始创建者 open_id 列表（original_creator_ids；CreatorIDs 实际按所有者匹配）
+	OriginalCreatorIDs []string
+	// TimeRanges 时间窗过滤：key 为 my_edit_time / my_comment_time / open_time / create_time，
+	// 值为 {"start": unix 秒, "end": unix 秒}（两端可缺省）。为空不下发。
+	TimeRanges map[string]map[string]int64
 }
 
 // DriveSearchResult 是 v2 search 的精简结果视图。
@@ -491,13 +496,8 @@ func DriveSearchV2(opts DriveSearchOptions, userAccessToken string) (*DriveSearc
 	return docWikiSearchV2("drive 搜索", opts, userAccessToken)
 }
 
-// docWikiSearchV2 是 drive search 与 search docs 共用的 v2 doc_wiki/search 调用；action 用于错误前缀。
-func docWikiSearchV2(action string, opts DriveSearchOptions, userAccessToken string) (*DriveSearchResult, error) {
-	c, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
+// BuildDocWikiSearchBody 构造 v2 doc_wiki/search 请求体（drive search 的 --dry-run 与单测复用，与真实请求同源）。
+func BuildDocWikiSearchBody(opts DriveSearchOptions) map[string]interface{} {
 	body := map[string]interface{}{
 		"query": opts.Query,
 	}
@@ -526,6 +526,14 @@ func docWikiSearchV2(action string, opts DriveSearchOptions, userAccessToken str
 	}
 	if len(opts.DocTypes) > 0 {
 		shared["doc_types"] = opts.DocTypes
+	}
+	if len(opts.OriginalCreatorIDs) > 0 {
+		shared["original_creator_ids"] = opts.OriginalCreatorIDs
+	}
+	for key, rng := range opts.TimeRanges {
+		if len(rng) > 0 {
+			shared[key] = rng
+		}
 	}
 	if opts.OnlyTitle {
 		shared["only_title"] = true
@@ -562,7 +570,17 @@ func docWikiSearchV2(action string, opts DriveSearchOptions, userAccessToken str
 		body["doc_filter"] = cloneFilter()
 		body["wiki_filter"] = cloneFilter()
 	}
+	return body
+}
 
+// docWikiSearchV2 是 drive search 与 search docs 共用的 v2 doc_wiki/search 调用；action 用于错误前缀。
+func docWikiSearchV2(action string, opts DriveSearchOptions, userAccessToken string) (*DriveSearchResult, error) {
+	c, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	body := BuildDocWikiSearchBody(opts)
 	resp, err := c.Post(Context(), "/open-apis/search/v2/doc_wiki/search", body,
 		larkcore.AccessTokenTypeUser, UserTokenOption(userAccessToken)...)
 	if err != nil {

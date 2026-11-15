@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/spf13/cobra"
@@ -51,6 +54,7 @@ var sheetReadRichCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		warnSheetUnsupportedCells(os.Stderr, result, ranges)
 
 		if output == "json" {
 			if err := printJSON(result); err != nil {
@@ -87,6 +91,26 @@ var sheetReadRichCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// warnSheetUnsupportedCells 在 stderr 提示 #UNSUPPORTED_TYPE 单元格（下拉框等），stdout 不受影响。
+func warnSheetUnsupportedCells(w io.Writer, result []*client.CellRangeV3, requested []string) {
+	for i, r := range result {
+		fallback := ""
+		if i < len(requested) {
+			fallback = requested[i]
+		}
+		_, addrs := client.UnsupportedCellAddrs(r, fallback)
+		if len(addrs) == 0 {
+			continue
+		}
+		rng := ""
+		if r != nil {
+			rng = r.Range
+		}
+		fmt.Fprintf(w, "警告: 范围 %s 中 %d 个单元格为接口不支持的类型（如下拉框），富文本接口不返回其值: %s；可用 sheet read-plain 读取纯文本\n",
+			rng, len(addrs), strings.Join(addrs, ", "))
+	}
 }
 
 func printCellElement(elem *client.CellElement) {

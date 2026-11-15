@@ -1,7 +1,7 @@
 # 飞书云盘增强（Drive）
 
 `drive` 命令组覆盖云盘文件的增强能力：大文件分块上传与原地覆盖、流式下载与断点续传、重命名、
-上传文件的版本历史、异步导入导出与续查、文件夹移动、目录单向镜像与 URL/token 解析。
+上传文件的版本历史、预览产物与封面、异步导入导出与续查、文件夹移动、目录单向镜像与 URL/token 解析。
 `doc import-file`（本地文件导入为云文档的简单入口）也归本工作流。
 
 边界：
@@ -9,7 +9,8 @@
   申请权限（`drive apply-permission`）与密级标签（`drive secure-label`）见 `../perm/workflow.md`；评论（含 `drive add-comment`
   创建富文本/局部评论）见 `../comment/workflow.md`。
 - 文档正文读取与 Markdown 导入导出（`doc export/import`、`markdown *`）属于 `feishu-cli-docs`；
-  全局 `search docs/messages/apps` 与按文件夹/知识库精筛的 `drive search` 属于 `feishu-cli-platform` 的 search 工作流。
+  全局 `search docs/messages/apps` 与按文件夹/知识库精筛的 `drive search`（含 `--edited/--commented/--opened/--created-since|until`
+  时间窗、`--mine`、`--created-by-me`、`--original-creator-ids`）属于 `feishu-cli-platform` 的 search 工作流。
 
 ## 目录
 
@@ -28,10 +29,15 @@
 | `drive import/export/export-download/move/task-result/update-title/version-history/version-get` | auto | User 优先；未配置 User 时用 Bot；**已配置但解析/刷新失败 fail-closed**，不静默切 Bot |
 | `drive pull/push/status` | User 优先，不可用时 stderr 告警后回退 Bot | 带 `--delete-local/--delete-remote` 时 fail-closed；`--as` 显式指定 |
 | `drive inspect` | User 优先，回退 Bot | 无 `--as`；只读 |
+| `drive preview` / `cover` | auto | `--as bot\|user\|auto`；只读 |
 
 - 续查异步任务（`task-result`、`export-download`）沿用创建任务时的身份；超时输出的 `next_command` 已带 `--as`，换身份查询常见"任务不存在/无权限"。
 - User Token 缺 drive 读 scope 时返回 `99991679`（如 `drive:drive` / `drive:drive:readonly` / `space:document:retrieve` 任选其一），
   退出码 3：资源对应用可见时可显式 `--as bot`，否则按提示 `auth login --scope "..."` 补授权。
+- **预览**：`drive upload/import/export/move/update-title/apply-permission/secure-label set/preview/cover` 的 `--dry-run`
+  只打印请求计划，**不读取凭据、不联网**（无凭据环境退出码 0），本地参数与输出路径先于预览校验（错误为退出码 2）。
+  需要只读联网才能算出计划的「计划预览类」需要凭据：`drive push/pull --dry-run`（只读列举远端，见第 7 节）、
+  `drive add-comment --dry-run` 传 `/wiki/` 链接时（先只读解析 wiki 节点）。
 - 预检：`feishu-cli auth check --scope "drive:file:upload"`（只检查本地 User Token，不验证 Bot 与资源权限）。
 - Bot 身份新建文件、导入文档后，会自动给当前 CLI 登录用户授予 `full_access`（JSON 带 `permission_grant`），规则见 `../perm/workflow.md`。
 
@@ -66,6 +72,7 @@ TOKEN=$(feishu-cli drive inspect --url "https://xxx.feishu.cn/wiki/wikcnxxx" -o 
 feishu-cli drive upload --file /tmp/report.pdf
 feishu-cli drive upload --file /tmp/big.zip --folder-token fldxxx --name "年度报告.zip"
 feishu-cli drive upload --file /tmp/report.pdf --folder-token fldxxx --as bot   # Bot 新建后自动给当前用户授 full_access
+feishu-cli drive upload --file /tmp/report.pdf --dry-run                        # 预览：按 20MB 阈值列出 upload_all 或分块步骤
 
 # 原地覆盖为新版本：file_token 不变、返回 version，协作者/公开范围等权限设置不变
 feishu-cli drive upload --file /tmp/report-v2.pdf --file-token boxcnxxxx --name "report.pdf"
@@ -104,6 +111,28 @@ feishu-cli file version revert boxcnxxx 7694404069074407133              # 回�
   `--on-extension-mismatch allow`；981004 是缺编辑权限而非缺 scope；批量重命名请串行，避免 99991400 限流。
 - `version-history` 每项含 `version`、`name`、`action_type`（upload/rename/delete_version/revert）等；
   `version-get` 与 `drive download` 同一条流式链路，`--output` 省略或为目录时用服务端文件名。
+
+### 1b. 上传文件的预览产物与封面（drive preview / cover）
+
+```bash
+feishu-cli drive preview boxcnxxx --list-only                        # 列出候选：type / type_code / status / downloadable
+feishu-cli drive preview boxcnxxx --type source_file -o ./report     # 直接下载源文件（preview_type=16，不查候选）
+feishu-cli drive preview boxcnxxx --type image -o ./thumb            # png/jpg 中任一 READY 的候选
+feishu-cli drive preview "https://example.feishu.cn/file/boxcnxxx" --type pdf -o ./p --dry-run
+feishu-cli drive cover boxcnxxx --list-only                          # 本地规格列表，不联网、不需要凭据
+feishu-cli drive cover boxcnxxx --spec default -o ./cover            # 不带扩展名时按内容补 .png
+```
+
+- `preview` 先 `POST .../medias/:file_token/preview_result` 取候选，再按选中候选的 `type_code` 与返回的 `version`
+  `GET .../preview_download`。`--type` 取 `pdf` / `pdf_lin` / `html` / `text` / `image` / `source_file` 或类型代码；
+  候选不存在时列出可用类型，候选非 READY 时报错。`--list-only` 与 `--type`/`--output` 互斥，`--type` 时 `--output` 必填。
+- ⚠️ **已知限制（实测）**：docx 等文件的 PDF 类候选（`pdf` / `pdf_lin`）显示 READY，但 `preview_download` 返回 HTTP 200 空 body，
+  带 version 或数分钟后重试结果相同（与生成进度无关，轮询无效）。命令此时报错且**不写空文件**；改用 `--type source_file`
+  下载源文件，或用 `drive cover` 取封面图。
+- `cover --spec`：`default`（1280）/ `icon`（120）/ `grid`（360）/ `small`（480）/ `middle`（720）/ `big`（850，移动端）/
+  `square`（360 方形裁剪）。文件没有该规格封面时服务端 404，命令给出中文提示。docx 页面封面不在这里，用 `doc resource download --type cover`。
+- 两者都接受裸 file token、`/file/` 链接或包裹上传文件的 `/wiki/` 链接（wiki 在凭据解析后解包）；`--output` 在任何网络请求前
+  校验（敏感目录拒绝、不能是目录），目标已存在且未带 `--overwrite` 时退出码 2。
 
 ### 2. 文档导出（含 markdown 快捷路径）
 
@@ -223,7 +252,18 @@ feishu-cli drive push --folder-token fldxxx --local-dir ./mirror
 feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --if-exists smart       # 远端不旧于本地时跳过
 feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --if-exists overwrite   # 原地覆盖全部同名文件
 feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --delete-remote --yes
+
+# 预览差集计划（不上传、不下载、不建文件夹、不删除；不要求 --yes）
+feishu-cli drive push --folder-token fldxxx --local-dir ./mirror --delete-remote --dry-run -o json
+feishu-cli drive pull --folder-token fldxxx --local-dir ./mirror --delete-local --dry-run
 ```
+
+**`--dry-run` 差集计划（计划预览类）**：需要凭据，只读列举远端文件夹（push 还只读扫描本地；pull 只 stat 本地），
+按与真实执行相同的 `--if-exists` / `--on-duplicate-remote` / `--delete-*` 规则给每个条目算出动作：
+`create_folder` / `upload` / `overwrite` / `download` / `skip`（带 `reason`）/ `conflict`（本地同名是目录、路径不安全）/
+`delete_remote` / `delete_local`。`-o json` 输出 `{dry_run, command, folder_token, local_dir, summary, items, note}`，
+文本模式打印各动作计数与非 skip 条目。带 `--delete-*` 的预览**不要求 `--yes`**；真实执行时删除阶段只在上传/下载零失败时进行，
+计划仍会列出并在 `note` 提示。本地参数与 `--local-dir` 安全校验先于预览，错误为退出码 2。
 
 **覆盖与增量**：
 - `push --if-exists overwrite` 携带 file_token 原地覆盖：file_token 不变、items 带新 `version`，链接/协作者/评论/历史版本保留；
@@ -322,6 +362,7 @@ Sheet，应先转换为 XLSX。
 | `drive pull` / `status` | `drive:drive.metadata:readonly`、`drive:file:download`（`status --quick` 不需要下载 scope） |
 | `drive push` | `drive:drive.metadata:readonly`、`drive:file:upload`、`space:folder:create`；带 `--delete-remote` 还需 `space:document:delete` |
 | `drive inspect` | `drive:drive.metadata:readonly`；wiki URL 还需 `wiki:node:read` |
+| `drive preview` / `cover` | `drive:file:download`；wiki 链接还需 `wiki:node:read` |
 
 各命令的身份见「[身份与预检](#身份与预检)」。
 
@@ -330,6 +371,7 @@ Sheet，应先转换为 XLSX。
 - **大文件阈值**：上传与导入固定 20MB，超过自动切分片。
 - **有界轮询**：导出 10×5s、导入 30×2s、文件夹移动 30×2s；超时**不报错**而是返回 `next_command`；查询瞬时失败继续轮询，
   限流立即停止并在错误中给出带 `--as` 的续查命令，全部查询失败时报错（任务已创建，续查即可，不要重复创建）。
-- **退出码**：`update-title` 扩展名保护等用法错误为 2；User Token 缺 scope（99991679）为 3；`--delete-*` 未带 `--yes` 为 10；
-  显式类型与 URL 冲突、目标文件已存在等本地校验失败为 1；`task-result` 查到失败任务也是 0，以 `failed` 字段为准。
+- **退出码**：参数与本地校验错误（`update-title` 扩展名保护、显式类型与 URL 冲突、目标文件已存在、必填参数缺失等）为 2，
+  且先于凭据检查报出；User Token 缺 scope（99991679）或无凭据为 3；`--delete-*` 未带 `--yes`（非 `--dry-run`）为 10；
+  `task-result` 查到失败任务也是 0，以 `failed` 字段为准。
 - **drive move 省略 --folder-token**：先取真实根目录 token，不会把空字符串交给 move API。

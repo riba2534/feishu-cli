@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -34,10 +35,6 @@ var downloadFileCmd = &cobra.Command{
   feishu-cli file download boxcnXXXXXXXXX -o large.zip --timeout 30m`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken := args[0]
 		outputPath, _ := cmd.Flags().GetString("output")
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
@@ -49,16 +46,20 @@ var downloadFileCmd = &cobra.Command{
 		if err := validateOutputPath(outputPath, ""); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
-
 		var timeout time.Duration
 		if timeoutStr != "" {
 			var err error
 			timeout, err = time.ParseDuration(timeoutStr)
 			if err != nil {
-				return fmt.Errorf("无效的超时时间格式: %s（示例: 10m, 1h）", timeoutStr)
+				return clierr.Usagef("无效的超时时间格式: %s（示例: 10m, 1h）", timeoutStr)
 			}
 		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		if err := client.DownloadFileWithToken(fileToken, outputPath, userAccessToken, timeout); err != nil {
 			return err

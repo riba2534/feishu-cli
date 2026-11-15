@@ -20,6 +20,13 @@ var createTaskCmd = &cobra.Command{
   --due               截止时间（格式: 2006-01-02 15:04:05 或 2006-01-02）
   --origin-href       任务来源链接
   --origin-platform   任务来源平台名称（默认: feishu-cli）
+  --assignee          负责人，逗号分隔：ou_ 用户 / cli_ 应用（创建时一并指派）
+  --follower          关注人，逗号分隔：ou_ 用户 / cli_ 应用
+  --tasklist-id       放入的清单 GUID 或清单 applink
+  --idempotency-key   幂等键（写入 client_token；同 key 重试不会重复建任务）
+  --data              任意任务字段 JSON（内联或 @文件，如 custom_fields）；显式 flag 覆盖同名字段
+  --dry-run           只预览请求，不执行（不联网、不读凭据）
+  --as                身份：auto（默认）| user | bot
   --output, -o        输出格式（json）
 
 示例:
@@ -35,41 +42,69 @@ var createTaskCmd = &cobra.Command{
   # 创建带来源链接的任务
   feishu-cli task create --summary "处理 Issue" --origin-href "https://github.com/example/repo/issues/1"
 
+  # 创建时指派给自己并放进清单（幂等键防重试重复创建）
+  feishu-cli task create --summary "跟进上线" --assignee ou_xxx --tasklist-id TASKLIST_GUID --idempotency-key deploy-0601
+
+  # 用 --data 写自定义字段（先 dry-run 核对请求体）
+  feishu-cli task create --summary "需求评审" --data '{"custom_fields":[{"guid":"CF_GUID","number_value":"3"}]}' --dry-run
+
   # JSON 格式输出
   feishu-cli task create --summary "测试任务" --output json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		summary, _ := cmd.Flags().GetString("summary")
 		description, _ := cmd.Flags().GetString("description")
 		dueStr, _ := cmd.Flags().GetString("due")
 		originHref, _ := cmd.Flags().GetString("origin-href")
 		originPlatform, _ := cmd.Flags().GetString("origin-platform")
-
-		opts := client.CreateTaskOptions{
+		in := taskCreateInput{
 			Summary:        summary,
 			Description:    description,
+			Due:            dueStr,
 			OriginHref:     originHref,
 			OriginPlatform: originPlatform,
 		}
+		in.Assignee, _ = cmd.Flags().GetString("assignee")
+		in.Follower, _ = cmd.Flags().GetString("follower")
+		in.TasklistID, _ = cmd.Flags().GetString("tasklist-id")
+		in.IdempotencyKey, _ = cmd.Flags().GetString("idempotency-key")
+		in.Data, _ = cmd.Flags().GetString("data")
 
-		// Parse due time
-		if dueStr != "" {
-			dueTime, err := parseTime(dueStr)
-			if err != nil {
-				return fmt.Errorf("解析截止时间失败: %w", err)
-			}
-			opts.DueTimestamp = dueTime.UnixMilli()
+		// 本地参数校验先于凭据解析：--due 非法不会触发 token 刷新
+		body, dueMs, err := buildTaskCreateBody(in)
+		if err != nil {
+			return err
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "task create 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: taskAPIPath("tasks"), Desc: "创建任务",
+				Params: taskOpenIDParams(), Body: body,
+			}})
 		}
 
-		task, err := client.CreateTask(opts, token)
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
+
+		var task *client.TaskInfo
+		if in.extended() {
+			// 成员/清单/幂等键/--data 超出 SDK 结构体，按构造好的请求体原样发送
+			task, err = client.CreateTaskWithBody(body, token)
+		} else {
+			task, err = client.CreateTask(client.CreateTaskOptions{
+				Summary:        summary,
+				Description:    description,
+				DueTimestamp:   dueMs,
+				OriginHref:     originHref,
+				OriginPlatform: originPlatform,
+			}, token)
+		}
 		if err != nil {
 			return err
 		}
@@ -125,6 +160,12 @@ func init() {
 	createTaskCmd.Flags().String("due", "", "截止时间（格式: 2006-01-02 15:04:05）")
 	createTaskCmd.Flags().String("origin-href", "", "任务来源链接")
 	createTaskCmd.Flags().String("origin-platform", "", "任务来源平台名称")
+	createTaskCmd.Flags().String("assignee", "", "负责人，逗号分隔：ou_ 用户 / cli_ 应用")
+	createTaskCmd.Flags().String("follower", "", "关注人，逗号分隔：ou_ 用户 / cli_ 应用")
+	createTaskCmd.Flags().String("tasklist-id", "", "放入的清单 GUID 或清单 applink")
+	createTaskCmd.Flags().String("idempotency-key", "", "幂等键（client_token），重试不重复创建")
+	createTaskCmd.Flags().String("data", "", "任意任务字段 JSON（内联或 @文件）；显式 flag 覆盖同名字段")
+	addTaskDryRunFlag(createTaskCmd)
 	createTaskCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	createTaskCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(createTaskCmd)

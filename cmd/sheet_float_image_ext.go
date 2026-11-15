@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
 )
@@ -82,7 +83,7 @@ var sheetImageUpdateCmd = &cobra.Command{
 		// 用 Changed() 判断 width/height 是否显式设置（而非值是否为 0）——否则 --width 0 会被这里
 		// 当成「未指定」误报，而不是落到下面 validateFloatImageUpdate 报「不能小于 20」。
 		if rangeStr == "" && !cmd.Flags().Changed("width") && !cmd.Flags().Changed("height") && offsetX == nil && offsetY == nil {
-			return fmt.Errorf("至少需要指定一个待更新字段（--range/--width/--height/--offset-x/--offset-y）")
+			return clierr.Usagef("至少需要指定一个待更新字段（--range/--width/--height/--offset-x/--offset-y）")
 		}
 
 		// 与 help 声明一致的边界校验：width/height 仅在用户显式设置时校验 ≥20，offset 校验 ≥0。
@@ -209,11 +210,11 @@ var sheetImageWriteCmd = &cobra.Command{
 		allowPrivate, _ := cmd.Flags().GetBool("allow-private-net")
 		output, _ := cmd.Flags().GetString("output")
 		if output != "" && output != "text" && output != "json" {
-			return fmt.Errorf("不支持的输出格式 %q，仅支持 text, json", output)
+			return clierr.Usagef("不支持的输出格式 %q，仅支持 text, json", output)
 		}
 
 		if rangeStr == "" || imagePath == "" {
-			return fmt.Errorf("--range、--image 均为必填项")
+			return clierr.Usagef("--range、--image 均为必填项")
 		}
 
 		rangeStr = unescapeSheetRange(rangeStr)
@@ -295,7 +296,7 @@ func normalizeSheetWriteImageRange(rangeStr, sheetID string) (string, error) {
 	if idx := strings.LastIndex(body, "!"); idx >= 0 {
 		p := strings.Trim(body[:idx], "'")
 		if p != sheetID {
-			return "", fmt.Errorf("单元格范围的工作表 ID %q 与目标 %q 不一致（飞书接口要求使用 sheet_id 而非工作表标题）", p, sheetID)
+			return "", clierr.Usagef("单元格范围的工作表 ID %q 与目标 %q 不一致（飞书接口要求使用 sheet_id 而非工作表标题）", p, sheetID)
 		}
 		body = body[idx+1:]
 	}
@@ -309,13 +310,13 @@ func normalizeSheetWriteImageRange(rangeStr, sheetID string) (string, error) {
 	start = strings.TrimSpace(start)
 	end = strings.TrimSpace(end)
 	if start == "" || end == "" {
-		return "", fmt.Errorf("--range 必须是单个单元格，如 A1 或 %s!A1", sheetID)
+		return "", clierr.Usagef("--range 必须是单个单元格，如 A1 或 %s!A1", sheetID)
 	}
 	if !strings.EqualFold(start, end) {
-		return "", fmt.Errorf("sheet image write-image 只支持单个单元格，不能写入多单元格范围 %q；请改用 %s", rangeStr, start)
+		return "", clierr.Usagef("sheet image write-image 只支持单个单元格，不能写入多单元格范围 %q；请改用 %s", rangeStr, start)
 	}
 	if !sheetCellRE.MatchString(start) {
-		return "", fmt.Errorf("--range 必须是有效的单个单元格地址（当前 %q）", start)
+		return "", clierr.Usagef("--range 必须是有效的单个单元格地址（当前 %q）", start)
 	}
 	start = strings.ToUpper(start)
 	return prefix + "!" + start + ":" + start, nil
@@ -325,16 +326,16 @@ func normalizeSheetWriteImageRange(rangeStr, sheetID string) (string, error) {
 // width/height 仅在用户显式设置时校验 ≥20（飞书浮图最小尺寸），offset-x/offset-y ≥0（不为负）。
 func validateFloatImageUpdate(widthChanged bool, width float64, heightChanged bool, height float64, offsetX, offsetY *float64) error {
 	if widthChanged && width < 20 {
-		return fmt.Errorf("--width 不能小于 20（当前 %.0f）", width)
+		return clierr.Usagef("--width 不能小于 20（当前 %.0f）", width)
 	}
 	if heightChanged && height < 20 {
-		return fmt.Errorf("--height 不能小于 20（当前 %.0f）", height)
+		return clierr.Usagef("--height 不能小于 20（当前 %.0f）", height)
 	}
 	if offsetX != nil && *offsetX < 0 {
-		return fmt.Errorf("--offset-x 不能为负（当前 %.0f）", *offsetX)
+		return clierr.Usagef("--offset-x 不能为负（当前 %.0f）", *offsetX)
 	}
 	if offsetY != nil && *offsetY < 0 {
-		return fmt.Errorf("--offset-y 不能为负（当前 %.0f）", *offsetY)
+		return clierr.Usagef("--offset-y 不能为负（当前 %.0f）", *offsetY)
 	}
 	return nil
 }

@@ -51,10 +51,6 @@ var addContentCmd = &cobra.Command{
   feishu-cli doc add DOC_ID content.md --block-id PARENT_BLOCK_ID --index 0 --content-type markdown`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		contentStr, _ := cmd.Flags().GetString("content")
 		contentFile, _ := cmd.Flags().GetString("content-file")
 		contentType, _ := cmd.Flags().GetString("content-type")
@@ -100,6 +96,10 @@ var addContentCmd = &cobra.Command{
 			contentData = string(data)
 		} else {
 			contentData = source
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		userAccessToken := resolveOptionalUserToken(cmd)

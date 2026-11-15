@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -61,10 +62,6 @@ var approvalTaskQueryCmd = &cobra.Command{
   # 原始 API 响应
   feishu-cli approval task query --topic todo --output raw-json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		topic, _ := cmd.Flags().GetString("topic")
 		topicValue, err := normalizeApprovalTaskTopic(topic)
 		if err != nil {
@@ -88,6 +85,9 @@ var approvalTaskQueryCmd = &cobra.Command{
 			return err
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		token, err := requireUserToken(cmd, "approval task query")
 		if err != nil {
 			return err
@@ -213,14 +213,14 @@ func normalizeApprovalTaskTopic(topic string) (string, error) {
 	case "2", "done":
 		return approvalTopicDone, nil
 	case "3", "started", "initiated":
-		return "", fmt.Errorf("topic=started 已不被官方 tasks 接口支持（服务端仅接受 todo/done/cc-unread/cc-read）；" +
+		return "", clierr.Usagef("topic=started 已不被官方 tasks 接口支持（服务端仅接受 todo/done/cc-unread/cc-read）；" +
 			"查询「我发起的审批」请改用 `feishu-cli approval instance initiated`")
 	case "17", "cc-unread", "unread-cc":
 		return approvalTopicCCUnread, nil
 	case "18", "cc-read", "read-cc":
 		return approvalTopicCCRead, nil
 	default:
-		return "", fmt.Errorf("不支持的 topic: %s（可选值: todo, done, cc-unread, cc-read）", topic)
+		return "", clierr.Usagef("不支持的 topic: %s（可选值: todo, done, cc-unread, cc-read）", topic)
 	}
 }
 

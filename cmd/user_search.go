@@ -51,10 +51,6 @@ var userSearchCmd = &cobra.Command{
   feishu-cli user search --query "张三" --has-chatted --exclude-external-users
   feishu-cli user search --email a@example.com,b@example.com -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		emailStr, _ := cmd.Flags().GetString("email")
 		mobileStr, _ := cmd.Flags().GetString("mobile")
 		query, _ := cmd.Flags().GetString("query")
@@ -67,15 +63,29 @@ var userSearchCmd = &cobra.Command{
 			return clierr.Usagef("--query 最多 %d 个字符，得到 %d 个", client.MaxContactSearchQuery, n)
 		}
 
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
-
 		// --query / 过滤条件路径：走 contact/v3/users/search（User 身份，对齐官方 +search-user）
-		if query != "" || hasUserSearchFilters(cmd) {
+		// 本地参数校验（互斥、数量与范围）全部在 config.Validate 与身份解析之前完成
+		keywordMode := query != "" || hasUserSearchFilters(cmd)
+		var searchOpts client.SearchUsersV3Options
+		if keywordMode {
 			if emailStr != "" || mobileStr != "" {
 				return clierr.Usagef("--email/--mobile 与 --query/过滤条件互斥：前者按邮箱手机号精确查 ID，后者是关键词搜索")
 			}
-			return runContactUserSearch(cmd, query, output)
+			opts, err := buildContactUserSearchOptions(cmd, query)
+			if err != nil {
+				return err
+			}
+			searchOpts = opts
 		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		if keywordMode {
+			return runContactUserSearch(cmd, searchOpts, output)
+		}
+
+		userToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		// --email / --mobile 路径
 		var emails, mobiles []string
@@ -177,15 +187,15 @@ func hasUserSearchFilters(cmd *cobra.Command) bool {
 	return strings.TrimSpace(flagString(cmd, "user-ids")) != ""
 }
 
-// runContactUserSearch 关键词 / 过滤条件搜索用户（contact/v3/users/search）。
-func runContactUserSearch(cmd *cobra.Command, query, output string) error {
+// buildContactUserSearchOptions 校验并构造关键词 / 过滤条件搜索参数（纯本地，不联网）。
+func buildContactUserSearchOptions(cmd *cobra.Command, query string) (client.SearchUsersV3Options, error) {
 	userIDs := splitAndTrim(flagString(cmd, "user-ids"))
 	if len(userIDs) > 100 {
-		return clierr.Usagef("--user-ids 最多 100 个，得到 %d 个", len(userIDs))
+		return client.SearchUsersV3Options{}, clierr.Usagef("--user-ids 最多 100 个，得到 %d 个", len(userIDs))
 	}
 	pageSize := flagInt(cmd, "page-size")
 	if pageSize < 1 || pageSize > client.MaxContactSearchPageSize {
-		return clierr.Usagef("--page-size 范围 1-%d，得到 %d", client.MaxContactSearchPageSize, pageSize)
+		return client.SearchUsersV3Options{}, clierr.Usagef("--page-size 范围 1-%d，得到 %d", client.MaxContactSearchPageSize, pageSize)
 	}
 	opts := client.SearchUsersV3Options{
 		Query:     query,
@@ -198,7 +208,11 @@ func runContactUserSearch(cmd *cobra.Command, query, output string) error {
 	opts.ExcludeExternalUsers, _ = cmd.Flags().GetBool("exclude-external-users")
 	opts.LeftOrganization, _ = cmd.Flags().GetBool("left-organization")
 	opts.HasEnterpriseEmail, _ = cmd.Flags().GetBool("has-enterprise-email")
+	return opts, nil
+}
 
+// runContactUserSearch 关键词 / 过滤条件搜索用户（contact/v3/users/search）。
+func runContactUserSearch(cmd *cobra.Command, opts client.SearchUsersV3Options, output string) error {
 	userToken, err := requireUserToken(cmd, "user search --query")
 	if err != nil {
 		return err

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -49,9 +50,6 @@ API: POST /open-apis/wiki/v2/spaces/{space_id}/nodes/{node_token}/copy
   feishu-cli wiki node-copy --space-id 7044xxx --node-token wikcnxxx \
     --target-parent-node-token wikcnzzz --title "副本-2025"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		spaceID, _ := cmd.Flags().GetString("space-id")
 		nodeToken, _ := cmd.Flags().GetString("node-token")
 		targetSpace, _ := cmd.Flags().GetString("target-space-id")
@@ -65,13 +63,13 @@ API: POST /open-apis/wiki/v2/spaces/{space_id}/nodes/{node_token}/copy
 		targetParent = strings.TrimSpace(targetParent)
 
 		if spaceID == "" || nodeToken == "" {
-			return fmt.Errorf("--space-id 和 --node-token 必填")
+			return clierr.Usagef("--space-id 和 --node-token 必填")
 		}
 		if targetSpace == "" && targetParent == "" {
-			return fmt.Errorf("--target-space-id 或 --target-parent-node-token 至少传一个")
+			return clierr.Usagef("--target-space-id 或 --target-parent-node-token 至少传一个")
 		}
 		if targetSpace != "" && targetParent != "" {
-			return fmt.Errorf("--target-space-id 和 --target-parent-node-token 互斥，只能传一个")
+			return clierr.Usagef("--target-space-id 和 --target-parent-node-token 互斥，只能传一个")
 		}
 
 		body := map[string]any{}
@@ -103,6 +101,10 @@ API: POST /open-apis/wiki/v2/spaces/{space_id}/nodes/{node_token}/copy
 
 		// 复制属于写操作：auto 下 User 优先、未配置时用 Bot；已配置 User 但不可用时 fail-closed，
 		// 不能像读类 helper 那样告警后静默降级为 Bot（结果会落到 Bot 身份可见的位置，且权限判断不同）。
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err

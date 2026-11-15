@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -30,7 +31,7 @@ var approvalInstanceGetCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if output != "" && output != "json" && output != "raw-json" {
-			return fmt.Errorf("无效的 --output: %s，有效值: json/raw-json", output)
+			return clierr.Usagef("无效的 --output: %s，有效值: json/raw-json", output)
 		}
 
 		if err := config.Validate(); err != nil {

@@ -87,18 +87,23 @@ func ListPermission(docToken string, docType string, userAccessToken ...string) 
 }
 
 // DeletePermission removes permission from a document
-func DeletePermission(docToken string, docType string, memberType string, memberID string, userAccessToken ...string) error {
+//
+// memberKind 非空时写入 body.type（member_type=wikispaceid 时必填：wiki_space_member/viewer/editor），为空不下发 body。
+func DeletePermission(docToken string, docType string, memberType string, memberID string, memberKind string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
 
-	req := larkdrive.NewDeletePermissionMemberReqBuilder().
+	builder := larkdrive.NewDeletePermissionMemberReqBuilder().
 		Token(docToken).
 		Type(docType).
 		MemberId(memberID).
-		MemberType(memberType).
-		Build()
+		MemberType(memberType)
+	if memberKind != "" {
+		builder.Body(&larkdrive.DeletePermissionMemberReqBody{Type: &memberKind})
+	}
+	req := builder.Build()
 
 	resp, err := client.Drive.PermissionMember.Delete(Context(), req, UserTokenOption(firstString(userAccessToken))...)
 	if err != nil {
@@ -409,7 +414,9 @@ func AuthPermission(docToken, docType, action string, userAccessToken ...string)
 }
 
 // UpdatePermission 更新协作者权限
-func UpdatePermission(docToken string, docType string, memberID string, memberType string, perm string, userAccessToken ...string) error {
+//
+// memberKind 非空时写入 body.type（member_type=wikispaceid 时使用），为空不下发。
+func UpdatePermission(docToken string, docType string, memberID string, memberType string, perm string, memberKind string, userAccessToken ...string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -419,11 +426,7 @@ func UpdatePermission(docToken string, docType string, memberID string, memberTy
 		Token(docToken).
 		Type(docType).
 		MemberId(memberID).
-		BaseMember(larkdrive.NewBaseMemberBuilder().
-			MemberType(memberType).
-			MemberId(memberID).
-			Perm(perm).
-			Build()).
+		BaseMember(buildBaseMember(PermissionMember{MemberType: memberType, MemberID: memberID, Perm: perm, Type: memberKind})).
 		Build()
 
 	resp, err := client.Drive.PermissionMember.Update(Context(), req, UserTokenOption(firstString(userAccessToken))...)

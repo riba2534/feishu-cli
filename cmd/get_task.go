@@ -27,16 +27,15 @@ var getTaskCmd = &cobra.Command{
   feishu-cli task get e297ddff-06ca-4166-b917-4ce57cd3a7a0 --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token := resolveOptionalUserTokenWithFallback(cmd)
-
 		taskGuid, guidErr := parseTaskGUIDArg(args[0])
 		if guidErr != nil {
 			return guidErr
 		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token := resolveOptionalUserTokenWithFallback(cmd)
 
 		task, err := client.GetTask(taskGuid, token)
 		if err != nil {

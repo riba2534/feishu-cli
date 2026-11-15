@@ -236,15 +236,6 @@ var chatMemberAddCmd = &cobra.Command{
   feishu-cli chat member add oc_xxx --id-list user_xxx --member-id-type user_id`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		asFlag, _ := cmd.Flags().GetString("as")
-		token, err := resolveChatToken(cmd, asFlag)
-		if err != nil {
-			return err
-		}
 
 		chatID := args[0]
 		memberIDType, _ := cmd.Flags().GetString("member-id-type")
@@ -252,7 +243,16 @@ var chatMemberAddCmd = &cobra.Command{
 
 		idList := splitAndTrim(idListStr)
 		if len(idList) == 0 {
-			return fmt.Errorf("成员 ID 列表不能为空")
+			return clierr.Usagef("成员 ID 列表不能为空")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		asFlag, _ := cmd.Flags().GetString("as")
+		token, err := resolveChatToken(cmd, asFlag)
+		if err != nil {
+			return err
 		}
 
 		if err := client.AddChatMembers(chatID, memberIDType, idList, token); err != nil {
@@ -283,15 +283,6 @@ var chatMemberRemoveCmd = &cobra.Command{
   feishu-cli chat member remove oc_xxx --id-list user_xxx --member-id-type user_id`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		asFlag, _ := cmd.Flags().GetString("as")
-		token, err := resolveChatToken(cmd, asFlag)
-		if err != nil {
-			return err
-		}
 
 		chatID := args[0]
 		memberIDType, _ := cmd.Flags().GetString("member-id-type")
@@ -299,7 +290,16 @@ var chatMemberRemoveCmd = &cobra.Command{
 
 		idList := splitAndTrim(idListStr)
 		if len(idList) == 0 {
-			return fmt.Errorf("成员 ID 列表不能为空")
+			return clierr.Usagef("成员 ID 列表不能为空")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		asFlag, _ := cmd.Flags().GetString("as")
+		token, err := resolveChatToken(cmd, asFlag)
+		if err != nil {
+			return err
 		}
 
 		if err := client.RemoveChatMembers(chatID, memberIDType, idList, token); err != nil {

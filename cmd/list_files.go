@@ -43,10 +43,6 @@ var listFilesCmd = &cobra.Command{
   feishu-cli file list --output json`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		var folderToken string
 		if len(args) > 0 {
 			folderToken = args[0]
@@ -64,6 +60,10 @@ var listFilesCmd = &cobra.Command{
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
 		userAccessToken, err := resolveIdentityWithLegacyDefault(cmd, legacyUserWithBotFallback)
 		if err != nil {
 			return err

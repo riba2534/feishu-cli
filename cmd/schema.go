@@ -50,8 +50,10 @@ var schemaCmd = &cobra.Command{
 	Short: "查询 OpenAPI Schema（path/verb/参数/scope）",
 	Long: `查询飞书开放平台 OpenAPI 的方法 schema：HTTP 路径、动词、参数、请求体、响应体、scope。
 
-数据来源：编译期 embed 的 internal/registry/meta_data.json 永远是离线 baseline；
-运行时可从官方 public api_definition?protocol=meta 拉取 overlay（5s 超时、10MB 上限、24h TTL、无凭证）。
+数据来源：编译期 embed 的 internal/registry/meta_data.json 永远是离线 baseline
+（由 scripts/sync_official_catalog.py 从官方 lark-cli 内嵌 catalog 生成）；
+运行时可从官方 public api_definition?protocol=meta 拉取 overlay（5s 超时、10MB 上限、24h TTL、无凭证），
+overlay 按 service 整体替换，之后再从内嵌基线补回 local_supplements 白名单里的方法（如 task.comments.*）。
 远端失败时静默回退 embedded。FEISHU_CLI_REMOTE_META=off 可关闭 overlay。
 
 路径格式: <service>.<resource>.<method>
@@ -77,7 +79,7 @@ var schemaCmd = &cobra.Command{
 
 注意事项:
   - 查询 schema 不需要 token；overlay 请求也不携带 App/User 凭证
-  - 内置 baseline 覆盖 12 个 service；overlay 可能增加官方新增 service/method
+  - 内置 baseline 覆盖 15 个 service；overlay 可能增加官方新增 service/method
   - 完整 OpenAPI 文档见 docUrl 字段或 https://open.feishu.cn/`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -106,6 +108,7 @@ var schemaStatusCmd = &cobra.Command{
   cache_version     本地 ~/.feishu-cli/cache/remote_meta.json 版本
   runtime_version   当前合并后实际使用的版本
   service_count / method_count  含嵌套 resource 的统计
+  supplements       overlay 之后从内嵌基线补回的白名单方法（local_supplements；离线模式为空，因为它们本就在内嵌基线里）
 
 overlay 从官方 public api_definition?protocol=meta 拉取，不携带凭证；失败回退 embedded。`,
 	Args: cobra.NoArgs,
@@ -129,9 +132,14 @@ func runSchemaStatus(w io.Writer, format string) error {
 }
 
 func formatCatalogPretty(info registry.CatalogInfo) string {
-	return fmt.Sprintf("Catalog: source=%s brand=%s embedded=%s runtime=%s cache=%s services=%d methods=%d remote=%v",
+	line := fmt.Sprintf("Catalog: source=%s brand=%s embedded=%s runtime=%s cache=%s services=%d methods=%d remote=%v",
 		info.Source, info.Brand, info.EmbeddedVersion, info.RuntimeVersion, info.CacheVersion,
 		info.ServiceCount, info.MethodCount, info.RemoteEnabled)
+	if len(info.Supplements) > 0 {
+		// 补丁层：overlay 后按 local_supplements 白名单从内嵌基线补回的方法数（明细见 --format json）
+		line += fmt.Sprintf(" supplements=%d(local_supplements)", len(info.Supplements))
+	}
+	return line
 }
 
 // runSchema dispatches based on path depth.

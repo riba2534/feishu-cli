@@ -14,9 +14,12 @@
 
 ## 前置条件
 
-- **身份**：写命令（import / create-notes / update / svg-import / upload-image / delete / clone）默认 Bot；
+- **身份**：写命令（import / create-notes / update / svg-import / upload-image / delete / clone）默认 Bot，
+  用 `--as bot|user|auto` 切换；不传 `--as` 时与旧版一致（显式 `--user-access-token` / `FEISHU_USER_ACCESS_TOKEN` 仍切 User）。
   读命令（nodes / image / lint / export-code / svg-export）User 优先、未配置时回落 Bot。画板在用户本人的文档里
-  （Bot 无权访问）时，写命令显式传 `--user-access-token` 或设置 `FEISHU_USER_ACCESS_TOKEN`
+  （Bot 无权访问）时，写命令加 `--as user`（使用 `auth login` 登录态，缺失时报错退出）
+- **预览**：import / update / svg-import / upload-image / delete / create-notes 的 `--dry-run` 是静态预览，不联网、不需要凭据；
+  clone 的 `--dry-run` 要读取源画板节点统计数量，需要凭据与源画板读权限
 - **权限**：`board:whiteboard:node:read` / `board:whiteboard:node:create` / `board:whiteboard:node:delete`；
   `doc add-board` 另需文档写权限（`docx:document` 或 `docx:document:write_only`）
 - **whiteboard-cli**（路径 B 与路径 C 的本地管道用）：`npm i -g @larksuite/whiteboard-cli`；
@@ -276,13 +279,13 @@ feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
 | `feishu-cli doc add-board <doc_id>` | 在文档加画板块 | `--parent-id`（父块 ID，默认根级别）`--index`（插入位置，-1=末尾）`-o json` |
 | `feishu-cli board nodes <board_id>` | 拉所有节点 | 无 |
 | `feishu-cli board image <board_id> out` | 下载画板缩略图（自动按实际格式补扩展名，通常 JPEG） | 无 |
-| `feishu-cli board create-notes <board_id> nodes.json` | 批量创建节点 | `--source-type` `--client-token` `--overwrite`（清空整板） |
+| `feishu-cli board create-notes <board_id> nodes.json` | 批量创建节点 | `--source-type` `--client-token` `--overwrite`（清空整板）`--dry-run` |
 | `feishu-cli board import <board_id> diagram.mmd --syntax mermaid` | 路径 A：服务端渲染；`--syntax svg` 为路径 C 服务端解析 | `--syntax [plantuml\|mermaid\|svg]` `--engine [server\|local]` `--diagram-type` `--style` `--overwrite`（清空整板）`--client-token`（仅 local）`--dry-run` |
 | `feishu-cli board svg-import <board_id> drawing.svg` | 路径 D：单 svg 节点 | `--x` `--y` `--width` `--height` `--source-type` `--client-token` `--dry-run` |
 | `python3 scripts/svg_to_board.py drawing.svg <board_id>` | 路径 C：5 步本地管道 | `--viewbox WxH`（覆盖为零原点视口，默认自动解析完整 viewBox）`--keep-overflow`（不裁剪溢出节点）`--batch`（默认 300）`--interval`（默认 0.3s）`--feishu-cli`（CLI 路径）`--dry-run` |
 | `feishu-cli board update <board_id> nodes.json` | 写入节点（默认追加；`--overwrite` 原子清空整板后写入） | `--overwrite` `--snapshot` `--client-token` `--dry-run` `--stdin` |
-| `feishu-cli board delete <board_id> --all` | 删节点，无确认立即执行（`--all` 清空整板；空画板提示"没有节点"并成功退出） | `--node-ids` |
-| `feishu-cli board clone <src> <dst>` | 克隆画板（目标应为空画板；默认 Bot 读源画板） | `--batch-size`（默认 10）`--interval`（默认 1s）`--filter-types` `--dry-run` |
+| `feishu-cli board delete <board_id> --all` | 删节点，无确认立即执行（`--all` 清空整板；空画板提示"没有节点"并成功退出；`--node-ids` 与 `--all` 都不给时退出码 2） | `--node-ids` `--dry-run` |
+| `feishu-cli board clone <src> <dst>` | 克隆画板（目标应为空画板；默认 Bot 读源画板） | `--batch-size`（默认 10）`--interval`（默认 1s）`--filter-types` `--dry-run`（读取源画板，需要凭据） |
 | `feishu-cli board upload-image <board_id> photo.png` | 图片转 image 节点（支持 jpeg/png/gif/webp/bmp/tiff，只读文件头取尺寸；EXIF Orientation 5-8 旋转的 JPEG——手机竖拍照片最常见——无法自动取尺寸，会报错要求显式 `--width/--height`） | `--x` `--y` `--width` `--height` `--dry-run` |
 | `feishu-cli board lint <board_id>` | 几何质检 | 无 |
 | `feishu-cli board export-code <board_id>` | 反向导出 SVG；`--source` 取回 Mermaid/PlantUML 源码 | `--output-path` `--merge` `--source` `--node-id` `--overwrite`（输出文件已存在时默认报错） |

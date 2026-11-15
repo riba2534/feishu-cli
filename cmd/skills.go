@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/riba2534/feishu-cli/internal/skillbundle"
 	"github.com/riba2534/feishu-cli/internal/skillinstall"
@@ -119,7 +120,8 @@ var skillsListCmd = &cobra.Command{
 			name, sub, _ := strings.Cut(strings.Trim(args[0], "/"), "/")
 			files, err := b.ListFiles(name, sub)
 			if err != nil {
-				return err
+				// 未知技能 / 路径越界 / 路径不存在：都是参数问题（内嵌内容，无 I/O 失败）
+				return clierr.Usage(err)
 			}
 			if skillsListJSON {
 				return writeJSON(out, map[string]any{"skill": name, "path": sub, "files": files, "count": len(files)})
@@ -182,13 +184,13 @@ var skillsReadCmd = &cobra.Command{
 		name, rel, _ := strings.Cut(args[0], "/")
 		if len(args) == 2 {
 			if rel != "" {
-				return fmt.Errorf("路径只能给一次：要么写成 %s/<路径>，要么作为第二个参数", name)
+				return clierr.Usagef("路径只能给一次：要么写成 %s/<路径>，要么作为第二个参数", name)
 			}
 			rel = args[1]
 		}
 		_, _, data, err := b.ReadFile(name, rel)
 		if err != nil {
-			return err
+			return clierr.Usage(err)
 		}
 		_, err = cmd.OutOrStdout().Write(data)
 		return err

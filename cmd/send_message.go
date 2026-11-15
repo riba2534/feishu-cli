@@ -130,10 +130,10 @@ var sendMessageCmd = &cobra.Command{
 		threadID, _ := cmd.Flags().GetString("thread-id")
 
 		if threadID != "" {
-			return fmt.Errorf("--thread-id 不可用于 msg send：飞书 create message 接口不支持 thread_id；请改用 msg reply <om_xxx>（回复既有话题可省略 --reply-in-thread，开启新话题时加 --reply-in-thread）")
+			return clierr.Usagef("--thread-id 不可用于 msg send：飞书 create message 接口不支持 thread_id；请改用 msg reply <om_xxx>（回复既有话题可省略 --reply-in-thread，开启新话题时加 --reply-in-thread）")
 		}
 		if receiveIDType == "" || receiveID == "" {
-			return fmt.Errorf("必须同时指定 --receive-id-type 和 --receive-id")
+			return clierr.Usagef("必须同时指定 --receive-id-type 和 --receive-id")
 		}
 		if err := validateSendReceiveIDType(receiveIDType); err != nil {
 			return err
@@ -197,9 +197,9 @@ func validateSendReceiveIDType(receiveIDType string) error {
 	case "email", "open_id", "user_id", "union_id", "chat_id":
 		return nil
 	case "thread_id":
-		return fmt.Errorf("--receive-id-type thread_id 不受飞书 create message 接口支持；请改用 msg reply <om_xxx>")
+		return clierr.Usagef("--receive-id-type thread_id 不受飞书 create message 接口支持；请改用 msg reply <om_xxx>")
 	default:
-		return fmt.Errorf("无效的 --receive-id-type: %s，有效值: email/open_id/user_id/union_id/chat_id", receiveIDType)
+		return clierr.Usagef("无效的 --receive-id-type: %s，有效值: email/open_id/user_id/union_id/chat_id", receiveIDType)
 	}
 }
 
@@ -208,7 +208,7 @@ func validateSendMessageType(msgType string) error {
 	case "text", "post", "image", "file", "audio", "media", "sticker", "interactive", "share_chat", "share_user":
 		return nil
 	default:
-		return fmt.Errorf("无效的 --msg-type: %s，有效值: text/post/image/file/audio/media/sticker/interactive/share_chat/share_user", msgType)
+		return clierr.Usagef("无效的 --msg-type: %s，有效值: text/post/image/file/audio/media/sticker/interactive/share_chat/share_user", msgType)
 	}
 }
 
@@ -219,7 +219,7 @@ func validateIdempotencyKey(key string) error {
 		return nil
 	}
 	if n := utf8.RuneCountInString(key); n > 50 {
-		return fmt.Errorf("--idempotency-key 过长：%d 字符，上限 50 字符", n)
+		return clierr.Usagef("--idempotency-key 过长：%d 字符，上限 50 字符", n)
 	}
 	return nil
 }
@@ -343,7 +343,7 @@ func validateLocalIMImage(path string) error {
 	}
 	ext := strings.ToLower(filepath.Ext(path))
 	if _, ok := supportedIMImageExtensions[ext]; !ok {
-		return fmt.Errorf("不支持的图片扩展名 %q", ext)
+		return clierr.Usagef("不支持的图片扩展名 %q", ext)
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -368,7 +368,7 @@ func validateLocalIMImage(path string) error {
 		"image/bmp": {}, "image/webp": {}, "image/tiff": {},
 	}
 	if _, ok := allowed[contentType]; !ok {
-		return fmt.Errorf("文件内容不是支持的图片格式（检测为 %s）", contentType)
+		return clierr.Usagef("文件内容不是支持的图片格式（检测为 %s）", contentType)
 	}
 	return nil
 }

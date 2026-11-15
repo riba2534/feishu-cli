@@ -48,9 +48,6 @@ var vcMeetingListActiveCmd = &cobra.Command{
   feishu-cli vc meeting list-active
   feishu-cli vc meeting list-active --as bot --user-id ou_xxx -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
@@ -79,6 +76,10 @@ var vcMeetingListActiveCmd = &cobra.Command{
 				preview["query"] = map[string]any{"user_id": userID}
 			}
 			return printJSON(preview)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveVCReadIdentity(cmd)

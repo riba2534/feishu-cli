@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -50,7 +49,7 @@ var bitableDashboardCreateCmd = &cobra.Command{
 			return err
 		}
 		if len(body) == 0 {
-			return fmt.Errorf("未提供任何字段（用 --name/--theme-style 或 --config）")
+			return clierr.Usagef("未提供任何字段（用 --name/--theme-style 或 --config）")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "POST", path: dashboardPath(bt, ""), body: body}
@@ -65,7 +64,7 @@ var bitableDashboardGetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dashboardID, _ := cmd.Flags().GetString("dashboard-id")
 		if dashboardID == "" {
-			return fmt.Errorf("--dashboard-id 必填")
+			return clierr.Usagef("--dashboard-id 必填")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "GET", path: dashboardPath(bt, dashboardID)}
@@ -86,14 +85,14 @@ var bitableDashboardUpdateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dashboardID, _ := cmd.Flags().GetString("dashboard-id")
 		if dashboardID == "" {
-			return fmt.Errorf("--dashboard-id 必填")
+			return clierr.Usagef("--dashboard-id 必填")
 		}
 		body, err := dashboardBuildCreateOrUpdateBody(cmd)
 		if err != nil {
 			return err
 		}
 		if len(body) == 0 {
-			return fmt.Errorf("未提供任何更新字段（用 --name/--theme-style 或 --config）")
+			return clierr.Usagef("未提供任何更新字段（用 --name/--theme-style 或 --config）")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "PATCH", path: dashboardPath(bt, dashboardID), body: body}
@@ -108,7 +107,7 @@ var bitableDashboardDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dashboardID, _ := cmd.Flags().GetString("dashboard-id")
 		if dashboardID == "" {
-			return fmt.Errorf("--dashboard-id 必填")
+			return clierr.Usagef("--dashboard-id 必填")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "DELETE", path: dashboardPath(bt, dashboardID)}
@@ -125,7 +124,7 @@ var bitableDashboardArrangeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dashboardID, _ := cmd.Flags().GetString("dashboard-id")
 		if dashboardID == "" {
-			return fmt.Errorf("--dashboard-id 必填")
+			return clierr.Usagef("--dashboard-id 必填")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "POST", path: dashboardPath(bt, dashboardID, "arrange"), body: map[string]any{}}
@@ -146,7 +145,7 @@ func dashboardBuildCreateOrUpdateBody(cmd *cobra.Command) (map[string]any, error
 		}
 		var body map[string]any
 		if err := json.Unmarshal([]byte(raw), &body); err != nil {
-			return nil, fmt.Errorf("解析 --config 失败: %w", err)
+			return nil, clierr.Usagef("解析 --config 失败: %w", err)
 		}
 		return body, nil
 	}
@@ -194,7 +193,7 @@ var bitableDashboardBlockCreateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dashboardID, _ := cmd.Flags().GetString("dashboard-id")
 		if dashboardID == "" {
-			return fmt.Errorf("--dashboard-id 必填")
+			return clierr.Usagef("--dashboard-id 必填")
 		}
 		body, err := dashboardBuildBlockBody(cmd, true)
 		if err != nil {
@@ -214,7 +213,7 @@ var bitableDashboardBlockGetCmd = &cobra.Command{
 		dashboardID, _ := cmd.Flags().GetString("dashboard-id")
 		blockID, _ := cmd.Flags().GetString("block-id")
 		if dashboardID == "" || blockID == "" {
-			return fmt.Errorf("--dashboard-id 和 --block-id 必填")
+			return clierr.Usagef("--dashboard-id 和 --block-id 必填")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "GET", path: dashboardPath(bt, dashboardID, "blocks", blockID)}
@@ -233,7 +232,7 @@ var bitableDashboardBlockListCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dashboardID, _ := cmd.Flags().GetString("dashboard-id")
 		if dashboardID == "" {
-			return fmt.Errorf("--dashboard-id 必填")
+			return clierr.Usagef("--dashboard-id 必填")
 		}
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
@@ -265,14 +264,14 @@ var bitableDashboardBlockUpdateCmd = &cobra.Command{
 		dashboardID, _ := cmd.Flags().GetString("dashboard-id")
 		blockID, _ := cmd.Flags().GetString("block-id")
 		if dashboardID == "" || blockID == "" {
-			return fmt.Errorf("--dashboard-id 和 --block-id 必填")
+			return clierr.Usagef("--dashboard-id 和 --block-id 必填")
 		}
 		body, err := dashboardBuildBlockBody(cmd, false)
 		if err != nil {
 			return err
 		}
 		if len(body) == 0 {
-			return fmt.Errorf("未提供任何更新字段（用 --name/--data-config/--position 或 --config）")
+			return clierr.Usagef("未提供任何更新字段（用 --name/--data-config/--position 或 --config）")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "PATCH", path: dashboardPath(bt, dashboardID, "blocks", blockID), body: body}
@@ -288,7 +287,7 @@ var bitableDashboardBlockDeleteCmd = &cobra.Command{
 		dashboardID, _ := cmd.Flags().GetString("dashboard-id")
 		blockID, _ := cmd.Flags().GetString("block-id")
 		if dashboardID == "" || blockID == "" {
-			return fmt.Errorf("--dashboard-id 和 --block-id 必填")
+			return clierr.Usagef("--dashboard-id 和 --block-id 必填")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "DELETE", path: dashboardPath(bt, dashboardID, "blocks", blockID)}
@@ -309,7 +308,7 @@ func dashboardBuildBlockBody(cmd *cobra.Command, createMode bool) (map[string]an
 		}
 		var body map[string]any
 		if err := json.Unmarshal([]byte(raw), &body); err != nil {
-			return nil, fmt.Errorf("解析 --config 失败: %w", err)
+			return nil, clierr.Usagef("解析 --config 失败: %w", err)
 		}
 		return body, nil
 	}
@@ -322,7 +321,7 @@ func dashboardBuildBlockBody(cmd *cobra.Command, createMode bool) (map[string]an
 	if createMode {
 		blockType, _ := cmd.Flags().GetString("type")
 		if blockType == "" {
-			return nil, fmt.Errorf("--type 必填（或用 --config 传完整请求体）")
+			return nil, clierr.Usagef("--type 必填（或用 --config 传完整请求体）")
 		}
 		if err := validateEnum(blockType, "type", dashboardBlockTypes); err != nil {
 			return nil, err
@@ -336,7 +335,7 @@ func dashboardBuildBlockBody(cmd *cobra.Command, createMode bool) (map[string]an
 		raw, _ := cmd.Flags().GetString("data-config")
 		var dataConfig any
 		if err := json.Unmarshal([]byte(raw), &dataConfig); err != nil {
-			return nil, fmt.Errorf("解析 --data-config 失败: %w", err)
+			return nil, clierr.Usagef("解析 --data-config 失败: %w", err)
 		}
 		body["data_config"] = dataConfig
 	}

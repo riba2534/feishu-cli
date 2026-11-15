@@ -21,12 +21,17 @@ var createEventCmd = &cobra.Command{
   --start             开始时间（必填）
   --end               结束时间（必填，须晚于开始时间）
   --description, -d   日程描述（可选）
+  --description-format 描述格式：text（默认，纯文本）| markdown（写入富文本 description_rich：
+                      粗体/斜体/链接/标题/列表/表格/图片等；![alt](./a.png) 本地图片须是当前目录内的
+                      相对路径，创建前自动上传；远端图片 URL 原样保留）
   --location, -l      地点（可选）
   --rrule             重复规则（RFC5545 RRULE，可选），创建重复日程
   --attendee-ids      参与人（可选），逗号分隔：ou_ 用户 / oc_ 群 / omm_ 会议室 / 邮箱=外部参与人。
                       日程创建后再添加参与人；添加失败会自动删除刚创建的日程（回滚）。
                       User 身份会自动把本人加入参与人列表
   --vchat             同时创建飞书视频会议（可选）
+  --meeting-owner-id  视频会议 owner 的 open_id（ou_ 开头；隐含 --vchat；仅 --as bot 在应用日历上生效，
+                      owner 须为本租户用户）
   --dry-run           只预览请求，不执行
   --as                身份：auto（默认）| user | bot
   --output, -o        输出格式，可选 json
@@ -70,6 +75,21 @@ var createEventCmd = &cobra.Command{
     --start 2024-01-21T14:00:00+08:00 \
     --end 2024-01-21T15:00:00+08:00 \
     --attendee-ids ou_xxx,oc_xxx,omm_xxx --vchat --output json
+
+  # 用 Markdown 写议程（本地图片自动上传；先 dry-run 核对）
+  feishu-cli calendar create-event \
+    --summary "方案评审" \
+    --start 2024-01-21T14:00:00+08:00 \
+    --end 2024-01-21T15:00:00+08:00 \
+    --description $'## 议程\n1. **背景**\n2. 方案对比 ![架构](./arch.png)' \
+    --description-format markdown --dry-run
+
+  # Bot 在应用日历上建会并指定会议 owner
+  feishu-cli calendar create-event --as bot \
+    --summary "客户对齐" \
+    --start 2024-01-21T14:00:00+08:00 \
+    --end 2024-01-21T15:00:00+08:00 \
+    --meeting-owner-id ou_xxx
 
   # 创建每周一重复的日程
   feishu-cli calendar create-event \
@@ -116,6 +136,14 @@ var createEventCmd = &cobra.Command{
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
+		rich, err := parseRichDescriptionFlags(cmd, description)
+		if err != nil {
+			return err
+		}
+		meetingOwnerID, err := validateMeetingOwnerFlag(cmd)
+		if err != nil {
+			return err
+		}
 
 		if dryRun {
 			body := map[string]any{
@@ -123,7 +151,9 @@ var createEventCmd = &cobra.Command{
 				"start_time": map[string]any{"timestamp": fmt.Sprint(startUnix)},
 				"end_time":   map[string]any{"timestamp": fmt.Sprint(endUnix)},
 			}
-			if description != "" {
+			if rich != nil {
+				body["description_rich"] = rich.preview()
+			} else if description != "" {
 				body["description"] = description
 			}
 			if location != "" {
@@ -132,15 +162,23 @@ var createEventCmd = &cobra.Command{
 			if rrule != "" {
 				body["recurrence"] = rrule
 			}
-			if withVChat {
-				body["vchat"] = map[string]any{"vc_type": "vc"}
+			if withVChat || meetingOwnerID != "" {
+				vchat := map[string]any{"vc_type": "vc"}
+				if meetingOwnerID != "" {
+					vchat["meeting_settings"] = map[string]any{"owner_id": meetingOwnerID}
+				}
+				body["vchat"] = vchat
 			}
-			steps := []dryRunStep{{
+			var steps []dryRunStep
+			if rich != nil {
+				steps = append(steps, rich.uploadSteps(calendarID)...)
+			}
+			steps = append(steps, dryRunStep{
 				Method: "POST",
 				URL:    "/open-apis/calendar/v4/calendars/" + calendarID + "/events",
 				Desc:   "创建日程",
 				Body:   body,
-			}}
+			})
 			if len(attendees) > 0 {
 				steps = append(steps, dryRunStep{
 					Method: "POST",
@@ -162,14 +200,22 @@ var createEventCmd = &cobra.Command{
 		}
 
 		params := &client.CreateEventParams{
-			CalendarID:  calendarID,
-			Summary:     summary,
-			StartTime:   startTime,
-			EndTime:     endTime,
-			Description: description,
-			Location:    location,
-			Recurrence:  rrule,
-			WithVChat:   withVChat,
+			CalendarID:     calendarID,
+			Summary:        summary,
+			StartTime:      startTime,
+			EndTime:        endTime,
+			Description:    description,
+			Location:       location,
+			Recurrence:     rrule,
+			WithVChat:      withVChat,
+			MeetingOwnerID: meetingOwnerID,
+		}
+		if rich != nil {
+			// 先上传描述中的本地图片，再以 description_rich 创建日程
+			if params.DescriptionRich, err = rich.resolve(calendarID, token); err != nil {
+				return err
+			}
+			params.Description = ""
 		}
 
 		event, err := client.CreateEvent(params, token)
@@ -239,6 +285,8 @@ func init() {
 	createEventCmd.Flags().String("rrule", "", "重复规则（RFC5545 RRULE，如 FREQ=WEEKLY;BYDAY=MO）")
 	createEventCmd.Flags().String("attendee-ids", "", "参与人，逗号分隔：ou_ 用户 / oc_ 群 / omm_ 会议室 / 邮箱=外部参与人；添加失败自动删除日程回滚")
 	createEventCmd.Flags().Bool("vchat", false, "同时创建飞书视频会议（日程详情带会议链接）")
+	createEventCmd.Flags().String("meeting-owner-id", "", "视频会议 owner 的 open_id（ou_；隐含 --vchat；仅 --as bot 生效）")
+	addDescriptionFormatFlag(createEventCmd)
 	createEventCmd.Flags().Bool("dry-run", false, "只预览将发出的请求，不执行")
 	createEventCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	createEventCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")

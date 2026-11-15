@@ -61,9 +61,6 @@ docs_ai 引擎（服务端读取，可输出 block id，对齐官方 docs +fetch
   - block 级精确分页读取用 doc blocks；整篇导出用 doc export`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		outline, _ := cmd.Flags().GetBool("outline")
 		heading, _ := cmd.Flags().GetString("heading")
 		keyword, _ := cmd.Flags().GetString("keyword")
@@ -79,6 +76,9 @@ docs_ai 引擎（服务端读取，可输出 block id，对齐官方 docs +fetch
 				return err
 			}
 			opts.docInput = args[0]
+			if err := config.Validate(); err != nil {
+				return err
+			}
 			userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 			documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 			if err != nil {
@@ -96,7 +96,19 @@ docs_ai 引擎（服务端读取，可输出 block id，对齐官方 docs +fetch
 		if modes != 1 {
 			return clierr.Usagef("请从 --outline / --heading / --keyword 中选择且仅选择一种模式（或用 --engine docs_ai / --with-ids 读取全文）")
 		}
+		// keyword 正则是本地参数：先于凭据校验与导出全文编译
+		var keywordRe *regexp.Regexp
+		if keyword != "" {
+			re, err := regexp.Compile(keyword)
+			if err != nil {
+				return clierr.Usagef("--keyword 正则无效: %w", err)
+			}
+			keywordRe = re
+		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		// 支持 docx token、/docx/ URL 与 /wiki/ URL（wiki 经 node_by_token 换出底层 docx）
@@ -148,11 +160,7 @@ docs_ai 引擎（服务端读取，可输出 block id，对齐官方 docs +fetch
 		}
 
 		// keyword 模式
-		re, err := regexp.Compile(keyword)
-		if err != nil {
-			return fmt.Errorf("--keyword 正则无效: %w", err)
-		}
-		hits := grepMarkdownLines(markdown, re, contextLines)
+		hits := grepMarkdownLines(markdown, keywordRe, contextLines)
 		if len(hits) == 0 {
 			return fmt.Errorf("未找到匹配 %q 的内容", keyword)
 		}

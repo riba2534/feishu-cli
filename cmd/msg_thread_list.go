@@ -30,6 +30,7 @@ var msgThreadMessagesCmd = &cobra.Command{
   --page-token  分页标记
   --start-time  起始时间（Unix 秒 / 毫秒 / RFC3339 / YYYY-MM-DD），客户端本地过滤
   --end-time    结束时间（同上，含边界；纯日期取当天 23:59:59），客户端本地过滤
+  --concise     紧凑 Markdown 视图（默认输出 JSON）
 
 时间过滤说明:
   飞书对 thread 容器会忽略 start_time/end_time，因此 CLI 不把时间范围发给服务端，
@@ -61,6 +62,7 @@ var msgThreadMessagesCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		concise, _ := cmd.Flags().GetBool("concise")
 
 		if err := config.Validate(); err != nil {
 			return err
@@ -86,6 +88,17 @@ var msgThreadMessagesCmd = &cobra.Command{
 			if dropped := before - len(result.Items); dropped > 0 || result.HasMore {
 				printThreadWindowNote(cmd.ErrOrStderr(), dropped, result.HasMore)
 			}
+		}
+
+		if concise {
+			names := client.ResolveSenderNames(result.Items, userToken)
+			c := newConciseRenderer(os.Stdout, names)
+			fmt.Fprintf(os.Stdout, "# 话题 %s（%d 条）\n\n", threadID, len(result.Items))
+			for _, m := range result.Items {
+				c.message(m, "")
+			}
+			c.footer(result.HasMore, result.PageToken)
+			return nil
 		}
 
 		return printJSON(result)
@@ -174,4 +187,5 @@ func init() {
 	msgThreadMessagesCmd.Flags().String("start-time", "", "起始时间（Unix 秒/毫秒、RFC3339、YYYY-MM-DD），客户端本地过滤")
 	msgThreadMessagesCmd.Flags().String("end-time", "", "结束时间（Unix 秒/毫秒、RFC3339、YYYY-MM-DD，含边界），客户端本地过滤")
 	msgThreadMessagesCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	msgThreadMessagesCmd.Flags().Bool("concise", false, "紧凑 Markdown 视图（渲染正文、保留 message_id/回复关系/page_token）；默认仍输出 JSON")
 }

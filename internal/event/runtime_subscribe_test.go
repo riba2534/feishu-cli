@@ -32,6 +32,9 @@ func newSubscribeRuntime(baseURL string) *Runtime {
 
 func TestRegisterSubscriptionsSuccess(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isForeignProbe(w, r) {
+			return
+		}
 		if r.URL.Path != "/subscribe" {
 			t.Errorf("path = %s", r.URL.Path)
 		}
@@ -162,6 +165,9 @@ func TestSequentialConsumersSubscribeEachUnsubscribeOnLast(t *testing.T) {
 	var mu sync.Mutex
 	var paths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isForeignProbe(w, r) {
+			return
+		}
 		mu.Lock()
 		paths = append(paths, r.Method+" "+r.URL.Path)
 		mu.Unlock()
@@ -223,6 +229,9 @@ func TestConcurrentConsumersSubscribeEachUnsubscribeOnce(t *testing.T) {
 	var mu sync.Mutex
 	var paths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isForeignProbe(w, r) {
+			return
+		}
 		mu.Lock()
 		paths = append(paths, r.Method+" "+r.URL.Path)
 		mu.Unlock()
@@ -311,6 +320,9 @@ func TestFirstSubscribeBlocksSecondStillSubscribesBeforeReady(t *testing.T) {
 	var subSeq int
 	var firstStartWS, secondStartWS bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isForeignProbe(w, r) {
+			return
+		}
 		mu.Lock()
 		paths = append(paths, r.Method+" "+r.URL.Path)
 		isSub := r.URL.Path == "/open-apis/vc/v1/meetings/subscription"
@@ -407,6 +419,9 @@ func TestFirstSubscribeFailsSecondStillSubscribesBeforeReady(t *testing.T) {
 	var subSeq int
 	var firstStartWS bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isForeignProbe(w, r) {
+			return
+		}
 		mu.Lock()
 		paths = append(paths, r.Method+" "+r.URL.Path)
 		isSub := r.URL.Path == "/open-apis/vc/v1/meetings/subscription"
@@ -528,6 +543,9 @@ func TestUnregisterSubscriptionsUses5sTimeout(t *testing.T) {
 	}
 	started := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isForeignProbe(w, r) {
+			return
+		}
 		close(started)
 		select {
 		case <-r.Context().Done():
@@ -597,6 +615,9 @@ func TestSubscriptionRequestBodiesApprovalVsVC(t *testing.T) {
 func TestRegisterSubscriptionsVCEventTypePathAndBody(t *testing.T) {
 	var gotPath, gotBody, gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isForeignProbe(w, r) {
+			return
+		}
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
 		buf := new(strings.Builder)

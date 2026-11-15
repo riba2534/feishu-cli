@@ -51,10 +51,6 @@ var markdownDiffCmd = &cobra.Command{
   feishu-cli markdown diff --file-token boxcnxxx --from-version 3
   feishu-cli markdown diff --file-token boxcnxxx --from-version 2 --to-version 5 --context-lines 1`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken, _ := cmd.Flags().GetString("file-token")
 		localFile, _ := cmd.Flags().GetString("file")
 		fromVersion, _ := cmd.Flags().GetString("from-version")
@@ -138,6 +134,10 @@ var markdownDiffCmd = &cobra.Command{
 			if _, err := safefile.StatInputFile(localFile); err != nil {
 				return err
 			}
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveIdentityToken(cmd)

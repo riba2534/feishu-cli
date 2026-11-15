@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -45,13 +45,9 @@ var appsAccessScopeSetCmd = &cobra.Command{
   feishu-cli apps access-scope-set --app-id app_xxx --scope specific \
     --targets '[{"type":"user","id":"ou_xxx"},{"type":"chat","id":"oc_xxx"}]'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		appID := strings.TrimSpace(flagString(cmd, "app-id"))
 		if appID == "" {
-			return fmt.Errorf("--app-id 不能为空")
+			return clierr.Usagef("--app-id 不能为空")
 		}
 		if err := validateAppsAccessScopeFlags(cmd); err != nil {
 			return err
@@ -67,6 +63,9 @@ var appsAccessScopeSetCmd = &cobra.Command{
 			return appsDryRun(cmd, "PUT", path, nil, body)
 		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		token, err := requireUserToken(cmd, "apps access-scope-set")
 		if err != nil {
 			return err
@@ -90,36 +89,36 @@ func validateAppsAccessScopeFlags(cmd *cobra.Command) error {
 	switch scope {
 	case "specific":
 		if targets == "" {
-			return fmt.Errorf("--scope=specific 时必须提供 --targets")
+			return clierr.Usagef("--scope=specific 时必须提供 --targets")
 		}
 		if err := validateAppsTargetsJSON(targets); err != nil {
 			return err
 		}
 		if approver != "" && !applyEnabled {
-			return fmt.Errorf("--approver 需要配合 --apply-enabled")
+			return clierr.Usagef("--approver 需要配合 --apply-enabled")
 		}
 		if requireLogin {
-			return fmt.Errorf("--scope=specific 时不允许 --require-login")
+			return clierr.Usagef("--scope=specific 时不允许 --require-login")
 		}
 	case "public":
 		if targets != "" {
-			return fmt.Errorf("--scope=public 时不允许 --targets")
+			return clierr.Usagef("--scope=public 时不允许 --targets")
 		}
 		if applyEnabled {
-			return fmt.Errorf("--scope=public 时不允许 --apply-enabled")
+			return clierr.Usagef("--scope=public 时不允许 --apply-enabled")
 		}
 		if approver != "" {
-			return fmt.Errorf("--scope=public 时不允许 --approver")
+			return clierr.Usagef("--scope=public 时不允许 --approver")
 		}
 		if !cmd.Flags().Changed("require-login") {
-			return fmt.Errorf("--scope=public 时必须显式给 --require-login（true 或 false，不要依赖默认值）")
+			return clierr.Usagef("--scope=public 时必须显式给 --require-login（true 或 false，不要依赖默认值）")
 		}
 	case "tenant":
 		if targets != "" || applyEnabled || approver != "" || requireLogin {
-			return fmt.Errorf("--scope=tenant 时不允许其它 flag")
+			return clierr.Usagef("--scope=tenant 时不允许其它 flag")
 		}
 	default:
-		return fmt.Errorf("--scope 必须是 specific / public / tenant")
+		return clierr.Usagef("--scope 必须是 specific / public / tenant")
 	}
 	return nil
 }
@@ -127,18 +126,18 @@ func validateAppsAccessScopeFlags(cmd *cobra.Command) error {
 func validateAppsTargetsJSON(targetsJSON string) error {
 	var items []map[string]any
 	if err := json.Unmarshal([]byte(targetsJSON), &items); err != nil {
-		return fmt.Errorf("--targets 不是合法 JSON: %w", err)
+		return clierr.Usagef("--targets 不是合法 JSON: %w", err)
 	}
 	if len(items) == 0 {
-		return fmt.Errorf("--targets 至少要有一项；specific 范围需要具体的 user/department/chat id")
+		return clierr.Usagef("--targets 至少要有一项；specific 范围需要具体的 user/department/chat id")
 	}
 	for i, t := range items {
 		typ, _ := t["type"].(string)
 		if !appsAccessScopeAllowedTargetTypes[typ] {
-			return fmt.Errorf("--targets[%d].type %q 必须是 user / department / chat 之一", i, typ)
+			return clierr.Usagef("--targets[%d].type %q 必须是 user / department / chat 之一", i, typ)
 		}
 		if id, _ := t["id"].(string); strings.TrimSpace(id) == "" {
-			return fmt.Errorf("--targets[%d].id 为空", i)
+			return clierr.Usagef("--targets[%d].id 为空", i)
 		}
 	}
 	return nil
@@ -148,7 +147,7 @@ func buildAppsAccessScopeBody(cmd *cobra.Command) (map[string]any, error) {
 	scope := flagString(cmd, "scope")
 	enum, ok := appsScopeToServerEnum[scope]
 	if !ok {
-		return nil, fmt.Errorf("--scope 必须是 specific / public / tenant，得到 %q", scope)
+		return nil, clierr.Usagef("--scope 必须是 specific / public / tenant，得到 %q", scope)
 	}
 	body := map[string]any{"scope": enum}
 
@@ -156,7 +155,7 @@ func buildAppsAccessScopeBody(cmd *cobra.Command) (map[string]any, error) {
 	case "specific":
 		var targets []map[string]any
 		if err := json.Unmarshal([]byte(flagString(cmd, "targets")), &targets); err != nil {
-			return nil, fmt.Errorf("--targets 不是合法 JSON: %w", err)
+			return nil, clierr.Usagef("--targets 不是合法 JSON: %w", err)
 		}
 		users, departments, chats := splitAppsAccessScopeTargets(targets)
 		if len(users) > 0 {

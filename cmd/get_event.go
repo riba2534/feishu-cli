@@ -49,12 +49,11 @@ var getEventCmd = &cobra.Command{
   feishu-cli calendar get-event CAL_ID EVENT_ID --output json`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		calendarID, eventID, err := calendarEventArgs(args)
 		if err != nil {
+			return err
+		}
+		if err := config.Validate(); err != nil {
 			return err
 		}
 		token := resolveOptionalUserTokenWithFallback(cmd)

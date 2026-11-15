@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-//go:embed scope_priorities.json scope_overrides.json
+//go:embed scope_priorities.json scope_overrides.json local_supplements.json
 var registryFS embed.FS
 
 // embeddedMetaJSON is set by loader_embedded.go when meta_data.json is compiled in.
@@ -27,13 +27,15 @@ type MergedRegistry struct {
 	Services []map[string]interface{} `json:"services"`
 }
 
-// Init initializes the registry: embedded baseline first, then optional remote overlay.
+// Init initializes the registry: embedded baseline first, then optional remote overlay,
+// then local_supplements（overlay 按 service 整体替换后，从内嵌基线补回白名单方法）.
 // Remote fetch errors never fail Init. Safe to call multiple times (sync.Once).
 func Init() {
 	initOnce.Do(func() {
 		configuredBrand = resolveBrand()
 		loadEmbeddedIntoMerged()
 		applyRemoteOverlay()
+		applyLocalSupplements()
 		rebuildProjectList()
 	})
 }

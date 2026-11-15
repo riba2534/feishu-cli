@@ -191,9 +191,6 @@ var mailTemplateDeleteCmd = &cobra.Command{
   feishu-cli mail template delete --template-id 764xxx --dry-run
   feishu-cli mail template delete --template-id 764xxx --yes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		mailbox, _ := cmd.Flags().GetString("mailbox")
 		templateID, _ := cmd.Flags().GetString("template-id")
 		output, _ := cmd.Flags().GetString("output")
@@ -209,11 +206,14 @@ var mailTemplateDeleteCmd = &cobra.Command{
 			return printJSON(map[string]any{"dry_run": true, "method": "DELETE",
 				"path": "/open-apis/mail/v1/user_mailboxes/" + mailbox + "/templates/" + templateID})
 		}
-		if err := confirmDangerousAction(cmd, fmt.Sprintf("将删除邮件模板 %s，确认?", templateID)); err != nil {
+		if err := config.Validate(); err != nil {
 			return err
 		}
 		token, err := requireUserToken(cmd, "mail template delete")
 		if err != nil {
+			return err
+		}
+		if err := confirmDangerousAction(cmd, fmt.Sprintf("将删除邮件模板 %s，确认?", templateID)); err != nil {
 			return err
 		}
 		if err := client.DeleteMailTemplate(mailbox, templateID, token); err != nil {

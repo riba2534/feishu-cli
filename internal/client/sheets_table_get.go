@@ -4,9 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 )
+
+// UnsupportedCellType 是 V3 batch_get 对下拉框等无法表达的单元格返回的元素类型。
+const UnsupportedCellType = "#UNSUPPORTED_TYPE"
+
+// sheetsWarnWriter 是表格读取告警的输出位置（测试可替换）。
+var sheetsWarnWriter io.Writer = os.Stderr
+
+// readPlainForBackfill 便于测试替换回填用的纯文本读取。
+var readPlainForBackfill = ReadCellsPlainV3
 
 // sheets_table_get.go —— sheet table-get 的读侧实现：把电子表格区域读回
 // DataFrame 形状（columns + data + dtypes/formats），与 table-put 输入完全对称，
@@ -68,6 +79,10 @@ func ReadTable(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, 
 		return nil, fmt.Errorf("range %s 无返回数据", fullRange)
 	}
 	grid := ranges[0]
+
+	// 下拉框等 V3 无法表达的单元格返回 #UNSUPPORTED_TYPE：用 batch_get_plain 按纯文本回填，
+	// 否则会被读成 null，round-trip 写回时清空原值
+	backfillUnsupportedCells(ctx, spreadsheetToken, sheetID, fullRange, grid, userAccessToken)
 
 	// 每行每列归一为标量
 	scalars := make([][]cellScalar, len(grid.Values))
@@ -152,6 +167,100 @@ func ReadTable(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, 
 		Dtypes:  dtypes,
 		Formats: formats,
 	}}}, nil
+}
+
+// UnsupportedCellAddrs 返回区域内含 #UNSUPPORTED_TYPE 元素的单元格（行列下标与 A1 地址）。
+// 地址按返回的 range 起点换算；起点无法解析时用 fallbackRange。
+func UnsupportedCellAddrs(grid *CellRangeV3, fallbackRange string) (cells [][2]int, addrs []string) {
+	if grid == nil {
+		return nil, nil
+	}
+	startCol, startRow := rangeOrigin(grid.Range, fallbackRange)
+	for i, row := range grid.Values {
+		for j, elems := range row {
+			if !hasUnsupportedElement(elems) {
+				continue
+			}
+			cells = append(cells, [2]int{i, j})
+			addrs = append(addrs, fmt.Sprintf("%s%d", ColumnIndexToLetter(startCol+j), startRow+i+1))
+		}
+	}
+	return cells, addrs
+}
+
+func hasUnsupportedElement(elems []*CellElement) bool {
+	for _, e := range elems {
+		if e != nil && e.Type == UnsupportedCellType {
+			return true
+		}
+	}
+	return false
+}
+
+// rangeOrigin 取范围左上角的 0 起始列号与行号；无法解析时返回 (0, 0)。
+func rangeOrigin(ranges ...string) (col, row int) {
+	for _, r := range ranges {
+		rest := r
+		if _, after, ok := SplitSheetRangePrefix(r); ok {
+			rest = after
+		}
+		if b, ok := ParseA1Bounds(rest); ok {
+			col, row = b.StartCol, b.StartRow
+			if col < 0 {
+				col = 0
+			}
+			if row < 0 {
+				row = 0
+			}
+			return col, row
+		}
+	}
+	return 0, 0
+}
+
+// backfillUnsupportedCells 把 #UNSUPPORTED_TYPE 单元格替换为 batch_get_plain 的纯文本。
+// 回填失败（请求出错或纯文本缺该单元格）时在 stderr 列出单元格地址告警，不中断读取。
+func backfillUnsupportedCells(ctx context.Context, spreadsheetToken, sheetID, fullRange string, grid *CellRangeV3, userAccessToken string) {
+	cells, addrs := UnsupportedCellAddrs(grid, fullRange)
+	if len(cells) == 0 {
+		return
+	}
+	plain, err := readPlainForBackfill(ctx, spreadsheetToken, sheetID, []string{fullRange}, userAccessToken)
+	if err != nil || len(plain) == 0 || plain[0] == nil {
+		reason := "纯文本读取无返回数据"
+		if err != nil {
+			reason = err.Error()
+		}
+		fmt.Fprintf(sheetsWarnWriter, "警告: %d 个单元格为接口不支持的类型（如下拉框），纯文本回填失败，读作空值: %s（%s）\n",
+			len(addrs), strings.Join(addrs, ", "), reason)
+		return
+	}
+	// 两个接口按同一 fullRange 读取；若返回的起点不同（如一侧裁掉了前导空行列），按下标回填会错位，宁可告警不回填
+	gc, gr := rangeOrigin(grid.Range, fullRange)
+	if pc, pr := rangeOrigin(plain[0].Range, fullRange); pc != gc || pr != gr {
+		fmt.Fprintf(sheetsWarnWriter, "警告: %d 个单元格为接口不支持的类型（如下拉框），纯文本读取的范围起点与原范围不一致，未回填，读作空值: %s\n",
+			len(addrs), strings.Join(addrs, ", "))
+		return
+	}
+	values := plain[0].Values
+	var failed []string
+	for k, c := range cells {
+		i, j := c[0], c[1]
+		if i >= len(values) || j >= len(values[i]) {
+			failed = append(failed, addrs[k])
+			continue
+		}
+		text, _ := values[i][j].(string)
+		if text == "" {
+			grid.Values[i][j] = nil
+			continue
+		}
+		grid.Values[i][j] = []*CellElement{{Type: "text", Text: &TextElement{Text: text}}}
+	}
+	if len(failed) > 0 {
+		fmt.Fprintf(sheetsWarnWriter, "警告: %d 个单元格为接口不支持的类型（如下拉框），纯文本结果缺少对应单元格，读作空值: %s\n",
+			len(failed), strings.Join(failed, ", "))
+	}
 }
 
 // sheetGridSize 通过 V2 metainfo 拿指定子表的行列数（支持 User Token）。

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -17,6 +18,7 @@ var mergeForwardMsgCmd = &cobra.Command{
   --receive-id        接收者 ID（必填）
   --receive-id-type   接收者 ID 类型（默认 email）
   --message-ids       消息 ID 列表（逗号分隔，必填）
+  --dry-run           只打印将调用的接口与请求体，不转发
 
 身份:
   仅支持 Bot（应用）身份：飞书合并转发接口只接受 tenant_access_token。
@@ -42,6 +44,24 @@ var mergeForwardMsgCmd = &cobra.Command{
     --receive-id-type chat_id \
     --message-ids om_xxx,om_yyy`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		receiveID, _ := cmd.Flags().GetString("receive-id")
+		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
+		messageIDsStr, _ := cmd.Flags().GetString("message-ids")
+
+		messageIDs := splitAndTrim(messageIDsStr)
+		if len(messageIDs) == 0 {
+			return clierr.Usagef("消息 ID 列表不能为空")
+		}
+
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "合并转发消息（预览，不会真正转发）", map[string]any{"identity": "bot"}, []dryRunStep{{
+				Method: "POST",
+				URL:    "/open-apis/im/v1/messages/merge_forward",
+				Params: map[string]any{"receive_id_type": receiveIDType},
+				Body:   map[string]any{"receive_id": receiveID, "message_id_list": messageIDs},
+			}})
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
@@ -50,15 +70,6 @@ var mergeForwardMsgCmd = &cobra.Command{
 		// 服务端拒绝或被 SDK 静默改用 Bot，这里固定 Bot 并明确提示，避免误以为以本人身份转发。
 		if userToken := resolveOptionalUserToken(cmd); userToken != "" {
 			fmt.Fprintln(cmd.ErrOrStderr(), "[提示] msg merge-forward 仅支持 Bot（应用）身份，已忽略 User Access Token，以 Bot 身份执行（Bot 需能看到这些消息且在目标会话中）")
-		}
-
-		receiveID, _ := cmd.Flags().GetString("receive-id")
-		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
-		messageIDsStr, _ := cmd.Flags().GetString("message-ids")
-
-		messageIDs := splitAndTrim(messageIDsStr)
-		if len(messageIDs) == 0 {
-			return fmt.Errorf("消息 ID 列表不能为空")
 		}
 
 		newMessageID, err := client.MergeForwardMessage(receiveID, receiveIDType, messageIDs, "")
@@ -80,5 +91,6 @@ func init() {
 	mergeForwardMsgCmd.Flags().String("receive-id-type", "email", "接收者 ID 类型（email/open_id/user_id/union_id/chat_id）")
 	mergeForwardMsgCmd.Flags().String("message-ids", "", "消息 ID 列表（逗号分隔）")
 	mergeForwardMsgCmd.Flags().String("user-access-token", "", "已忽略：合并转发接口仅支持 Bot 身份")
+	mergeForwardMsgCmd.Flags().Bool("dry-run", false, "只打印将调用的接口与请求体，不转发")
 	mustMarkFlagRequired(mergeForwardMsgCmd, "receive-id", "message-ids")
 }

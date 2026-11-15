@@ -43,10 +43,6 @@ var driveDownloadCmd = &cobra.Command{
   feishu-cli drive download --file-token https://xxx.feishu.cn/file/boxcnxxxx
   feishu-cli drive download --file-token boxcnxxxx --as bot`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		rawToken, _ := cmd.Flags().GetString("file-token")
 		outputPath, _ := cmd.Flags().GetString("output")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
@@ -81,6 +77,10 @@ var driveDownloadCmd = &cobra.Command{
 			} else if err == nil && !overwrite {
 				return fmt.Errorf("文件已存在: %s（使用 --overwrite 覆盖）", outputPath)
 			}
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveIdentityWithLegacyDefault(cmd, func(c *cobra.Command) (string, error) {

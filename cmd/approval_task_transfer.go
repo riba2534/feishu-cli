@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +32,7 @@ var approvalTaskTransferCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if output != "" && output != "json" {
-			return fmt.Errorf("无效的 --output: %s，有效值: json", output)
+			return clierr.Usagef("无效的 --output: %s，有效值: json", output)
 		}
 		if err := validateApprovalWriteUserIDType(userIDType); err != nil {
 			return err

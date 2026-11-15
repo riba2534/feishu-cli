@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -85,10 +86,7 @@ func defaultSheetImportMDDeps() sheetImportMDDeps {
 }
 
 func runSheetImportMD(cmd *cobra.Command, args []string, deps sheetImportMDDeps) error {
-	if err := deps.validate(); err != nil {
-		return err
-	}
-
+	// 本地文件与表格内容先校验（用法错误 exit 2），再校验配置与身份
 	mdPath := args[0]
 	if !strings.HasSuffix(strings.ToLower(mdPath), ".md") && !strings.HasSuffix(strings.ToLower(mdPath), ".markdown") {
 		fmt.Fprintf(cmd.ErrOrStderr(), "提示: 文件扩展名不是 .md/.markdown，仍按 Markdown 解析\n")
@@ -119,14 +117,14 @@ func runSheetImportMD(cmd *cobra.Command, args []string, deps sheetImportMDDeps)
 	// 1. 解析 markdown，挑出第 N 张 GFM 表格
 	tables := extractGFMTables(string(raw))
 	if len(tables) == 0 {
-		return fmt.Errorf("文件里找不到任何 GFM 表格: %s", mdPath)
+		return clierr.Usagef("文件里找不到任何 GFM 表格: %s", mdPath)
 	}
 	if tableIndex < 0 || tableIndex >= len(tables) {
-		return fmt.Errorf("--table-index %d 超出范围（文件里共 %d 张表，0-based）", tableIndex, len(tables))
+		return clierr.Usagef("--table-index %d 超出范围（文件里共 %d 张表，0-based）", tableIndex, len(tables))
 	}
 	rows := tables[tableIndex]
 	if len(rows) == 0 {
-		return fmt.Errorf("第 %d 张表是空的", tableIndex)
+		return clierr.Usagef("第 %d 张表是空的", tableIndex)
 	}
 	if err := validateSheetImportMDSize(rows); err != nil {
 		return err
@@ -134,6 +132,9 @@ func runSheetImportMD(cmd *cobra.Command, args []string, deps sheetImportMDDeps)
 
 	sheetImportMDProgress(cmd, output, "解析到表格 #%d：%d 行 × %d 列\n", tableIndex, len(rows), len(rows[0]))
 
+	if err := deps.validate(); err != nil {
+		return err
+	}
 	userAccessToken, err := deps.resolveUserToken(cmd)
 	if err != nil {
 		return err
@@ -236,12 +237,12 @@ func validateSheetImportMDSize(rows [][]string) error {
 	}
 	cells := len(rows) * len(rows[0])
 	if cells > maxSheetImportMDCells {
-		return fmt.Errorf("表格单次写入单元格数 %d（%d 行 × %d 列）超过飞书 API 上限 %d，请拆分", cells, len(rows), len(rows[0]), maxSheetImportMDCells)
+		return clierr.Usagef("表格单次写入单元格数 %d（%d 行 × %d 列）超过飞书 API 上限 %d，请拆分", cells, len(rows), len(rows[0]), maxSheetImportMDCells)
 	}
 	for r, row := range rows {
 		for c, cell := range row {
 			if len([]rune(cell)) > maxSheetImportMDCellChars {
-				return fmt.Errorf("单元格 R%dC%d 字符数 %d 超过飞书 API 上限 %d，请拆分或精简内容", r+1, c+1, len([]rune(cell)), maxSheetImportMDCellChars)
+				return clierr.Usagef("单元格 R%dC%d 字符数 %d 超过飞书 API 上限 %d，请拆分或精简内容", r+1, c+1, len([]rune(cell)), maxSheetImportMDCellChars)
 			}
 		}
 	}

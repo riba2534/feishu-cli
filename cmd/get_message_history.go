@@ -3,11 +3,13 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -61,6 +63,7 @@ var getMessageHistoryCmd = &cobra.Command{
   --page-size           分页大小 (1-50)，默认 50
   --page-token          分页标记
   --output, -o          输出格式 (json)
+  --concise             紧凑 Markdown 视图（渲染正文，保留 message_id/话题/回复关系/page_token；与 -o json 互斥）
   --card-content-type   interactive 卡片返回格式：user / raw / rendered（默认 user）
 
 示例:
@@ -78,12 +81,11 @@ var getMessageHistoryCmd = &cobra.Command{
     --start-time 1704067200 --sort-type ByCreateTimeAsc
 
   # 保留 OAPI 原始渲染版/降级版
-  feishu-cli msg history --container-id oc_xxx --card-content-type rendered -o json`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
+  feishu-cli msg history --container-id oc_xxx --card-content-type rendered -o json
 
+  # 紧凑 Markdown 视图（适合总结聊天）
+  feishu-cli msg history --container-id oc_xxx --concise`,
+	RunE: func(cmd *cobra.Command, args []string) error {
 		containerIDType, _ := cmd.Flags().GetString("container-id-type")
 		containerID, _ := cmd.Flags().GetString("container-id")
 		userID, _ := cmd.Flags().GetString("user-id")
@@ -101,6 +103,10 @@ var getMessageHistoryCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		concise, _ := cmd.Flags().GetBool("concise")
+		if err := validateConciseOutput(concise, output); err != nil {
+			return err
+		}
 
 		// 三种入口互斥，必须恰好一个
 		entryCount := 0
@@ -114,10 +120,14 @@ var getMessageHistoryCmd = &cobra.Command{
 			entryCount++
 		}
 		if entryCount == 0 {
-			return fmt.Errorf("必须指定 --container-id / --user-id / --user-email 之一")
+			return clierr.Usagef("必须指定 --container-id / --user-id / --user-email 之一")
 		}
 		if entryCount > 1 {
-			return fmt.Errorf("--container-id / --user-id / --user-email 互斥，只能指定一个")
+			return clierr.Usagef("--container-id / --user-id / --user-email 互斥，只能指定一个")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		var token string
@@ -161,7 +171,7 @@ var getMessageHistoryCmd = &cobra.Command{
 
 		// 走到这里必有 container-id + container-id-type
 		if containerIDType == "" {
-			return fmt.Errorf("必须指定 --container-id-type")
+			return clierr.Usagef("必须指定 --container-id-type")
 		}
 
 		opts := client.ListMessagesOptions{
@@ -213,6 +223,11 @@ var getMessageHistoryCmd = &cobra.Command{
 		var chatMembers []*client.ChatMemberInfo
 		if output == "json" && containerIDType == "chat" && strings.HasPrefix(containerID, "oc_") {
 			chatMembers, _ = client.LoadAllChatMembers(containerID, token) // 静默降级
+		}
+
+		if concise {
+			renderHistoryConcise(os.Stdout, "消息记录 "+containerID, result, senderNames)
+			return nil
 		}
 
 		if output == "json" {
@@ -326,6 +341,7 @@ func init() {
 	getMessageHistoryCmd.Flags().Int("page-size", 50, "分页大小 (1-50)")
 	getMessageHistoryCmd.Flags().String("page-token", "", "分页标记")
 	getMessageHistoryCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
+	getMessageHistoryCmd.Flags().Bool("concise", false, msgConciseFlagHelp)
 	getMessageHistoryCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	getMessageHistoryCmd.Flags().String("as", "auto", "身份选择: bot | user | auto（默认 auto = User 优先回退 Bot）。外部群拉群昵称推荐 --as bot + 对外共享 App")
 	// 默认对每条带 thread_id 的根消息

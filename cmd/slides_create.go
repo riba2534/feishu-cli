@@ -81,6 +81,10 @@ JSON 输出 url 与 permission_grant；以 User 身份创建时不触发。
 			return err
 		}
 
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
 			steps := []map[string]any{{
 				"method": "POST",
@@ -103,14 +107,17 @@ JSON 输出 url 与 permission_grant；以 User 身份创建时不触发。
 					"desc":   fmt.Sprintf("添加第 %d/%d 页", i+1, len(pages)),
 				})
 			}
-			return printJSON(map[string]any{"dry_run": true, "slides": len(pages), "images_to_upload": len(placeholders), "steps": steps})
+			return printJSON(withVisualDryRunIdentity(cmd, map[string]any{"dry_run": true, "slides": len(pages), "images_to_upload": len(placeholders), "steps": steps}))
 		}
 
 		if err := config.Validate(); err != nil {
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		result, err := client.CreateSlides(client.CreateSlidesOptions{
 			Title:           title,
@@ -299,4 +306,5 @@ func init() {
 	slidesCreateCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求，不创建")
 	slidesCreateCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	slidesCreateCmd.Flags().String("user-access-token", "", "User Access Token")
+	addVisualWriteAsFlag(slidesCreateCmd)
 }

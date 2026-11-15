@@ -75,7 +75,17 @@ func setupCmdTestConfig(t *testing.T, mockURL string) func() {
 	}
 }
 
+// isPortProbe 识别宿主机端口扫描器打进 httptest 随机端口的探测（实测 GET /、无 Authorization）。
+// CLI 发出的请求都在 /open-apis/ 下或带鉴权头；探测请求若被计入，会让「请求数 / 请求序列」断言偶发失败。
+func isPortProbe(r *http.Request) bool {
+	return r.URL.Path == "/" && r.Header.Get("Authorization") == ""
+}
+
 func mockAuthHandler(w http.ResponseWriter, r *http.Request) bool {
+	if isPortProbe(r) {
+		http.NotFound(w, r)
+		return true
+	}
 	if strings.Contains(r.URL.Path, "/tenant_access_token") || strings.Contains(r.URL.Path, "/refresh_access_token") {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{

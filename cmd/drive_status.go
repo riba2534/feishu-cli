@@ -49,10 +49,6 @@ var driveStatusCmd = &cobra.Command{
   feishu-cli drive status --folder-token fldxxx --local-dir ./mirror --quick
   feishu-cli drive status --folder-token fldxxx --local-dir ./mirror -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		folderToken, _ := cmd.Flags().GetString("folder-token")
 		localDir, _ := cmd.Flags().GetString("local-dir")
 		output, _ := cmd.Flags().GetString("output")
@@ -73,6 +69,10 @@ var driveStatusCmd = &cobra.Command{
 
 		safeRoot, _, err := resolveSafeLocalDir(localDir, false)
 		if err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
 			return err
 		}
 

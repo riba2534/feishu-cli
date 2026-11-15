@@ -119,9 +119,6 @@ func historyOutput(cmd *cobra.Command) (string, error) {
 }
 
 func runDocHistoryList(cmd *cobra.Command, args []string) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
 	pageSize, _ := cmd.Flags().GetInt("page-size")
 	pageToken, _ := cmd.Flags().GetString("page-token")
 	pageAll, _ := cmd.Flags().GetBool("page-all")
@@ -132,6 +129,10 @@ func runDocHistoryList(cmd *cobra.Command, args []string) error {
 	if pageSize < 1 || pageSize > 20 {
 		return clierr.Usagef("--page-size 必须在 1-20 之间，当前: %d", pageSize)
 	}
+	if err := config.Validate(); err != nil {
+		return err
+	}
+
 	userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {
@@ -208,9 +209,6 @@ func jsonNumberText(v any) string {
 }
 
 func runDocHistoryRevert(cmd *cobra.Command, args []string) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
 	versionID, _ := cmd.Flags().GetString("history-version-id")
 	versionID = strings.TrimSpace(versionID)
 	waitMs, _ := cmd.Flags().GetInt("wait-timeout-ms")
@@ -245,6 +243,10 @@ func runDocHistoryRevert(cmd *cobra.Command, args []string) error {
 			"body":    body,
 		})
 	}
+	if err := config.Validate(); err != nil {
+		return err
+	}
+
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {
 		return err
@@ -260,9 +262,6 @@ func runDocHistoryRevert(cmd *cobra.Command, args []string) error {
 }
 
 func runDocHistoryRevertStatus(cmd *cobra.Command, args []string) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
 	taskID, _ := cmd.Flags().GetString("task-id")
 	taskID = strings.TrimSpace(taskID)
 	output, err := historyOutput(cmd)
@@ -272,6 +271,10 @@ func runDocHistoryRevertStatus(cmd *cobra.Command, args []string) error {
 	if taskID == "" {
 		return clierr.Usagef("--task-id 不能为空")
 	}
+	if err := config.Validate(); err != nil {
+		return err
+	}
+
 	userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {

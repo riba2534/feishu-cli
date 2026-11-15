@@ -61,10 +61,6 @@ var searchDocsCmd = &cobra.Command{
   feishu-cli search docs "产品需求" --user-access-token <token>`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		query := args[0]
 		count, _ := cmd.Flags().GetInt("count")
 		offset, _ := cmd.Flags().GetInt("offset")
@@ -81,6 +77,10 @@ var searchDocsCmd = &cobra.Command{
 		}
 		docsTypes, err := normalizeSearchDocsTypes(docsTypesStr)
 		if err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
 			return err
 		}
 

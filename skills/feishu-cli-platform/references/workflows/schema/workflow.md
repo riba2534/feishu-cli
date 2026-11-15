@@ -23,15 +23,18 @@
 
 ## 数据来源
 
-编译期内嵌的 catalog 是离线 baseline（12 个 service / 152 个 method）。运行时默认从官方 public
-`api_definition?protocol=meta` 拉取 overlay（无凭证、10MB 上限、24h TTL、原子写缓存
+编译期内嵌的 catalog 是离线 baseline（15 个 service / 256 个 method，从官方 lark-cli 内嵌 catalog 同步）。
+运行时默认从官方 public `api_definition?protocol=meta` 拉取 overlay（无凭证、10MB 上限、24h TTL、原子写缓存
 `~/.feishu-cli/cache/remote_meta.json`），失败静默回退内嵌版本；`FEISHU_CLI_REMOTE_META=off` 可关闭。
-overlay 生效后为 15 个 service / 250 个 method。首次运行会在短预算内同步拉取
+overlay 按 service 整体替换内嵌定义，之后再从内嵌基线补回 `local_supplements` 白名单里的方法
+（公开 meta 端点缺失、但本项目命令在用的方法，目前是 `task.comments.*`）。远端内容随官方更新，
+两种模式下的方法数以 `schema status` 为准。首次运行会在短预算内同步拉取
 （`FEISHU_CLI_META_FIRST_SYNC_MS` 可调，`0` 表示只走后台刷新），之后命中缓存。
 
 判断 overlay 是否生效看 `schema status --format json` 的 `source`：`runtime`（本次刚拉取）/ `cache`（命中缓存）/
-`embedded`（未生效，检查网络或 `FEISHU_CLI_REMOTE_META`）。`doctor --only catalog` 与 `auth status -o json`
-的 `catalog` 字段同样可读。
+`embedded`（未生效，检查网络或 `FEISHU_CLI_REMOTE_META`）。`supplements` 列出 overlay 之后补回的方法
+（离线时为空，因为它们本就在内嵌基线里），pretty 行尾显示为 `supplements=N(local_supplements)`。`auth status -o json`
+的 `catalog` 字段同样带 `source` 与 `supplements`；`doctor --only catalog` 只在 message 里显示 source 与方法数。
 
 ## 命令速查
 

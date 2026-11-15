@@ -14,7 +14,7 @@ feishu-cli schema list --service drive         # 列出某个 service 的 resour
 feishu-cli schema drive.metas.batch_query      # 查 path / 参数 / 身份 / scope
 ```
 
-本地 catalog 内嵌 12 个 service / 152 个 method，运行时 overlay 生效后约 15 个 service / 250 个 method，
+本地 catalog 内嵌 15 个 service / 256 个 method，运行时 overlay 生效后同为 15 个 service（方法数以 `schema status` 为准），
 只覆盖开放平台的一小部分。**命中** → 直接用现有命令或 `feishu-cli api` 调。
 
 ### 第 2 步：查官方文档

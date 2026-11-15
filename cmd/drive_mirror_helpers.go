@@ -41,7 +41,7 @@ func resolveSafeLocalDir(localDir string, write bool) (safeAbs, cwdAbs string, e
 	// 先确保目录存在
 	info, statErr := os.Stat(localDir)
 	if statErr != nil {
-		return "", "", clierr.Usage(fmt.Errorf("--local-dir 不存在或无法访问: %w", statErr))
+		return "", "", clierr.Usagef("--local-dir 不存在或无法访问: %w", statErr)
 	}
 	if !info.IsDir() {
 		return "", "", clierr.Usagef("--local-dir 不是目录: %s", localDir)

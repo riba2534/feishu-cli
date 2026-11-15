@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,7 @@ form_id 即表单类型视图的 view_id。`,
 		tableID, _ := cmd.Flags().GetString("table-id")
 		formID, _ := cmd.Flags().GetString("form-id")
 		if tableID == "" || formID == "" {
-			return fmt.Errorf("--table-id 和 --form-id 必填")
+			return clierr.Usagef("--table-id 和 --form-id 必填")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{method: "GET", path: formPath(bt, tableID, formID)}
@@ -60,7 +60,7 @@ shared/shared_limit/submit_limit_once 是 bitable/v1 字段，故整体路由到
 		tableID, _ := cmd.Flags().GetString("table-id")
 		formID, _ := cmd.Flags().GetString("form-id")
 		if tableID == "" || formID == "" {
-			return fmt.Errorf("--table-id 和 --form-id 必填")
+			return clierr.Usagef("--table-id 和 --form-id 必填")
 		}
 
 		body, err := buildFormPatchBody(cmd)
@@ -68,7 +68,7 @@ shared/shared_limit/submit_limit_once 是 bitable/v1 字段，故整体路由到
 			return err
 		}
 		if len(body) == 0 {
-			return fmt.Errorf("未提供任何更新字段（用 --name/--description/--shared/... 或 --config）")
+			return clierr.Usagef("未提供任何更新字段（用 --name/--description/--shared/... 或 --config）")
 		}
 
 		return bitableRun(cmd, func(bt string) bitableReq {
@@ -93,7 +93,7 @@ func buildFormPatchBody(cmd *cobra.Command) (map[string]any, error) {
 		}
 		var body map[string]any
 		if err := json.Unmarshal([]byte(raw), &body); err != nil {
-			return nil, fmt.Errorf("解析 --config 失败: %w", err)
+			return nil, clierr.Usagef("解析 --config 失败: %w", err)
 		}
 		return body, nil
 	}
@@ -142,7 +142,7 @@ var bitableFormFieldListCmd = &cobra.Command{
 		tableID, _ := cmd.Flags().GetString("table-id")
 		formID, _ := cmd.Flags().GetString("form-id")
 		if tableID == "" || formID == "" {
-			return fmt.Errorf("--table-id 和 --form-id 必填")
+			return clierr.Usagef("--table-id 和 --form-id 必填")
 		}
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		pageToken, _ := cmd.Flags().GetString("page-token")
@@ -172,7 +172,7 @@ item 字段: id(必填)/title/description/required/visible/pre_field_id/option_d
 		tableID, _ := cmd.Flags().GetString("table-id")
 		formID, _ := cmd.Flags().GetString("form-id")
 		if tableID == "" || formID == "" {
-			return fmt.Errorf("--table-id 和 --form-id 必填")
+			return clierr.Usagef("--table-id 和 --form-id 必填")
 		}
 		body, err := buildFormQuestionsBody(cmd)
 		if err != nil {
@@ -196,17 +196,17 @@ func buildFormQuestionsBody(cmd *cobra.Command) (any, error) {
 		}
 		var body any
 		if err := json.Unmarshal([]byte(raw), &body); err != nil {
-			return nil, fmt.Errorf("解析 --config 失败: %w", err)
+			return nil, clierr.Usagef("解析 --config 失败: %w", err)
 		}
 		return body, nil
 	}
 	questionsJSON, _ := cmd.Flags().GetString("questions")
 	if questionsJSON == "" {
-		return nil, fmt.Errorf("需提供 --questions（问题数组）或 --config（完整请求体）")
+		return nil, clierr.Usagef("需提供 --questions（问题数组）或 --config（完整请求体）")
 	}
 	var questions any
 	if err := json.Unmarshal([]byte(questionsJSON), &questions); err != nil {
-		return nil, fmt.Errorf("解析 --questions 失败: %w", err)
+		return nil, clierr.Usagef("解析 --questions 失败: %w", err)
 	}
 	return map[string]any{"questions": questions}, nil
 }

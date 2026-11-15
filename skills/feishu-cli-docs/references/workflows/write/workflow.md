@@ -28,6 +28,9 @@
 - 文档参数：`doc content-update`、`doc media-insert`、`doc history *`、`doc add/add-board/add-callout/update/delete/batch-update/table`
   与 `doc import --document-id` 都接受 docx token、`/docx/` URL 和 `/wiki/` URL（wiki 自动解析为底层 docx，底层不是 docx 时报错）。
   `doc htmlbox` 暂只接受裸 document_id。
+- 预览：`doc create`、`doc content-update`、`doc media-insert`、`doc history revert`、`doc resource *`、`doc htmlbox` 写命令的
+  `--dry-run` 是静态预览，不联网、不需要凭据（wiki 链接的解析步骤用占位符表示）。去掉 `--dry-run` 后缺凭据以退出码 3 结束。
+- 参数错误（索引越界、互斥 flag、非法枚举、本地文件不可读等）以退出码 2 结束，并且先于凭据检查与任何网络请求。
 
 ## 新建文档
 
@@ -136,7 +139,7 @@ python3 -c "d=open('/tmp/doc.md','rb').read(); assert b'\xef\xbf\xbd' not in d; 
 ## 编辑已有文档
 
 不要把 `doc import --document-id` 当成更新命令；它会把 Markdown 转成新块追加到文档末尾。已有文档编辑用 `doc content-update`
-（官方 docs_ai 单操作原子更新，无先删后写破坏窗口，支持 `--revision-id` 乐观锁；没有 `--dry-run`）。
+（官方 docs_ai 单操作原子更新，无先删后写破坏窗口，支持 `--revision-id` 乐观锁；`--dry-run` 只打印请求计划，不联网、不需要凭据）。
 
 | 用户意图 | 推荐写法 | 粒度 |
 |---|---|---|
@@ -293,6 +296,8 @@ feishu-cli doc media-insert <document_id> --file /path/to/report.pdf --type file
 feishu-cli doc media-insert <document_id> --file /path/to/demo.mp4 --type file --file-view preview
 # 用户说"把这张截图 / 刚复制的图插进去"：直接从剪贴板插入，不要先存成本地文件
 feishu-cli doc media-insert <document_id> --from-clipboard --caption "架构图"
+# 预览多步计划（wiki 解析 → 读根块 → 末尾建空块 → 上传 → 绑定）：不联网、不需要凭据、不读剪贴板
+feishu-cli doc media-insert <document_id> --file /path/to/image.png --dry-run
 ```
 
 - `--type` 只接受 `image` / `file`（其他值以退出码 2 拒绝）；视频等其他文件用 `--type file` 作为附件插入。

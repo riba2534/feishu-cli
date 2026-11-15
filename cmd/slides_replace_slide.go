@@ -76,6 +76,10 @@ CLI 自动处理（官方实测的契约坑）:
 		}
 		body := withSlidesLint(cmd, map[string]any{"parts": injected})
 
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
 			pres, wikiStep, err := slidesDryRunPresentation(args[0])
 			if err != nil {
@@ -95,13 +99,16 @@ CLI 自动处理（官方实测的契约坑）:
 			if len(normalizations) > 0 {
 				out["normalizations"] = normalizations
 			}
-			return printJSON(out)
+			return printJSON(withVisualDryRunIdentity(cmd, out))
 		}
 
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
+			return err
+		}
 		presentationID, err := resolvePresentationArg(args[0], userAccessToken)
 		if err != nil {
 			return err
@@ -198,6 +205,10 @@ CLI 自动处理（官方实测的契约坑）:
 			}}})
 		}
 
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
 			pres, wikiStep, err := slidesDryRunPresentation(args[0])
 			if err != nil {
@@ -220,13 +231,16 @@ CLI 自动处理（官方实测的契约坑）:
 				"params": query,
 				"body":   buildBody(content),
 			})
-			return printJSON(map[string]any{"dry_run": true, "slide_id": slideID, "content_bytes": len(content), "images_to_upload": len(placeholders), "steps": steps})
+			return printJSON(withVisualDryRunIdentity(cmd, map[string]any{"dry_run": true, "slide_id": slideID, "content_bytes": len(content), "images_to_upload": len(placeholders), "steps": steps}))
 		}
 
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
+			return err
+		}
 		presentationID, err := resolvePresentationArg(args[0], userAccessToken)
 		if err != nil {
 			return err
@@ -472,6 +486,7 @@ func init() {
 	addSlidesNoLintFlag(slidesReplaceSlideCmd)
 	slidesReplaceSlideCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求，不调用 API")
 	slidesReplaceSlideCmd.Flags().String("user-access-token", "", "User Access Token")
+	addVisualWriteAsFlag(slidesReplaceSlideCmd)
 
 	slidesCmd.AddCommand(slidesUpdateSlideCmd)
 	slidesUpdateSlideCmd.Flags().String("slide-id", "", "要整页覆盖的页面 slide_id（必填）")
@@ -481,4 +496,5 @@ func init() {
 	addSlidesNoLintFlag(slidesUpdateSlideCmd)
 	slidesUpdateSlideCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求，不调用 API")
 	slidesUpdateSlideCmd.Flags().String("user-access-token", "", "User Access Token")
+	addVisualWriteAsFlag(slidesUpdateSlideCmd)
 }

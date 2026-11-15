@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -35,19 +36,12 @@ var mailTemplateCreateCmd = &cobra.Command{
   feishu-cli mail template create --name "周报" --subject "本周进度" \
       --body "<p>这是模板</p>" --to user@example.com`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-		token, err := requireUserToken(cmd, "mail template create")
-		if err != nil {
-			return err
-		}
 		name, _ := cmd.Flags().GetString("name")
 		if strings.TrimSpace(name) == "" {
-			return fmt.Errorf("--name 必填")
+			return clierr.Usagef("--name 必填")
 		}
 		if len([]rune(name)) > 100 {
-			return fmt.Errorf("--name 长度不能超过 100 个字符")
+			return clierr.Usagef("--name 长度不能超过 100 个字符")
 		}
 		subject, _ := cmd.Flags().GetString("subject")
 		body, _ := cmd.Flags().GetString("body")
@@ -67,6 +61,13 @@ var mailTemplateCreateCmd = &cobra.Command{
 			return err
 		}
 		bccList, err := parseEmailList(bccRaw)
+		if err != nil {
+			return err
+		}
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, err := requireUserToken(cmd, "mail template create")
 		if err != nil {
 			return err
 		}

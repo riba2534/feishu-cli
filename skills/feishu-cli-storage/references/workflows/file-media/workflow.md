@@ -14,6 +14,14 @@
   见 `../perm/workflow.md`）。
 - Bot 对用户自有文件（用户上传、用户创建的文档）通常没有管理权限：移动、删除、回滚这类文件要传用户身份。
 
+## 预览（--dry-run）
+
+写类命令都支持 `--dry-run`：`file upload/mkdir/move/copy/shortcut/delete`、`file version create/delete/revert`、
+`media upload`。只打印将要发出的请求（method / url / params / body），**不读取凭据、不联网**，无凭据环境也是退出码 0；
+本地参数（文件存在性、类型枚举、必填项）在预览之前校验，错误为退出码 2。`file upload` / `media upload` 按 20MB 阈值
+列出 `upload_all` 或 `upload_prepare` / `upload_part` / `upload_finish` 步骤，与真实上传一致。
+例外：`media upload --doc-id` 传 `/wiki/` 链接时需要 App 凭据，先只读解析 wiki 节点再输出计划。
+
 ## File
 
 ```bash
@@ -30,6 +38,7 @@ feishu-cli file shortcut <file_token> --target fldxxx --type docx       # 在目
 feishu-cli file delete <file_token> --type file --yes
 feishu-cli file delete <folder_token> --type folder --yes -o json      # 异步删除并轮询 task_check
 feishu-cli file delete <folder_token> --type folder --dry-run           # 预览请求，不确认、不删除
+feishu-cli file copy <file_token> --target fldxxx --type docx --dry-run  # 写类命令均可先预览
 feishu-cli file quota -o json                                           # 当前登录用户容量（必须 User Token）
 feishu-cli file meta <token> [token...] --doc-type docx
 feishu-cli file stats <file_token> --doc-type docx
@@ -76,6 +85,7 @@ feishu-cli file version list doxcnxxx --obj-type docx -o json
 feishu-cli file version create doxcnxxx --obj-type docx --name "v1.0"
 feishu-cli file version get doxcnxxx <version_id> --obj-type docx -o json
 feishu-cli file version delete doxcnxxx <version_id> --obj-type docx
+feishu-cli file version revert boxcnxxx 7633658129540910621 --dry-run   # 预览，不回滚
 ```
 
 - `file version revert` 底层 `POST /open-apis/drive/v1/files/{file_token}/revert`（请求体 `{"version": ...}`），需
@@ -101,6 +111,7 @@ feishu-cli media upload image.png --parent-type docx_image --parent-node <docume
 feishu-cli media upload report.pdf --parent-type docx_file --parent-node <document_id> -o json
 # 上传到文档块下时携带 --doc-id：写入 extra={"drive_route_token":...}，素材按该文档路由鉴权
 feishu-cli media upload image.png --parent-type docx_image --parent-node <block_id> --doc-id <document_id>
+feishu-cli media upload image.png --parent-node <document_id> --dry-run   # 预览上传请求
 feishu-cli media download <file_token> --output image.png
 feishu-cli media download <file_token> -o large.bin --timeout 30m      # 默认超时 5m
 ```

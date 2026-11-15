@@ -43,3 +43,16 @@ func TestOutputFileRejectsSensitiveDirs(t *testing.T) {
 		t.Fatal("普通路径应写出内容")
 	}
 }
+
+// 非法 --format / --jq 都是用法错误（退出码 2），所有调用 ParseOptions 的命令一致。
+func TestParseOptions_FormatAndJQAreUsageErrors(t *testing.T) {
+	for _, tc := range []struct{ flag, val string }{{"format", "nope"}, {"jq", "bad("}} {
+		cmd := &cobra.Command{Use: "t"}
+		cmd.Flags().String("format", "", "")
+		cmd.Flags().String("jq", "", "")
+		_ = cmd.Flags().Set(tc.flag, tc.val)
+		if _, err := ParseOptions(cmd); err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+			t.Fatalf("--%s %q 应为用法错误: %v", tc.flag, tc.val, err)
+		}
+	}
+}

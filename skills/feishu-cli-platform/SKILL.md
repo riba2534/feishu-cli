@@ -2,7 +2,7 @@
 name: feishu-cli-platform
 description: >-
   飞书 CLI 平台基础能力，不是飞书请求的通用兜底：配置与多 Profile、Device Flow 登录、Token 与 scope 预检、应用侧 scope 开通诊断、doctor、技能安装与 CLI 升级、OpenAPI schema 查询与 api 透传、全局搜索（文档含文件夹/知识库/创建者筛选、消息、应用），按邮箱或手机号查用户、部门与机器人。用户提到登录飞书、Token 过期、99991672/99991679、切换 profile、技能与 CLI 版本漂移、调用未封装接口、跨飞书搜文档或消息、查 open_id 时使用；查 schema 或发 raw API 时即使端点属于审批或会议也用本 Skill。不用于文档、云盘与权限、消息、表格、可视化、日历/任务/审批/OKR、邮件和会议等业务操作，分别使用 feishu-cli-docs/storage/messaging/data/visual/work/mail/meetings。
-compatibility: Requires feishu-cli v1.43.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.44.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Read Write
 ---
 
@@ -17,9 +17,9 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 | 意图 | 读取文件 |
 |---|---|
 | 登录、登出、scope 预检、应用已开通 scope 诊断（`auth scopes`）、Token、profile、config、doctor、技能安装/漂移（`skills`）、CLI 升级（`update`） | `references/workflows/auth/workflow.md` |
-| 调任意 OpenAPI、`--as`、分页和 dry-run | `references/workflows/api/workflow.md` |
+| 调任意 OpenAPI、`--as`、分页、dry-run、multipart 上传（`--file`）与机器可读错误（`--error-format json`） | `references/workflows/api/workflow.md` |
 | 查询本地 OpenAPI path、参数和 scope | `references/workflows/schema/workflow.md` |
-| 全局搜索文档（含 `drive search` 按文件夹/知识库/创建者精筛）、消息或应用 | `references/workflows/search/workflow.md` |
+| 全局搜索文档（含 `drive search` 按文件夹/知识库/创建者、编辑/评论/打开/创建时间窗精筛）、消息或应用 | `references/workflows/search/workflow.md` |
 | 查询用户、邮箱、手机号、部门，搜索机器人（`user search-bot`） | `references/workflows/directory/workflow.md` |
 
 涉及身份选择，或遇到 Token、身份、scope 报错（如 99991663/99991668/99991672/99991679）时读取 `references/workflows/auth/references/identity.md`，排错表见 `references/workflows/auth/workflow.md`；`auth check` 不是 Bot 权限检查。

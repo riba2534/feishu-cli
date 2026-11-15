@@ -28,16 +28,26 @@ Bot 身份创建时自动给当前 CLI 登录用户授予 full_access（JSON 输
   feishu-cli file mkdir "子文件夹" --parent fldcnXXXXXXXXX
 
   # JSON 格式输出
-  feishu-cli file mkdir "新文件夹" --output json`,
+  feishu-cli file mkdir "新文件夹" --output json
+
+  # 预览请求（--dry-run 只打印将要发出的请求，不读取凭据、不联网）
+  feishu-cli file mkdir "新文件夹" --parent fldcnXXX --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		name := args[0]
 		parentToken, _ := cmd.Flags().GetString("parent")
 		output, _ := cmd.Flags().GetString("output")
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Create folder", nil, []dryRunStep{{
+				Method: "POST",
+				URL:    "/open-apis/drive/v1/files/create_folder",
+				Body:   map[string]any{"name": name, "folder_token": parentToken},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		token, url, err := client.CreateFolder(name, parentToken, userAccessToken)
@@ -72,6 +82,7 @@ Bot 身份创建时自动给当前 CLI 登录用户授予 full_access（JSON 输
 func init() {
 	fileCmd.AddCommand(createFolderCmd)
 	createFolderCmd.Flags().String("parent", "", "父文件夹 Token")
+	createFolderCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	createFolderCmd.Flags().String("user-access-token", "", "User Access Token（可选，使用用户身份访问文件）")
 	createFolderCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 }

@@ -6,7 +6,6 @@ import (
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
-	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -49,29 +48,22 @@ var bitableTableListCmd = &cobra.Command{
 		if limit > 0 {
 			params["limit"] = limit
 		}
-		if err := config.Validate(); err != nil {
-			return err
-		}
-		token, err := resolveIdentityToken(cmd)
-		if err != nil {
-			return err
-		}
-		baseToken, err := resolveBaseToken(cmd)
-		if err != nil {
-			return err
-		}
-		data, err := client.BaseV3Call("GET", bitableTablePath(baseToken), params, nil, token)
-		if err != nil {
-			return err
-		}
-		got := len(bitableAnySlice(data["tables"]))
-		if total := bitableJSONInt(data["total"]); total > offset+got && got > 0 {
-			next := offset + got
-			data["has_more"] = true
-			data["next_offset"] = next
-			fmt.Fprintf(os.Stderr, "提示: 共 %d 张数据表，本页 %d 张；续翻加 --offset %d，或去掉 --offset/--limit 自动取全部\n", total, got, next)
-		}
-		return printJSON(data)
+		return bitableExecute(cmd, func(bt string) bitableReq {
+			return bitableReq{method: "GET", path: bitableTablePath(bt), params: params}
+		}, func(req bitableReq, token string) (any, error) {
+			data, err := client.BaseV3Call(req.method, req.path, req.params, nil, token)
+			if err != nil {
+				return nil, err
+			}
+			got := len(bitableAnySlice(data["tables"]))
+			if total := bitableJSONInt(data["total"]); total > offset+got && got > 0 {
+				next := offset + got
+				data["has_more"] = true
+				data["next_offset"] = next
+				fmt.Fprintf(os.Stderr, "提示: 共 %d 张数据表，本页 %d 张；续翻加 --offset %d，或去掉 --offset/--limit 自动取全部\n", total, got, next)
+			}
+			return data, nil
+		})
 	},
 }
 
@@ -81,7 +73,7 @@ var bitableTableGetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		if tableID == "" {
-			return fmt.Errorf("--table-id 必填")
+			return clierr.Usagef("--table-id 必填")
 		}
 		return runBaseV3Simple(cmd, "GET", func(bt string) string {
 			return bitableTablePath(bt, tableID)
@@ -141,7 +133,7 @@ var bitableTableUpdateCmd = &cobra.Command{
 		configFile, _ := cmd.Flags().GetString("config-file")
 
 		if tableID == "" {
-			return fmt.Errorf("--table-id 必填")
+			return clierr.Usagef("--table-id 必填")
 		}
 
 		pathFn := func(bt string) string { return bitableTablePath(bt, tableID) }
@@ -150,7 +142,7 @@ var bitableTableUpdateCmd = &cobra.Command{
 			return runBaseV3WithJSON(cmd, "PATCH", pathFn)
 		}
 		if name == "" {
-			return fmt.Errorf("需要 --name 或 --config 至少一个")
+			return clierr.Usagef("需要 --name 或 --config 至少一个")
 		}
 		body := map[string]any{"name": name}
 		return runBaseV3WithBody(cmd, "PATCH", pathFn, body)
@@ -163,7 +155,7 @@ var bitableTableDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		if tableID == "" {
-			return fmt.Errorf("--table-id 必填")
+			return clierr.Usagef("--table-id 必填")
 		}
 		return runBaseV3Simple(cmd, "DELETE", func(bt string) string {
 			return bitableTablePath(bt, tableID)
@@ -203,4 +195,6 @@ func init() {
 
 	bitableTableDeleteCmd.Flags().String("table-id", "", "table_id（必填）")
 	mustMarkFlagRequired(bitableTableDeleteCmd, "table-id")
+
+	addBitablePreviewFlags(tableSubs...)
 }

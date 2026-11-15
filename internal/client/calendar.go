@@ -149,6 +149,10 @@ type CreateEventParams struct {
 	Recurrence  string // 重复日程规则（RFC5545 RRULE），如 FREQ=WEEKLY;BYDAY=MO
 	// WithVChat 为 true 时同时创建飞书视频会议（vchat.vc_type=vc），日程详情会带会议链接
 	WithVChat bool
+	// DescriptionRich 非空时以 Markdown 富文本写入 description_rich（与 Description 互斥）
+	DescriptionRich string
+	// MeetingOwnerID 视频会议 owner 的 open_id（vchat.meeting_settings.owner_id），隐含创建视频会议；仅 Bot 身份生效
+	MeetingOwnerID string
 }
 
 // CreateEvent 创建日程
@@ -194,8 +198,17 @@ func CreateEvent(params *CreateEventParams, userAccessToken string) (*CalendarEv
 		eventBuilder.Recurrence(params.Recurrence)
 	}
 
-	if params.WithVChat {
-		eventBuilder.Vchat(larkcalendar.NewVchatBuilder().VcType("vc").Build())
+	if params.WithVChat || params.MeetingOwnerID != "" {
+		vchat := larkcalendar.NewVchatBuilder().VcType("vc")
+		if params.MeetingOwnerID != "" {
+			vchat.MeetingSettings(larkcalendar.NewMeetingSettingsBuilder().OwnerId(params.MeetingOwnerID).Build())
+		}
+		eventBuilder.Vchat(vchat.Build())
+	}
+
+	if params.DescriptionRich != "" {
+		// SDK 结构体没有 description_rich，富文本描述走手写请求
+		return sendCalendarEventWithRich(http.MethodPost, "/open-apis/calendar/v4/calendars/"+url.PathEscape(params.CalendarID)+"/events", eventBuilder.Build(), params.DescriptionRich, "创建日程", userAccessToken)
 	}
 
 	req := larkcalendar.NewCreateCalendarEventReqBuilder().
@@ -373,12 +386,14 @@ type UpdateEventParams struct {
 	Recurrence  string // 重复日程规则（RFC5545 RRULE），如 FREQ=WEEKLY;BYDAY=MO
 	// NeedNotification 为 nil 时不传（服务端默认通知参与人）
 	NeedNotification *bool
+	// DescriptionRich 非空时以 Markdown 富文本写入 description_rich（与 Description 互斥）
+	DescriptionRich string
 }
 
 // HasFields 报告是否至少有一个待更新字段（NeedNotification 不算）。
 func (p *UpdateEventParams) HasFields() bool {
 	return p.Summary != "" || p.Description != "" || p.StartTime != "" || p.EndTime != "" ||
-		p.Location != "" || p.Recurrence != ""
+		p.Location != "" || p.Recurrence != "" || p.DescriptionRich != ""
 }
 
 // UpdateEvent 更新日程（使用 Patch 方式）
@@ -433,6 +448,10 @@ func UpdateEvent(params *UpdateEventParams, userAccessToken string) (*CalendarEv
 
 	if params.NeedNotification != nil {
 		eventBuilder.NeedNotification(*params.NeedNotification)
+	}
+
+	if params.DescriptionRich != "" {
+		return sendCalendarEventWithRich(http.MethodPatch, calendarEventPath(params.CalendarID, params.EventID), eventBuilder.Build(), params.DescriptionRich, "更新日程", userAccessToken)
 	}
 
 	req := larkcalendar.NewPatchCalendarEventReqBuilder().

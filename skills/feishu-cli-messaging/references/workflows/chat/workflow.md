@@ -1,6 +1,6 @@
 # 飞书会话浏览与管理
 
-本工作流处理"读聊天记录 / 消息互动 / 管群"：`chat` 全部子命令，以及 `msg flag/get/history/list/mget/pin/pins/reaction/read-users/resource-download/search-chats/thread-messages/unpin`。
+本工作流处理"读聊天记录 / 消息互动 / 管群"：`chat` 全部子命令，以及 `msg flag/get/history/list/mget/pin/pins/reaction/read-users/read-status/resource-download/search-chats/thread-messages/unpin`。
 发送、回复、转发、加急，以及编辑和撤回已发消息走 [`msg` 工作流](../msg/workflow.md)；构造卡片走 [`card` 工作流](../card/workflow.md)。
 
 ## 目录
@@ -31,6 +31,8 @@
 | 看单条 / 批量消息、合并转发内容 | `msg get` / `msg mget` |
 | 看一个话题的全部回复 | `msg thread-messages <omt_xxx>` |
 | 谁读了 Bot 或本人发出的消息 | `msg read-users <om_xxx>`（见[已读用户](#已读用户msg-read-users)） |
+| 我自己是否读过这些消息 | `msg read-status <om_xxx> ...`（见[我的已读状态](#我的已读状态msg-read-status)） |
+| 给 Agent 总结用的紧凑聊天记录 | `msg history ... --concise` / `msg thread-messages <omt_xxx> --concise` |
 | 按关键词搜消息 | `search messages`（属于 `feishu-cli-platform`） |
 | 下载消息里的图片 / 文件 | `msg resource-download`（见[下载消息资源](#下载消息资源)） |
 | Reaction / Pin / 书签 | `msg reaction` / `msg pin` / `msg flag` |
@@ -48,6 +50,7 @@
 | `chat create`、`chat link` | 固定 Bot（应用身份），不能切 User Token |
 | `msg read-users` | `--as bot\|user\|auto`，默认 auto（已配置但不可用时 fail-closed）；只能查调用身份自己发出的消息，按消息发送者选身份，见[已读用户](#已读用户msg-read-users) |
 | `msg flag create/list/cancel` | 必须 User（`im:feed.flag:read` / `im:feed.flag:write`） |
+| `msg read-status` | 必须 User（`im:message:readonly`），未登录 exit 3 |
 
 - `--as bot` 时 Bot 必须在目标群内；`msg reaction remove` 只能删除同一身份添加的表情（实测跨身份删除返回 231007）。
 - 外部群里 Bot 通常不在群内，读外部群消息先确认 User 授权：
@@ -125,6 +128,10 @@ feishu-cli msg thread-messages omt_xxx --page-size 50 --sort ByCreateTimeAsc
 # 话题内时间窗：秒 / 毫秒 / RFC3339 / YYYY-MM-DD 都接受，在客户端过滤当前页
 feishu-cli msg thread-messages omt_xxx --start-time 1704067200 --end-time 1704153600
 
+# 紧凑 Markdown 视图（渲染正文与 @ 名字，保留 message_id / 话题 / 回复关系 / page_token）
+feishu-cli msg history --container-id oc_xxx --page-size 50 --concise
+feishu-cli msg thread-messages omt_xxx --concise
+
 ```
 
 ### msg history 的 JSON 输出
@@ -148,6 +155,10 @@ feishu-cli msg thread-messages omt_xxx --start-time 1704067200 --end-time 170415
 - 本页无可见消息但 `has_more=true` 时 stderr 提示继续带 `--page-token` 翻页，不要据此判断"没有消息"。
 - `msg thread-messages` 的输出是 PascalCase（`Items/HasMore/PageToken`），**没有** `sender_names`；名字见下方
   "名字反解与输出处理"。
+- `--concise`（history / thread-messages）输出紧凑 Markdown：每条消息一行头（时间、发送者名与 ID、message_id、`回复 om_xxx`、
+  已撤回/已编辑），下面是渲染后的正文（text/post/卡片文本/图片与文件占位），话题回复与合并转发子消息缩进列出，
+  末尾给出 `--page-token`。`--concise` 与 `-o json` 互斥（exit 2）；不加时 JSON / 文本输出与之前完全一致。
+  需要字段级处理（如 `sender_id`、原始 content）时仍用 JSON。
 
 ### 已读用户（msg read-users）
 
@@ -161,6 +172,17 @@ feishu-cli msg thread-messages omt_xxx --start-time 1704067200 --end-time 170415
 ```bash
 feishu-cli msg read-users om_xxx --as bot --user-id-type open_id -o json    # Bot 发出的消息
 feishu-cli msg read-users om_xxx --as user -o json                          # 本人发出的消息
+```
+
+### 我的已读状态（msg read-status）
+
+查询**当前登录用户**是否读过指定消息（`POST /open-apis/im/v1/messages/read_status`），与 `read-users`（谁读了我发的消息）不同。
+仅 User 身份；位置参数与 `--message-ids` 可合用，合计 1–50 个且须为 `om_` 前缀，超出或前缀不对在联网前 exit 2。
+`-o json` 透传服务端 `data`：`items[]`（`message_id` / `is_read`）与 `invalid_message_ids[]`；文本模式每行 `om_xxx  已读|未读`。
+
+```bash
+feishu-cli msg read-status om_xxx om_yyy
+feishu-cli msg read-status --message-ids om_xxx,om_yyy -o json
 ```
 
 ## 搜群与定位

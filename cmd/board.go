@@ -17,6 +17,9 @@ var boardCmd = &cobra.Command{
   update        更新画板内容（支持覆盖）
   delete        删除画板节点
 
+写命令（import/update/clone/svg-import/upload-image/delete/create-notes）默认 Bot 身份，
+--as user 以当前登录用户身份执行，--as auto 为 User 优先、未登录回退 Bot。
+
 示例:
   # 下载画板图片
   feishu-cli board image <whiteboard_id> output.png

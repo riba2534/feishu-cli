@@ -131,6 +131,13 @@ var sheetUnprotectCmd = &cobra.Command{
 	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		protectIDs := args[1:]
+		if handled, err := sheetDryRunIfRequested(cmd, args[0], "", fmt.Sprintf("删除 %d 个保护范围", len(protectIDs)), map[string]any{
+			"protect_ids": protectIDs,
+		}, "DELETE", "/open-apis/sheets/v2/spreadsheets/%s/protected_range_batch_del", map[string]any{
+			"protectIds": protectIDs,
+		}); handled {
+			return err
+		}
 
 		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {
@@ -160,5 +167,6 @@ func init() {
 	sheetProtectCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
 	sheetProtectCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 
+	sheetUnprotectCmd.Flags().Bool("dry-run", false, "只打印将要发送的请求，不执行")
 	sheetUnprotectCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

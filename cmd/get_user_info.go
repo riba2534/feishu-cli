@@ -41,6 +41,9 @@ var getUserInfoCmd = &cobra.Command{
   feishu-cli user info ou_xxx --as user`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateIdentityAsFlag(cmd); err != nil {
+			return err
+		}
 		if err := config.Validate(); err != nil {
 			return err
 		}

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -28,7 +29,7 @@ var configGetCmd = &cobra.Command{
 		key := args[0]
 
 		if !viper.IsSet(key) {
-			return fmt.Errorf("未知的配置项: %s", key)
+			return clierr.Usagef("未知的配置项: %s", key)
 		}
 
 		val := viper.Get(key)

@@ -130,10 +130,10 @@ var replyMsgCmd = &cobra.Command{
 
 func validateReplyMessageID(messageID string) error {
 	if strings.HasPrefix(messageID, "omt_") {
-		return fmt.Errorf("无效的 message_id %q：omt_ 是 thread_id；请传入话题内的 om_xxx 消息 ID", messageID)
+		return clierr.Usagef("无效的 message_id %q：omt_ 是 thread_id；请传入话题内的 om_xxx 消息 ID", messageID)
 	}
 	if !strings.HasPrefix(messageID, "om_") {
-		return fmt.Errorf("无效的 message_id %q：回复消息需要 om_xxx 消息 ID", messageID)
+		return clierr.Usagef("无效的 message_id %q：回复消息需要 om_xxx 消息 ID", messageID)
 	}
 	return nil
 }

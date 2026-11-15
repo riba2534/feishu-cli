@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/converter"
 )
 
@@ -35,10 +35,10 @@ func parseTableColumnWidthFlag(raw string) (mode string, values []int, err error
 		}
 		v, e := strconv.Atoi(p)
 		if e != nil {
-			return "", nil, fmt.Errorf("--table-column-width 第 %d 项 %q 不是合法整数（用法：auto | fixed | N1,N2,...）", i+1, p)
+			return "", nil, clierr.Usagef("--table-column-width 第 %d 项 %q 不是合法整数（用法：auto | fixed | N1,N2,...）", i+1, p)
 		}
 		if v < 0 {
-			return "", nil, fmt.Errorf("--table-column-width 第 %d 项 %d 不能为负数", i+1, v)
+			return "", nil, clierr.Usagef("--table-column-width 第 %d 项 %d 不能为负数", i+1, v)
 		}
 		values = append(values, v)
 	}

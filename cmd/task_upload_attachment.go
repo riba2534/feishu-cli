@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/spf13/cobra"
@@ -34,24 +35,20 @@ var taskUploadAttachmentCmd = &cobra.Command{
   feishu-cli task upload-attachment --task-guid xxxx --file ./report.pdf
   feishu-cli task upload-attachment --task-guid xxxx --file ./img.png -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		taskGuid, _ := cmd.Flags().GetString("task-guid")
 		filePath, _ := cmd.Flags().GetString("file")
 		resourceType, _ := cmd.Flags().GetString("resource-type")
 		output, _ := cmd.Flags().GetString("output")
 
 		if taskGuid == "" {
-			return fmt.Errorf("--task-guid 必填")
+			return clierr.Usagef("--task-guid 必填")
 		}
 		taskGuid, guidErr := parseTaskGUIDArg(taskGuid)
 		if guidErr != nil {
 			return guidErr
 		}
 		if filePath == "" {
-			return fmt.Errorf("--file 必填")
+			return clierr.Usagef("--file 必填")
 		}
 		if resourceType == "" {
 			resourceType = "task"
@@ -60,7 +57,19 @@ var taskUploadAttachmentCmd = &cobra.Command{
 		// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
 		stat, err := safefile.StatInputFile(filePath)
 		if err != nil {
-			return fmt.Errorf("--file 无效: %w", err)
+			return clierr.Usagef("--file 无效: %w", err)
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "task upload-attachment 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: taskAPIPath("attachments", "upload"), Desc: "multipart 上传附件", Params: taskOpenIDParams(),
+				Body: map[string]any{"resource_type": resourceType, "resource_id": taskGuid, "file": filepath.Base(filePath), "size": stat.Size()},
+			}})
+		}
+		if err := config.Validate(); err != nil {
+			return err
 		}
 		fmt.Fprintf(os.Stderr, "上传附件: %s (%d bytes) → task=%s\n", filepath.Base(filePath), stat.Size(), taskGuid)
 
@@ -101,6 +110,7 @@ func init() {
 	taskUploadAttachmentCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	taskUploadAttachmentCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	addWriteAsFlag(taskUploadAttachmentCmd)
+	addTaskDryRunFlag(taskUploadAttachmentCmd)
 	mustMarkFlagRequired(taskUploadAttachmentCmd, "task-guid")
 	mustMarkFlagRequired(taskUploadAttachmentCmd, "file")
 }

@@ -31,15 +31,13 @@ var mailForwardCmd = &cobra.Command{
   --attach                       追加本地附件（可重复或逗号分隔）
   --no-original-attachments      不携带原邮件附件
   --confirm-send                 保存草稿后立即发送
+  --send-time                    定时发送（Unix 秒，至少晚于当前 5 分钟；须配合 --confirm-send）
+  --request-receipt              请求已读回执（Disposition-Notification-To 指向发件人）
 
 示例:
   feishu-cli mail forward --message-id msg_xxx --to user@example.com
   feishu-cli mail forward --message-id msg_xxx --to team@example.com --body "请关注此邮件"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		mailbox, _ := cmd.Flags().GetString("mailbox")
 		messageID, _ := cmd.Flags().GetString("message-id")
 		toRaw, _ := cmd.Flags().GetString("to")
@@ -77,7 +75,14 @@ var mailForwardCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		sendTime, err := validateMailSendTime(cmd)
+		if err != nil {
+			return err
+		}
 
+		if err := config.Validate(); err != nil {
+			return err
+		}
 		token, err := requireUserToken(cmd, "mail forward")
 		if err != nil {
 			return err
@@ -116,6 +121,9 @@ var mailForwardCmd = &cobra.Command{
 			from = profile.PrimaryEmailAddress
 			fromName = profile.Name
 		}
+		if err := requireMailReceiptSender(cmd, from); err != nil {
+			return err
+		}
 
 		isHTML := forceHTML
 		if !forceHTML && !plainText {
@@ -132,6 +140,7 @@ var mailForwardCmd = &cobra.Command{
 			LMSReplyToMessageID: firstNonEmptyString(src.MessageID, messageID),
 			Attachments:         attachments,
 		}
+		input.DispositionNotificationTo = mailReceiptAddress(cmd, from)
 		if isHTML {
 			input.BodyHTML = comment + buildMailHTMLForwardQuote(src)
 		} else {
@@ -165,7 +174,7 @@ var mailForwardCmd = &cobra.Command{
 			return nil
 		}
 
-		sendData, err := client.SendMailDraft(mailbox, draftID, token)
+		sendData, err := client.SendMailDraftAt(mailbox, draftID, sendTime, token)
 		if err != nil {
 			return fmt.Errorf("发送失败（草稿 %s 已创建）: %w", draftID, err)
 		}
@@ -182,8 +191,15 @@ var mailForwardCmd = &cobra.Command{
 			"confirmed":   true,
 			"attachments": attNames,
 		}
+		if sendTime != "" {
+			result["send_time"] = sendTime
+		}
 		if output == "json" {
 			return printJSON(result)
+		}
+		if sendTime != "" {
+			fmt.Printf("转发已定时发送 (message_id=%s, send_time=%s)\n", sent.MessageID, sendTime)
+			return nil
 		}
 		fmt.Printf("转发发送成功 (message_id=%s)\n", sent.MessageID)
 		return nil
@@ -199,6 +215,8 @@ func init() {
 	mailForwardCmd.Flags().String("bcc", "", "密送")
 	mailForwardCmd.Flags().String("body", "", "前置评论（可选）")
 	mailForwardCmd.Flags().Bool("confirm-send", false, "保存草稿后立即发送")
+	addMailSendTimeFlag(mailForwardCmd)
+	addMailRequestReceiptFlag(mailForwardCmd)
 	mailForwardCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailForwardCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mailForwardCmd.Flags().Bool("html", false, "强制视为 HTML body")

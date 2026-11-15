@@ -89,13 +89,13 @@ var authStatusCmd = &cobra.Command{
 		refreshPresent := token.RefreshToken != ""
 		// health 区分三种情况：
 		//   healthy              — access_token 或 refresh_token 当前有效
-		//   missing_refresh_token — 登录时就没拿到 refresh_token（常因应用未开通 offline_access）
+		//   missing_refresh_token — 登录时就没拿到 refresh_token（应用未开启安全设置里的「刷新 user_access_token」或未发版）
 		//   needs_relogin        — 曾经有 refresh_token 但已过期，或 access_token 也已失效
 		health := "healthy"
 		if !refreshPresent {
 			health = "missing_refresh_token"
 			if note == "" {
-				note = "登录时未获取到 refresh_token，Access Token 过期后需重新 auth login；常因应用未开通 offline_access scope"
+				note = "登录时未获取到 refresh_token，Access Token 过期后需重新 auth login；原因：" + auth.NoRefreshTokenCause
 			}
 		} else if status == "expired" {
 			health = "needs_relogin"
@@ -133,6 +133,11 @@ var authStatusCmd = &cobra.Command{
 				failure["description"] = f.Description
 			}
 			result["refresh_failure"] = failure
+		}
+		if !refreshPresent {
+			// 结构化归因（additive）：与 auth login --json 的 no_refresh_token 同形
+			appID := auth.NoRefreshTokenAppID(token, config.Get().AppID)
+			result["no_refresh_token"] = noRefreshTokenInfo(config.Get().BaseURL, appID)
 		}
 		if refreshPresent {
 			result["refresh_token_valid"] = token.IsRefreshTokenValid()
@@ -191,7 +196,7 @@ var authStatusCmd = &cobra.Command{
 				fmt.Println("  Refresh Token:  已过期")
 			}
 		} else {
-			fmt.Println("  Refresh Token:  ⚠ 未获取（登录时应用可能未开通 offline_access）")
+			fmt.Println("  Refresh Token:  ⚠ 未获取（应用未开启「刷新 user_access_token」或开启后未发版）")
 		}
 
 		if token.Scope != "" {
@@ -203,6 +208,9 @@ var authStatusCmd = &cobra.Command{
 		fmt.Printf("  健康度:         %s\n", health)
 		if note != "" {
 			fmt.Printf("  提示:           %s\n", note)
+		}
+		if info, ok := result["no_refresh_token"].(map[string]any); ok && token.RefreshFailure == nil {
+			fmt.Printf("  处理:           %s\n", info["fix"])
 		}
 		printCatalogHuman()
 		if verify {

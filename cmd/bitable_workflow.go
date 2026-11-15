@@ -1,9 +1,8 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +15,7 @@ import (
 func bitableWorkflowToggle(cmd *cobra.Command, action string) error {
 	workflowID, _ := cmd.Flags().GetString("workflow-id")
 	if workflowID == "" {
-		return fmt.Errorf("--workflow-id 必填")
+		return clierr.Usagef("--workflow-id 必填")
 	}
 	return bitableRun(cmd, func(bt string) bitableReq {
 		return bitableReq{method: "PATCH", path: client.BaseV3Path("bases", bt, "workflows", workflowID, action)}

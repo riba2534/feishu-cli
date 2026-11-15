@@ -7,6 +7,8 @@
 ## 目录
 
 - [身份与 scope](#身份与-scope)
+- [目标参数：token 或文档链接](#目标参数token-或文档链接)
+- [预览（--dry-run）](#预览--dry-run)
 - [Bot 创建资源后自动授权当前用户](#bot-创建资源后自动授权当前用户)
 - [协作者](#协作者)
 - [转移所有权](#转移所有权)
@@ -42,6 +44,33 @@
 | `docs:permission.setting:write_only` | 更新公开权限、密码管理 |
 | `docs:permission.member:apply` | 申请权限（`drive apply-permission`） |
 | `docs:secure_label:readonly` / `docs:secure_label:write_only` | 查看 / 设置密级标签（`drive secure-label list` / `set`） |
+
+## 目标参数：token 或文档链接
+
+perm 全部子命令的 `<doc_token>` 位置参数接受**裸 token** 或**飞书文档链接**：
+
+- 裸 token：类型取 `--doc-type`（默认 `docx`），行为与以前一致。
+- 链接：按路径离线识别 token 与类型（`/docx/`、`/sheets/`、`/base/`、`/file/`、`/drive/folder/`、`/slides/`、`/mindnote/` 等；
+  `/wiki/` 链接对应 `--doc-type wiki`，权限 API 直接作用于知识库节点、不解包；`/minutes/` 链接对应 `minutes`）。
+  传链接时可省略 `--doc-type`；显式传入时以显式值为准，与链接类型冲突直接报用法错误（退出码 2）。
+- 无法识别的路径、非飞书域名等报用法错误（退出码 2），不再把整条链接拼进请求路径。服务端返回非 JSON 响应时，
+  错误只保留动作、HTTP 状态码与 body 摘要，不再输出整段传输头。
+
+```bash
+feishu-cli perm list "https://example.feishu.cn/wiki/wikcnxxx" --as user        # 自动 --doc-type wiki
+feishu-cli perm list "https://example.feishu.cn/file/boxcnxxx" --as user        # 自动 --doc-type file
+```
+
+## 预览（--dry-run）
+
+perm 全部子命令（含 `password create/update/delete`、`transfer-owner`、`public-update`）都支持 `--dry-run`：
+打印 method / url / params / body 与将使用的身份（`as`），**不读取凭据、不联网**，无凭据环境也是退出码 0。
+参数校验（`--member-kind`、`--perm-type`、batch-add 成员列表、public-update 至少一个字段等）在预览之前执行。
+
+```bash
+feishu-cli perm transfer-owner doxcnxxx --member-type email --member-id user@example.com --dry-run
+feishu-cli perm public-update doxcnxxx --link-share-entity tenant_readable --dry-run
+```
 
 ## Bot 创建资源后自动授权当前用户
 
@@ -88,14 +117,23 @@ feishu-cli perm delete <TOKEN> --doc-type docx --member-type email --member-id u
 
 # 批量添加
 feishu-cli perm batch-add <TOKEN> --doc-type sheet --members-file members.json --notification
+
+# 知识空间成员组整体授权（wikispaceid 必须带 --member-kind，写入请求体 type）
+feishu-cli perm add <TOKEN> --member-type wikispaceid --member-id 7xxxxxxxx --member-kind wiki_space_viewer --perm view --dry-run
+feishu-cli perm delete <TOKEN> --member-type wikispaceid --member-id 7xxxxxxxx --member-kind wiki_space_viewer
 ```
 
 - `--doc-type` 默认 `docx`，**所有子命令**都要让它与 TOKEN 的真实类型一致（sheet/bitable/file/wiki/folder/slides 等必须显式传）。
 - `--notification` 默认关闭；传了才通知被授权者。
 - `--perm-type` 只对知识库节点（`--doc-type wiki`）有效：`container` = 当前页面及子页面，`single_page` = 仅当前页面；
   不传时不下发，由服务端按默认（container）处理；非 wiki 文档传入会直接报用法错误（退出码 2，实测）。
+- `--member-kind`（add / update / delete）：仅且必须在 `--member-type wikispaceid` 时传，取值
+  `wiki_space_member`（全部成员）/ `wiki_space_viewer`（可阅读成员）/ `wiki_space_editor`（可编辑成员），写入请求体 `type`；
+  此时不能再传 `--perm-type`。其他 member-type 传 `--member-kind`、或 wikispaceid 缺 `--member-kind` 都是用法错误（退出码 2）。
 - `perm list` 始终输出 JSON 数组（没有 `-o` 参数），每项含 `member_type`、`member_id`、`perm`、`perm_type`（按服务端返回）。
-- `batch-add` 的 members.json 顶层为数组；知识库成员可额外带 `"perm_type": "container"|"single_page"`，非 wiki 文档带该字段会报错：
+- `batch-add` 的 members.json 顶层为数组；知识库成员可额外带 `"perm_type": "container"|"single_page"`，非 wiki 文档带该字段会报错；
+  `member_type` 为 `wikispaceid` 的成员必须带 `"type": "wiki_space_member"|"wiki_space_viewer"|"wiki_space_editor"`（同 `--member-kind`）。
+  JSON 解析失败、成员字段为空等都是用法错误（退出码 2）：
 
 ```json
 [
@@ -208,13 +246,13 @@ feishu-cli drive secure-label set doxcnxxx --type docx --label-id 72177808796447
 | `openchat` | `chat_id` | 按群聊授权，群内所有成员获得权限 | oc_xxx |
 | `opendepartmentid` | — | 按部门授权，部门内所有成员获得权限 | od_xxx |
 | `groupid` | — | 用户组 | gc_xxx |
-| `wikispaceid` | — | 知识空间 | ws_xxx |
+| `wikispaceid` | — | 知识空间（必须配 `--member-kind`） | 7xxxxxxxx |
 
 IM 风格别名会自动映射为标准值，两种写法等效。
 
 **Token 与类型**：老 token 有前缀可参考（`doxcn`→docx、`doccn`→doc、`shtcn`→sheet、`bascn`→bitable、`wikcn`→wiki、
 `fldcn`→folder）；新版 token 多数没有这类前缀，按 URL 路径判断，或 `feishu-cli drive inspect --url <token> -o json`
-自动识别（返回 `type`；wiki 节点会展开为底层文档并附 `wiki_node`）。给知识库节点授权用 `/wiki/` URL 里的 node_token 配 `--doc-type wiki`。
+自动识别（返回 `type`；wiki 节点会展开为底层文档并附 `wiki_node`）。给知识库节点授权可直接传 `/wiki/` 链接，或用其中的 node_token 配 `--doc-type wiki`。
 
 ## 创建文档后标准授权流程
 
@@ -237,7 +275,9 @@ owner 时的处理见 [文档创建后的授权流程](../../../../feishu-cli-do
 | `1063004 User has no share permission` | 当前身份对文档无管理协作者/分享权限；Bot 身份最常见（应用不是协作者） | 文档属于你本人或你有管理权限时加 `--as user`；否则联系所有者授予「可管理」，或把应用加为协作者 |
 | `1063002 Permission denied` | 当前身份无权访问该文档 | 同上，Bot 身份时改用 `--as user` |
 | `99991672` / `99991679` | 应用未开通 / 用户未授权对应 scope | 按错误提示在开放平台开通，或 `auth login --scope "..."` 补授权 |
-| doc-type 与 token 不匹配 / token 无效 | `--doc-type` 与实际文档类型不一致 | 用 URL 路径或 `drive inspect` 确认类型后重试 |
+| doc-type 与 token 不匹配 / token 无效（如 `1063001 Invalid parameter`） | `--doc-type` 与实际文档类型不一致 | 直接传文档链接让 CLI 推断类型，或用 `drive inspect` 确认类型后重试 |
+| `<doc_token> 解析失败` / `与 URL 路径推断的类型冲突`（退出码 2） | 链接路径不受支持，或显式 `--doc-type` 与链接类型不一致 | 换受支持的文档链接，或去掉 `--doc-type` |
+| `--member-type wikispaceid 时 --member-kind 必填` | 知识空间授权缺少成员组 | 加 `--member-kind wiki_space_member|wiki_space_viewer|wiki_space_editor` |
 | `member not found` | member-id 不存在或 member-type 不正确 | 确认邮箱/ID 正确；email 类型需要用户的飞书注册邮箱 |
 | `password create` 返回 1063002 | 文档未开启互联网公开链接（与身份无关，实测） | 先 `public-update --external-access --link-share-entity anyone_readable`；仍失败再确认企业是否开通分享密码功能 |
 | `transfer-owner` 无权限 | 只有文档所有者或管理员可转移 | 先用 `perm list` 确认当前身份；文档属于你本人时用 `--as user` |

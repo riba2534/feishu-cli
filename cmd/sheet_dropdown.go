@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -48,11 +49,11 @@ options 用逗号分隔多个选项，每项 ≤ 100 字符；如需选项内出
 		multiple, _ := cmd.Flags().GetBool("multiple")
 
 		if spreadsheetToken == "" || rangeStr == "" {
-			return fmt.Errorf("--token/--spreadsheet-token、--range 均为必填项")
+			return clierr.Usagef("--token/--spreadsheet-token、--range 均为必填项")
 		}
 
 		if strings.TrimSpace(optionsJSON) != "" && strings.TrimSpace(optionsCSV) != "" {
-			return fmt.Errorf("--options 和 --options-json 不能同时使用，请选其一")
+			return clierr.Usagef("--options 和 --options-json 不能同时使用，请选其一")
 		}
 
 		rangeStr = unescapeSheetRange(rangeStr)
@@ -62,7 +63,7 @@ options 用逗号分隔多个选项，每项 ≤ 100 字符；如需选项内出
 			return err
 		}
 		if len(options) == 0 {
-			return fmt.Errorf("--options 或 --options-json 至少需要一个非空选项")
+			return clierr.Usagef("--options 或 --options-json 至少需要一个非空选项")
 		}
 
 		var colors []string
@@ -97,7 +98,7 @@ func parseDropdownOptions(csv, jsonStr string) ([]string, error) {
 	if strings.TrimSpace(jsonStr) != "" {
 		var arr []string
 		if err := json.Unmarshal([]byte(jsonStr), &arr); err != nil {
-			return nil, fmt.Errorf("--options-json 必须是字符串数组（如 '[\"a\",\"b\"]'）: %w", err)
+			return nil, clierr.Usagef("--options-json 必须是字符串数组（如 '[\"a\",\"b\"]'）: %w", err)
 		}
 		return arr, nil
 	}

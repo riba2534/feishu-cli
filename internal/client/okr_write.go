@@ -273,6 +273,33 @@ func DoOKRWrite(req *OKRWriteRequest, action, userAccessToken string) (json.RawM
 			return nil, err
 		}
 		return okrDataField(resp.RawBody)
+	case "PUT":
+		resp, err := cli.Put(Context(), path, body, tokenType, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("%s失败: %w", action, err)
+		}
+		if err := CheckAPIResponse(action, resp); err != nil {
+			return nil, err
+		}
+		return okrDataField(resp.RawBody)
+	case "GET":
+		resp, err := cli.Get(Context(), path, nil, tokenType, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("%s失败: %w", action, err)
+		}
+		if err := CheckAPIResponse(action, resp); err != nil {
+			return nil, err
+		}
+		return okrDataField(resp.RawBody)
+	case "DELETE":
+		resp, err := cli.Delete(Context(), path, nil, tokenType, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("%s失败: %w", action, err)
+		}
+		if err := CheckAPIResponse(action, resp); err != nil {
+			return nil, err
+		}
+		return okrDataField(resp.RawBody)
 	}
 	return nil, fmt.Errorf("不支持的方法 %s", req.Method)
 }

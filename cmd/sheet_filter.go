@@ -158,6 +158,11 @@ var sheetFilterDeleteCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sheetID := args[1]
+		if handled, err := sheetDryRunIfRequested(cmd, args[0], "", "删除子表 "+sheetID+" 的筛选", map[string]any{
+			"sheet_id": sheetID,
+		}, "DELETE", "/open-apis/sheets/v3/spreadsheets/%s/sheets/"+sheetID+"/filter", nil); handled {
+			return err
+		}
 
 		target, err := newSheetTarget(cmd, args[0])
 		if err != nil {
@@ -189,5 +194,6 @@ func init() {
 
 	sheetFilterCreateCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 	sheetFilterGetCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
+	sheetFilterDeleteCmd.Flags().Bool("dry-run", false, "只打印将要发送的请求，不执行")
 	sheetFilterDeleteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

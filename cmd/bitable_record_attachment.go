@@ -59,7 +59,7 @@ func bitableAttachmentCellBody(recordID, fieldID string, fileTokens []string) ma
 func renderAttachmentDryRun(cmd *cobra.Command, desc string, steps []map[string]any, extra map[string]any) error {
 	o, err := output.ParseOptions(cmd)
 	if err != nil {
-		return err
+		return clierr.Usage(err)
 	}
 	o.OutputFile = "" // dry-run 预览只打 stdout，绝不写 --output（对 download-attachment 的下载路径语义尤其关键）
 	payload := map[string]any{
@@ -94,31 +94,44 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
   feishu-cli bitable record upload-attachment --base-token <bt> --table-id <tid> \
     --record-id <rec> --field-id <fld> --file ./report.pdf --file ./shot.png`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		files, _ := cmd.Flags().GetStringArray("file")
 		// 敏感目录在任何网络请求（含 wiki 链接解析）之前拒绝；存在性等检查见下方本地预检（dry-run 不要求文件存在）
 		for _, fp := range files {
 			if err := safefile.ValidateInputPath(fp); err != nil {
-				return fmt.Errorf("--file 无效: %w", err)
+				return clierr.Usagef("--file 无效: %w", err)
 			}
-		}
-		baseToken, err := resolveBaseToken(cmd)
-		if err != nil {
-			return err
 		}
 		tableID, _ := cmd.Flags().GetString("table-id")
 		recordID, _ := cmd.Flags().GetString("record-id")
 		fieldID, _ := cmd.Flags().GetString("field-id")
 		if tableID == "" || recordID == "" || fieldID == "" {
-			return fmt.Errorf("--table-id / --record-id / --field-id 必填")
+			return clierr.Usagef("--table-id / --record-id / --field-id 必填")
 		}
 		if len(files) == 0 {
-			return fmt.Errorf("--file 必填（可重复）")
+			return clierr.Usagef("--file 必填（可重复）")
 		}
 		if len(files) > 50 {
-			return fmt.Errorf("单次最多 50 个文件，当前 %d 个", len(files))
+			return clierr.Usagef("单次最多 50 个文件，当前 %d 个", len(files))
+		}
+		if _, err := bitableOutputOptions(cmd); err != nil {
+			return err
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if err := validateBaseTokenOffline(cmd); err != nil {
+			return err
+		}
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		if !dryRun {
+			if err := config.Validate(); err != nil {
+				return err
+			}
+		}
+		// dry-run 下 wiki 链接用占位符、不联网；实际执行时 wiki 链接经 node_by_token 解析
+		baseToken, err := resolveBaseToken(cmd)
+		if err != nil {
+			return err
 		}
 
 		// 注意：append_attachments 是 table 级端点（.../tables/{tid}/append_attachments），
@@ -127,7 +140,7 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 
 		fieldPath := client.BaseV3Path("bases", baseToken, "tables", tableID, "fields", fieldID)
 
-		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+		if dryRun {
 			steps := []map[string]any{
 				{
 					"desc":   "[1] 读取目标字段，确认是附件字段",
@@ -176,7 +189,7 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 		for _, fp := range files {
 			stat, serr := safefile.StatInputFile(fp)
 			if serr != nil {
-				return fmt.Errorf("--file 无效: %w", serr)
+				return clierr.Usagef("--file 无效: %w", serr)
 			}
 			if stat.Size() > client.BitableAttachmentMaxFileSize {
 				return clierr.Usagef("文件 %s 超过多维表格附件上限 2GB", fp)
@@ -256,9 +269,6 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
   feishu-cli bitable record download-attachment --base-token <bt> --table-id <tid> \
     --record-id <rec> --file-token <ft> --output ./downloads/`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		outputPath, _ := cmd.Flags().GetString("output")
 		// 输出路径在任何网络请求（含 wiki 链接解析、token 刷新）之前校验，敏感目录直接拒绝
 		if outputPath != "" {
@@ -266,16 +276,28 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 				return err
 			}
 		}
-		baseToken, err := resolveBaseToken(cmd)
-		if err != nil {
-			return err
-		}
 		tableID, _ := cmd.Flags().GetString("table-id")
 		recordID, _ := cmd.Flags().GetString("record-id")
 		fileTokens, _ := cmd.Flags().GetStringArray("file-token")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
 		if tableID == "" || recordID == "" {
-			return fmt.Errorf("--table-id / --record-id 必填")
+			return clierr.Usagef("--table-id / --record-id 必填")
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if err := validateBaseTokenOffline(cmd); err != nil {
+			return err
+		}
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		if !dryRun {
+			if err := config.Validate(); err != nil {
+				return err
+			}
+		}
+		baseToken, err := resolveBaseToken(cmd)
+		if err != nil {
+			return err
 		}
 
 		// get_attachments 同为 table 级端点（不在 records 子路径下）。
@@ -285,11 +307,11 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 		multi := len(fileTokens) != 1
 		if multi && outputPath != "" {
 			if stat, serr := os.Stat(outputPath); serr != nil || !stat.IsDir() {
-				return fmt.Errorf("下载多个附件或省略 --file-token 时 --output 必须是已存在目录")
+				return clierr.Usagef("下载多个附件或省略 --file-token 时 --output 必须是已存在目录")
 			}
 		}
 
-		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+		if dryRun {
 			steps := []map[string]any{
 				{
 					"desc":   "[1] 读取记录附件元数据（拿每个附件的 extra_info；--file-token 时仍先读以取 extra）",
@@ -485,13 +507,13 @@ var bitableRecordRemoveAttachmentCmd = &cobra.Command{
 		fieldID, _ := cmd.Flags().GetString("field-id")
 		fileTokens, _ := cmd.Flags().GetStringArray("file-token")
 		if tableID == "" || recordID == "" || fieldID == "" {
-			return fmt.Errorf("--table-id / --record-id / --field-id 必填")
+			return clierr.Usagef("--table-id / --record-id / --field-id 必填")
 		}
 		if len(fileTokens) == 0 {
-			return fmt.Errorf("--file-token 必填（可重复）")
+			return clierr.Usagef("--file-token 必填（可重复）")
 		}
 		if len(fileTokens) > 50 {
-			return fmt.Errorf("单次最多 50 个 token，当前 %d 个", len(fileTokens))
+			return clierr.Usagef("单次最多 50 个 token，当前 %d 个", len(fileTokens))
 		}
 		body := bitableAttachmentCellBody(recordID, fieldID, fileTokens)
 		return bitableRun(cmd, func(bt string) bitableReq {

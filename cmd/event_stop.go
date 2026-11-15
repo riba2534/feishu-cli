@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/event"
 	"github.com/spf13/cobra"
@@ -43,7 +44,7 @@ var eventStopCmd = &cobra.Command{
 		asJSON, _ := cmd.Flags().GetBool("json")
 
 		if !all && pid == 0 && eventKey == "" {
-			return fmt.Errorf("必须指定 --pid / --event-key / --all 之一")
+			return clierr.Usagef("必须指定 --pid / --event-key / --all 之一")
 		}
 
 		bus, err := event.NewBus(cfg.AppID)

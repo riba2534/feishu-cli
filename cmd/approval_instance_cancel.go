@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -28,7 +29,7 @@ var approvalInstanceCancelCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		instanceCode, _ := cmd.Flags().GetString("instance-code")
 		if strings.TrimSpace(instanceCode) == "" {
-			return fmt.Errorf("--instance-code 不能为空")
+			return clierr.Usagef("--instance-code 不能为空")
 		}
 
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -100,17 +101,26 @@ var createVersionCmd = &cobra.Command{
   file_token    文件的 Token
 
 示例:
-  feishu-cli file version create doccnXXX --obj-type docx --name "v1.0"`,
+  feishu-cli file version create doccnXXX --obj-type docx --name "v1.0"
+  feishu-cli file version create doccnXXX --obj-type docx --name "v1.0" --dry-run   # 只预览请求`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken := args[0]
 		objType, _ := cmd.Flags().GetString("obj-type")
 		name, _ := cmd.Flags().GetString("name")
 		output, _ := cmd.Flags().GetString("output")
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Create file version", nil, []dryRunStep{{
+				Method: "POST",
+				URL:    client.FileVersionsAPIPath(fileToken),
+				Body:   map[string]any{"name": name, "obj_type": objType},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		version, err := client.CreateFileVersion(fileToken, objType, name, userAccessToken)
@@ -195,16 +205,25 @@ var deleteVersionCmd = &cobra.Command{
   version_id    版本号
 
 示例:
-  feishu-cli file version delete doccnXXX ver_xxxxx --obj-type docx`,
+  feishu-cli file version delete doccnXXX ver_xxxxx --obj-type docx
+  feishu-cli file version delete doccnXXX ver_xxxxx --obj-type docx --dry-run   # 只预览请求`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		fileToken := args[0]
+		versionID := args[1]
+		objType, _ := cmd.Flags().GetString("obj-type")
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printDryRunPlan(cmd, "Delete file version", nil, []dryRunStep{{
+				Method: "DELETE",
+				URL:    client.FileVersionsAPIPath(fileToken) + "/" + url.PathEscape(versionID),
+				Params: map[string]any{"obj_type": objType},
+			}})
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
 
-		fileToken := args[0]
-		versionID := args[1]
-		objType, _ := cmd.Flags().GetString("obj-type")
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		if err := client.DeleteFileVersion(fileToken, versionID, objType, userAccessToken); err != nil {
@@ -233,6 +252,7 @@ func init() {
 	versionCmd.AddCommand(createVersionCmd)
 	createVersionCmd.Flags().String("obj-type", "docx", "文档类型（doc/docx/sheet/bitable）")
 	createVersionCmd.Flags().String("name", "", "版本名称（必填）")
+	createVersionCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	createVersionCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mustMarkFlagRequired(createVersionCmd, "name")
 
@@ -244,4 +264,5 @@ func init() {
 	// delete 子命令
 	versionCmd.AddCommand(deleteVersionCmd)
 	deleteVersionCmd.Flags().String("obj-type", "docx", "文档类型（doc/docx/sheet/bitable）")
+	deleteVersionCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 }

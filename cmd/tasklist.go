@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
@@ -38,17 +39,24 @@ var tasklistCreateCmd = &cobra.Command{
 示例:
   feishu-cli tasklist create --name "项目清单"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		name, _ := cmd.Flags().GetString("name")
+		output, _ := cmd.Flags().GetString("output")
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "tasklist create 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: taskAPIPath("tasklists"), Desc: "创建任务清单", Params: taskOpenIDParams(), Body: map[string]any{"name": name},
+			}})
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
-
 		token, tokenErr := resolveIdentityToken(cmd)
 		if tokenErr != nil {
 			return tokenErr
 		}
-
-		name, _ := cmd.Flags().GetString("name")
-		output, _ := cmd.Flags().GetString("output")
 
 		tl, err := client.CreateTasklist(name, token)
 		if err != nil {
@@ -193,16 +201,23 @@ var tasklistDeleteCmd = &cobra.Command{
   feishu-cli tasklist delete GUID`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		tasklistGuid := args[0]
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "tasklist delete 预览（未执行）", nil, []dryRunStep{{
+				Method: "DELETE", URL: taskAPIPath("tasklists", tasklistGuid), Desc: "删除任务清单",
+			}})
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
-
 		token, tokenErr := resolveIdentityToken(cmd)
 		if tokenErr != nil {
 			return tokenErr
 		}
-
-		tasklistGuid := args[0]
 
 		if err := client.DeleteTasklist(tasklistGuid, token); err != nil {
 			return err
@@ -221,34 +236,52 @@ var tasklistTaskAddCmd = &cobra.Command{
 参数:
   tasklist_guid     清单 GUID（位置参数）
   --task-ids        任务 GUID 列表，逗号分隔（必填）
+  --section-guid    放入清单内的指定分组（可选；分组 GUID 用 task section list --resource-type tasklist 查）
+  --dry-run         只预览请求，不执行
 
 示例:
   feishu-cli tasklist task-add TASKLIST_GUID --task-ids TASK_GUID1
-  feishu-cli tasklist task-add TASKLIST_GUID --task-ids TASK_GUID1,TASK_GUID2`,
+  feishu-cli tasklist task-add TASKLIST_GUID --task-ids TASK_GUID1,TASK_GUID2
+  feishu-cli tasklist task-add TASKLIST_GUID --task-ids TASK_GUID1 --section-guid SECTION_GUID --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		tasklistGuid := args[0]
 		taskIDsStr, _ := cmd.Flags().GetString("task-ids")
+		sectionGuid, _ := cmd.Flags().GetString("section-guid")
+		sectionGuid = strings.TrimSpace(sectionGuid)
 		output, _ := cmd.Flags().GetString("output")
 
 		taskIDs := splitAndTrim(taskIDsStr)
 
 		if len(taskIDs) == 0 {
-			return fmt.Errorf("任务 ID 列表不能为空")
+			return clierr.Usagef("任务 ID 列表不能为空")
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			body := map[string]any{"tasklist_guid": tasklistGuid}
+			if sectionGuid != "" {
+				body["section_guid"] = sectionGuid
+			}
+			steps := make([]dryRunStep, 0, len(taskIDs))
+			for _, taskID := range taskIDs {
+				steps = append(steps, dryRunStep{Method: "POST", URL: taskAPIPath("tasks", taskID, "add_tasklist"), Desc: "把任务加入清单", Params: taskOpenIDParams(), Body: body})
+			}
+			return printDryRunPlan(cmd, "tasklist task-add 预览（未执行）", nil, steps)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
 		}
 
 		var lastTask *client.TaskInfo
 		for _, taskID := range taskIDs {
-			task, err := client.AddTaskToTasklist(taskID, tasklistGuid, token)
+			task, err := client.AddTaskToTasklist(taskID, tasklistGuid, sectionGuid, token)
 			if err != nil {
 				return fmt.Errorf("添加任务 %s 到清单失败: %w", taskID, err)
 			}
@@ -278,15 +311,6 @@ var tasklistTaskRemoveCmd = &cobra.Command{
   feishu-cli tasklist task-remove TASKLIST_GUID --task-ids TASK_GUID1,TASK_GUID2`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		tasklistGuid := args[0]
 		taskIDsStr, _ := cmd.Flags().GetString("task-ids")
 		output, _ := cmd.Flags().GetString("output")
@@ -294,7 +318,25 @@ var tasklistTaskRemoveCmd = &cobra.Command{
 		taskIDs := splitAndTrim(taskIDsStr)
 
 		if len(taskIDs) == 0 {
-			return fmt.Errorf("任务 ID 列表不能为空")
+			return clierr.Usagef("任务 ID 列表不能为空")
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			steps := make([]dryRunStep, 0, len(taskIDs))
+			for _, taskID := range taskIDs {
+				steps = append(steps, dryRunStep{Method: "POST", URL: taskAPIPath("tasks", taskID, "remove_tasklist"), Desc: "把任务移出清单", Params: taskOpenIDParams(), Body: map[string]any{"tasklist_guid": tasklistGuid}})
+			}
+			return printDryRunPlan(cmd, "tasklist task-remove 预览（未执行）", nil, steps)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
 		}
 
 		var lastTask *client.TaskInfo
@@ -397,6 +439,7 @@ func init() {
 	tasklistCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistCreateCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(tasklistCreateCmd)
+	addTaskDryRunFlag(tasklistCreateCmd)
 	mustMarkFlagRequired(tasklistCreateCmd, "name")
 
 	tasklistCmd.AddCommand(tasklistGetCmd)
@@ -412,12 +455,15 @@ func init() {
 	tasklistCmd.AddCommand(tasklistDeleteCmd)
 	tasklistDeleteCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(tasklistDeleteCmd)
+	addTaskDryRunFlag(tasklistDeleteCmd)
 
 	tasklistCmd.AddCommand(tasklistTaskAddCmd)
 	tasklistTaskAddCmd.Flags().String("task-ids", "", "任务 GUID 列表，逗号分隔（必填）")
+	tasklistTaskAddCmd.Flags().String("section-guid", "", "放入清单内的指定分组 GUID（可选）")
 	tasklistTaskAddCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistTaskAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(tasklistTaskAddCmd)
+	addTaskDryRunFlag(tasklistTaskAddCmd)
 	mustMarkFlagRequired(tasklistTaskAddCmd, "task-ids")
 
 	tasklistCmd.AddCommand(tasklistTaskRemoveCmd)
@@ -425,6 +471,7 @@ func init() {
 	tasklistTaskRemoveCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistTaskRemoveCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(tasklistTaskRemoveCmd)
+	addTaskDryRunFlag(tasklistTaskRemoveCmd)
 	mustMarkFlagRequired(tasklistTaskRemoveCmd, "task-ids")
 
 	tasklistCmd.AddCommand(tasklistTasksCmd)

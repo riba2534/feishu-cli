@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 
 	"github.com/spf13/cobra"
 )
@@ -25,12 +25,12 @@ base/v3 批量获取记录，body 字段为 record_id_list。
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tableID, _ := cmd.Flags().GetString("table-id")
 		if tableID == "" {
-			return fmt.Errorf("--table-id 必填")
+			return clierr.Usagef("--table-id 必填")
 		}
 		idsCSV, _ := cmd.Flags().GetString("record-ids")
 		ids := splitAndTrim(idsCSV)
 		if len(ids) == 0 {
-			return fmt.Errorf("--record-ids 必填（逗号分隔）")
+			return clierr.Usagef("--record-ids 必填（逗号分隔）")
 		}
 
 		body := map[string]any{"record_id_list": ids}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -37,28 +38,35 @@ var tasklistMemberAddCmd = &cobra.Command{
   feishu-cli tasklist member add TASKLIST_GUID --members ou_xxx --role viewer`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		tasklistGuid := args[0]
 		membersStr, _ := cmd.Flags().GetString("members")
 		role, _ := cmd.Flags().GetString("role")
 		output, _ := cmd.Flags().GetString("output")
 
 		if role != "editor" && role != "viewer" {
-			return fmt.Errorf("无效的角色: %s（仅支持 editor 或 viewer）", role)
+			return clierr.Usagef("无效的角色: %s（仅支持 editor 或 viewer）", role)
 		}
 
 		memberIDs := splitAndTrim(membersStr)
 
 		if len(memberIDs) == 0 {
-			return fmt.Errorf("成员列表不能为空")
+			return clierr.Usagef("成员列表不能为空")
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "tasklist member add 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: taskAPIPath("tasklists", tasklistGuid, "add_members"), Desc: "添加清单成员", Params: taskOpenIDParams(), Body: map[string]any{"members": taskMemberDryRunList(memberIDs, role)},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
 		}
 
 		tl, err := client.AddTasklistMembers(tasklistGuid, memberIDs, role, token)
@@ -90,28 +98,35 @@ var tasklistMemberRemoveCmd = &cobra.Command{
   feishu-cli tasklist member remove TASKLIST_GUID --members ou_xxx --role viewer`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		tasklistGuid := args[0]
 		membersStr, _ := cmd.Flags().GetString("members")
 		role, _ := cmd.Flags().GetString("role")
 		output, _ := cmd.Flags().GetString("output")
 
 		if role != "editor" && role != "viewer" {
-			return fmt.Errorf("无效的角色: %s（仅支持 editor 或 viewer）", role)
+			return clierr.Usagef("无效的角色: %s（仅支持 editor 或 viewer）", role)
 		}
 
 		memberIDs := splitAndTrim(membersStr)
 
 		if len(memberIDs) == 0 {
-			return fmt.Errorf("成员列表不能为空")
+			return clierr.Usagef("成员列表不能为空")
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "tasklist member remove 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: taskAPIPath("tasklists", tasklistGuid, "remove_members"), Desc: "移除清单成员", Params: taskOpenIDParams(), Body: map[string]any{"members": taskMemberDryRunList(memberIDs, role)},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
 		}
 
 		tl, err := client.RemoveTasklistMembers(tasklistGuid, memberIDs, role, token)
@@ -144,6 +159,7 @@ func init() {
 	tasklistMemberAddCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistMemberAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(tasklistMemberAddCmd)
+	addTaskDryRunFlag(tasklistMemberAddCmd)
 	mustMarkFlagRequired(tasklistMemberAddCmd, "members")
 
 	tasklistMemberCmd.AddCommand(tasklistMemberRemoveCmd)
@@ -152,5 +168,6 @@ func init() {
 	tasklistMemberRemoveCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	tasklistMemberRemoveCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(tasklistMemberRemoveCmd)
+	addTaskDryRunFlag(tasklistMemberRemoveCmd)
 	mustMarkFlagRequired(tasklistMemberRemoveCmd, "members")
 }

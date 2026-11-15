@@ -41,10 +41,6 @@ var markdownFetchCmd = &cobra.Command{
   feishu-cli markdown fetch --file-token boxcnxxx --output-path ./local.md --overwrite
   feishu-cli markdown fetch --file-token boxcnxxx --version 7633658129540910621 --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken, _ := cmd.Flags().GetString("file-token")
 		outputPath, _ := cmd.Flags().GetString("output-path")
 		version, _ := cmd.Flags().GetString("version")
@@ -80,6 +76,10 @@ var markdownFetchCmd = &cobra.Command{
 				URL:    markdownPreviewDownloadPath(fileToken),
 				Params: markdownPreviewParams(version),
 			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveIdentityToken(cmd)

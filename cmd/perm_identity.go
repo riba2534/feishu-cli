@@ -15,6 +15,7 @@ const permAsFlagHelp = "身份: bot(App Token) | user(User Token) | auto(User �
 func addPermIdentityFlags(c *cobra.Command) {
 	c.PersistentFlags().String("as", "", permAsFlagHelp)
 	c.PersistentFlags().String("user-access-token", "", "User Access Token（显式指定时以该用户身份调用权限 API）")
+	c.PersistentFlags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 }
 
 // resolvePermIdentity 解析 perm 子命令的身份：
@@ -35,6 +36,7 @@ func wrapPermError(err error, userAccessToken string) error {
 	if err == nil {
 		return nil
 	}
+	err = sanitizeNonJSONResponseError(err)
 	if client.HasAPICode(err, 1063002) && userAccessToken == "" {
 		return fmt.Errorf("%w\n提示：当前以 Bot（App）身份调用，应用无权访问该文档。若文档属于你本人或你有权限，改用 --as user（需先 feishu-cli auth login）；或先把应用加为文档协作者", err)
 	}

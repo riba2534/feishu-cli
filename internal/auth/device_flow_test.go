@@ -143,6 +143,12 @@ func TestRequestDeviceAuthorization_ErrorResponse(t *testing.T) {
 func TestPollDeviceToken_Success(t *testing.T) {
 	callCount := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 只统计真正的轮询请求：宿主机端口扫描等外部探测（GET /）也会打到 httptest 随机端口，
+		// 计入后 token 会提前一轮返回，tick 数不足导致测试偶发失败
+		if r.Method != http.MethodPost || r.URL.Path != "/open-apis/authen/v2/oauth/token" {
+			http.NotFound(w, r)
+			return
+		}
 		callCount++
 		w.Header().Set("Content-Type", "application/json")
 
@@ -247,6 +253,10 @@ func TestPollDeviceToken_ExpiredToken(t *testing.T) {
 func TestPollDeviceToken_SlowDown(t *testing.T) {
 	callCount := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost { // 忽略宿主机端口扫描等外部探测
+			http.NotFound(w, r)
+			return
+		}
 		callCount++
 		w.Header().Set("Content-Type", "application/json")
 		if callCount == 1 {

@@ -15,16 +15,8 @@ type dryRunStep struct {
 }
 
 func printDryRunPlan(cmd *cobra.Command, desc string, extra map[string]any, steps []dryRunStep) error {
-	plan := map[string]any{
-		"dry_run": true,
-		"desc":    desc,
-		"api":     steps,
-	}
-	for k, v := range extra {
-		plan[k] = v
-	}
 	if output, _ := cmd.Flags().GetString("output"); output == "" || output == "json" {
-		return printJSON(plan)
+		return printDryRunJSON(desc, extra, steps)
 	}
 	fmt.Printf("%s\n", desc)
 	for i, step := range steps {
@@ -34,4 +26,13 @@ func printDryRunPlan(cmd *cobra.Command, desc string, extra map[string]any, step
 		}
 	}
 	return nil
+}
+
+// printDryRunJSON 只输出 JSON 形式的预览，供 -o 不是输出格式的命令（如 drive preview/cover 的 -o 是保存路径）使用。
+func printDryRunJSON(desc string, extra map[string]any, steps []dryRunStep) error {
+	plan := map[string]any{"dry_run": true, "desc": desc, "api": steps}
+	for k, v := range extra {
+		plan[k] = v
+	}
+	return printJSON(plan)
 }

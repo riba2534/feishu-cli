@@ -22,10 +22,6 @@ var updateBlockCmd = &cobra.Command{
   feishu-cli doc update DOC_ID BLOCK_ID --content-file update.json`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		blockID := args[1]
 		contentStr, _ := cmd.Flags().GetString("content")
 		contentFile, _ := cmd.Flags().GetString("content-file")
@@ -41,6 +37,10 @@ var updateBlockCmd = &cobra.Command{
 			contentJSON = contentStr
 		} else {
 			return clierr.Usagef("必须指定 --content 或 --content-file")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		userAccessToken := resolveOptionalUserToken(cmd)

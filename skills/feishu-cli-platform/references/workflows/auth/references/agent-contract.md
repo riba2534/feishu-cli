@@ -10,7 +10,7 @@
 |---|---|---|
 | `0` | 成功 | 仍要检查结果字段：批量命令逐项看 `ok` / `error` / `failures`，异步任务看 `ready` / `failed`，发消息看 `message_id` 非空 |
 | `1` | 一般或业务错误：资源不存在、资源级无权限（如 1063002）、重试后仍限流、部分失败（`doc import` 的 `failures`、`content-update` 的 `partial_success`）、交互终端里拒绝确认（"操作已取消"） | 读 stderr 的错误码、`log_id` 与建议；写操作先确认是否已部分落地，不要整批重跑 |
-| `2` | 用法错误：未知命令或 flag（附拼写建议）、参数缺失或冲突、取值越界、本地路径校验失败 | 按 `--help` 修正参数后重试；不要换身份或重新登录 |
+| `2` | 用法错误：未知命令或 flag（附拼写建议）、参数缺失或冲突、取值越界、本地路径校验失败。本地能判定的参数错误一般先于凭据检查报出（缺凭据时也是 2） | 按 `--help` 修正参数后重试；不要换身份或重新登录 |
 | `3` | 鉴权或权限：未登录、Token 失效或刷新已终态失败、应用或用户缺 scope（99991672 / 99991679）、App 凭证缺失或被拒 | 按 [身份选择](identity.md) 与排错表处理；不要循环重试 |
 | `4` | 网络：超时、连接失败、DNS 解析失败 | 可以重试；写操作重试前先确认上次是否已生效，有幂等键或 `--client-token` 时沿用同一个值 |
 | `10` | 需要确认：危险操作在非交互环境中未带 `--yes`，**未执行任何操作** | 见下一节，不能当作成功或普通失败 |
@@ -43,6 +43,21 @@ stderr 给出"需要确认：…"说明。处理顺序：
 - `api` 命令遇到业务错误或 HTTP 错误时 stdout 为空，`--jq` / `--format` / `-o` 不处理错误体，退出码非 0；
   只有 `--raw` 会把响应体原样写到 stdout 或 `-o` 文件，便于调试。非飞书信封的 HTTP 错误文本形如 `HTTP <状态码>, body: <预览>`。
 - 少数命令始终输出 JSON、不接受 `-o`，以各工作流说明和 `--help` 为准。
+
+## 机器可读错误（`--error-format json`）
+
+默认错误是中文文本。需要按字段分支时加全局 `--error-format json`（放在命令前后都可以），失败时 stderr 只输出一行
+JSON，stdout 与退出码不变：
+
+```json
+{"error":{"message":"飞书业务错误: code=99991679, msg=Unauthorized","exit_code":3,"kind":"auth","code":99991679,"log_id":"...","missing_scopes":["search:docs:read"],"retryable":false,"hint":"..."}}
+```
+
+- `message`、`exit_code`、`kind`、`retryable` 恒有。`kind` 与退出码一一对应：`usage`（2）/ `auth`（3）/ `network`（4）/
+  `confirmation_required`（10）/ `interrupted`（130）/ `cancelled` 或 `general`（1）。
+- `retryable` 只在网络错误或限流（99991400 / HTTP 429）时为 `true`。
+- `code`、`log_id`、`missing_scopes` 只来自飞书错误响应，`hint` 是修复建议；取不到时字段省略，解析时不要假设必存。
+- 取值只有 `text`（默认）与 `json`，其他值为用法错误（退出码 2）。
 
 ## Bot 创建资源后的自动授权
 

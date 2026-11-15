@@ -27,7 +27,15 @@ feishu-cli comment reply update <file_token> <comment_id> <reply_id> \
   --content '[{"type":"text","text":"请 "},{"type":"mention_user","mention_user":"ou_xxx"},{"type":"text","text":" 复核"}]'
 feishu-cli comment reply react <file_token> <reply_id> --type docx --emoji THUMBSUP          # 取消: --action delete
 feishu-cli comment reply delete <file_token> <comment_id> <reply_id> --type docx
+
+# 写操作先预览（不读取凭据、不联网）
+feishu-cli comment add <file_token> --type docx --text "评论内容" --dry-run
+feishu-cli comment reply add <file_token> <comment_id> --text "回复内容" --dry-run
 ```
+
+`comment add/resolve/unresolve`、`comment reply add/update/react/delete` 都支持 `--dry-run`：只打印将要发出的请求，
+不读取凭据、不联网（无凭据环境退出码 0）；参数错误（如 `--text`/`--content` 都缺、非法 `--emoji`）先于预览报出，退出码 2。
+`comment delete` 不发请求（见下文限制），因此没有 `--dry-run`。
 
 ## 创建富文本或局部评论（drive add-comment）
 
@@ -77,6 +85,8 @@ feishu-cli drive add-comment --doc boxcnxxx --type file --content '[{"type":"tex
   doc（旧版）与 file 只支持全文评论；`--full` 强制全文评论。
 - 元素：`text`；`mention_user`（open_id 放 `mention_user` 或 `text` 字段）；`link`（URL 放 `link` 或 `text` 字段，
   建议只放飞书云文档链接）。所有 `text` 合计 ≤10000 字符（拆成多个元素不能绕过，超限返回 1069302），CLI 本地预检。
+- `--dry-run`：裸 token 或非 wiki 链接为静态预览（不读取凭据、不联网）；wiki 链接需要 User 凭据，先只读解析 wiki 节点
+  （node_by_token）再输出计划，不创建评论。`--doc`、`--content`、锚点格式等参数错误在凭据检查之前报出（退出码 2）。
 - 输出 `data.comment_id` / `data.reply_id`、`is_whole`、`resolved_by`。全文评论（`is_whole=true`）**不能再被回复**
   （`comment reply add` 返回 1069302，实测），需要后续讨论时创建局部评论。
 

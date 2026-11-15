@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -176,7 +177,7 @@ func resolveMeetingIDsByNo(meetingNo, startStr, endStr, token string) ([]string,
 	}
 
 	if startSec > endSec {
-		return nil, fmt.Errorf("--start 不能晚于 --end")
+		return nil, clierr.Usagef("--start 不能晚于 --end")
 	}
 
 	data, err := client.ListMeetingsByNo(meetingNo, startSec, endSec, token)

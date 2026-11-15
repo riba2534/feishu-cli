@@ -49,10 +49,6 @@ var driveExportCmd = &cobra.Command{
   feishu-cli drive export --url https://xxx.feishu.cn/wiki/wikcnxxx --file-extension pdf
   feishu-cli drive export --token sldxxx --doc-type slides --file-extension pptx`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		docToken, _ := cmd.Flags().GetString("token")
 		docURL, _ := cmd.Flags().GetString("url")
 		docType, _ := cmd.Flags().GetString("doc-type")
@@ -73,23 +69,23 @@ var driveExportCmd = &cobra.Command{
 
 		sourceType, sourceToken, resolvedType, err := normalizeDriveExportInput(docURL, docToken, docType)
 		if err != nil {
-			return err
+			return clierr.Usage(err)
 		}
 		if fileExtension == "" {
-			return fmt.Errorf("--file-extension 必填，允许: %s", driveExportFileExtensionValues)
+			return clierr.Usagef("--file-extension 必填，允许: %s", driveExportFileExtensionValues)
 		}
 
 		if sourceType == "wiki" && resolvedType == "" {
 			switch fileExtension {
 			case "docx", "pdf", "xlsx", "csv", "markdown", "base", "pptx":
 			default:
-				return fmt.Errorf("不支持的 --file-extension %q，允许: %s", fileExtension, driveExportFileExtensionValues)
+				return clierr.Usagef("不支持的 --file-extension %q，允许: %s", fileExtension, driveExportFileExtensionValues)
 			}
 			if onlySchema && fileExtension != "base" {
-				return fmt.Errorf("--only-schema 仅在导出 bitable 为 base 时使用")
+				return clierr.Usagef("--only-schema 仅在导出 bitable 为 base 时使用")
 			}
 			if strings.TrimSpace(subID) != "" && fileExtension != "csv" {
-				return fmt.Errorf("--sub-id 仅在 sheet/bitable 导出 csv 时使用")
+				return clierr.Usagef("--sub-id 仅在 sheet/bitable 导出 csv 时使用")
 			}
 		} else {
 			if err := validateDriveExportFormat(resolvedType, fileExtension, subID, onlySchema); err != nil {
@@ -102,7 +98,7 @@ var driveExportCmd = &cobra.Command{
 		}
 		// 输出目录在任何网络请求（含 token 刷新、wiki 解析、创建导出任务）之前校验，敏感目录直接拒绝
 		if err := validateOutputPath(outputDir, ""); err != nil {
-			return fmt.Errorf("--output-dir 无效: %w", err)
+			return clierr.Usagef("--output-dir 无效: %w", err)
 		}
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
@@ -157,6 +153,10 @@ var driveExportCmd = &cobra.Command{
 				extra["file_name"] = ensureExportFileExtension(sanitizeExportName(preferredName, sourceToken), fileExtension)
 			}
 			return printDryRunPlan(cmd, "export cloud document", extra, steps)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveIdentityToken(cmd)
@@ -314,7 +314,7 @@ func normalizeDriveExportInput(rawURL, token, docType string) (sourceType, sourc
 		return "", "", "", fmt.Errorf("必须提供 --url 或 --token")
 	}
 	if token != "" && rawURL != "" {
-		return "", "", "", fmt.Errorf("--url 与 --token 互斥")
+		return "", "", "", clierr.Usagef("--url 与 --token 互斥")
 	}
 	raw := token
 	if rawURL != "" {
@@ -324,7 +324,7 @@ func normalizeDriveExportInput(rawURL, token, docType string) (sourceType, sourc
 		// 只按 URL 路径前缀推断类型（query 中的 /wiki/ 等字样不会劫持解析）
 		ref, parseErr := client.ParseResourceURL(raw)
 		if parseErr != nil {
-			return "", "", "", fmt.Errorf("--url 解析失败: %w", parseErr)
+			return "", "", "", clierr.Usagef("--url 解析失败: %w", parseErr)
 		}
 		parsedType := ref.Type
 		sourceType = normalizeDriveExportDocType(parsedType)
@@ -334,7 +334,7 @@ func normalizeDriveExportInput(rawURL, token, docType string) (sourceType, sourc
 				return "wiki", sourceToken, "", nil
 			}
 			if docType != "" && !isDriveExportDocType(docType) && docType != "wiki" {
-				return "", "", "", fmt.Errorf("--doc-type %q 与 URL 类型 wiki 冲突", docType)
+				return "", "", "", clierr.Usagef("--doc-type %q 与 URL 类型 wiki 冲突", docType)
 			}
 			if docType != "" && docType != "wiki" {
 				return "wiki", sourceToken, normalizeDriveExportDocType(docType), nil
@@ -345,10 +345,10 @@ func normalizeDriveExportInput(rawURL, token, docType string) (sourceType, sourc
 			return "", "", "", fmt.Errorf("URL 类型 %q 不受 drive export 支持", parsedType)
 		}
 		if docType == "wiki" {
-			return "", "", "", fmt.Errorf("--doc-type wiki 与 URL 类型 %q 冲突", sourceType)
+			return "", "", "", clierr.Usagef("--doc-type wiki 与 URL 类型 %q 冲突", sourceType)
 		}
 		if docType != "" && normalizeDriveExportDocType(docType) != sourceType {
-			return "", "", "", fmt.Errorf("--doc-type %q 与 URL 类型 %q 冲突", docType, sourceType)
+			return "", "", "", clierr.Usagef("--doc-type %q 与 URL 类型 %q 冲突", docType, sourceType)
 		}
 		return sourceType, sourceToken, sourceType, nil
 	}
@@ -356,7 +356,7 @@ func normalizeDriveExportInput(rawURL, token, docType string) (sourceType, sourc
 		return "", "", "", fmt.Errorf("不支持的 --url %q，请使用飞书文档 URL", rawURL)
 	}
 	if !client.IsSafeResourceToken(strings.TrimSpace(token)) {
-		return "", "", "", fmt.Errorf("--token 不是有效的 token（只允许字母、数字、_ 和 -）: %q", token)
+		return "", "", "", clierr.Usagef("--token 不是有效的 token（只允许字母、数字、_ 和 -）: %q", token)
 	}
 	token = strings.TrimSpace(token)
 	if docType == "" {
@@ -409,10 +409,6 @@ var driveExportDownloadCmd = &cobra.Command{
 示例:
   feishu-cli drive export-download --file-token boxxxx --output-dir ./exports`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken, _ := cmd.Flags().GetString("file-token")
 		fileName, _ := cmd.Flags().GetString("file-name")
 		outputDir, _ := cmd.Flags().GetString("output-dir")
@@ -420,7 +416,7 @@ var driveExportDownloadCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 
 		if fileToken == "" {
-			return fmt.Errorf("--file-token 必填")
+			return clierr.Usagef("--file-token 必填")
 		}
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
@@ -434,11 +430,15 @@ var driveExportDownloadCmd = &cobra.Command{
 		savedPath := filepath.Join(outputDir, fileName)
 		// 输出目录与最终文件在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
 		if err := validateOutputPath(outputDir, ""); err != nil {
-			return fmt.Errorf("--output-dir 无效: %w", err)
+			return clierr.Usagef("--output-dir 无效: %w", err)
 		}
 		if err := validateOutputPath(savedPath, ""); err != nil {
 			return err
 		}
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err

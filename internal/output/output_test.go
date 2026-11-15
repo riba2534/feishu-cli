@@ -194,6 +194,46 @@ func TestParseOptionsInvalidFormat(t *testing.T) {
 	}
 }
 
+// ParseOptions 与 --format 一样在发请求前校验 --jq：语法错误与未定义函数（误写的 -r → r/0）都报错。
+func TestParseOptionsInvalidJQ(t *testing.T) {
+	for _, tc := range []struct{ expr, want string }{
+		{"bad(", "jq 表达式解析失败"},
+		{"-r", "jq 表达式编译失败"},
+		{"$undefined_var", "jq 表达式编译失败"},
+	} {
+		cmd := &cobra.Command{Use: "x", Run: func(*cobra.Command, []string) {}}
+		AddOutputFlags(cmd)
+		_ = cmd.Flags().Set("jq", tc.expr)
+		_, err := ParseOptions(cmd)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("--jq %q 应报 %q，得到 %v", tc.expr, tc.want, err)
+		}
+	}
+	// 合法表达式与空表达式不受影响
+	for _, expr := range []string{"", "  ", ".items[] | .name", "$ENV | length", "[.[] | select(.a > 1)]"} {
+		cmd := &cobra.Command{Use: "x", Run: func(*cobra.Command, []string) {}}
+		AddOutputFlags(cmd)
+		_ = cmd.Flags().Set("jq", expr)
+		o, err := ParseOptions(cmd)
+		if err != nil || o.JQ != expr {
+			t.Errorf("--jq %q 应通过: o=%+v err=%v", expr, o, err)
+		}
+	}
+}
+
+// ValidateJQ 编译通过的表达式，渲染时也能求值（与 applyJQ 的隐式编译一致）。
+func TestValidateJQCompileMatchesRender(t *testing.T) {
+	if err := ValidateJQ("-r"); err == nil {
+		t.Fatal("未定义函数应在校验阶段报错")
+	}
+	if _, err := RenderString(&Options{Format: FormatJSON, JQ: "-r"}, map[string]any{}); err == nil {
+		t.Fatal("渲染时同样应失败（校验与渲染口径一致）")
+	}
+	if err := ValidateJQ(".a"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestParseOptionsPagination(t *testing.T) {
 	cmd := &cobra.Command{Use: "x", Run: func(*cobra.Command, []string) {}}
 	AddPaginationFlags(cmd)

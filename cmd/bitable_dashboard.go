@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
@@ -49,10 +47,10 @@ base/v3 无仪表盘复制端点，本命令走 bitable/v1（app_token 即 base_
 		dashboardID, _ := cmd.Flags().GetString("dashboard-id")
 		name, _ := cmd.Flags().GetString("name")
 		if dashboardID == "" {
-			return fmt.Errorf("--dashboard-id 必填")
+			return clierr.Usagef("--dashboard-id 必填")
 		}
 		if name == "" {
-			return fmt.Errorf("--name 必填")
+			return clierr.Usagef("--name 必填")
 		}
 		return bitableRun(cmd, func(bt string) bitableReq {
 			return bitableReq{

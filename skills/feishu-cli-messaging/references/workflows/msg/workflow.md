@@ -26,7 +26,7 @@ CLI 路径不等于工作流归属：`feishu-cli msg` 下的子命令按动作�
 | 动作类型 | 子命令 | 归属工作流 |
 | --- | --- | --- |
 | 发送与已发消息管理 | `send` / `reply` / `forward` / `merge-forward` / `urgent` / `edit` / `delete` | 本文档（`msg` 工作流） |
-| 读取与资源下载 | `history` / `list` / `get` / `mget` / `thread-messages` / `search-chats` / `read-users` / `pins` / `resource-download` | [`chat` 工作流](../chat/workflow.md) |
+| 读取与资源下载 | `history` / `list` / `get` / `mget` / `thread-messages` / `search-chats` / `read-users` / `read-status` / `pins` / `resource-download` | [`chat` 工作流](../chat/workflow.md) |
 | 互动与书签 | `reaction` / `pin` / `unpin` / `flag` | [`chat` 工作流](../chat/workflow.md) |
 
 构造卡片 JSON 走 [`card` 工作流](../card/workflow.md)；拉一段时间窗的群消息用 chat 工作流的端到端脚本
@@ -337,11 +337,15 @@ feishu-cli msg edit om_xxx --markdown "**最终版**" --set-attachments ./final.
 
 ```bash
 feishu-cli msg forward om_xxx --receive-id user@example.com --receive-id-type email
-feishu-cli msg merge-forward --receive-id oc_xxx --receive-id-type chat_id --message-ids om_xxx,om_yyy
+feishu-cli msg forward omt_xxx --receive-id oc_xxx --receive-id-type chat_id --dry-run   # 转发整个话题，先预览
+feishu-cli msg merge-forward --receive-id oc_xxx --receive-id-type chat_id --message-ids om_xxx,om_yyy --dry-run
 feishu-cli msg urgent om_xxx --user-id-type open_id --user-ids ou_xxx,ou_yyy
 ```
 
-- `forward` 转发一条消息；默认 Bot 身份，Bot 需能看到原消息。
+- `forward` 转发一条消息；传 `omt_` 话题 ID 时转发整个话题（`POST /im/v1/threads/{thread_id}/forward`）。
+  默认 Bot 身份，Bot 需能看到原消息。`--receive-id-type` 支持 `email/open_id/user_id/union_id/chat_id/thread_id`
+  （`thread_id` 表示转发进某个话题）。
+- `forward` / `merge-forward` 的 `--dry-run` 只打印接口、`receive_id_type` 与请求体后 exit 0，不读凭据、不联网。
 - `merge-forward` 把多条消息合并成一条转发；只用 Bot 身份，Bot 需能看到这些消息且在目标会话中。
   `--receive-id-type` 默认 `email`，发到群时显式写 `chat_id`。
 - `urgent` 对 Bot 自己发出的消息加急，`--urgent-type app|sms|phone`（默认 app）；不支持批量消息 ID（`bm_xxx`）。

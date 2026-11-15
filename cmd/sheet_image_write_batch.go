@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +45,7 @@ BMP/TIFF/WebP 自动转 PNG，原文件不变；HEIC/BPG 原样提交，结果�
 		allowPrivate, _ := cmd.Flags().GetBool("allow-private-net")
 		output, _ := cmd.Flags().GetString("output")
 		if output != "" && output != "text" && output != "json" {
-			return fmt.Errorf("不支持的输出格式 %q，仅支持 text, json", output)
+			return clierr.Usagef("不支持的输出格式 %q，仅支持 text, json", output)
 		}
 
 		items, err := readSheetImageBatchManifest(manifest, args[1], cmd.InOrStdin())
@@ -82,7 +83,7 @@ BMP/TIFF/WebP 自动转 PNG，原文件不变；HEIC/BPG 原样提交，结果�
 func readSheetImageBatchManifest(manifestStr, sheetID string, in io.Reader) ([]client.BatchWriteSheetImageItem, error) {
 	text := strings.TrimSpace(manifestStr)
 	if text == "" {
-		return nil, fmt.Errorf("--manifest 为必填项（可传文件路径、行内 JSON 数组或 - 从标准输入读取）")
+		return nil, clierr.Usagef("--manifest 为必填项（可传文件路径、行内 JSON 数组或 - 从标准输入读取）")
 	}
 
 	var raw []byte
@@ -101,24 +102,24 @@ func readSheetImageBatchManifest(manifestStr, sheetID string, in io.Reader) ([]c
 	} else if strings.HasPrefix(text, "[") {
 		raw = []byte(text)
 	} else if strings.HasPrefix(text, "{") {
-		return nil, fmt.Errorf("manifest 必须是 JSON 数组（形如 [{...}]），不支持单个 JSON 对象")
+		return nil, clierr.Usagef("manifest 必须是 JSON 数组（形如 [{...}]），不支持单个 JSON 对象")
 	} else {
-		return nil, fmt.Errorf("读取 manifest 失败（文件不存在或不是合法 JSON 数组）: %s", text)
+		return nil, clierr.Usagef("读取 manifest 失败（文件不存在或不是合法 JSON 数组）: %s", text)
 	}
 
 	var items []client.BatchWriteSheetImageItem
 	if err := json.Unmarshal(raw, &items); err != nil {
-		return nil, fmt.Errorf("解析 manifest 失败（需要 JSON 数组）: %w", err)
+		return nil, clierr.Usagef("解析 manifest 失败（需要 JSON 数组）: %w", err)
 	}
 	if len(items) == 0 || len(items) > client.MaxSheetImageBatchItems {
-		return nil, fmt.Errorf("manifest 图片数量必须为 1-%d（当前 %d）", client.MaxSheetImageBatchItems, len(items))
+		return nil, clierr.Usagef("manifest 图片数量必须为 1-%d（当前 %d）", client.MaxSheetImageBatchItems, len(items))
 	}
 
 	seen := map[string]struct{}{}
 	for i := range items {
 		cell, err := normalizeSheetImageBatchCell(unescapeSheetRange(items[i].Cell), sheetID)
 		if err != nil {
-			return nil, fmt.Errorf("manifest 第 %d 项: %w", i+1, err)
+			return nil, clierr.Usagef("manifest 第 %d 项: %w", i+1, err)
 		}
 		items[i].Cell = cell
 
@@ -128,10 +129,10 @@ func readSheetImageBatchManifest(manifestStr, sheetID string, in io.Reader) ([]c
 		hasURL := items[i].URL != ""
 		hasPath := items[i].Path != ""
 		if hasURL == hasPath {
-			return nil, fmt.Errorf("manifest 第 %d 项必须且只能设置 url/path 之一", i+1)
+			return nil, clierr.Usagef("manifest 第 %d 项必须且只能设置 url/path 之一", i+1)
 		}
 		if _, ok := seen[cell]; ok {
-			return nil, fmt.Errorf("manifest 包含重复单元格 %s", cell)
+			return nil, clierr.Usagef("manifest 包含重复单元格 %s", cell)
 		}
 		seen[cell] = struct{}{}
 	}
@@ -143,7 +144,7 @@ func normalizeSheetImageBatchCell(value, sheetID string) (string, error) {
 	if idx := strings.LastIndex(text, "!"); idx >= 0 {
 		prefix := strings.Trim(text[:idx], "'")
 		if prefix != sheetID {
-			return "", fmt.Errorf("cell 的 sheet_id %q 与目标 %q 不一致（飞书接口要求使用 sheet_id 而非工作表标题）", prefix, sheetID)
+			return "", clierr.Usagef("cell 的 sheet_id %q 与目标 %q 不一致（飞书接口要求使用 sheet_id 而非工作表标题）", prefix, sheetID)
 		}
 		text = text[idx+1:]
 	}
@@ -152,13 +153,13 @@ func normalizeSheetImageBatchCell(value, sheetID string) (string, error) {
 		start := text[:idx]
 		end := text[idx+1:]
 		if !strings.EqualFold(start, end) {
-			return "", fmt.Errorf("cell 只支持单个单元格，起止不能不同: %q", value)
+			return "", clierr.Usagef("cell 只支持单个单元格，起止不能不同: %q", value)
 		}
 		text = start
 	}
 
 	if !sheetCellRE.MatchString(text) {
-		return "", fmt.Errorf("cell 必须是单个 A1 地址（当前 %q）", value)
+		return "", clierr.Usagef("cell 必须是单个 A1 地址（当前 %q）", value)
 	}
 	text = strings.ToUpper(text)
 	return fmt.Sprintf("%s!%s:%s", sheetID, text, text), nil

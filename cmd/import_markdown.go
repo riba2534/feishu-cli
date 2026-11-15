@@ -420,10 +420,6 @@ JSON 输出 permission_grant；导入到已有文档（--document-id）或 User 
   feishu-cli doc import doc.md --title "测试" --diagram-workers 5 --table-workers 8`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		filePath := args[0]
 		title, _ := cmd.Flags().GetString("title")
 		documentID, _ := cmd.Flags().GetString("document-id")
@@ -479,6 +475,10 @@ JSON 输出 permission_grant；导入到已有文档（--document-id）或 User 
 			return err
 		}
 		if err := validateMarkdownEncoding(content); err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
 			return err
 		}
 
@@ -1710,7 +1710,7 @@ func replaceFailedVideoBlock(documentID string, task videoTask, fileName, reason
 
 func validateWorkerCount(flagName string, value int) error {
 	if value <= 0 {
-		return fmt.Errorf("--%s 必须大于 0，当前值: %d", flagName, value)
+		return clierr.Usagef("--%s 必须大于 0，当前值: %d", flagName, value)
 	}
 	return nil
 }

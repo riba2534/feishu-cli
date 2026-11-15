@@ -49,10 +49,6 @@ var minutesDownloadCmd = &cobra.Command{
   # 只取下载链接
   feishu-cli minutes download --minute-tokens obcnxxxx --url-only`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		raw, _ := cmd.Flags().GetString("minute-tokens")
 		outputPath, _ := cmd.Flags().GetString("output")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
@@ -70,6 +66,10 @@ var minutesDownloadCmd = &cobra.Command{
 			if err := validateOutputPath(markdownFirstNonEmpty(outputPath, "."), ""); err != nil {
 				return err
 			}
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// 参数校验通过后再解析身份：用法错误（exit 2）不应被"未登录"（exit 3）遮住

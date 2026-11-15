@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/riba2534/feishu-cli/internal/runctx"
 	"github.com/spf13/cobra"
@@ -107,6 +108,10 @@ var rootCmd = &cobra.Command{
 
 更多信息请访问: https://github.com/riba2534/feishu-cli`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// --jq 是纯本地参数：在读配置、解析身份之前校验，非法表达式不发任何请求、不先要求凭据
+		if err := output.ValidateMarkedJQ(cmd); err != nil {
+			return err
+		}
 		// --profile 必须在 skip / config.Init 之前生效，doctor/auth status/profile 才能看到覆盖。
 		if err := profile.SetCommandOverride(profileFlag); err != nil {
 			return err
@@ -192,16 +197,13 @@ func Execute() {
 	// Ctrl-C 时进行中的请求与等待立即取消。
 	ctx, stopSignals := newSignalContext(context.Background(), interruptGracePeriod, os.Stderr)
 	runctx.Set(ctx)
-	err := rootCmd.ExecuteContext(ctx)
+	flagParseError = false
+	executed, err := rootCmd.ExecuteContextC(ctx)
 	stopSignals()
+	flagsParsed = executed != nil && executed.Flags().Parsed() && !flagParseError
 	if err != nil {
-		if msg := err.Error(); msg != "" {
-			fmt.Fprintln(os.Stderr, msg)
-		}
-		// 附加 log_id / 缺失 scope / 字段校验等诊断与按业务码的修复建议
-		for _, line := range renderErrorDiagnostics(err) {
-			fmt.Fprintln(os.Stderr, line)
-		}
+		// 错误主文本 + log_id / 缺失 scope 等诊断与修复建议；--error-format json 时为一行 JSON 信封
+		writeCommandError(os.Stderr, err)
 		// 按错误分类退出（0 成功 / 1 一般 / 2 用法 / 3 鉴权 / 4 网络 / 10 需确认 / 130 中断），
 		// 供脚本与 AI Agent 区分失败类型；错误文本保持不变。
 		os.Exit(exitCodeFor(err))

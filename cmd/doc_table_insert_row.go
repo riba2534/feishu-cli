@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -36,23 +37,23 @@ func init() {
 }
 
 func runDocTableInsertRow(cmd *cobra.Command, args []string) error {
+	tableBlockID := args[1]
+	index, _ := cmd.Flags().GetInt("index")
+	output, _ := cmd.Flags().GetString("output")
+	// 飞书 API 仅接受 index == -1（末尾）或 index >= 0
+	if index < -1 {
+		return clierr.Usagef("索引必须 >= 0 或 -1（表示末尾）")
+	}
+
 	if err := config.Validate(); err != nil {
 		return err
 	}
 
-	tableBlockID := args[1]
-	index, _ := cmd.Flags().GetInt("index")
-	output, _ := cmd.Flags().GetString("output")
 	userAccessToken := resolveOptionalUserToken(cmd)
 	// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {
 		return err
-	}
-
-	// 飞书 API 仅接受 index == -1（末尾）或 index >= 0
-	if index < -1 {
-		return fmt.Errorf("索引必须 >= 0 或 -1（表示末尾）")
 	}
 
 	err = client.InsertTableRow(documentID, tableBlockID, index, userAccessToken)

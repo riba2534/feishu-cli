@@ -36,9 +36,6 @@ var driveVersionHistoryCmd = &cobra.Command{
   feishu-cli drive version-history --file-token boxcnXXX --limit 50 --cursor 1700000000000 -o json`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		fileToken, _ := cmd.Flags().GetString("file-token")
 		limit, _ := cmd.Flags().GetInt("limit")
 		cursor, _ := cmd.Flags().GetString("cursor")
@@ -56,6 +53,10 @@ var driveVersionHistoryCmd = &cobra.Command{
 		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
@@ -105,9 +106,6 @@ var driveVersionGetCmd = &cobra.Command{
   feishu-cli drive version-get --file-token boxcnXXX --version 7694404161344900828 --output ./old.pdf`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		fileToken, _ := cmd.Flags().GetString("file-token")
 		version, _ := cmd.Flags().GetString("version")
 		outputPath, _ := cmd.Flags().GetString("output")
@@ -135,6 +133,10 @@ var driveVersionGetCmd = &cobra.Command{
 				return fmt.Errorf("文件已存在: %s（使用 --overwrite 覆盖）", outputPath)
 			}
 		}
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
 		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err

@@ -2,11 +2,9 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/clierr"
-	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +36,7 @@ var bitableRoleGetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		roleID, _ := cmd.Flags().GetString("role-id")
 		if roleID == "" {
-			return fmt.Errorf("--role-id 必填")
+			return clierr.Usagef("--role-id 必填")
 		}
 		return runBaseV3Role(cmd, "GET", func(bt string) string {
 			return bitableRolePath(bt, roleID)
@@ -67,7 +65,7 @@ var bitableRoleUpdateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		roleID, _ := cmd.Flags().GetString("role-id")
 		if roleID == "" {
-			return fmt.Errorf("--role-id 必填")
+			return clierr.Usagef("--role-id 必填")
 		}
 		body, err := loadBitableJSONBody(cmd)
 		if err != nil {
@@ -85,7 +83,7 @@ var bitableRoleDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		roleID, _ := cmd.Flags().GetString("role-id")
 		if roleID == "" {
-			return fmt.Errorf("--role-id 必填")
+			return clierr.Usagef("--role-id 必填")
 		}
 		return runBaseV3Role(cmd, "DELETE", func(bt string) string {
 			return bitableRolePath(bt, roleID)
@@ -96,26 +94,15 @@ var bitableRoleDeleteCmd = &cobra.Command{
 // runBaseV3Role 调用角色接口并解开多层响应（外层 data 里再套一层二次序列化的 data，
 // 内层可能带自己的 code/message——外层 code=0 但内层失败时必须报错，见 client.UnwrapBaseRoleData）。
 func runBaseV3Role(cmd *cobra.Command, method string, pathFn func(baseToken string) string, body any) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
-	token, err := resolveIdentityToken(cmd)
-	if err != nil {
-		return err
-	}
-	baseToken, err := resolveBaseToken(cmd)
-	if err != nil {
-		return err
-	}
-	data, err := client.BaseV3Call(method, pathFn(baseToken), nil, body, token)
-	if err != nil {
-		return err
-	}
-	inner, err := client.UnwrapBaseRoleData(data)
-	if err != nil {
-		return err
-	}
-	return printJSON(inner)
+	return bitableExecute(cmd, func(bt string) bitableReq {
+		return bitableReq{method: method, path: pathFn(bt), body: body}
+	}, func(req bitableReq, token string) (any, error) {
+		data, err := client.BaseV3Call(req.method, req.path, nil, req.body, token)
+		if err != nil {
+			return nil, err
+		}
+		return client.UnwrapBaseRoleData(data)
+	})
 }
 
 // loadBitableJSONBody 读取 --config/--config-file 为任意 JSON 值。
@@ -128,7 +115,7 @@ func loadBitableJSONBody(cmd *cobra.Command) (any, error) {
 	}
 	var body any
 	if err := json.Unmarshal([]byte(raw), &body); err != nil {
-		return nil, fmt.Errorf("解析 --config 失败: %w", err)
+		return nil, clierr.Usagef("解析 --config 失败: %w", err)
 	}
 	return body, nil
 }
@@ -305,4 +292,7 @@ func init() {
 	bitableWorkflowListCmd.Flags().String("status", "", "过滤状态: enabled/disabled")
 	addBaseTokenFlag(bitableWorkflowListCmd)
 	bitableWorkflowListCmd.Flags().String("user-access-token", "", "User Access Token")
+
+	addBitablePreviewFlags(append(roleSubs, bitableAdvpermEnableCmd, bitableAdvpermDisableCmd,
+		bitableDataQueryCmd, bitableWorkflowListCmd)...)
 }

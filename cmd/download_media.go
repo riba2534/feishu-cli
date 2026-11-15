@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -29,10 +30,6 @@ var downloadMediaCmd = &cobra.Command{
   feishu-cli media download ABC123token456 -o large.bin --timeout 30m`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		fileToken := args[0]
 		output, _ := cmd.Flags().GetString("output")
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
@@ -43,7 +40,7 @@ var downloadMediaCmd = &cobra.Command{
 
 		// 路径安全检查：防止路径遍历攻击
 		if err := validateOutputPath(output, ""); err != nil {
-			return fmt.Errorf("输出路径不安全: %w", err)
+			return clierr.Usagef("输出路径不安全: %w", err)
 		}
 
 		var timeout time.Duration
@@ -51,12 +48,16 @@ var downloadMediaCmd = &cobra.Command{
 			var err error
 			timeout, err = time.ParseDuration(timeoutStr)
 			if err != nil {
-				return fmt.Errorf("无效的超时时间格式: %s（示例: 10m, 1h）", timeoutStr)
+				return clierr.Usagef("无效的超时时间格式: %s（示例: 10m, 1h）", timeoutStr)
 			}
 		}
 
 		opts := client.DownloadMediaOptions{
 			Timeout: timeout,
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		// Try to get temp URL first

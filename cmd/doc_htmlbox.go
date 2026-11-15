@@ -9,6 +9,7 @@ import (
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/output"
 	"github.com/spf13/cobra"
@@ -112,7 +113,7 @@ func loadHTMLInput(cmd *cobra.Command) (string, error) {
 	htmlStr, _ := cmd.Flags().GetString("html")
 	htmlFile, _ := cmd.Flags().GetString("html-file")
 	if htmlStr != "" && htmlFile != "" {
-		return "", fmt.Errorf("--html 和 --html-file 不能同时使用")
+		return "", clierr.Usagef("--html 和 --html-file 不能同时使用")
 	}
 	var content string
 	switch {

@@ -25,18 +25,25 @@ var reopenTaskCmd = &cobra.Command{
   feishu-cli task reopen e297ddff-06ca-4166-b917-4ce57cd3a7a0 --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		taskGuid, guidErr := parseTaskGUIDArg(args[0])
 		if guidErr != nil {
 			return guidErr
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "task reopen 预览（未执行）", nil, []dryRunStep{{
+				Method: "PATCH", URL: taskAPIPath("tasks", taskGuid), Desc: "把完成时间写回 0（重新打开）", Params: taskOpenIDParams(), Body: map[string]any{"task": map[string]any{"completed_at": "0"}, "update_fields": []string{"completed_at"}},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
 		}
 
 		task, err := client.ReopenTask(taskGuid, token)
@@ -67,4 +74,5 @@ func init() {
 	reopenTaskCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	reopenTaskCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(reopenTaskCmd)
+	addTaskDryRunFlag(reopenTaskCmd)
 }

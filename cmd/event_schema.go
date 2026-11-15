@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/event"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +25,7 @@ var eventSchemaCmd = &cobra.Command{
 		key := args[0]
 		def, ok := event.Lookup(key)
 		if !ok {
-			return fmt.Errorf("未知 EventKey: %q（运行 `feishu-cli event list` 查看支持的 key）", key)
+			return clierr.Usagef("未知 EventKey: %q（运行 `feishu-cli event list` 查看支持的 key）", key)
 		}
 
 		asJSON, _ := cmd.Flags().GetBool("json")
@@ -46,6 +47,33 @@ var eventSchemaCmd = &cobra.Command{
 		}
 		if len(def.RequiredConsoleEvents) > 0 {
 			fmt.Printf("Console:      %s\n", strings.Join(def.RequiredConsoleEvents, ", "))
+		}
+		if def.HasSubscription() {
+			unsub := "否（持久订阅关系）"
+			if def.UnsubscribePath != "" {
+				unsub = "是 " + def.UnsubscribePath
+			}
+			fmt.Printf("Subscribe:    POST %s（--as %s；退出时注销: %s）\n", def.SubscribePath, strings.Join(def.IdentityTypes(), "|"), unsub)
+		}
+		for _, p := range def.Params {
+			var attrs []string
+			if p.Required {
+				attrs = append(attrs, "必填")
+			}
+			if p.Default != "" {
+				attrs = append(attrs, "默认 "+p.Default)
+			}
+			if len(p.Values) > 0 {
+				attrs = append(attrs, "可选 "+strings.Join(p.Values, "|"))
+			}
+			if p.Multi {
+				attrs = append(attrs, "可逗号分隔多值")
+			}
+			attr := ""
+			if len(attrs) > 0 {
+				attr = "（" + strings.Join(attrs, "，") + "）"
+			}
+			fmt.Printf("Param:        --param %s=<值>%s %s\n", p.Name, attr, p.Description)
 		}
 		if def.PayloadSchema != "" {
 			fmt.Println("\nPayload Schema (示例):")

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/safefile"
 	"github.com/riba2534/feishu-cli/internal/textutil"
@@ -61,10 +62,6 @@ var vcNotesCmd = &cobra.Command{
   # 从日历事件直达妙记并下载逐字稿（会议需有录制 / 妙记）
   feishu-cli vc notes --calendar-event-ids <event_id> --download-transcript --output-dir ./notes`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		meetingRaw, _ := cmd.Flags().GetString("meeting-ids")
 		minuteRaw, _ := cmd.Flags().GetString("minute-tokens")
 		calendarRaw, _ := cmd.Flags().GetString("calendar-event-ids")
@@ -101,8 +98,12 @@ var vcNotesCmd = &cobra.Command{
 		// 逐字稿落盘目录在任何网络请求（含 token 刷新）之前校验，敏感目录直接拒绝
 		if downloadTranscript {
 			if err := validateOutputPath(outputDir, ""); err != nil {
-				return fmt.Errorf("--output-dir 无效: %w", err)
+				return clierr.Usagef("--output-dir 无效: %w", err)
 			}
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		token, err := resolveVCReadIdentity(cmd)

@@ -23,7 +23,8 @@ var boardCloneCmd = &cobra.Command{
   - 移除只读字段（id/locked/children/parent_id 等）
   - 先创建形状/svg/文字节点，记录新旧 ID 映射，再创建 connector 并重写 attached_object.id
   - 分批 + 批间隔节流，避免触发限流
-  - --dry-run 只列出将克隆的节点数与类型分布
+  - --dry-run 只列出将克隆的节点数与类型分布，不写目标画板。属于计划预览：需要读取源画板节点
+    （只读请求），因此需要凭据与源画板读权限
 
 示例:
   # 基础克隆
@@ -35,14 +36,13 @@ var boardCloneCmd = &cobra.Command{
   # 仅克隆 svg + composite_shape 节点
   feishu-cli board clone <src> <dst> --filter-types svg,composite_shape
 
-  # 预览（不调用 API）
-  feishu-cli board clone <src> <dst> --dry-run`,
+  # 预览（只读取源画板，不写目标画板；需要凭据）
+  feishu-cli board clone <src> <dst> --dry-run
+
+  # 以当前登录用户身份克隆（默认 Bot）
+  feishu-cli board clone <src> <dst> --as user`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		srcID := args[0]
 		dstID := args[1]
 		batchSize, _ := cmd.Flags().GetInt("batch-size")
@@ -50,7 +50,18 @@ var boardCloneCmd = &cobra.Command{
 		filterTypes, _ := cmd.Flags().GetStringSlice("filter-types")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+
+		// 计划预览类：--dry-run 也要读取源画板节点（只读），所以凭据校验与身份解析在 dry-run 分支之前
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		if batchSize <= 0 {
 			batchSize = 10
@@ -262,7 +273,8 @@ func init() {
 	boardCloneCmd.Flags().Int("batch-size", 10, "每批克隆的节点数")
 	boardCloneCmd.Flags().Duration("interval", 1*time.Second, "批次间隔（避免限流）")
 	boardCloneCmd.Flags().StringSlice("filter-types", nil, "只克隆指定类型（逗号分隔，如 svg,composite_shape,text_shape）")
-	boardCloneCmd.Flags().Bool("dry-run", false, "预览不调用 API")
+	boardCloneCmd.Flags().Bool("dry-run", false, "预览：只读取源画板节点（需要凭据），不写目标画板")
 	boardCloneCmd.Flags().String("user-access-token", "", "User Access Token")
+	addVisualWriteAsFlag(boardCloneCmd)
 	boardCloneCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 }

@@ -31,13 +31,19 @@ var authPermissionCmd = &cobra.Command{
   feishu-cli perm auth DOC_TOKEN --action edit --doc-type sheet`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		docToken, docType, err := resolvePermTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		action, _ := cmd.Flags().GetString("action")
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printPermDryRun(cmd, "Check current identity's permission on the document", "GET",
+				permAPIPath("/open-apis/drive/v1/permissions/%s/members/auth", docToken), map[string]any{"type": docType, "action": action}, nil)
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
-
-		docToken := args[0]
-		docType, _ := cmd.Flags().GetString("doc-type")
-		action, _ := cmd.Flags().GetString("action")
 
 		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {

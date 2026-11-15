@@ -1,9 +1,8 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +24,7 @@ func roleMemberPath(appToken, roleID string, extra ...string) string {
 func requireRoleID(cmd *cobra.Command) (string, error) {
 	roleID, _ := cmd.Flags().GetString("role-id")
 	if roleID == "" {
-		return "", fmt.Errorf("--role-id 必填")
+		return "", clierr.Usagef("--role-id 必填")
 	}
 	return roleID, nil
 }
@@ -70,7 +69,7 @@ var bitableRoleMemberCreateCmd = &cobra.Command{
 		}
 		memberID, _ := cmd.Flags().GetString("member-id")
 		if memberID == "" {
-			return fmt.Errorf("--member-id 必填")
+			return clierr.Usagef("--member-id 必填")
 		}
 		memberIDType, _ := cmd.Flags().GetString("member-id-type")
 		params := map[string]any{}
@@ -96,7 +95,7 @@ var bitableRoleMemberDeleteCmd = &cobra.Command{
 		}
 		memberID, _ := cmd.Flags().GetString("member-id")
 		if memberID == "" {
-			return fmt.Errorf("--member-id 必填")
+			return clierr.Usagef("--member-id 必填")
 		}
 		memberIDType, _ := cmd.Flags().GetString("member-id-type")
 		params := map[string]any{}
@@ -145,7 +144,7 @@ func runRoleMemberBatch(cmd *cobra.Command, action string) error {
 	idsStr, _ := cmd.Flags().GetString("member-ids")
 	ids := splitAndTrim(idsStr)
 	if len(ids) == 0 {
-		return fmt.Errorf("--member-ids 必填（逗号分隔）")
+		return clierr.Usagef("--member-ids 必填（逗号分隔）")
 	}
 	memberType, _ := cmd.Flags().GetString("member-id-type")
 	if memberType == "" {

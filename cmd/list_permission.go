@@ -12,8 +12,9 @@ var listPermissionCmd = &cobra.Command{
 	Long: `查看文档的所有协作者及其权限。
 
 参数:
-  doc_token       文档 Token
-  --doc-type      文档类型（默认: docx）
+  doc_token       文档 Token 或文档链接（链接自动推断 token 与类型，/wiki/ 链接对应 wiki）
+  --doc-type      文档类型（默认: docx；传链接时可省略，显式传入时须与链接类型一致）
+  --dry-run       只打印将要发出的请求（不读取凭据、不联网）
 
 文档类型:
   docx      新版文档（默认）
@@ -32,15 +33,24 @@ var listPermissionCmd = &cobra.Command{
   feishu-cli perm list DOC_TOKEN
 
   # 查看电子表格的协作者列表
-  feishu-cli perm list DOC_TOKEN --doc-type sheet`,
+  feishu-cli perm list DOC_TOKEN --doc-type sheet
+
+  # 直接传文档链接（自动推断 token 与 doc-type）
+  feishu-cli perm list https://example.feishu.cn/wiki/wikcnxxx`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		docToken, docType, err := resolvePermTarget(cmd, args[0])
+		if err != nil {
+			return err
+		}
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			return printPermDryRun(cmd, "List document collaborators", "GET",
+				permAPIPath("/open-apis/drive/v1/permissions/%s/members", docToken), map[string]any{"type": docType}, nil)
+		}
+
 		if err := config.Validate(); err != nil {
 			return err
 		}
-
-		docToken := args[0]
-		docType, _ := cmd.Flags().GetString("doc-type")
 
 		userToken, err := resolvePermIdentity(cmd)
 		if err != nil {

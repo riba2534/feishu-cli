@@ -139,6 +139,7 @@ echo "actual=$ACTUAL expected=$EXPECTED ratio=$(echo "scale=2; $ACTUAL / $EXPECT
 #### A. 已翻倍：清空重传
 
 ```bash
+feishu-cli board delete <board_id> --all --dry-run   # board delete 无确认门禁、立即执行，先预览
 feishu-cli board delete <board_id> --all
 python3 scripts/svg_to_board.py drawing.svg <board_id>
 ```

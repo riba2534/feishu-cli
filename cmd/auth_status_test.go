@@ -245,7 +245,7 @@ func TestAuthTimeFieldsAreRFC3339(t *testing.T) {
 		RefreshToken:     "r",
 		ExpiresAt:        expires,
 		RefreshExpiresAt: refreshExpires,
-	}, buildLoginScopeSummary("", ""))
+	}, buildLoginScopeSummary("", ""), "", "")
 	for field, want := range map[string]time.Time{"expires_at": expires, "refresh_expires_at": refreshExpires} {
 		got, err := time.Parse(time.RFC3339, event[field].(string))
 		if err != nil || !got.Equal(want) {

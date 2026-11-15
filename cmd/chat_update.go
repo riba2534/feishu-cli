@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -35,21 +36,24 @@ var chatUpdateCmd = &cobra.Command{
   feishu-cli chat update oc_xxx --owner-id ou_yyy`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, err := resolveIdentityToken(cmd)
-		if err != nil {
-			return err
-		}
 		chatID := args[0]
 		name, _ := cmd.Flags().GetString("name")
 		description, _ := cmd.Flags().GetString("description")
 		ownerID, _ := cmd.Flags().GetString("owner-id")
 
 		if name == "" && description == "" && ownerID == "" {
-			return fmt.Errorf("至少需要指定 --name、--description 或 --owner-id 中的一个")
+			return clierr.Usagef("至少需要指定 --name、--description 或 --owner-id 中的一个")
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, err := resolveIdentityToken(cmd)
+		if err != nil {
+			return err
 		}
 
 		if err := client.UpdateChat(chatID, name, description, ownerID, token); err != nil {

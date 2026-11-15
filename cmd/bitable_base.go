@@ -116,10 +116,6 @@ var bitableCreateCmd = &cobra.Command{
   feishu-cli bitable create --name "任务跟踪" --table-name "任务" \
     --fields '[{"name":"标题","type":"text"},{"name":"状态","type":"select","options":[{"name":"Todo"},{"name":"Done"}]}]'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		name, _ := cmd.Flags().GetString("name")
 		folderToken, _ := cmd.Flags().GetString("folder-token")
 		timeZone, _ := cmd.Flags().GetString("time-zone")
@@ -139,9 +135,7 @@ var bitableCreateCmd = &cobra.Command{
 			}
 			firstTableFields = parsed
 		}
-
-		token, err := resolveIdentityToken(cmd)
-		if err != nil {
+		if err := validateIdentityAs(cmd); err != nil {
 			return err
 		}
 
@@ -151,6 +145,22 @@ var bitableCreateCmd = &cobra.Command{
 		}
 		if timeZone != "" {
 			body["time_zone"] = timeZone
+		}
+
+		if bitableIsDryRun(cmd) {
+			req := bitableReq{method: "POST", path: client.BaseV3Path("bases"), body: body}
+			if firstTableFields != nil || strings.TrimSpace(tableName) != "" {
+				req.preview = map[string]any{"follow_up": bitableCreateFollowUpSteps(strings.TrimSpace(tableName), firstTableFields)}
+			}
+			return printJSON(bitableDryRunPreview(req))
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, err := resolveIdentityToken(cmd)
+		if err != nil {
+			return err
 		}
 
 		data, err := client.BaseV3Call("POST", client.BaseV3Path("bases"), nil, body, token)
@@ -184,6 +194,25 @@ var bitableCreateCmd = &cobra.Command{
 		printPermissionGrantText(os.Stdout, grant)
 		return nil
 	},
+}
+
+// bitableCreateFollowUpSteps 描述 bitable create 带 --table-name / --fields 时建表后的后续请求（dry-run 预览用）。
+func bitableCreateFollowUpSteps(tableName string, fields []any) []map[string]any {
+	listStep := map[string]any{"method": "GET", "path": client.BaseV3Path("bases", "<new_base_token>", "tables"), "desc": "读取平台自动创建的默认数据表"}
+	if fields != nil {
+		if tableName == "" {
+			tableName = "数据表 1"
+		}
+		return []map[string]any{
+			listStep,
+			{"method": "POST", "path": client.BaseV3Path("bases", "<new_base_token>", "tables"), "body": map[string]any{"name": tableName, "fields": fields}, "desc": "按 --fields 新建第一张数据表"},
+			{"method": "DELETE", "path": client.BaseV3Path("bases", "<new_base_token>", "tables", "<default_table_id>"), "desc": "删除默认数据表"},
+		}
+	}
+	return []map[string]any{
+		listStep,
+		{"method": "PATCH", "path": client.BaseV3Path("bases", "<new_base_token>", "tables", "<default_table_id>"), "body": map[string]any{"name": tableName}, "desc": "重命名默认数据表"},
+	}
 }
 
 // bitableCreateDefaultTableDeleteDelay 新建自定义表后删除默认表前的等待（对齐官方 1s，避开写后读延迟）。
@@ -316,22 +345,9 @@ var bitableGetCmd = &cobra.Command{
 	Use:   "get",
 	Short: "获取多维表格信息",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-		token, err := resolveIdentityToken(cmd)
-		if err != nil {
-			return err
-		}
-		baseToken, err := resolveBaseToken(cmd)
-		if err != nil {
-			return err
-		}
-		data, err := client.BaseV3Call("GET", client.BaseV3Path("bases", baseToken), nil, nil, token)
-		if err != nil {
-			return err
-		}
-		return printJSON(data)
+		return runBaseV3Simple(cmd, "GET", func(bt string) string {
+			return client.BaseV3Path("bases", bt)
+		}, nil)
 	},
 }
 
@@ -342,27 +358,21 @@ var bitableCopyCmd = &cobra.Command{
 	Long: `复制一个已有的多维表格。
 
 必填:
-  --base-token  源多维表格 token
+  --base-token  源多维表格 token（也可以是模板中心 bitable template list/search 返回的模板 token）
   --name        新表格名称
 
 可选:
   --folder-token    目标文件夹
-  --without-content bool  只复制结构（不含数据）`,
+  --without-content bool  只复制结构（不含数据）
+  --time-zone       时区（如 Asia/Shanghai），影响日期字段的解释
+  --dry-run         只打印将发送的请求
+
+注意: 多维表格应用（BaseApp，/app/ 链接）不能用本命令复制。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-		token, err := resolveIdentityToken(cmd)
-		if err != nil {
-			return err
-		}
-		baseToken, err := resolveBaseToken(cmd)
-		if err != nil {
-			return err
-		}
 		name, _ := cmd.Flags().GetString("name")
 		folderToken, _ := cmd.Flags().GetString("folder-token")
 		withoutContent, _ := cmd.Flags().GetBool("without-content")
+		timeZone, _ := cmd.Flags().GetString("time-zone")
 		output, _ := cmd.Flags().GetString("output")
 
 		if strings.TrimSpace(name) == "" {
@@ -373,8 +383,18 @@ var bitableCopyCmd = &cobra.Command{
 		if folderToken != "" {
 			body["folder_token"] = folderToken
 		}
+		if strings.TrimSpace(timeZone) != "" {
+			body["time_zone"] = strings.TrimSpace(timeZone)
+		}
 
-		data, err := client.BaseV3Call("POST", client.BaseV3Path("bases", baseToken, "copy"), nil, body, token)
+		p, err := bitablePrepare(cmd, func(bt string) bitableReq {
+			return bitableReq{method: "POST", path: client.BaseV3Path("bases", bt, "copy"), body: body}
+		})
+		if err != nil || p.dryRun {
+			return err
+		}
+		token := p.token
+		data, err := client.BaseV3Call(p.req.method, p.req.path, nil, p.req.body, token)
 		if err != nil {
 			return err
 		}
@@ -415,9 +435,13 @@ func init() {
 	bitableCopyCmd.Flags().String("name", "", "新表格名称（必填）")
 	bitableCopyCmd.Flags().String("folder-token", "", "目标文件夹 token")
 	bitableCopyCmd.Flags().Bool("without-content", false, "只复制结构")
+	bitableCopyCmd.Flags().String("time-zone", "", "时区（如 Asia/Shanghai）")
 	bitableCopyCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	bitableCopyCmd.Flags().String("user-access-token", "", "User Access Token")
 	mustMarkFlagRequired(bitableCopyCmd, "name")
+
+	// create/get/copy 自带 -o/--output（json 开关），只补 --dry-run，不挂 --format/--jq
+	addBitablePreviewFlags(bitableCreateCmd, bitableGetCmd, bitableCopyCmd)
 }
 
 // extractBaseTokenFromResponse 从 base/v3 创建/复制响应中取出新表的 token。

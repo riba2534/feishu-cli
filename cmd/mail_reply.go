@@ -32,6 +32,8 @@ var mailReplyCmd = &cobra.Command{
   --mailbox      默认 me
   --html / --plain-text  强制正文类型（默认按 --body 内容自动检测）
   --attach       附件路径（可重复或逗号分隔；单封邮件附件总计 ≤25MB）
+  --send-time    定时发送（Unix 秒，至少晚于当前 5 分钟；须配合 --confirm-send）
+  --request-receipt  请求已读回执（Disposition-Notification-To 指向发件人）
 
 示例:
   feishu-cli mail reply --message-id msg_xxx --body "收到，周三开会"
@@ -54,10 +56,6 @@ var mailReplyAllCmd = &cobra.Command{
 }
 
 func runMailReply(cmd *cobra.Command, replyAll bool) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
-
 	mailbox, _ := cmd.Flags().GetString("mailbox")
 	messageID, _ := cmd.Flags().GetString("message-id")
 	body, _ := cmd.Flags().GetString("body")
@@ -76,7 +74,14 @@ func runMailReply(cmd *cobra.Command, replyAll bool) error {
 	if err != nil {
 		return err
 	}
+	sendTime, err := validateMailSendTime(cmd)
+	if err != nil {
+		return err
+	}
 
+	if err := config.Validate(); err != nil {
+		return err
+	}
 	token, err := requireUserToken(cmd, cmd.CommandPath())
 	if err != nil {
 		return err
@@ -95,6 +100,9 @@ func runMailReply(cmd *cobra.Command, replyAll bool) error {
 		fromName = profile.Name
 	}
 	self := mailSelfAddressSet(from, mailbox)
+	if err := requireMailReceiptSender(cmd, from); err != nil {
+		return err
+	}
 
 	// Step 3: 收件人（Reply-To 优先；自己发出的邮件回复原收件人）
 	to, cc, err := buildMailReplyRecipients(src, self, replyAll)
@@ -118,6 +126,7 @@ func runMailReply(cmd *cobra.Command, replyAll bool) error {
 		LMSReplyToMessageID: firstNonEmptyString(src.MessageID, messageID),
 		Attachments:         attachments,
 	}
+	input.DispositionNotificationTo = mailReceiptAddress(cmd, from)
 	if isHTML {
 		input.BodyHTML = body + buildMailHTMLReplyQuote(src)
 	} else {
@@ -149,7 +158,7 @@ func runMailReply(cmd *cobra.Command, replyAll bool) error {
 	}
 
 	// 发送
-	sendData, err := client.SendMailDraft(mailbox, draftID, token)
+	sendData, err := client.SendMailDraftAt(mailbox, draftID, sendTime, token)
 	if err != nil {
 		return fmt.Errorf("发送失败（草稿 %s 已创建）: %w", draftID, err)
 	}
@@ -168,8 +177,15 @@ func runMailReply(cmd *cobra.Command, replyAll bool) error {
 		"to":         input.To,
 		"cc":         input.CC,
 	}
+	if sendTime != "" {
+		result["send_time"] = sendTime
+	}
 	if output == "json" {
 		return printJSON(result)
+	}
+	if sendTime != "" {
+		fmt.Printf("回复已定时发送 (message_id=%s, send_time=%s)\n", sent.MessageID, sendTime)
+		return nil
 	}
 	fmt.Printf("回复发送成功 (message_id=%s)\n", sent.MessageID)
 	return nil
@@ -196,6 +212,8 @@ func init() {
 	mailReplyCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailReplyCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	addMailAttachFlag(mailReplyCmd)
+	addMailSendTimeFlag(mailReplyCmd)
+	addMailRequestReceiptFlag(mailReplyCmd)
 	mustMarkFlagRequired(mailReplyCmd, "message-id", "body")
 
 	mailCmd.AddCommand(mailReplyAllCmd)
@@ -208,5 +226,7 @@ func init() {
 	mailReplyAllCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mailReplyAllCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	addMailAttachFlag(mailReplyAllCmd)
+	addMailSendTimeFlag(mailReplyAllCmd)
+	addMailRequestReceiptFlag(mailReplyAllCmd)
 	mustMarkFlagRequired(mailReplyAllCmd, "message-id", "body")
 }

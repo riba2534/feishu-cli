@@ -15,6 +15,9 @@ type CatalogInfo struct {
 	RemoteEnabled   bool   `json:"remote_enabled"`
 	LastCheckAt     int64  `json:"last_check_at,omitempty"`
 	CachePath       string `json:"cache_path,omitempty"`
+	// Supplements 是 overlay 之后按 local_supplements.json 白名单从内嵌基线补回的方法；
+	// 仅在远端 overlay 缺失这些方法时非空（离线/embedded 模式下它们本就在内嵌基线里）。
+	Supplements []string `json:"supplements,omitempty"`
 }
 
 // Status 返回当前 catalog 来源、版本和规模。会触发 Init。
@@ -33,6 +36,7 @@ func Status() CatalogInfo {
 		MethodCount:     CountMethods(mergedServices),
 		RemoteEnabled:   remoteEnabled(),
 		CachePath:       overlayCachePath(),
+		Supplements:     append([]string(nil), appliedSupplements...),
 	}
 	if cm, err := loadCacheMeta(); err == nil {
 		info.CacheVersion = cm.Version

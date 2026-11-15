@@ -25,18 +25,25 @@ var deleteTaskCmd = &cobra.Command{
   feishu-cli task delete e297ddff-06ca-4166-b917-4ce57cd3a7a0 --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		taskGuid, guidErr := parseTaskGUIDArg(args[0])
 		if guidErr != nil {
 			return guidErr
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "task delete 预览（未执行）", nil, []dryRunStep{{
+				Method: "DELETE", URL: taskAPIPath("tasks", taskGuid), Desc: "删除任务",
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
 		}
 
 		if err := client.DeleteTask(taskGuid, token); err != nil {
@@ -66,4 +73,5 @@ func init() {
 	deleteTaskCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	deleteTaskCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(deleteTaskCmd)
+	addTaskDryRunFlag(deleteTaskCmd)
 }

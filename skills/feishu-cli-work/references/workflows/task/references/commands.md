@@ -14,10 +14,20 @@ feishu-cli task create \
   [--due "2026-02-01 18:00:00"] \
   [--origin-href "https://example.com"] \
   [--origin-platform "feishu-cli"] \
-  [-o json]
+  [--assignee ou_xxx[,ou_yyy]] [--follower ou_zzz|cli_xxx] \
+  [--tasklist-id <tasklist_guid|清单 applink>] \
+  [--idempotency-key <key>] \
+  [--data '<任务字段 JSON>' | --data @task.json] \
+  [--dry-run] [-o json]
 ```
 
-`--due` 格式 `YYYY-MM-DD HH:mm:ss` 或 `YYYY-MM-DD`（纯日期 = 当天 00:00，不是全天截止）。
+- `--due` 格式 `YYYY-MM-DD HH:mm:ss` 或 `YYYY-MM-DD`（纯日期 = 当天 00:00，不是全天截止）；格式非法为用法错误（exit 2），
+  在解析身份之前报出，不会触发 token 刷新。
+- `--assignee` / `--follower` 逗号分隔，`ou_` 为用户、`cli_` 为应用，其他前缀 exit 2；创建时一步指派，省去 `member add`。
+- `--tasklist-id` 直接放进清单（接受清单 applink 中的 `guid`）；要放进清单内指定分组，创建后用 `tasklist task-add --section-guid`。
+- `--idempotency-key` 写入 `client_token`：脚本重试时同一个 key 不会重复建任务。
+- `--data` 透传任意任务字段（如 `custom_fields`、`start`、`mode`），显式 flag 覆盖 `--data` 中的同名字段。字段结构先查
+  `feishu-cli schema task.tasks.create`，写之前 `--dry-run` 核对请求体。
 
 ### 列出 / 查看
 
@@ -61,11 +71,14 @@ feishu-cli task related [--include-completed=false] [--page-all] [--page-limit 2
 ### 更新 / 完成 / 重开 / 删除
 
 ```bash
-feishu-cli task update <task_guid> [--summary "新标题"] [--description "新描述"] [--due "2026-03-01 18:00:00"] [--completed]
+feishu-cli task update <task_guid> [--summary "新标题"] [--description "新描述"] [--due "2026-03-01 18:00:00"] [--completed] \
+  [--data '{"custom_fields":[...]}'] [--dry-run]
 feishu-cli task complete <task_guid> [-o json]   # 幂等，已完成时 already_completed=true
 feishu-cli task reopen <task_guid>
 feishu-cli task delete <task_guid>
 ```
+
+`task update --data` 的每个顶层键都计入 `update_fields`（显式 flag 覆盖同名字段），未列出的字段不变。
 
 ## 子任务与父任务
 
@@ -86,10 +99,21 @@ feishu-cli task reminder add <task_guid> --minutes 30        # 相对截止时�
 feishu-cli task reminder remove <task_guid> --ids <reminder_id>[,<reminder_id>]   # ID 从 task get 获取
 feishu-cli task comment add <task_guid> --content "进展说明" [--reply-to <comment_id>]
 feishu-cli task comment list <task_guid> [-o json]
+feishu-cli task comment get <comment_id> [-o json]
+feishu-cli task comment update <comment_id> --content "更正后的内容" [--dry-run]
+feishu-cli task comment delete <comment_id> [--dry-run] [--yes]   # 不可恢复，非交互不带 --yes 时 exit 10
 feishu-cli task upload-attachment --task-guid <task_guid> --file ./report.pdf [--resource-type task|task_delivery]
 ```
 
-附件单文件 ≤ 50MB（`task:attachment:write`）。
+- 评论 `update` / `delete` 只能操作调用身份自己发表的评论；`comment_id` 来自 `comment list` 或 `comment add -o json` 的 `id`。
+- 附件单文件 ≤ 50MB（`task:attachment:write`）。
+
+## 写命令预览（--dry-run）
+
+所有任务与清单写命令（create / update / delete / complete / reopen、subtask create、set-ancestor、member add/remove、
+reminder add/remove、comment add/update/delete、upload-attachment、tasklist create/delete/task-add/task-remove、
+tasklist member add/remove）都支持 `--dry-run`：只打印 `{dry_run, desc, api:[{method,url,params,body}]}`，
+不联网、不读凭据（未配置应用凭证也能预览）。`task complete --dry-run` 列出"先读取、未完成才写入"两步。
 
 ## 分组（section）
 
@@ -110,12 +134,15 @@ feishu-cli tasklist list [--page-size 100] [--page-token <token>] [-o json]
 feishu-cli tasklist get <tasklist_guid> [-o json]
 feishu-cli tasklist search [--query "Sprint"] [--creator ou_xxx] [-o json]     # 至少一个条件
 feishu-cli tasklist tasks <tasklist_guid> [--completed] [-o json]
-feishu-cli tasklist task-add <tasklist_guid> --task-ids <task_guid>[,<task_guid>]
+feishu-cli tasklist task-add <tasklist_guid> --task-ids <task_guid>[,<task_guid>] [--section-guid <section_guid>]
 feishu-cli tasklist task-remove <tasklist_guid> --task-ids <task_guid>
 feishu-cli tasklist member add <tasklist_guid> --members ou_xxx [--role editor|viewer]   # 默认 editor
 feishu-cli tasklist member remove <tasklist_guid> --members ou_xxx [--role editor|viewer]
 feishu-cli tasklist delete <tasklist_guid>
 ```
+
+`task-add --section-guid` 把任务放进清单内的指定分组；分组 GUID 用
+`task section list --resource-type tasklist --resource-id <tasklist_guid>` 查。
 
 ## 权限要求
 
@@ -129,3 +156,4 @@ feishu-cli tasklist delete <tasklist_guid>
 | 读取 / 管理任务清单 | `task:tasklist:read` / `task:tasklist:write` |
 | 分组（section） | `task:section:read`、`task:section:write` |
 | 上传附件 | `task:attachment:write` |
+| 评论 list/get、add/update、delete | `task:comment:read` / `task:comment:writeonly`、`task:comment:write` / `task:comment:delete`（`task:comment:write` 均可） |

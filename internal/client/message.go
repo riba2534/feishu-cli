@@ -836,6 +836,61 @@ func ForwardMessage(messageID string, receiveID string, receiveIDType string, us
 	return *resp.Data.MessageId, nil
 }
 
+// ForwardThread 转发整个话题（POST /open-apis/im/v1/threads/{thread_id}/forward），返回新消息 ID。
+func ForwardThread(threadID string, receiveID string, receiveIDType string, userAccessToken string) (string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	req := larkim.NewForwardThreadReqBuilder().
+		ThreadId(threadID).
+		ReceiveIdType(receiveIDType).
+		Body(larkim.NewForwardThreadReqBodyBuilder().
+			ReceiveId(receiveID).
+			Build()).
+		Build()
+
+	resp, err := client.Im.Thread.Forward(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return "", fmt.Errorf("转发话题失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return "", fmt.Errorf("转发话题失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data == nil || resp.Data.MessageId == nil {
+		return "", fmt.Errorf("转发成功但未返回消息 ID")
+	}
+
+	return *resp.Data.MessageId, nil
+}
+
+// GetMessagesReadStatus 批量查询当前用户对消息的已读状态（POST /open-apis/im/v1/messages/read_status，仅 User 身份）。
+// 返回 data 原文（items[] 与 invalid_message_ids[]），由命令层透传。
+func GetMessagesReadStatus(messageIDs []string, userAccessToken string) (json.RawMessage, error) {
+	cli, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := cli.Post(Context(), "/open-apis/im/v1/messages/read_status", map[string]any{"message_ids": messageIDs}, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("查询消息已读状态失败: %w", err)
+	}
+	if err := CheckAPIResponse("查询消息已读状态", resp); err != nil {
+		return nil, err
+	}
+	var apiResp struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析已读状态响应失败: %w", err)
+	}
+	return apiResp.Data, nil
+}
+
 // ReadUser represents a user who has read a message
 type ReadUser struct {
 	UserIDType string

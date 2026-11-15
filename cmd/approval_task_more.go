@@ -146,19 +146,19 @@ var approvalTaskRemindCmd = &cobra.Command{
 	},
 }
 
-// runApprovalHighRiskWrite 统一处理审批高风险写：dry-run（不联网、不解析身份）→ 确认门禁 → User Token → 执行
+// runApprovalHighRiskWrite 统一处理审批高风险写：dry-run（不联网、不解析身份）→ 配置校验 → User Token → 确认门禁 → 执行
 func runApprovalHighRiskWrite(cmd *cobra.Command, name, path string, params, body map[string]any, prompt string, do func(token string) error, success string) error {
 	if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
 		return printDryRunPlan(cmd, name+" 预览（未执行）", nil, []dryRunStep{{Method: "POST", URL: path, Params: params, Body: body}})
-	}
-	if err := confirmDangerousAction(cmd, prompt); err != nil {
-		return err
 	}
 	if err := config.Validate(); err != nil {
 		return err
 	}
 	token, err := requireUserToken(cmd, name)
 	if err != nil {
+		return err
+	}
+	if err := confirmDangerousAction(cmd, prompt); err != nil {
 		return err
 	}
 	if err := do(token); err != nil {

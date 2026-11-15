@@ -18,6 +18,11 @@ const mailBase = "/open-apis/mail/v1"
 
 // mailboxPath 构造 mailbox 相关的 API path
 // mailboxID 可以是 "me" 或具体 email 地址
+// MailMailboxPath 导出 mailboxPath，供命令层 dry-run 展示请求路径。
+func MailMailboxPath(mailboxID string, segments ...string) string {
+	return mailboxPath(mailboxID, segments...)
+}
+
 func mailboxPath(mailboxID string, segments ...string) string {
 	parts := make([]string, 0, 1+len(segments))
 	parts = append(parts, url.PathEscape(mailboxID))
@@ -396,10 +401,20 @@ func UpdateMailDraft(mailboxID, draftID, rawEMLBase64URL, userAccessToken string
 // API: POST /open-apis/mail/v1/user_mailboxes/{mailbox_id}/drafts/{draft_id}/send
 // 返回响应原始 data（含 message_id、thread_id 等）
 func SendMailDraft(mailboxID, draftID, userAccessToken string) (json.RawMessage, error) {
+	return SendMailDraftAt(mailboxID, draftID, "", userAccessToken)
+}
+
+// SendMailDraftAt 发送草稿；sendTime 非空（Unix 秒字符串）时定时发送，body 为 {"send_time": sendTime}；
+// 为空时与 SendMailDraft 一致（不带 body，立即发送）。
+func SendMailDraftAt(mailboxID, draftID, sendTime, userAccessToken string) (json.RawMessage, error) {
 	if mailboxID == "" {
 		mailboxID = "me"
 	}
-	return callMailAPI(http.MethodPost, mailboxPath(mailboxID, "drafts", draftID, "send"), nil, userAccessToken)
+	var body any
+	if sendTime != "" {
+		body = map[string]any{"send_time": sendTime}
+	}
+	return callMailAPI(http.MethodPost, mailboxPath(mailboxID, "drafts", draftID, "send"), body, userAccessToken)
 }
 
 // GetMailDraftRaw 获取草稿原始 EML（base64url 编码）

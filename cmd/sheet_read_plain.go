@@ -60,7 +60,7 @@ var sheetReadPlainCmd = &cobra.Command{
 				for i, row := range cellRange.Values {
 					rowStrs := make([]string, len(row))
 					for j, cell := range row {
-						rowStrs[j] = fmt.Sprintf("%v", cell)
+						rowStrs[j] = formatSheetCellText(cell)
 					}
 					fmt.Printf("  [%d] %s\n", i+1, strings.Join(rowStrs, " | "))
 				}

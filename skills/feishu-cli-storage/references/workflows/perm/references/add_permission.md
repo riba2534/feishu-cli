@@ -6,7 +6,8 @@
 
 前缀 → doc-type 对照见主工作流 [`../workflow.md`](../workflow.md) 的「参数取值」。
 
-新版 token 多数没有类型前缀：有 URL 时按路径判断；只有裸 token 时运行
+有文档链接时直接把链接当 `<doc_token>` 传入即可（CLI 按路径推断 token 与 `--doc-type`，/wiki/ 链接对应 wiki；
+显式 `--doc-type` 与链接冲突时报用法错误）。新版 token 多数没有类型前缀：只有裸 token 时运行
 `feishu-cli drive inspect --url <token> -o json`，用输出的 `token` 配 `type`。wiki 节点会被展开为底层文档并附带
 `wiki_node`：给知识库节点授权（可配 `--perm-type`）时用 `wiki_node.node_token` 配 `--doc-type wiki`。
 
@@ -21,12 +22,14 @@
 | openchat | `oc_` 前缀 |
 | opendepartmentid | `od_` 前缀 |
 | groupid | `gc_` 前缀 |
-| wikispaceid | `ws_` 前缀 |
+| wikispaceid | 知识空间 space_id（纯数字），必须同时传 `--member-kind wiki_space_member|wiki_space_viewer|wiki_space_editor` |
 
 ## 3. 身份与知识库范围
 
 - 默认 Bot 身份；文档属于当前登录用户、应用不是协作者时加 `--as user`（Bot 会报 1063004/1063002）
 - 知识库节点（`--doc-type wiki`）可用 `--perm-type container|single_page` 控制是否包含子页面
+
+- 拿不准时先加 `--dry-run` 预览请求体（不读凭据、不联网）
 
 ## 4. 是否需要通知对方
 

@@ -37,11 +37,13 @@ var authTokenCmd = &cobra.Command{
   # 把旧版未绑定 app_id 的 token.json 显式绑定到当前应用（不更换 token）
   feishu-cli auth token --bind-legacy-app --as user`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		as, _ := cmd.Flags().GetString("as")
 		as = strings.ToLower(strings.TrimSpace(as))
+		switch as {
+		case "user", "bot", "tenant", "app", "", "auto":
+		default:
+			return clierr.Usagef("--as 仅支持 user|bot|auto，得到 %q", as)
+		}
 		flagUserToken, _ := cmd.Flags().GetString("user-access-token")
 		if flagUserToken != "" && (as == "bot" || as == "tenant" || as == "app") {
 			return clierr.Usagef("不能同时使用 --as bot 与 --user-access-token：前者要求 App/Tenant 身份，后者是显式 User Token。请去掉其中一个")
@@ -55,6 +57,14 @@ var authTokenCmd = &cobra.Command{
 			if flagUserToken != "" {
 				return clierr.Usagef("不能同时使用 --bind-legacy-app 与 --user-access-token：绑定只针对本地 token.json")
 			}
+		}
+
+		// 本地参数校验之后才要求 App 凭证（参数错误优先报退出码 2）
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
+		if bindLegacy {
 			cfg := config.Get()
 			if err := auth.BindLegacyToken(cfg.AppID); err != nil {
 				return err

@@ -44,6 +44,10 @@ func newDocsAIBlocks(content string) []map[string]any {
 
 func (f *fakeDocWriteServer) handler(t *testing.T) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if isPortProbe(r) {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		f.mu.Lock()
 		defer f.mu.Unlock()

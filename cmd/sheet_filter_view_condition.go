@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/cobra"
 )
 
@@ -84,6 +85,15 @@ var sheetFilterViewConditionDeleteCmd = &cobra.Command{
   feishu-cli sheet filter-view condition delete --token shtcnxxxxxx --sheet-id 0b1212 \
       --filter-view-id pH9hbVcCXA --condition-id E`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		rawToken, sheetID, filterViewID, conditionID, _, err := readSheetConditionFlags(cmd, true)
+		if err != nil {
+			return err
+		}
+		if handled, err := sheetDryRunIfRequested(cmd, rawToken, "--token", "删除筛选条件（列 "+conditionID+"）", map[string]any{
+			"sheet_id": sheetID, "filter_view_id": filterViewID, "condition_id": conditionID,
+		}, "DELETE", "/open-apis/sheets/v3/spreadsheets/%s/sheets/"+sheetID+"/filter_views/"+filterViewID+"/conditions/"+conditionID, nil); handled {
+			return err
+		}
 		spreadsheetToken, sheetID, filterViewID, conditionID, _, uat, err := readSheetConditionCommon(cmd, true)
 		if err != nil {
 			return err
@@ -129,8 +139,8 @@ var sheetFilterViewConditionListCmd = &cobra.Command{
 	},
 }
 
-// readSheetConditionCommon 读取 condition 命令的公共参数。requireConditionID 控制是否要求 --condition-id。
-func readSheetConditionCommon(cmd *cobra.Command, requireConditionID bool) (token, sheetID, filterViewID, conditionID, output, uat string, err error) {
+// readSheetConditionFlags 离线读取并校验 condition 命令的公共参数（不解析身份、不联网）。
+func readSheetConditionFlags(cmd *cobra.Command, requireConditionID bool) (token, sheetID, filterViewID, conditionID, output string, err error) {
 	token, err = readSheetSpreadsheetToken(cmd)
 	if err != nil {
 		return
@@ -141,11 +151,19 @@ func readSheetConditionCommon(cmd *cobra.Command, requireConditionID bool) (toke
 	output, _ = cmd.Flags().GetString("output")
 
 	if token == "" || sheetID == "" || filterViewID == "" {
-		err = fmt.Errorf("--token、--sheet-id、--filter-view-id 均为必填项")
+		err = clierr.Usagef("--token、--sheet-id、--filter-view-id 均为必填项")
 		return
 	}
 	if requireConditionID && conditionID == "" {
-		err = fmt.Errorf("--condition-id 为必填项（列字母，如 E）")
+		err = clierr.Usagef("--condition-id 为必填项（列字母，如 E）")
+	}
+	return
+}
+
+// readSheetConditionCommon 读取 condition 命令的公共参数并解析身份。requireConditionID 控制是否要求 --condition-id。
+func readSheetConditionCommon(cmd *cobra.Command, requireConditionID bool) (token, sheetID, filterViewID, conditionID, output, uat string, err error) {
+	token, sheetID, filterViewID, conditionID, output, err = readSheetConditionFlags(cmd, requireConditionID)
+	if err != nil {
 		return
 	}
 	target, terr := newSheetTargetNamed(cmd, token, "--token")
@@ -159,15 +177,16 @@ func readSheetConditionCommon(cmd *cobra.Command, requireConditionID bool) (toke
 
 // runSheetConditionWrite create/update 共用逻辑（两者 body 字段一致，仅端点 method 不同）。
 func runSheetConditionWrite(cmd *cobra.Command, isCreate bool) error {
-	spreadsheetToken, sheetID, filterViewID, conditionID, output, uat, err := readSheetConditionCommon(cmd, true)
-	if err != nil {
-		return err
-	}
 	filterType, _ := cmd.Flags().GetString("filter-type")
 	compareType, _ := cmd.Flags().GetString("compare-type")
 	expectedJSON, _ := cmd.Flags().GetString("expected")
 
+	// --expected 为本地参数，先于身份解析校验
 	expected, err := parseSheetConditionExpected(expectedJSON)
+	if err != nil {
+		return err
+	}
+	spreadsheetToken, sheetID, filterViewID, conditionID, output, uat, err := readSheetConditionCommon(cmd, true)
 	if err != nil {
 		return err
 	}
@@ -201,7 +220,7 @@ func parseSheetConditionExpected(jsonStr string) ([]string, error) {
 	}
 	var arr []string
 	if err := json.Unmarshal([]byte(jsonStr), &arr); err != nil {
-		return nil, fmt.Errorf("--expected 必须是字符串数组（如 '[\"6\"]'）: %w", err)
+		return nil, clierr.Usagef("--expected 必须是字符串数组（如 '[\"6\"]'）: %w", err)
 	}
 	return arr, nil
 }
@@ -253,6 +272,7 @@ func init() {
 	sheetFilterViewConditionUpdateCmd.Flags().String("expected", "", `筛选参数 JSON 数组（如 '["6"]'）`)
 
 	// delete
+	sheetFilterViewConditionDeleteCmd.Flags().Bool("dry-run", false, "只打印将要发送的请求，不执行")
 	addSheetConditionCommonFlags(sheetFilterViewConditionDeleteCmd, true, false)
 
 	// list

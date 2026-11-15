@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -39,26 +40,24 @@ func init() {
 }
 
 func runDocTableDeleteRows(cmd *cobra.Command, args []string) error {
-	if err := config.Validate(); err != nil {
-		return err
-	}
-
 	tableBlockID := args[1]
 	start, _ := cmd.Flags().GetInt("start")
 	end, _ := cmd.Flags().GetInt("end")
 	output, _ := cmd.Flags().GetString("output")
+	if start < 0 {
+		return clierr.Usagef("起始索引不能为负数")
+	}
+	if end <= start {
+		return clierr.Usagef("结束索引必须大于起始索引")
+	}
+	if err := config.Validate(); err != nil {
+		return err
+	}
 	userAccessToken := resolveOptionalUserToken(cmd)
 	// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {
 		return err
-	}
-
-	if start < 0 {
-		return fmt.Errorf("起始索引不能为负数")
-	}
-	if end <= start {
-		return fmt.Errorf("结束索引必须大于起始索引")
 	}
 
 	err = client.DeleteTableRows(documentID, tableBlockID, start, end, userAccessToken)

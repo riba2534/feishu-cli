@@ -15,7 +15,6 @@ import (
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/profile"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -102,16 +101,7 @@ func runWorkCmd(t *testing.T, c *cobra.Command, args []string, flags map[string]
 	t.Helper()
 	// 直接调用 RunE 时 cobra 不会合并父命令的 persistent flag（如 okr 的 --as），先手动触发合并
 	_ = c.InheritedFlags()
-	t.Cleanup(func() {
-		c.Flags().VisitAll(func(f *pflag.Flag) {
-			if sv, ok := f.Value.(pflag.SliceValue); ok {
-				_ = sv.Replace(nil)
-			} else {
-				_ = f.Value.Set(f.DefValue)
-			}
-			f.Changed = false
-		})
-	})
+	t.Cleanup(func() { resetFlagValues(c.Flags()) })
 	for k, v := range flags {
 		if err := c.Flags().Set(k, v); err != nil {
 			t.Fatalf("set --%s: %v", k, err)

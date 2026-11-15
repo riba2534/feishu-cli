@@ -56,9 +56,6 @@ docx/sheet/bitable(base)/slides 在线文档和 wiki 节点（wiki 节点与文�
   feishu-cli drive update-title --url https://xxx.feishu.cn/wiki/wikcnXXX --title "新标题" --as user`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
 		urlInput, _ := cmd.Flags().GetString("url")
 		tokenInput, _ := cmd.Flags().GetString("token")
 		explicitType, _ := cmd.Flags().GetString("type")
@@ -104,6 +101,10 @@ docx/sheet/bitable(base)/slides 在线文档和 wiki 节点（wiki 节点与文�
 				plan["body"] = map[string]string{"new_title": "<按当前文件名的扩展名解析后的 --title>"}
 			}
 			return printJSON(plan)
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
 		}
 
 		userToken, err := resolveIdentityToken(cmd)

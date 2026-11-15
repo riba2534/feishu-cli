@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -37,20 +38,27 @@ var taskReminderAddCmd = &cobra.Command{
   feishu-cli task reminder add TASK_GUID --minutes 0`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		taskGuid, guidErr := parseTaskGUIDArg(args[0])
 		if guidErr != nil {
 			return guidErr
 		}
 		minutes, _ := cmd.Flags().GetInt("minutes")
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "task reminder add 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: taskAPIPath("tasks", taskGuid, "add_reminders"), Desc: "添加任务提醒", Params: taskOpenIDParams(), Body: map[string]any{"reminders": []any{map[string]any{"relative_fire_minute": minutes}}},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
+		}
 
 		if err := client.AddTaskReminders(taskGuid, minutes, token); err != nil {
 			return err
@@ -78,15 +86,6 @@ var taskReminderRemoveCmd = &cobra.Command{
   feishu-cli task reminder remove TASK_GUID --ids REMINDER_ID`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token, tokenErr := resolveIdentityToken(cmd)
-		if tokenErr != nil {
-			return tokenErr
-		}
-
 		taskGuid, guidErr := parseTaskGUIDArg(args[0])
 		if guidErr != nil {
 			return guidErr
@@ -102,7 +101,23 @@ var taskReminderRemoveCmd = &cobra.Command{
 		}
 
 		if len(ids) == 0 {
-			return fmt.Errorf("提醒 ID 列表不能为空")
+			return clierr.Usagef("提醒 ID 列表不能为空")
+		}
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+		if taskDryRunRequested(cmd) {
+			return printDryRunPlan(cmd, "task reminder remove 预览（未执行）", nil, []dryRunStep{{
+				Method: "POST", URL: taskAPIPath("tasks", taskGuid, "remove_reminders"), Desc: "移除任务提醒", Params: taskOpenIDParams(), Body: map[string]any{"reminder_ids": ids},
+			}})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		token, tokenErr := resolveIdentityToken(cmd)
+		if tokenErr != nil {
+			return tokenErr
 		}
 
 		if err := client.RemoveTaskReminders(taskGuid, ids, token); err != nil {
@@ -121,11 +136,13 @@ func init() {
 	taskReminderAddCmd.Flags().Int("minutes", 0, "提前提醒的分钟数（必填），0 表示截止时提醒")
 	taskReminderAddCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(taskReminderAddCmd)
+	addTaskDryRunFlag(taskReminderAddCmd)
 	mustMarkFlagRequired(taskReminderAddCmd, "minutes")
 
 	taskReminderCmd.AddCommand(taskReminderRemoveCmd)
 	taskReminderRemoveCmd.Flags().String("ids", "", "提醒 ID 列表，逗号分隔（必填）")
 	taskReminderRemoveCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
 	addWriteAsFlag(taskReminderRemoveCmd)
+	addTaskDryRunFlag(taskReminderRemoveCmd)
 	mustMarkFlagRequired(taskReminderRemoveCmd, "ids")
 }

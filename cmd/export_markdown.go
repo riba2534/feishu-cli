@@ -47,16 +47,13 @@ docs_ai 引擎（--engine docs_ai，服务端导出，与 doc content-update / d
   feishu-cli doc export ABC123def456 --download-images --assets-dir ./images`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		output, _ := cmd.Flags().GetString("output")
 		downloadImages, _ := cmd.Flags().GetBool("download-images")
 		assetsDir, _ := cmd.Flags().GetString("assets-dir")
 
 		engine, _ := cmd.Flags().GetString("engine")
 		engine = strings.ToLower(strings.TrimSpace(engine))
+		var docsAIOpts *docsAIReadOptions
 		switch engine {
 		case "", "local":
 			for _, name := range []string{"doc-format", "detail"} {
@@ -70,12 +67,21 @@ docs_ai 引擎（--engine docs_ai，服务端导出，与 doc content-update / d
 					return clierr.Usagef("--%s 是本地引擎专属参数，不能与 --engine docs_ai 同时使用", name)
 				}
 			}
+			opts, err := docsAIExportOptions(cmd)
+			if err != nil {
+				return err
+			}
+			docsAIOpts = opts
 		default:
 			return clierr.Usagef("不支持的 --engine %q，可选 local（默认）或 docs_ai", engine)
 		}
 
 		// 本地输出路径在任何网络请求（含 token 刷新、wiki 解析）之前校验，敏感目录直接拒绝
 		if err := validateDocExportPaths(output, assetsDir, downloadImages); err != nil {
+			return err
+		}
+
+		if err := config.Validate(); err != nil {
 			return err
 		}
 
@@ -88,8 +94,8 @@ docs_ai 引擎（--engine docs_ai，服务端导出，与 doc content-update / d
 			return err
 		}
 
-		if engine == "docs_ai" || engine == "docs-ai" {
-			return exportDocsAI(cmd, documentID, userAccessToken, output)
+		if docsAIOpts != nil {
+			return exportDocsAI(cmd, documentID, userAccessToken, output, docsAIOpts)
 		}
 
 		// Get all blocks
@@ -162,7 +168,7 @@ func validateDocExportPaths(output, assetsDir string, downloadImages bool) error
 	}
 	if downloadImages {
 		if err := validateOutputPath(assetsDir, ""); err != nil {
-			return fmt.Errorf("--assets-dir 无效: %w", err)
+			return clierr.Usagef("--assets-dir 无效: %w", err)
 		}
 	}
 	return nil
@@ -181,8 +187,8 @@ func writeExportOutput(output, content string) error {
 	return nil
 }
 
-// exportDocsAI 用 docs_ai fetch 导出全文（服务端方言，可经 content-update 无损写回）。
-func exportDocsAI(cmd *cobra.Command, documentID, userAccessToken, output string) error {
+// docsAIExportOptions 解析并校验 --engine docs_ai 的 --doc-format / --detail（纯本地，先于任何网络请求）。
+func docsAIExportOptions(cmd *cobra.Command) (*docsAIReadOptions, error) {
 	format, _ := cmd.Flags().GetString("doc-format")
 	detail, _ := cmd.Flags().GetString("detail")
 	format = strings.ToLower(strings.TrimSpace(format))
@@ -194,17 +200,21 @@ func exportDocsAI(cmd *cobra.Command, documentID, userAccessToken, output string
 		detail = "simple"
 	}
 	if format != "markdown" && format != "xml" {
-		return clierr.Usagef("不支持的 --doc-format %q，可选 markdown / xml", format)
+		return nil, clierr.Usagef("不支持的 --doc-format %q，可选 markdown / xml", format)
 	}
 	switch detail {
 	case "simple", "with-ids", "full":
 	default:
-		return clierr.Usagef("不支持的 --detail %q，可选 simple / with-ids / full", detail)
+		return nil, clierr.Usagef("不支持的 --detail %q，可选 simple / with-ids / full", detail)
 	}
 	if format == "markdown" && detail != "simple" {
-		return clierr.Usagef("--detail %s 只支持 --doc-format xml", detail)
+		return nil, clierr.Usagef("--detail %s 只支持 --doc-format xml", detail)
 	}
-	opts := &docsAIReadOptions{format: format, detail: detail, scope: "full", maxDepth: -1}
+	return &docsAIReadOptions{format: format, detail: detail, scope: "full", maxDepth: -1}, nil
+}
+
+// exportDocsAI 用 docs_ai fetch 导出全文（服务端方言，可经 content-update 无损写回）。
+func exportDocsAI(cmd *cobra.Command, documentID, userAccessToken, output string, opts *docsAIReadOptions) error {
 	data, err := client.FetchDocsAI(documentID, buildDocsAIFetchBody(opts), userAccessToken)
 	if err != nil {
 		return err

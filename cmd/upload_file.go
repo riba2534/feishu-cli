@@ -33,19 +33,33 @@ Bot 身份上传时自动给当前 CLI 登录用户授予 full_access（JSON 输
   feishu-cli file upload /tmp/report.pdf --parent fldcnXXXXXXXXX
 
   # 上传并重命名
-  feishu-cli file upload /tmp/report.pdf --parent fldcnXXXXXXXXX --name "月度报告.pdf"`,
+  feishu-cli file upload /tmp/report.pdf --parent fldcnXXXXXXXXX --name "月度报告.pdf"
+
+  # 预览请求（--dry-run 只打印将要发出的请求，不读取凭据、不联网）
+  feishu-cli file upload ./report.pdf --parent fldcnXXX --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		localPath := args[0]
 		parentToken, _ := cmd.Flags().GetString("parent")
 		fileName, _ := cmd.Flags().GetString("name")
 		output, _ := cmd.Flags().GetString("output")
 		// 本地文件在任何网络请求之前校验：敏感目录、不存在、是目录、无权限读取均为用法错误
-		if _, err := safefile.StatInputFile(localPath); err != nil {
+		stat, err := safefile.StatInputFile(localPath)
+		if err != nil {
+			return err
+		}
+		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
+			name := fileName
+			if name == "" {
+				name = filepath.Base(localPath)
+			}
+			return printDryRunPlan(cmd, "Upload local file to Drive", map[string]any{
+				"file":       localPath,
+				"size_bytes": stat.Size(),
+			}, driveFileUploadSteps(localPath, name, parentToken, "", stat.Size()))
+		}
+
+		if err := config.Validate(); err != nil {
 			return err
 		}
 		userAccessToken := resolveOptionalUserToken(cmd)
@@ -82,6 +96,7 @@ Bot 身份上传时自动给当前 CLI 登录用户授予 full_access（JSON 输
 func init() {
 	fileCmd.AddCommand(uploadFileCmd)
 	uploadFileCmd.Flags().String("parent", "", "父文件夹 Token（默认根目录）")
+	uploadFileCmd.Flags().Bool("dry-run", false, "只打印将要发出的请求（不读取凭据、不联网）")
 	uploadFileCmd.Flags().String("name", "", "文件名（默认使用本地文件名）")
 	uploadFileCmd.Flags().String("user-access-token", "", "User Access Token（可选，使用用户身份访问文件）")
 	uploadFileCmd.Flags().StringP("output", "o", "", "输出格式（json）")

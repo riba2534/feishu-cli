@@ -2,7 +2,7 @@
 name: feishu-cli-storage
 description: >-
   飞书云空间：Drive 上传下载（大文件分块、断点续传、覆盖为新版本）、DOCX/XLSX 等二进制导入与异步导出任务、目录镜像 push/pull、链接与 token 类型解析、重命名、上传文件的版本历史与恢复、基础 file/media 操作、Wiki 知识空间与节点结构（创建、移动、复制、删除）及成员、文档评论与回复（含表格/幻灯片局部评论）、协作者/公开链接/分享密码/转移所有权/权限申请与密级标签。用户提到云盘、文件夹、上传下载、导入 Office 文件、知识库目录、评论、共享或权限时使用。不用于：读取或改写文档/Wiki 正文和云盘原生 .md 文件（feishu-cli-docs）、会议录制与妙记（feishu-cli-meetings）、搜索文档（feishu-cli-platform）。
-compatibility: Requires feishu-cli v1.43.0+ and network access for Feishu API calls.
+compatibility: Requires feishu-cli v1.44.0+ and network access for Feishu API calls.
 allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) Bash(jq:*) Read Write
 ---
 
@@ -18,6 +18,7 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 | 大文件分块上传、原地覆盖上传、流式/断点下载、URL 或 wiki 包装文件下载 | `references/workflows/drive/workflow.md` |
 | 解析 URL/裸 token 的类型与标题（`drive inspect`）、重命名文件/文件夹/文档/wiki 节点（`drive update-title`） | `references/workflows/drive/workflow.md` |
 | 上传文件（type=file）的版本历史与按版本下载（`drive version-history/version-get`） | `references/workflows/drive/workflow.md` |
+| 上传文件预览产物与封面（`drive preview/cover`） | `references/workflows/drive/workflow.md` |
 | 异步导入导出与续查（`drive import/export/export-download/task-result`）、文件夹移动、目录镜像（pull/push/status） | `references/workflows/drive/workflow.md` |
 | 文件夹浏览与分页、基础 file CRUD、快捷方式、元数据/统计、容量（`file quota`）、文档素材上传下载 | `references/workflows/file-media/workflow.md` |
 | 在线文档命名版本（`file version list/create/get/delete`）与上传文件回滚（`file version revert`） | `references/workflows/file-media/workflow.md` |
@@ -37,7 +38,7 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
 4. 身份：perm 全组默认 Bot，操作用户自己的文档加 `--as user`（不读 `FEISHU_USER_ACCESS_TOKEN`），Bot 报 1063002/1063004 时改用 User；
    file/wiki 写类默认 Bot，只认显式 `--user-access-token`，Bot 移动、删除用户自有文件会失败；comment 读与 add/resolve 默认 User 优先，
    `comment reply add/update/react/delete` 默认 Bot 且必须与回复作者同身份；`drive add-comment/secure-label/apply-permission`、
-   `file quota`、`wiki space-create` 必须 User；`drive upload/download` 默认要求 User，可 `--as bot`。
+   `file quota`、`wiki space-create` 必须 User；`drive upload/download` 默认要求 User，可 `--as bot`；`drive preview/cover` 的 `--as` 默认 auto。
 5. 读类或镜像命令遇 99991679（User Token 缺 drive 读 scope）时，资源对应用可见可显式 `--as bot`，否则补授权；带 `--delete-*` 时
    已配置但不可用的 User Token 会 fail-closed，不降级 Bot。异步任务续查沿用原命令输出里的 `--as`。
 6. wiki `get/update/move/export/export-tree/delete` 接受 node_token、已挂载文档的 obj_token 或 URL；`move-to-drive`、`node-copy`、

@@ -22,8 +22,13 @@ var sheetWriteCmd = &cobra.Command{
 ` + sheetRangeFormatHelp + `
 
 自动分批:
-  接口单次最多写 5000 行、100 列。数据超限时以范围左上角为锚点自动拆成多个请求依次写入；
-  范围显式声明的行/列数小于数据时报错（只写左上角单元格如 "0b12!A1" 即可让 CLI 自动计算）。
+  接口单次最多写 5000 行、100 列。数据超限时以范围左上角为锚点自动拆成多个请求依次写入。
+  范围显式声明的行/列数小于数据时在本地报用法错误（exit 2，--dry-run 同样校验）；
+  只写左上角单元格如 "0b12!A1" 即可让 CLI 自动计算。
+
+--dry-run:
+  不读凭据、不联网。--sheet-id 或 URL ?sheet= 可离线确定子表时，预览中的范围已补好前缀，与执行时一致；
+  前缀为子表名、使用 --sheet-name 或依赖唯一子表时，预览保留原样范围，并在请求步骤 desc 中注明执行时换算。
 
 示例:
   # 通过命令行参数传入数据
@@ -49,6 +54,25 @@ var sheetWriteCmd = &cobra.Command{
 		values, err := client.DecodeSheetValues(raw)
 		if err != nil {
 			return clierr.Usagef("解析数据失败（需要 JSON 二维数组）: %v", err)
+		}
+		// 离线规整范围并校验范围能容纳数据：预览与执行发送同一个范围，范围过小在首个网络请求前报用法错误
+		previewRange, pending, err := previewSheetRange(args[1], sheetID, sheetName, urlSheetParam(args[0]))
+		if err != nil {
+			return err
+		}
+		if err := client.CheckSheetWriteRangeFits(previewRange, values); err != nil {
+			return clierr.Usage(err)
+		}
+		stepDesc := ""
+		if pending {
+			stepDesc = sheetRangePendingDesc
+		}
+		if handled, err := sheetDryRunWithStepDesc(cmd, args[0], "", "覆盖写入单元格", stepDesc, map[string]any{
+			"range": previewRange, "rows": len(values), "cols": client.MaxRowWidth(values),
+		}, "PUT", "/open-apis/sheets/v2/spreadsheets/%s/values", map[string]any{
+			"valueRange": map[string]any{"range": previewRange, "values": values},
+		}); handled {
+			return err
 		}
 
 		target, err := newSheetTarget(cmd, args[0])
@@ -104,6 +128,7 @@ func init() {
 	addSheetNameFlag(sheetWriteCmd)
 	sheetWriteCmd.Flags().StringP("data", "d", "", "要写入的数据（JSON 二维数组）")
 	sheetWriteCmd.Flags().String("data-file", "", "数据文件路径")
+	sheetWriteCmd.Flags().Bool("dry-run", false, "只打印将要发送的写入请求，不执行（加 -o json 查看请求体；超过单次上限时执行时自动分批；无需凭据）")
 	sheetWriteCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
 	sheetWriteCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

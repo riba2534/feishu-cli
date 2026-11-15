@@ -142,6 +142,9 @@ func TestReadyAfterPreConsumeAndHandshake(t *testing.T) {
 	var ready concurrentBuffer
 	var subscribed atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isForeignProbe(w, r) {
+			return
+		}
 		if r.URL.Path != "/open-apis/vc/v1/meetings/subscription" && r.URL.Path != "/open-apis/vc/v1/meetings/unsubscription" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}

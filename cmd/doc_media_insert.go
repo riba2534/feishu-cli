@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"net/url"
 	"path/filepath"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
@@ -36,6 +37,7 @@ var docMediaInsertCmd = &cobra.Command{
   --width      图片显示宽度（像素，仅图片；只给一边时按原图比例计算另一边）
   --height     图片显示高度（像素，仅图片）
   --output     输出格式（json/text，默认 text）
+  --dry-run    只打印将要执行的多步请求计划（不联网、不需要凭据、不读剪贴板；wiki 链接的解析步骤用占位符表示）
 
 超过 20MB 的文件自动走分片上传（upload_prepare / upload_part / upload_finish）。
 
@@ -56,13 +58,12 @@ var docMediaInsertCmd = &cobra.Command{
   feishu-cli doc media-insert DOC_ID --file demo.mp4 --type file --file-view preview
 
   # 从剪贴板插入截图
-  feishu-cli doc media-insert DOC_ID --from-clipboard --caption "架构图"`,
+  feishu-cli doc media-insert DOC_ID --from-clipboard --caption "架构图"
+
+  # 预览请求计划
+  feishu-cli doc media-insert DOC_ID --file photo.png --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		filePath, _ := cmd.Flags().GetString("file")
 		fromClipboard, _ := cmd.Flags().GetBool("from-clipboard")
 		fileView, _ := cmd.Flags().GetString("file-view")
@@ -70,7 +71,7 @@ var docMediaInsertCmd = &cobra.Command{
 		alignStr, _ := cmd.Flags().GetString("align")
 		caption, _ := cmd.Flags().GetString("caption")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 		if filePath == "" && !fromClipboard {
 			return clierr.Usagef("必须指定 --file 或 --from-clipboard 之一")
@@ -105,11 +106,14 @@ var docMediaInsertCmd = &cobra.Command{
 		if heightSet && (userHeight <= 0 || userHeight > maxImageDimension) {
 			return clierr.Usagef("--height 必须是 1-%d 的整数像素，当前: %d", maxImageDimension, userHeight)
 		}
-		// 剪贴板在联网前读取：读不到图片时直接以退出码 2 结束，不发任何请求
+		// 剪贴板在联网前读取：读不到图片时直接以退出码 2 结束，不发任何请求（dry-run 不读剪贴板）
 		var clipboardData []byte
+		var fileSize int64
 		fileName := filepath.Base(filePath)
 		displayFile := filePath
-		if fromClipboard {
+		if fromClipboard && dryRun {
+			fileName, displayFile = "clipboard.png", "clipboard.png"
+		} else if fromClipboard {
 			data, err := readClipboardImage()
 			if err != nil {
 				return err
@@ -117,13 +121,15 @@ var docMediaInsertCmd = &cobra.Command{
 			clipboardData, fileName, displayFile = data, "clipboard.png", "clipboard.png"
 		} else if st, statErr := safefile.StatInputFile(filePath); statErr != nil {
 			// 敏感目录、不存在、是目录、无权限读取均为用法错误（先于任何网络请求）
-			return fmt.Errorf("--file 无效: %w", statErr)
+			return clierr.Usagef("--file 无效: %w", statErr)
 		} else if !st.Mode().IsRegular() || st.Size() == 0 {
 			return clierr.Usagef("--file %s 不是非空的普通文件", filePath)
+		} else {
+			fileSize = st.Size()
 		}
 		// 显示尺寸在上传前算好：只给一边时按原图比例补另一边，无法解析原图尺寸则要求两边都给
 		dispW, dispH := 0, 0
-		if insertType == "image" {
+		if insertType == "image" && !(fromClipboard && dryRun) {
 			var pxW, pxH int
 			if fromClipboard {
 				pxW, pxH = decodeImagePixelSizeBytes(clipboardData)
@@ -136,6 +142,19 @@ var docMediaInsertCmd = &cobra.Command{
 				return dimErr
 			}
 		}
+
+		if dryRun {
+			return printDocMediaInsertDryRun(cmd, args[0], docMediaInsertPlan{
+				insertType: insertType, fileName: fileName, displayFile: displayFile, fileSize: fileSize,
+				fromClipboard: fromClipboard, fileViewType: fileViewType, width: dispW, height: dispH,
+				align: alignStr, caption: caption,
+			})
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+		userAccessToken := resolveOptionalUserToken(cmd)
 
 		// wiki 节点必须先换出底层 docx 的 obj_token：块接口与素材上传的 drive_route_token
 		// 都只认文档 token，直接使用 wiki token 会导致创建块失败或素材挂错路由。
@@ -306,6 +325,82 @@ var docMediaInsertCmd = &cobra.Command{
 	},
 }
 
+type docMediaInsertPlan struct {
+	insertType, fileName, displayFile string
+	fileSize                          int64
+	fromClipboard                     bool
+	fileViewType, width, height       int
+	align, caption                    string
+}
+
+// printDocMediaInsertDryRun 打印 media-insert 的多步编排计划（不联网、不解析身份）。
+// 与真实执行一致：读取根块 → 末尾创建空块 → 以新块为 parent_node 上传素材 → 绑定；上传/绑定失败时删除空块回滚。
+func printDocMediaInsertDryRun(cmd *cobra.Command, rawDoc string, plan docMediaInsertPlan) error {
+	ref, err := parseResourceArg(rawDoc, resourceArgOptions{ArgName: "<document_id|url>", DefaultType: client.ResourceTypeDocx, Allowed: []string{client.ResourceTypeDocx, client.ResourceTypeWiki}})
+	if err != nil {
+		return err
+	}
+	docID := ref.Token
+	var steps []dryRunStep
+	if ref.Type == client.ResourceTypeWiki {
+		docID = "<wiki 解析后的 docx token>"
+		steps = append(steps, dryRunStep{Method: "GET", URL: client.WikiNodeByTokenPath, Desc: "解析知识库节点为底层 docx 文档",
+			Params: map[string]any{"token": ref.Token}})
+	}
+	escaped := url.PathEscape(docID)
+	blocksPath := fmt.Sprintf("/open-apis/docx/v1/documents/%s/blocks", escaped)
+	parentType, blockType, emptyBlock := "docx_image", client.BlockTypeImage, map[string]any{"image": map[string]any{}}
+	bind := map[string]any{"replace_image": map[string]any{"token": "<file_token>"}}
+	if plan.insertType == "file" {
+		parentType, blockType = "docx_file", client.BlockTypeFile
+		file := map[string]any{"token": ""}
+		if plan.fileViewType != 0 {
+			file["view_type"] = plan.fileViewType
+		}
+		emptyBlock = map[string]any{"file": file}
+		bind = map[string]any{"replace_file": map[string]any{"token": "<file_token>"}}
+	} else {
+		// 与 client.ReplaceImage 的请求体一致：宽高都有才下发；对齐 1=left 2=center 3=right
+		img := bind["replace_image"].(map[string]any)
+		if plan.width > 0 && plan.height > 0 {
+			img["width"], img["height"] = plan.width, plan.height
+		} else if plan.fromClipboard {
+			img["width"], img["height"] = "<按剪贴板图片像素计算>", "<按剪贴板图片像素计算>"
+		}
+		align := 2
+		switch plan.align {
+		case "left":
+			align = 1
+		case "right":
+			align = 3
+		}
+		img["align"] = align
+		if plan.caption != "" {
+			img["caption"] = map[string]string{"content": plan.caption}
+		}
+	}
+	emptyBlock["block_type"] = blockType
+	upload := dryRunStep{Method: "POST", URL: "/open-apis/drive/v1/medias/upload_all", Desc: "上传素材，parent_node 为新建块 ID",
+		Body: map[string]any{"file_name": plan.fileName, "parent_type": parentType, "parent_node": "<new_block_id>",
+			"size": plan.fileSize, "extra": fmt.Sprintf(`{"drive_route_token":"%s"}`, docID), "file": "<binary>"}}
+	if plan.fromClipboard {
+		upload.Body["size"] = "<剪贴板图片大小>"
+	} else if client.DriveNeedsMultipart(plan.fileSize) {
+		upload = dryRunStep{Method: "POST", URL: "/open-apis/drive/v1/medias/upload_prepare", Desc: "素材超过 20MB，分片上传（upload_prepare → upload_part → upload_finish），parent_node 为新建块 ID",
+			Body: map[string]any{"file_name": plan.fileName, "parent_type": parentType, "parent_node": "<new_block_id>", "size": plan.fileSize}}
+	}
+	steps = append(steps,
+		dryRunStep{Method: "GET", URL: fmt.Sprintf("%s/%s", blocksPath, escaped), Desc: "读取文档根块，确定末尾插入位置"},
+		dryRunStep{Method: "POST", URL: fmt.Sprintf("%s/%s/children", blocksPath, escaped), Desc: "在文档末尾创建空块",
+			Params: map[string]any{"document_revision_id": -1}, Body: map[string]any{"children": []any{emptyBlock}, "index": "<root children count>"}},
+		upload,
+		dryRunStep{Method: "PATCH", URL: fmt.Sprintf("%s/<new_block_id>", blocksPath), Desc: "把 file_token 绑定到新建块", Body: bind},
+	)
+	return printDryRunPlan(cmd, "doc media-insert 预览：未发送任何请求；上传或绑定失败时会删除新建的空块回滚", map[string]any{
+		"type": plan.insertType, "file": plan.displayFile, "size": plan.fileSize,
+	}, steps)
+}
+
 // resolveImageDisplaySize 计算图片显示尺寸：两边都给直接用；只给一边按原图比例计算另一边；
 // 都不给时用原图像素尺寸（解析失败返回 0，交由服务端推断）。
 func resolveImageDisplaySize(userW, userH int, widthSet, heightSet bool, nativeW, nativeH int) (int, int, error) {
@@ -381,4 +476,5 @@ func init() {
 	docMediaInsertCmd.Flags().Int("height", 0, "图片显示高度（像素，仅图片）")
 	docMediaInsertCmd.Flags().StringP("output", "o", "", "输出格式（json/text）")
 	docMediaInsertCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
+	docMediaInsertCmd.Flags().Bool("dry-run", false, "只打印将要执行的请求计划，不联网、不需要凭据")
 }

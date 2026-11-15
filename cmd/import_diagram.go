@@ -124,10 +124,6 @@ var importDiagramCmd = &cobra.Command{
   feishu-cli board import <whiteboard_id> drawing.svg --syntax svg --dry-run -o json`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
 		whiteboardID := args[0]
 		source := args[1]
 		sourceType, _ := cmd.Flags().GetString("source-type")
@@ -175,6 +171,10 @@ var importDiagramCmd = &cobra.Command{
 			}
 		}
 
+		if err := validateIdentityAs(cmd); err != nil {
+			return err
+		}
+
 		// 复杂度估算 + 提示（仅 Mermaid，server engine）
 		if syntax == "mermaid" && engine != "local" {
 			if warn := estimateMermaidComplexity(source, sourceType); warn != "" {
@@ -211,6 +211,9 @@ var importDiagramCmd = &cobra.Command{
 			} else if clientToken != "" {
 				r["client_token"] = clientToken
 			}
+			if label, ok := visualDryRunIdentity(cmd); ok {
+				r["identity"] = label
+			}
 			if output == "json" {
 				return printJSON(r)
 			}
@@ -225,15 +228,24 @@ var importDiagramCmd = &cobra.Command{
 			}
 		}
 
-		userAccessToken := resolveOptionalUserToken(cmd)
+		// 本地引擎依赖检查属于本地前置条件，先于凭据校验
+		if engine == "local" && !client.WhiteboardCLIBridgeAvailable() {
+			return clierr.Usagef("--engine local 需要 whiteboard-cli。安装：npm install -g @larksuite/whiteboard-cli")
+		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
+		userAccessToken, err := resolveVisualWriteToken(cmd)
+		if err != nil {
+			return err
+		}
 		opts.UserAccessToken = userAccessToken
 
 		// 本地引擎路径：通过 whiteboard-cli 把 Mermaid/DSL 转节点 JSON 再 create_nodes
 		// 适合服务端引擎返回 Parse error 的复杂 Mermaid
 		if engine == "local" {
-			if !client.WhiteboardCLIBridgeAvailable() {
-				return fmt.Errorf("--engine local 需要 whiteboard-cli。安装：npm install -g @larksuite/whiteboard-cli")
-			}
 			nodesJSON, err := client.RenderDiagramToOpenAPINodes(source, syntax, sourceIsFile)
 			if err != nil {
 				return fmt.Errorf("本地引擎转换失败: %w", err)
@@ -389,5 +401,6 @@ func init() {
 	importDiagramCmd.Flags().String("client-token", "", "幂等键（≥10 字符，仅 --engine local 生效；结果未知时用同一个值重跑不会重复建节点）")
 	importDiagramCmd.Flags().Bool("dry-run", false, "预览不调用 API")
 	importDiagramCmd.Flags().String("user-access-token", "", "User Access Token")
+	addVisualWriteAsFlag(importDiagramCmd)
 	importDiagramCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 }
