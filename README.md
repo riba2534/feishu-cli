@@ -585,6 +585,27 @@ feishu-cli chat member add <chat_id> --id-list id1,id2
 feishu-cli chat member remove <chat_id> --id-list id1,id2
 ```
 
+**从私聊原生建群并同步（实验性）**
+
+`chat create-sync` 使用未公开的网页端 `PutChatRequest`（`fromChatId` + `initMessageIds`），
+从双人私聊创建普通私有群并原生同步所选消息，**不是转发或合并转发**。新群包含私聊双方，群主是网页登录用户。
+
+- 需要已有网页登录态，默认 `~/.larkx/credentials.json`，可用 `--web-session-file` 指定；不自动登录或更新凭据，不支持 OAuth Token。
+- 来源会话与消息只接受网页端数字 native ID，不接受 OpenAPI 的 `oc_` / `om_` / `ou_`，不能混用。
+- `--idempotency-key` 必填；`--last-messages` 与 `--message-ids` 必须二选一，最多 50 条。最近 N 条目前仅从最近 100 个位置筛选非系统、非空消息，不足就拒绝建群。
+- `--dry-run` 离线且不读凭据；`--preview` 只读联网核对双方和消息，不建群。写操作先展示计划并确认，非交互需获批准后带 `--yes`。
+- Bot 不随此命令加入，建群后另用 `chat member add --member-id-type app_id`，目标群需核验 OpenAPI `chat_id`。
+
+以下数字仅为占位示例，两个命令均不联网：
+
+```bash
+feishu-cli chat create-sync --help
+feishu-cli chat create-sync --name "消息同步测试" --from-chat-id 123456789 \
+  --last-messages 3 --idempotency-key sync-example --dry-run
+```
+
+重试与显式消息示例见 [群聊管理详细参考](skills/feishu-cli-messaging/references/workflows/chat/references/basic-commands.md#从私聊原生建群并同步实验性)。
+
 </details>
 
 <details>

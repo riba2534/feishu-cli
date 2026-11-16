@@ -11,6 +11,7 @@ var chatCmd = &cobra.Command{
 
 子命令:
   create    创建群聊
+  create-sync  从双人私聊原生建群并同步消息（实验性）
   get       获取群聊信息
   update    更新群聊信息
   delete    解散群聊

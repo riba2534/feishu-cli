@@ -38,6 +38,7 @@
 | Reaction / Pin / 书签 | `msg reaction` / `msg pin` / `msg flag` |
 | 撤回、编辑已发消息 | `msg delete` / `msg edit`（属于 [`msg` 工作流](../msg/workflow.md)） |
 | 建群、改群、成员管理 | `chat create` / `chat update` / `chat member ...` |
+| 从双人私聊原生建群并同步所选消息（不转发） | `chat create-sync`（实验性，见 [`references/basic-commands.md`](references/basic-commands.md#从私聊原生建群并同步实验性)） |
 
 ## 身份
 
@@ -48,6 +49,7 @@
 | `msg history --user-id/--user-email`（私聊入口） | 必须 User Token |
 | `msg reaction/pin/unpin/pins`、`chat get/update/delete`、`msg search-chats` | `--as bot\|user\|auto`，默认 auto：已登录用 User，未配置回退 Bot；**已配置但解析/刷新失败直接报错**，不静默切 Bot |
 | `chat create`、`chat link` | 固定 Bot（应用身份），不能切 User Token |
+| `chat create-sync`（实验性） | 已有网页登录用户 session，默认 `~/.larkx/credentials.json`；不自动登录或更新凭据，不支持 OAuth Token，仅接受数字 native ID |
 | `msg read-users` | `--as bot\|user\|auto`，默认 auto（已配置但不可用时 fail-closed）；只能查调用身份自己发出的消息，按消息发送者选身份，见[已读用户](#已读用户msg-read-users) |
 | `msg flag create/list/cancel` | 必须 User（`im:feed.flag:read` / `im:feed.flag:write`） |
 | `msg read-status` | 必须 User（`im:message:readonly`），未登录 exit 3 |
@@ -285,6 +287,8 @@ feishu-cli chat delete oc_xxx --yes                  # 不可逆；非交互环�
   `--types` 含 p2p 时单聊项另有 `p2p_target_id` / `p2p_target_type`。
 - `chat create` 只走应用身份：`--name` 必填（≤60 字），`--user-ids` 最多 50 个 open_id，`--bots` 最多 5 个 app_id，
   `--chat-mode group|topic`，不传 `--owner-id` 时 Bot 为群主；`-o json` 含 `share_link`（获取失败不影响建群）。
+- 原生私聊建群同步用 `chat create-sync`，不要替换为 `msg forward/merge-forward`。先读
+  [`references/basic-commands.md`](references/basic-commands.md#从私聊原生建群并同步实验性)，核对 native/open ID、消息选择和确认门禁。
 - 建群、加人、移人、改群主、解散都会影响他人，执行前确认目标和名单。
 
 ### chat member list 的输出

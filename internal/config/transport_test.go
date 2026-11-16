@@ -146,6 +146,76 @@ func TestCheckRequestURL_RequiresHTTPSchemeEvenOnLoopback(t *testing.T) {
 	}
 }
 
+type internalAPITestTransport struct {
+	called bool
+}
+
+func (transport *internalAPITestTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	transport.called = true
+	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: request}, nil
+}
+
+func TestCheckRequestURL_InternalAPIHosts(test *testing.T) {
+	resetConfig()
+	test.Setenv(envAllowCustomBaseURL, "")
+	test.Setenv(envAllowInsecureHTTP, "")
+
+	cases := []struct {
+		name    string
+		prefix  string
+		suffix  string
+		wantErr bool
+	}{
+		{"https", "https://", "", false},
+		{"https default port", "https://", ":443", false},
+		{"http", "http://", "", true},
+		{"http port 443", "http://", ":443", true},
+		{"https port 80", "https://", ":80", true},
+		{"https nondefault port", "https://", ":8443", true},
+		{"https padded port", "https://", ":0443", true},
+		{"malicious suffix", "https://", ".evil.example", true},
+		{"subdomain", "https://sub.", "", true},
+		{"trailing dot", "https://", ".", true},
+		{"userinfo", "https://user:pass@", "", true},
+		{"ftp", "ftp://", "", true},
+	}
+	for _, host := range []string{"internal-api-lark-api.feishu.cn", "internal-api-lark-api.larksuite.com"} {
+		for _, testCase := range cases {
+			test.Run(host+"/"+testCase.name, func(subtest *testing.T) {
+				raw := testCase.prefix + host + testCase.suffix
+				request, err := http.NewRequest(http.MethodGet, raw+"/im/v1/preview", nil)
+				if err != nil {
+					subtest.Fatalf("创建测试请求失败: %v", err)
+				}
+				if err := CheckRequestURL(request.URL); (err != nil) != testCase.wantErr {
+					subtest.Fatalf("CheckRequestURL(%q) = %v，wantErr = %v", raw, err, testCase.wantErr)
+				}
+				if err := CheckBaseURL(raw); err == nil {
+					subtest.Fatalf("内部 API host 不得作为 Open API base_url: %q", raw)
+				}
+
+				httpClient := NewHTTPClient(time.Second)
+				transport, ok := httpClient.Transport.(*policyTransport)
+				if !ok {
+					subtest.Fatalf("HTTP 客户端缺少白名单策略: %T", httpClient.Transport)
+				}
+				base := &internalAPITestTransport{}
+				transport.base = base
+				response, err := httpClient.Do(request)
+				if response != nil {
+					response.Body.Close()
+				}
+				if (err != nil) != testCase.wantErr {
+					subtest.Fatalf("NewHTTPClient.Do(%q) = %v，wantErr = %v", raw, err, testCase.wantErr)
+				}
+				if base.called != !testCase.wantErr {
+					subtest.Fatalf("底层 transport 调用 = %v，wantErr = %v", base.called, testCase.wantErr)
+				}
+			})
+		}
+	}
+}
+
 func TestNewHTTPClient_TimeoutAndLoopback(t *testing.T) {
 	c := NewHTTPClient(1500 * time.Millisecond)
 	if c.Timeout != 1500*time.Millisecond {

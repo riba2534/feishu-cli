@@ -32,6 +32,7 @@ CLI 路径不等于工作流：`msg send/reply/forward/merge-forward/urgent/edit
 2. 发送、群发、加急、编辑、撤回、合并转发和成员变更都有外部影响，执行前展示目标和数量。
    `msg delete` 没有确认门禁，`chat delete` 不可逆且非交互环境必须带 `--yes`。
 3. 身份：发送/回复/撤回默认 Bot，`msg edit`、`msg merge-forward`、`chat create/link` 只能 Bot；
+   `chat create-sync` 是实验性原生建群同步，使用已有网页登录用户 session，与 OAuth/Bot 身份分开。
    `msg history --user-id/--user-email` 必须 User；Reaction/Pin、`chat get/update/delete`、`msg search-chats`
    用 `--as`（默认 auto）。Reaction 只能由添加它的同一身份删除。`msg flag`、`msg read-status` 必须 User；`msg read-users` 只能查调用身份
    自己发出的消息，按消息发送者选身份。

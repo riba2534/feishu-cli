@@ -41,6 +41,11 @@ var officialAccountsHosts = map[string]struct{}{
 	"accounts.larksuite.com": {},
 }
 
+var officialInternalAPIHosts = map[string]struct{}{
+	"internal-api-lark-api.feishu.cn":     {},
+	"internal-api-lark-api.larksuite.com": {},
+}
+
 func envTruthyValue(v string) bool {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "1", "true", "yes", "on":
@@ -244,7 +249,8 @@ func CheckRequestURL(u *url.URL) error {
 	if IsLoopbackHost(host) {
 		return nil
 	}
-	if (IsOfficialOpenHost(host) || IsOfficialAccountsHost(host)) && officialHTTPSPortOK(u) {
+	_, internalAPI := officialInternalAPIHosts[strings.ToLower(host)]
+	if (IsOfficialOpenHost(host) || IsOfficialAccountsHost(host) || internalAPI) && officialHTTPSPortOK(u) {
 		return nil
 	}
 	return rejectCustomHost(u, false)
