@@ -44,7 +44,10 @@ var boardSVGExportCmd = &cobra.Command{
 				return err
 			}
 		}
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		result, err := client.ExportWhiteboardSVG(whiteboardID, userAccessToken)
 		if err != nil {

@@ -46,7 +46,10 @@ var updateWikiNodeCmd = &cobra.Command{
 		}
 
 		// 先通过 node_by_token 获取 space_id 与真实 node_token（输入可能是文档 obj_token）
-		token := resolveOptionalUserToken(cmd)
+		token, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
 		node, err := client.ResolveWikiNode(nodeToken, token)
 		if err != nil {
 			return fmt.Errorf("获取节点信息失败: %w", err)

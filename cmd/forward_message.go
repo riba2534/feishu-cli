@@ -79,7 +79,13 @@ var forwardMessageCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
+		token, err := resolveOptionalUserToken(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		forward := client.ForwardMessage
 		if isThread {

@@ -4,6 +4,15 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [Unreleased]
+
+新增可选的默认身份配置。默认值 `auto` 下所有命令的默认身份、输出与退出码均保持不变。
+
+### 新增
+
+- `default_as`（`config.yaml`，环境变量 `FEISHU_DEFAULT_AS`，取值 `auto` | `user`，默认 `auto`）：设为 `user` 后，凡是支持本人身份的命令在不传 `--as` 时一律使用 `auth login` 的登录态（token.json，过期自动刷新），包括默认 Bot 的写类命令（doc create/import、msg send 等）、perm、okr、slides/board 写命令与读类命令；不必再每次传 `--as user` 或注入 `FEISHU_USER_ACCESS_TOKEN`。拿不到可用 User Token（未登录、刷新失败、token.json 未绑定当前 App）时报鉴权错误（退出码 3）并提示 `auth login`，**不回落 Bot**。显式 `--as bot|user|auto` 与 `--user-access-token` 优先；只支持 Bot 的命令（vc bot meeting-join/leave/invite/end、msg merge-forward、chat create/link、msg edit/urgent、user list、dept get/children）以及 `user info`（User 身份只返回姓名）不受影响。非法取值在 `config.Validate` 报用法错误（退出码 2）。
+- `auth status` 的 JSON 输出新增 `default_as` 字段；`default_as=user` 时人类可读输出多一行「默认身份」。`config get default_as` 可查看当前取值。
+
 ## [v1.44.0] - 2026-11-05
 
 对照官方 CLI（larksuite/cli v1.0.99）逐领域对齐：统一退出码与 `--dry-run` 语义，内嵌 OpenAPI catalog 改为从官方同步，

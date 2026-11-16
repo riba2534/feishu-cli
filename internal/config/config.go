@@ -24,6 +24,7 @@ type Config struct {
 	OwnerEmail               string       `mapstructure:"owner_email"`
 	TransferOwnership        bool         `mapstructure:"transfer_ownership"`
 	Debug                    bool         `mapstructure:"debug"`
+	DefaultAs                string       `mapstructure:"default_as"`
 	Export                   ExportConfig `mapstructure:"export"`
 	Import                   ImportConfig `mapstructure:"import"`
 }
@@ -40,6 +41,27 @@ type ImportConfig struct {
 }
 
 var cfg *Config
+
+// 默认身份（default_as）取值与对应环境变量。
+// auto 为默认值，保持各命令自身的默认身份不变；user 为 opt-in：支持本人身份的命令
+// 未显式传 --as 时一律以已登录用户身份执行，拿不到可用 User Token 时报错，不回落 Bot。
+const (
+	DefaultAsAuto = "auto"
+	DefaultAsUser = "user"
+	EnvDefaultAs  = "FEISHU_DEFAULT_AS"
+)
+
+// NormalizeDefaultAs 规范化 default_as：去空白、转小写，空值视为 auto；非法取值返回用法错误（退出码 2）。
+func NormalizeDefaultAs(v string) (string, error) {
+	switch s := strings.ToLower(strings.TrimSpace(v)); s {
+	case "", DefaultAsAuto:
+		return DefaultAsAuto, nil
+	case DefaultAsUser:
+		return DefaultAsUser, nil
+	default:
+		return "", clierr.Usagef("default_as 仅支持 auto|user，得到 %q（来自环境变量 %s 或 config.yaml 的 default_as）", v, EnvDefaultAs)
+	}
+}
 
 // 命令行 --bot-app-id / --bot-app-secret，优先于环境变量和配置文件，不写盘。
 var botFlagAppID, botFlagAppSecret string
@@ -118,6 +140,7 @@ func Init(cfgFile string) error {
 	viper.SetDefault("owner_email", "")
 	viper.SetDefault("transfer_ownership", false)
 	viper.SetDefault("debug", false)
+	viper.SetDefault("default_as", DefaultAsAuto)
 	viper.SetDefault("export.download_images", false)
 	viper.SetDefault("export.assets_dir", "./assets")
 	viper.SetDefault("import.upload_images", true)
@@ -137,6 +160,7 @@ func Init(cfgFile string) error {
 	_ = viper.BindEnv("owner_email", "FEISHU_OWNER_EMAIL")
 	_ = viper.BindEnv("transfer_ownership", "FEISHU_TRANSFER_OWNERSHIP")
 	_ = viper.BindEnv("debug", "FEISHU_DEBUG")
+	_ = viper.BindEnv("default_as", EnvDefaultAs)
 
 	// 4. 读取配置文件
 	if err := viper.ReadInConfig(); err != nil {
@@ -191,6 +215,9 @@ func Validate() error {
 		return clierr.Authf("缺少 app_secret，请通过以下方式之一设置:\n  1. 命令行: --bot-app-id cli_xxx --bot-app-secret xxx\n  2. 环境变量: export FEISHU_APP_SECRET=xxx\n  3. 配置文件: %s", cfgPath)
 	}
 	if err := CheckBaseURL(cfg.BaseURL); err != nil {
+		return err
+	}
+	if _, err := NormalizeDefaultAs(cfg.DefaultAs); err != nil {
 		return err
 	}
 	return nil
@@ -262,6 +289,10 @@ allow_cross_origin_redirect: false
 owner_email: ""              # 文档创建后自动授权的邮箱（环境变量: FEISHU_OWNER_EMAIL）
 transfer_ownership: false    # 创建文档后是否转移所有权给 owner_email（默认仅添加 full_access）
 debug: false
+# 默认身份（环境变量: FEISHU_DEFAULT_AS）：auto（默认，各命令按自身默认身份执行）| user
+# user：支持本人身份的命令未传 --as 时一律用 auth login 的登录态（过期自动刷新），
+# 拿不到可用的 User Token 时报错、不回落 Bot；只支持 Bot 的命令不受影响
+default_as: "auto"
 
 # 导出配置
 export:

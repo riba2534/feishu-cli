@@ -46,7 +46,10 @@ var getBoardImageCmd = &cobra.Command{
 		if err := validateOutputPath(outputPath, ""); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		savedPath, err := client.GetBoardImage(whiteboardID, outputPath, userAccessToken)
 		if err != nil {

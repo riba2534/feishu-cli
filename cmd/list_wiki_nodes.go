@@ -56,7 +56,13 @@ var listWikiNodesCmd = &cobra.Command{
 			return err
 		}
 
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		userToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 		res, err := collectListPages(pageOpts, func(pageToken string) ([]*client.WikiNode, string, bool, error) {
 			return client.ListWikiNodes(spaceID, parentToken, pageSize, pageToken, userToken)
 		})

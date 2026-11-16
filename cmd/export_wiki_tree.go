@@ -91,7 +91,13 @@ var exportWikiTreeCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		// 1. 取根节点信息（自动得到 SpaceID，无需用户传）
 		fmt.Printf("正在解析根节点: %s\n", rootToken)

@@ -67,7 +67,10 @@ var taskSectionListCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		token, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 		var all []*client.TaskSection
 		var next string
 		var more bool
@@ -131,7 +134,10 @@ var taskSectionTasksCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		token, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 		res, err := collectTaskPages(pageToken, pageAll, func(tok string) (*client.TaskPage, error) {
 			return client.ListSectionTasks(args[0], completed, tok, 50, token)
 		})
@@ -269,7 +275,10 @@ var tasklistSearchCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		token, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 		items, next, more, err := client.SearchTasklists(client.TasklistSearchOptions{
 			Query: query, CreatorIDs: splitAndTrim(creator), PageToken: pageToken, PageSize: pageSize,
 		}, token)

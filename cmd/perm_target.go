@@ -100,7 +100,7 @@ func permIdentityLabel(cmd *cobra.Command) string {
 	if strings.TrimSpace(resolveFlagUserToken(cmd)) != "" {
 		return "user"
 	}
-	return "bot"
+	return effectiveIdentityLabel(cmd, "bot")
 }
 
 var nonJSONStatusPattern = regexp.MustCompile(`StatusCode:\s*(\d+)`)

@@ -154,7 +154,10 @@ var docMediaInsertCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		// wiki 节点必须先换出底层 docx 的 obj_token：块接口与素材上传的 drive_route_token
 		// 都只认文档 token，直接使用 wiki token 会导致创建块失败或素材挂错路由。

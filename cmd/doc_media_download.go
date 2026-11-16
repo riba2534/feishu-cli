@@ -90,7 +90,10 @@ var docMediaDownloadCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		// --doc-token 支持 URL 与 wiki：换出底层文档 token/类型（--extra 优先，此时不解析）
 		if strings.TrimSpace(docToken) != "" && strings.TrimSpace(extra) == "" {

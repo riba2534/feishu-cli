@@ -40,7 +40,10 @@ var msgMgetCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		userToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		result, err := client.BatchGetMessages(messageIDs, userToken, cardContentType)
 		if err != nil {

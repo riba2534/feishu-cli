@@ -19,6 +19,7 @@ var configGetCmd = &cobra.Command{
   base_url             API 地址
   owner_email          文档所有者邮箱
   transfer_ownership   创建文档后是否转移所有权
+  default_as           默认身份 auto|user（user：支持本人身份的命令默认用登录态，不回落 Bot）
   debug                调试模式
 
 示例:

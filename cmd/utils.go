@@ -39,10 +39,23 @@ func flagInt(cmd *cobra.Command, name string) int {
 	return v
 }
 
-// resolveOptionalUserToken 解析显式指定的 user_access_token（可选）
-// 仅检查 --user-access-token 参数和 FEISHU_USER_ACCESS_TOKEN 环境变量，
-// 不自动从 token.json 加载，确保能用 App Token 的 API 默认使用 App Token（租户身份）
-func resolveOptionalUserToken(cmd *cobra.Command) string {
+// resolveOptionalUserToken 解析写类命令的 user_access_token（可选）
+// 默认仅检查 --user-access-token 参数和 FEISHU_USER_ACCESS_TOKEN 环境变量，
+// 不自动从 token.json 加载，确保能用 App Token 的 API 默认使用 App Token（租户身份）。
+// default_as=user 时（见 identity_default.go）未显式指定则改用登录态 User Token，拿不到时报错、不回落 Bot。
+func resolveOptionalUserToken(cmd *cobra.Command) (string, error) {
+	if token := resolveExplicitUserToken(cmd); token != "" {
+		return token, nil
+	}
+	if defaultAsUserApplies(cmd) {
+		return requireDefaultAsUserToken(cmd)
+	}
+	return "", nil
+}
+
+// resolveExplicitUserToken 只读显式指定的 User Token（--user-access-token > FEISHU_USER_ACCESS_TOKEN），
+// 不读 token.json、不受 default_as 影响。供只支持 Bot 的命令判断「是否传了会被忽略的 User Token」。
+func resolveExplicitUserToken(cmd *cobra.Command) string {
 	if flagToken, _ := cmd.Flags().GetString("user-access-token"); flagToken != "" {
 		return flagToken
 	}
@@ -64,7 +77,18 @@ func resolveFlagUserToken(cmd *cobra.Command) string {
 // 1. 若未配置任何 User 身份（无 flag、无 env、无 token.json、无 config），返回 "", nil（安全回退到 Tenant/Bot）
 // 2. 若配置了 User 身份且解析/刷新成功，返回 token, nil
 // 3. 若检测到 User 身份配置，但解析或刷新失败，必须 fail-closed 返回具体错误，禁止切回 Bot
+//
+// default_as=user 且未显式传 --as 时改为必须 User Token（拿不到报错，不回落 Bot）。
 func resolveAutoUserToken(cmd *cobra.Command) (string, error) {
+	if defaultAsUserApplies(cmd) {
+		return requireDefaultAsUserToken(cmd)
+	}
+	return resolveAutoUserTokenIgnoringDefaultAs(cmd)
+}
+
+// resolveAutoUserTokenIgnoringDefaultAs 是不看 default_as 的 auto 解析，
+// 仅供「本次实际只能用 Bot」的分支（如 event consume 订阅的 key 都不支持 user）使用。
+func resolveAutoUserTokenIgnoringDefaultAs(cmd *cobra.Command) (string, error) {
 	flagToken, _ := cmd.Flags().GetString("user-access-token")
 	cfg := config.Get()
 	token, err := auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
@@ -85,6 +109,9 @@ func resolveAutoUserToken(cmd *cobra.Command) (string, error) {
 // 差集计算随之变大，--delete-local 会把用户本地文件当作"远端已不存在"而删掉。
 // 未配置 User Token（纯 Bot 场景）仍正常放行，属预期用法。
 func resolveOptionalUserTokenForDestructive(cmd *cobra.Command, opName string) (string, error) {
+	if defaultAsUserApplies(cmd) {
+		return requireDefaultAsUserToken(cmd)
+	}
 	flagToken, _ := cmd.Flags().GetString("user-access-token")
 	cfg := config.Get()
 	token, err := auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
@@ -109,7 +136,12 @@ func resolveOptionalUserTokenForDestructive(cmd *cobra.Command, opName string) (
 //     仍回退 Bot 以保持读命令可用，但必须在 stderr 明确告警。
 //     否则用户会拿到 Bot 视角的空结果或「无权限」，却以为是自己的 User 身份在查
 //     （同一台机器上 --as 类命令对同样的 token 会 fail-closed，两种行为互相矛盾）。
-func resolveOptionalUserTokenWithFallback(cmd *cobra.Command) string {
+//
+// default_as=user 时不回退：拿不到可用 User Token 直接返回错误（唯一可能返回 error 的情形）。
+func resolveOptionalUserTokenWithFallback(cmd *cobra.Command) (string, error) {
+	if defaultAsUserApplies(cmd) {
+		return requireDefaultAsUserToken(cmd)
+	}
 	flagToken, _ := cmd.Flags().GetString("user-access-token")
 	cfg := config.Get()
 	token, err := auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
@@ -120,7 +152,7 @@ func resolveOptionalUserTokenWithFallback(cmd *cobra.Command) string {
 		} else if cfg.Debug {
 			fmt.Fprintf(os.Stderr, "[Debug] 未配置 User Token，使用 App Token\n")
 		}
-		return ""
+		return "", nil
 	}
 	if cfg.Debug {
 		source := "token.json/config"
@@ -131,7 +163,7 @@ func resolveOptionalUserTokenWithFallback(cmd *cobra.Command) string {
 		}
 		fmt.Fprintf(os.Stderr, "[Debug] 使用 User Access Token (来源: %s)\n", source)
 	}
-	return token
+	return token, nil
 }
 
 // resolveRequiredUserToken 解析 user_access_token（必需）
@@ -161,7 +193,12 @@ func requireUserToken(cmd *cobra.Command, cmdName string) (string, error) {
 //	             检测到 User 身份但刷新/解析失败时 fail-closed 报错，防止未授权切 Bot；
 //	bot/tenant/app: 强制 App Token（返回空字符串）；
 //	user: 强制 User Token，缺失则报错。
+//
+// 未显式传 --as 且 default_as=user 时按 user 解析（无论命令自身 --as 默认值是什么），失败报错不回落 Bot。
 func resolveIdentityToken(cmd *cobra.Command) (string, error) {
+	if defaultAsUserApplies(cmd) {
+		return requireDefaultAsUserToken(cmd)
+	}
 	as, _ := cmd.Flags().GetString("as")
 	switch strings.ToLower(strings.TrimSpace(as)) {
 	case "", "auto":

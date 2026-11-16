@@ -151,7 +151,10 @@ var slidesScreenshotCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 		if !renderMode {
 			id, err := resolvePresentationArg(args[0], userAccessToken)
 			if err != nil {

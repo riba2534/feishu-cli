@@ -79,7 +79,10 @@ var calendarFreebusyCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		token, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 		if len(ids) == 0 {
 			if token == "" {
 				return clierr.Usagef("未指定 --user-id：Bot 身份没有\"本人\"日历，请用 --user-id 指定要查询的用户（或先 auth login 以本人身份查询）")

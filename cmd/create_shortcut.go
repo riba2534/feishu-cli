@@ -56,7 +56,10 @@ var createShortcutCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		info, err := client.CreateShortcut(targetFolder, fileToken, fileType, userAccessToken)
 		if err != nil {

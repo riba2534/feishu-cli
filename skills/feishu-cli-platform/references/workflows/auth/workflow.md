@@ -192,6 +192,7 @@ feishu-cli auth check --scope "search:docs:read" && feishu-cli search docs "关�
 | `refresh_failure` | 仅当上次刷新被服务端判定 refresh_token 终态失效（20026/20037/20064/20073）时出现：`code`/`error`/`description`/`at`。CLI 不会再自动刷新，需重新 `auth login` |
 | `scope` | 当前 token 已授权 scope（空格分隔） |
 | `cached_user` | 本地有用户缓存时出现：`open_id`/`user_id`/`union_id`/`name`，可用于确认"当前登录的是谁" |
+| `default_as` | 默认身份 `auto` / `user`（来自 `FEISHU_DEFAULT_AS` 或 config.yaml）；`user` 时支持本人身份的命令不传 `--as` 也用登录态，见 [身份选择](references/identity.md) |
 | `note` | 健康度提示文案 |
 | `verified` / `verify_error` | 仅 `--verify`：在线调 `user_info` 核验。access 过期时与业务命令同样走跨进程加锁刷新，并先校验 token 已绑定当前 App（未绑定的旧 token 直接校验失败，不会被静默绑定）；输出展示刷新后的状态 |
 | `profile` / `profile_source` | 当前选中的 profile 及来源（flag/env/pointer/fallback/legacy/none） |

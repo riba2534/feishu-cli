@@ -59,7 +59,13 @@ var downloadFileCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		if err := client.DownloadFileWithToken(fileToken, outputPath, userAccessToken, timeout); err != nil {
 			return err

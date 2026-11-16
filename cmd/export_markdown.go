@@ -86,7 +86,10 @@ docs_ai 引擎（--engine docs_ai，服务端导出，与 doc content-update / d
 		}
 
 		// 获取可选的 User Access Token（用于访问无 App 权限的文档）
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		// 支持 docx token、/docx/ URL 与 /wiki/ URL（wiki 经 node_by_token 换出底层 docx）
 		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)

@@ -45,7 +45,13 @@ var listWikiSpacesCmd = &cobra.Command{
 			return err
 		}
 
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		userToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 		res, err := collectListPages(pageOpts, func(pageToken string) ([]*client.WikiSpace, string, bool, error) {
 			return client.ListWikiSpaces(pageSize, pageToken, userToken)
 		})

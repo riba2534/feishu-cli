@@ -92,7 +92,13 @@ var taskSubtaskListCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		token, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		taskGuid, guidErr := parseTaskGUIDArg(args[0])
 		if guidErr != nil {

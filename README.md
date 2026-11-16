@@ -257,6 +257,12 @@ feishu-cli config init  # 生成模板后手动编辑填入凭证
 feishu-cli auth login
 ```
 
+（可选）希望文档、消息等默认以**本人身份**创建和发送（文档 owner 是自己、消息由自己发出），在 `config.yaml` 加一行
+`default_as: user`（或 `export FEISHU_DEFAULT_AS=user`）。打开后，凡是支持本人身份的命令在不传 `--as` 时都使用
+`auth login` 的登录态（过期自动刷新），不再需要每次传 `--as user` 或 `FEISHU_USER_ACCESS_TOKEN`；未登录或刷新失败时
+命令报错（退出码 3）而不是悄悄改用 Bot。只支持 Bot 的命令（如 `msg merge-forward`、`chat create`、`vc bot meeting-join`）
+不受影响；显式 `--as bot|user|auto` 始终优先。默认值 `auto` 保持现有行为。
+
 ### 验证安装
 
 ```bash
@@ -763,6 +769,7 @@ feishu-cli auth logout
 - `auth token --as bot` 走官方 Accounts OAuth v3 `client_credentials`；不可与 `--user-access-token` 同时使用
 - `offline_access` 由 CLI 自动追加，无需手动声明
 - Token 优先级：`--user-access-token` 参数 > `FEISHU_USER_ACCESS_TOKEN` 环境变量 > `token.json` > `config.yaml`
+- 默认身份：`default_as: user`（或 `FEISHU_DEFAULT_AS=user`）让支持本人身份的命令不传 `--as` 时也走上述 User Token 链，拿不到时报错、不回落 Bot；默认 `auto` 不改变各命令自身的默认身份
 - 审批任务查询会缓存当前登录用户资料到 `~/.feishu-cli/user_profile.json`，登录态变化或执行 `auth logout` 时会自动清理
 - `base_url` 默认仅官方 HTTPS。自定义远端 / 明文 HTTP / 带 body 跨源重定向需显式 opt-in（`FEISHU_ALLOW_CUSTOM_BASE_URL`、`FEISHU_ALLOW_INSECURE_HTTP`、`FEISHU_ALLOW_CROSS_ORIGIN_REDIRECT`）
 
@@ -1848,7 +1855,7 @@ make release-package VERSION=vX.Y.Z
 <details>
 <summary><b>用 CLI 导入的文档，自己在飞书里看不到？</b></summary>
 
-`doc import` 默认以 Bot 身份建档，文档归属于应用。已 `auth login` 时，CLI 会在 Bot 创建文档、表格、多维表格、文件夹、知识库节点、演示文稿后自动给当前登录用户授予 `full_access`（输出中的 `permission_grant` 字段给出结果）；未登录时会在 stderr 提示。也可手动授权：`feishu-cli perm add <doc_id> --doc-type docx --member-type email --member-id you@example.com --perm full_access`，或配置 `owner_email` 让技能流程转移所有权（见 AI 技能集成）。
+`doc import` 默认以 Bot 身份建档，文档归属于应用。已 `auth login` 时，CLI 会在 Bot 创建文档、表格、多维表格、文件夹、知识库节点、演示文稿后自动给当前登录用户授予 `full_access`（输出中的 `permission_grant` 字段给出结果）；未登录时会在 stderr 提示。也可手动授权：`feishu-cli perm add <doc_id> --doc-type docx --member-type email --member-id you@example.com --perm full_access`，或配置 `owner_email` 让技能流程转移所有权（见 AI 技能集成）。希望 CLI 写入一律以本人身份执行（文档直接归属自己），可在 `config.yaml` 设置 `default_as: user`（见[配置凭证](#配置凭证)）。
 </details>
 
 <details>

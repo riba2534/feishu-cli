@@ -64,7 +64,10 @@ JSON 输出 permission_grant（granted/skipped/failed）；以 User 身份创建
 	RunE: func(cmd *cobra.Command, args []string) error {
 		title, _ := cmd.Flags().GetString("title")
 		folder, _ := cmd.Flags().GetString("folder")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserTokenOrPreview(cmd)
+		if err != nil {
+			return err
+		}
 
 		if cmd.Flags().Changed("content") || cmd.Flags().Changed("content-file") ||
 			cmd.Flags().Changed("parent-token") || cmd.Flags().Changed("parent-position") || cmd.Flags().Changed("doc-format") ||

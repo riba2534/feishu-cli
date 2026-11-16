@@ -70,7 +70,10 @@ var chatListCmd = &cobra.Command{
 		}
 
 		// User 优先、Tenant 兜底：已登录列本人加入的群，未登录列 Bot 加入的群。
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		token, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		// Bot 身份出于隐私不能列单聊（对齐官方 bot_strip_p2p）：只要 p2p 时直接报错，混合时去掉 p2p 并提示。
 		effectiveTypes, err := resolveChatListTypesForIdentity(cmd.ErrOrStderr(), types, token)

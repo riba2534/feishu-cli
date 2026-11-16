@@ -307,9 +307,18 @@ func resolveEventSubscribeIdentity(cmd *cobra.Command, defs []event.KeyDefinitio
 		return "bot", "", tenantToken, nil
 	}
 	if !event.AnySupportsBot(defs) {
-		return "user", resolveOptionalUserTokenWithFallback(cmd), "", nil
+		userToken, err = resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return "", "", "", err
+		}
+		return "user", userToken, "", nil
 	}
-	userToken, err = resolveAutoUserToken(cmd)
+	if defaultAsUserApplies(cmd) && event.ResolveAutoIdentity(defs, true) != "user" {
+		// default_as=user 但所选订阅 key 只支持 Bot：本次只能用 Bot，按原 auto 规则解析（只支持 Bot 的场景不受 default_as 影响）
+		userToken, err = resolveAutoUserTokenIgnoringDefaultAs(cmd)
+	} else {
+		userToken, err = resolveAutoUserToken(cmd)
+	}
 	if err != nil {
 		return "", "", "", err
 	}

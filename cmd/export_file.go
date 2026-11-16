@@ -58,7 +58,10 @@ var exportFileCmd = &cobra.Command{
 		}
 
 		// 获取可选的 User Access Token
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		// 支持裸 token 与 URL：/docx/ /sheets/ /base/ 等按路径推断类型，/wiki/ 解包为底层文档。
 		// 显式 --doc-type 与 URL 推断冲突时报错；裸 token 沿用 --doc-type（默认 docx）。

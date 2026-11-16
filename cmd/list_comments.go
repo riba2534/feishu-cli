@@ -75,7 +75,13 @@ var listCommentsCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		res, err := collectListPages(pageOpts, func(pageToken string) ([]*client.Comment, string, bool, error) {
 			return client.ListCommentsWithOptions(client.ListCommentsOptions{

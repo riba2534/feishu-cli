@@ -40,7 +40,13 @@ var resolveCommentCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		if err := client.PatchComment(fileToken, commentID, fileType, true, userAccessToken); err != nil {
 			return err
@@ -85,7 +91,13 @@ var unresolveCommentCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		if err := client.PatchComment(fileToken, commentID, fileType, false, userAccessToken); err != nil {
 			return err

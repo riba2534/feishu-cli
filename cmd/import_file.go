@@ -57,7 +57,10 @@ Bot 身份导入时自动给当前 CLI 登录用户授予新文档 full_access�
 		if _, err := safefile.StatInputFile(localPath); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		if docName == "" {
 			docName = strings.TrimSuffix(filepath.Base(localPath), filepath.Ext(localPath))

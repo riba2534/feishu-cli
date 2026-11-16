@@ -113,6 +113,9 @@ func isNetworkFailure(err error) bool {
 
 // resumeIdentity 返回续查命令应携带的身份（与创建任务时一致，避免续查时静默切到另一身份）。
 func resumeIdentity(cmd *cobra.Command) string {
+	if cmd != nil && defaultAsUserApplies(cmd) {
+		return "user"
+	}
 	if cmd != nil {
 		if as, err := cmd.Flags().GetString("as"); err == nil {
 			if as = strings.ToLower(strings.TrimSpace(as)); as != "" {

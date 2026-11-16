@@ -65,7 +65,10 @@ var listReplyCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		res, err := collectListPages(pageOpts, func(pageToken string) ([]*client.CommentReply, string, bool, error) {
 			return client.ListCommentReplies(fileToken, commentID, fileType, pageSize, pageToken, userAccessToken)
@@ -162,7 +165,10 @@ var addReplyCmd = &cobra.Command{
 		}
 
 		// 添加属于写操作：默认保持当前 App/Bot 身份，仅显式 flag/env 时切换为 User。
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		reply, err := client.CreateCommentReply(fileToken, commentID, fileType, text, userAccessToken)
 		if err != nil {
@@ -219,7 +225,10 @@ var deleteReplyCmd = &cobra.Command{
 			return err
 		}
 		// 删除属于写操作：默认保持当前 App/Bot 身份，仅显式 flag/env 时切换为 User。
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		if err := client.DeleteCommentReply(fileToken, commentID, replyID, fileType, userAccessToken); err != nil {
 			return err

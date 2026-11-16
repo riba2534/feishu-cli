@@ -49,7 +49,13 @@ func runDocTableInsertColumn(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	userAccessToken := resolveOptionalUserToken(cmd)
+	userAccessToken, err := resolveOptionalUserToken(cmd)
+
+	if err != nil {
+
+		return err
+
+	}
 	// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {

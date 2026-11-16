@@ -85,7 +85,13 @@ var userSearchCmd = &cobra.Command{
 			return runContactUserSearch(cmd, searchOpts, output)
 		}
 
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		userToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		// --email / --mobile 路径
 		var emails, mobiles []string

@@ -68,7 +68,7 @@ var mergeForwardMsgCmd = &cobra.Command{
 
 		// 合并转发接口只接受 tenant_access_token（Bot 身份）：传入的 User Token 会被
 		// 服务端拒绝或被 SDK 静默改用 Bot，这里固定 Bot 并明确提示，避免误以为以本人身份转发。
-		if userToken := resolveOptionalUserToken(cmd); userToken != "" {
+		if userToken := resolveExplicitUserToken(cmd); userToken != "" {
 			fmt.Fprintln(cmd.ErrOrStderr(), "[提示] msg merge-forward 仅支持 Bot（应用）身份，已忽略 User Access Token，以 Bot 身份执行（Bot 需能看到这些消息且在目标会话中）")
 		}
 

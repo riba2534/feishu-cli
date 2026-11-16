@@ -78,7 +78,13 @@ var deleteFileCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		// 危险操作确认（--force / --yes 跳过；非交互且未确认时报错退出码 10）
 		if !force {

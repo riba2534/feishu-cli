@@ -30,7 +30,7 @@ const sheetAsFlagHelp = "身份: bot(App Token) | user(User Token) | auto(User �
 func resolveSheetUserToken(cmd *cobra.Command) (string, error) {
 	f := cmd.Flags().Lookup("as")
 	if f == nil || !f.Changed {
-		return resolveOptionalUserTokenWithFallback(cmd), nil
+		return resolveOptionalUserTokenWithFallback(cmd)
 	}
 	if err := validateIdentityAs(cmd); err != nil {
 		return "", err

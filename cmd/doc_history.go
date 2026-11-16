@@ -133,7 +133,13 @@ func runDocHistoryList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+	userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+	if err != nil {
+
+		return err
+
+	}
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {
 		return err
@@ -224,7 +230,10 @@ func runDocHistoryRevert(cmd *cobra.Command, args []string) error {
 		return clierr.Usagef("--wait-timeout-ms 必须在 0-30000 之间，当前: %d", waitMs)
 	}
 	body := map[string]any{"history_version_id": versionID, "wait_timeout_ms": waitMs}
-	userAccessToken := resolveOptionalUserToken(cmd)
+	userAccessToken, err := resolveOptionalUserTokenOrPreview(cmd)
+	if err != nil {
+		return err
+	}
 
 	if dryRun {
 		// dry-run 不发任何请求：wiki URL 只做离线解析
@@ -275,7 +284,13 @@ func runDocHistoryRevertStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+	userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+	if err != nil {
+
+		return err
+
+	}
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {
 		return err

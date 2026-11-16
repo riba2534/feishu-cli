@@ -152,7 +152,10 @@ var sendMessageCmd = &cobra.Command{
 		}
 
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
-		token := resolveOptionalUserToken(cmd)
+		token, err := resolveOptionalUserTokenOrPreview(cmd)
+		if err != nil {
+			return err
+		}
 		if dryRun {
 			// 预览：不读配置之外的任何远端资源，本地文件用占位 key，不发送。
 			contentInput.dryRun = true
