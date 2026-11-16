@@ -20,7 +20,7 @@ PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4
 class VerifyTests(unittest.TestCase):
     def run_case(self, failure=None, errors=None, create_screenshot=True, nodes=1):
         with tempfile.TemporaryDirectory() as tmp:
-            page = Path(tmp) / "page.html"
+            page = Path(tmp).resolve() / "page.html"
             page.write_text("<html><body>test</body></html>")
             # 旧截图不能让本次截图失败蒙混过关。
             page.with_name("page.verify.png").write_bytes(PNG)
