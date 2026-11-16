@@ -40,7 +40,7 @@ class FindCliTests(unittest.TestCase):
 
     def test_chooses_newest_executable_from_repo_root_or_bin(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             script = self._make_repo(root)
             root_cli = root / "feishu-cli"
             bin_cli = root / "bin/feishu-cli"
@@ -57,7 +57,7 @@ class FindCliTests(unittest.TestCase):
 
     def test_ignores_non_executable_repo_artifact(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             script = self._make_repo(root)
             root_cli = root / "feishu-cli"
             root_cli.write_text("not executable\n", encoding="utf-8")
