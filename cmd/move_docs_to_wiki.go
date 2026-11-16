@@ -78,7 +78,13 @@ var moveDocsToWikiCmd = &cobra.Command{
 			return err
 		}
 
-		userToken := resolveOptionalUserToken(cmd)
+		userToken, err := resolveOptionalUserToken(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 		moveDocsIdentity := "bot"
 		if userToken != "" {
 			moveDocsIdentity = "user"

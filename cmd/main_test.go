@@ -19,7 +19,7 @@ func TestMain(m *testing.M) {
 	for _, k := range []string{"HOME", "USERPROFILE"} {
 		_ = os.Setenv(k, home)
 	}
-	for _, k := range []string{"FEISHU_USER_ACCESS_TOKEN", "FEISHU_PROFILE", "FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_CLI_SKILLS_DIR"} {
+	for _, k := range []string{"FEISHU_USER_ACCESS_TOKEN", "FEISHU_PROFILE", "FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_CLI_SKILLS_DIR", "FEISHU_DEFAULT_AS"} {
 		_ = os.Unsetenv(k)
 	}
 	// 只改环境变量、不替换 profile.homeFunc：个别测试会再用 t.Setenv("HOME", ...) 指定自己的家目录

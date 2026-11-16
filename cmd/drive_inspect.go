@@ -152,7 +152,10 @@ var driveInspectCmd = &cobra.Command{
 		}
 
 		// auto token：User 优先，回退 Bot
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		userToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 		opts.UserAccessToken = userToken
 
 		// Step 0: 裸 token 未指定 --type 时，通过 query_by_token 识别真实类型（wiki 节点自动识别）

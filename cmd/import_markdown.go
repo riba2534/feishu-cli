@@ -436,7 +436,10 @@ JSON 输出 permission_grant；导入到已有文档（--document-id）或 User 
 			return err
 		}
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
 		var progressOut io.Writer = os.Stdout
 		if output == "json" {
 			progressOut = cmd.ErrOrStderr()

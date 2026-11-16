@@ -48,7 +48,10 @@ Bot 身份创建时自动给当前 CLI 登录用户授予 full_access（JSON 输
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		token, url, err := client.CreateFolder(name, parentToken, userAccessToken)
 		if err != nil {

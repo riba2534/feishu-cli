@@ -140,5 +140,10 @@ func init() {
 	getUserInfoCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	getUserInfoCmd.Flags().String("user-access-token", "", "User Access Token（--as user/auto 时使用）")
 	// 默认 bot 保持旧行为（应用身份、字段最全）；--as user 走 basic_batch。
+	// user info 的 User 身份只返回姓名类字段，default_as=user 不改变其默认 Bot 身份（需要时显式 --as user）
+	if getUserInfoCmd.Annotations == nil {
+		getUserInfoCmd.Annotations = map[string]string{}
+	}
+	getUserInfoCmd.Annotations[ignoreDefaultAsAnnotation] = "1"
 	getUserInfoCmd.Flags().String("as", "bot", "身份: bot（默认）| user（basic_batch，仅姓名）| auto")
 }

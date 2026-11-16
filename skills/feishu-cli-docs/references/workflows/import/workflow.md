@@ -29,7 +29,8 @@
 - 默认 **Bot 身份**，只需 App 凭证，无需 `auth login`。新建文档时 CLI 会自动给当前 CLI 登录用户授予 `full_access`
   （输出 `permission_grant`）；追加到已有文档或以 User 身份执行时不触发。
 - `--document-id` 接受 document_id、`/docx/` URL 与 `/wiki/` URL（wiki 自动解析为底层 docx）；Bot 必须对该文档有编辑权限，
-  要以本人身份写入用户自己的文档时显式传 `--user-access-token "$(feishu-cli auth token --as user)"`。
+  要以本人身份写入用户自己的文档时显式传 `--user-access-token "$(feishu-cli auth token --as user)"`；
+  `config get default_as` 为 `user` 时默认即本人身份（文档 owner 为登录用户），不必注入。
 - Markdown 必须是合法 UTF-8（非法字节直接拒绝）；合法 UTF-8 中的 `U+FFFD` 替换字符不会被拦截，导入前自查（见 `../write/workflow.md`）。
 
 ## 执行流程

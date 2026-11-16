@@ -110,6 +110,7 @@ func (r *listPageResult[T]) pageHint() (bool, string, bool) {
 
 // resolveIdentityWithLegacyDefault 为"新增 --as 但默认保持旧身份行为"的命令解析身份：
 //   - 显式传了 --as（bot|user|auto）→ 走 resolveIdentityToken（auto 已配置 User 但不可用时 fail-closed）；
+//   - 未传 --as 且 default_as=user → 必须 User Token（拿不到报错，不回落 Bot）；
 //   - 未传 --as → 调用 legacy，保持命令原有的默认身份语义（避免破坏既有脚本）。
 //
 // 返回空字符串表示使用 App/Tenant Token。
@@ -117,17 +118,20 @@ func resolveIdentityWithLegacyDefault(cmd *cobra.Command, legacy func(*cobra.Com
 	if f := cmd.Flags().Lookup("as"); f != nil && f.Changed {
 		return resolveIdentityToken(cmd)
 	}
+	if defaultAsUserApplies(cmd) {
+		return requireDefaultAsUserToken(cmd)
+	}
 	return legacy(cmd)
 }
 
 // legacyBotUnlessExplicitUserToken：旧默认 = Bot，仅在显式 --user-access-token / FEISHU_USER_ACCESS_TOKEN 时切 User。
 func legacyBotUnlessExplicitUserToken(cmd *cobra.Command) (string, error) {
-	return resolveOptionalUserToken(cmd), nil
+	return resolveOptionalUserToken(cmd)
 }
 
 // legacyUserWithBotFallback：旧默认 = User 优先，User 不可用时 stderr 告警后回退 Bot（读类命令）。
 func legacyUserWithBotFallback(cmd *cobra.Command) (string, error) {
-	return resolveOptionalUserTokenWithFallback(cmd), nil
+	return resolveOptionalUserTokenWithFallback(cmd)
 }
 
 // addLegacyAsFlag 注册 --as；help 中说明"不传时保持旧默认身份"。

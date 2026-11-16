@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/riba2534/feishu-cli/internal/clierr"
 	"github.com/spf13/viper"
 )
 
@@ -504,4 +505,73 @@ func TestInit_ConfigDefaultsExposedToViper(t *testing.T) {
 	if c.TransferOwnership {
 		t.Errorf("TransferOwnership = %v, 期望 false", c.TransferOwnership)
 	}
+}
+
+func TestNormalizeDefaultAs(t *testing.T) {
+	for in, want := range map[string]string{"": DefaultAsAuto, "auto": DefaultAsAuto, " AUTO ": DefaultAsAuto, "user": DefaultAsUser, " User ": DefaultAsUser} {
+		got, err := NormalizeDefaultAs(in)
+		if err != nil || got != want {
+			t.Errorf("NormalizeDefaultAs(%q) = %q, %v；期望 %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"bot", "tenant", "me"} {
+		_, err := NormalizeDefaultAs(in)
+		if err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+			t.Errorf("NormalizeDefaultAs(%q) 应返回用法错误，得到 %v", in, err)
+		}
+	}
+}
+
+// default_as：未配置为 auto；config.yaml 可设 user；FEISHU_DEFAULT_AS 覆盖文件；非法值由 Validate 拦截。
+func TestInit_DefaultAs(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(EnvDefaultAs, "")
+	t.Setenv("FEISHU_APP_ID", "")
+	t.Setenv("FEISHU_APP_SECRET", "")
+	dir := t.TempDir()
+	write := func(body string) string {
+		p := filepath.Join(dir, "config.yaml")
+		if err := os.WriteFile(p, []byte("app_id: a\napp_secret: b\n"+body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	resetConfig()
+	if err := Init(write("")); err != nil {
+		t.Fatal(err)
+	}
+	if got := Get().DefaultAs; got != DefaultAsAuto {
+		t.Errorf("未配置 default_as 应默认 auto，得到 %q", got)
+	}
+
+	resetConfig()
+	if err := Init(write("default_as: user\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got := Get().DefaultAs; got != DefaultAsUser {
+		t.Errorf("config.yaml default_as: user 未生效，得到 %q", got)
+	}
+	if err := Validate(); err != nil {
+		t.Errorf("default_as: user 应通过 Validate: %v", err)
+	}
+
+	resetConfig()
+	t.Setenv(EnvDefaultAs, "auto")
+	if err := Init(write("default_as: user\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got := Get().DefaultAs; got != DefaultAsAuto {
+		t.Errorf("FEISHU_DEFAULT_AS 应覆盖 config.yaml，得到 %q", got)
+	}
+
+	resetConfig()
+	t.Setenv(EnvDefaultAs, "bot")
+	if err := Init(write("")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(); err == nil || !clierr.HasKind(err, clierr.KindUsage) {
+		t.Errorf("非法 default_as 应在 Validate 返回用法错误，得到 %v", err)
+	}
+	resetConfig()
 }

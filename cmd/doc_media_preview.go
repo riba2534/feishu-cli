@@ -69,7 +69,13 @@ var docMediaPreviewCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 		d, err := client.OpenMediaPreviewDownload(token, userAccessToken, timeout)
 		if err != nil {
 			return withMediaPreviewHint(err)

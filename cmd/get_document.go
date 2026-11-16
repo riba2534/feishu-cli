@@ -28,7 +28,13 @@ var getDocumentCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 		// 支持文档 ID、/docx/ URL 与 /wiki/ URL（wiki 自动解包为底层 docx 的 obj_token）
 		docID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 		if err != nil {

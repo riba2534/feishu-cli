@@ -37,7 +37,7 @@ var authStatusCmd = &cobra.Command{
 		token, err := auth.LoadToken()
 		if err != nil {
 			if output == "json" {
-				out := map[string]any{"logged_in": false, "error": err.Error(), "catalog": registry.Status()}
+				out := map[string]any{"logged_in": false, "error": err.Error(), "catalog": registry.Status(), "default_as": configuredDefaultAs()}
 				attachProfileContext(out)
 				return printJSON(out)
 			}
@@ -47,16 +47,18 @@ var authStatusCmd = &cobra.Command{
 		if token == nil {
 			if output == "json" {
 				out := map[string]any{
-					"logged_in": false,
-					"identity":  "bot",
-					"note":      "未登录用户身份，仅可使用应用身份（App Token）能力",
-					"catalog":   registry.Status(),
+					"logged_in":  false,
+					"identity":   "bot",
+					"note":       "未登录用户身份，仅可使用应用身份（App Token）能力",
+					"catalog":    registry.Status(),
+					"default_as": configuredDefaultAs(),
 				}
 				attachProfileContext(out)
 				return printJSON(out)
 			}
 			fmt.Println("授权状态: 未登录")
 			printProfileContextHuman()
+			printDefaultAsHuman()
 			printCatalogHuman()
 			fmt.Println("  使用 feishu-cli auth login 进行授权")
 			return nil
@@ -117,6 +119,7 @@ var authStatusCmd = &cobra.Command{
 			"refresh_token_present": refreshPresent,
 			"health":                health,
 			"catalog":               registry.Status(),
+			"default_as":            configuredDefaultAs(),
 		}
 		if note != "" {
 			result["note"] = note
@@ -171,6 +174,7 @@ var authStatusCmd = &cobra.Command{
 		// 人类可读输出
 		fmt.Printf("授权状态: 已登录（%s）\n", status)
 		printProfileContextHuman()
+		printDefaultAsHuman()
 		fmt.Printf("  Access Token:   %s\n", auth.MaskToken(token.AccessToken))
 
 		if token.IsAccessTokenValid() {
@@ -279,4 +283,11 @@ func verifyStoredUserToken(token *auth.TokenStore, appID, appSecret, baseURL str
 		return fresh, false, err.Error()
 	}
 	return fresh, true, ""
+}
+
+// printDefaultAsHuman 在 default_as=user 时提示默认身份（auto 为默认值，不额外输出，保持原有展示）。
+func printDefaultAsHuman() {
+	if configuredDefaultAs() == config.DefaultAsUser {
+		fmt.Printf("  默认身份:       user（default_as，%s；支持本人身份的命令未传 --as 时用登录态，不回落 Bot）\n", defaultAsSource())
+	}
 }

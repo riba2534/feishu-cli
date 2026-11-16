@@ -164,6 +164,6 @@ func resolveMirrorIdentity(cmd *cobra.Command, destructive bool, opName string) 
 		if destructive {
 			return resolveOptionalUserTokenForDestructive(c, opName)
 		}
-		return resolveOptionalUserTokenWithFallback(c), nil
+		return resolveOptionalUserTokenWithFallback(c)
 	})
 }

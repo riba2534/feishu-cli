@@ -61,7 +61,10 @@ var boardExportCodeCmd = &cobra.Command{
 				return err
 			}
 		}
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		raw, err := client.GetBoardNodes(whiteboardID, userAccessToken)
 		if err != nil {

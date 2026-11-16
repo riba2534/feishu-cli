@@ -88,7 +88,10 @@ var moveWikiNodeCmd = &cobra.Command{
 
 		// 先通过 node_by_token 获取节点信息（当前 space_id 与真实 node_token）。
 		// 输入可能是挂载在知识库中的文档 obj_token，移动接口必须使用响应里的 node_token。
-		token := resolveOptionalUserToken(cmd)
+		token, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
 		node, err := client.ResolveWikiNode(nodeToken, token)
 		if err != nil {
 			return fmt.Errorf("获取节点信息失败: %w", err)

@@ -84,7 +84,10 @@ var calendarRoomFindCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		token, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		baseReq := &client.RoomFindRequest{
 			City:            strings.TrimSpace(city),

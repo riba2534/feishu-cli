@@ -178,7 +178,10 @@ func runSlidesHistoryList(cmd *cobra.Command, args []string) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+	userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+	if err != nil {
+		return err
+	}
 	presentationID, err := resolvePresentationArg(args[0], userAccessToken)
 	if err != nil {
 		return err

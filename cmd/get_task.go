@@ -35,7 +35,10 @@ var getTaskCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		token, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		task, err := client.GetTask(taskGuid, token)
 		if err != nil {

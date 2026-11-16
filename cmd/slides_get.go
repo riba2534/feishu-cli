@@ -82,7 +82,10 @@ var slidesGetCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		// 只按 URL 路径前缀识别 /slides/ 与 /wiki/；把 docx 等其他 URL 原样当 ID 会得到误导性的 404
 		presentationID, err := resolvePresentationArg(args[0], userAccessToken)

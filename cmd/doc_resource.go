@@ -203,7 +203,13 @@ func runDocResourceDownload(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+	userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+	if err != nil {
+
+		return err
+
+	}
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {
 		return err
@@ -344,7 +350,13 @@ func runDocResourceUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	userAccessToken := resolveOptionalUserToken(cmd)
+	userAccessToken, err := resolveOptionalUserToken(cmd)
+
+	if err != nil {
+
+		return err
+
+	}
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {
 		return err
@@ -409,7 +421,13 @@ func runDocResourceDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	userAccessToken := resolveOptionalUserToken(cmd)
+	userAccessToken, err := resolveOptionalUserToken(cmd)
+
+	if err != nil {
+
+		return err
+
+	}
 	documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 	if err != nil {
 		return err

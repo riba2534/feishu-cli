@@ -53,7 +53,10 @@ var moveFileCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		taskID, err := client.MoveFileWithToken(fileToken, targetFolder, fileType, userAccessToken)
 		if err != nil {

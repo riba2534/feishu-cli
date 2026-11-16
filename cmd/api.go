@@ -587,6 +587,10 @@ func resolveAPITokenDryRun(cmd *cobra.Command, as string) ([]larkcore.AccessToke
 	flagToken, _ := cmd.Flags().GetString("user-access-token")
 	cfg := config.Get()
 	hasUserToken := auth.HasUserTokenConfigured(flagToken, cfg.UserAccessToken)
+	if as == "" || as == "auto" {
+		// 未显式 --as 且 default_as=user：与实调一致按 user 预览
+		as = effectiveIdentityLabel(cmd, as)
+	}
 
 	switch as {
 	case "", "auto":

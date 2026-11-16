@@ -582,6 +582,8 @@ func validateVCBotAs(cmd *cobra.Command) error {
 // peekVCBotEventsIdentity 供 dry-run：只静态探测身份，不刷新、不联网、不写 token。
 func peekVCBotEventsIdentity(cmd *cobra.Command) (identity string, err error) {
 	as, _ := cmd.Flags().GetString("as")
+	// 未显式 --as 且 default_as=user：与实调一致按 user 预览
+	as = effectiveIdentityLabel(cmd, as)
 	switch strings.ToLower(strings.TrimSpace(as)) {
 	case "", "auto":
 		flagToken, _ := cmd.Flags().GetString("user-access-token")

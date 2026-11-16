@@ -28,7 +28,11 @@ var wikiSpaceGetCmd = &cobra.Command{
 		spaceID := args[0]
 		output, _ := cmd.Flags().GetString("output")
 
-		space, err := client.GetWikiSpace(spaceID, resolveOptionalUserTokenWithFallback(cmd))
+		userToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
+		space, err := client.GetWikiSpace(spaceID, userToken)
 		if err != nil {
 			return err
 		}

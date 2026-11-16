@@ -67,7 +67,10 @@ var exportWikiCmd = &cobra.Command{
 		}
 
 		// 获取可选的 User Access Token（用于访问无 App 权限的文档）
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		// 1. 获取节点信息
 		fmt.Printf("正在获取节点信息: %s\n", nodeToken)

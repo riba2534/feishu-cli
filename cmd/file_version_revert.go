@@ -45,7 +45,13 @@ var revertVersionCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		if err := client.RevertFileVersion(fileToken, version, userAccessToken); err != nil {
 			return err

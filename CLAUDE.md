@@ -94,6 +94,9 @@ export FEISHU_APP_ID=cli_xxx
 export FEISHU_APP_SECRET=xxx
 
 # 配置文件 (~/.feishu-cli/config.yaml 或 profiles/<name>/config.yaml)
+
+# 默认以本人身份执行支持 User 的命令（opt-in；未登录/刷新失败报错，不回落 Bot）
+export FEISHU_DEFAULT_AS=user    # 或 config.yaml: default_as: user
 ```
 
 ### 退出码
@@ -125,6 +128,7 @@ export FEISHU_APP_SECRET=xxx
   - 默认 **auto 但告警回退**（已配置 User 不可用时 stderr 告警后改用 Bot，不 fail-closed）：`msg history`（群聊入口；`--user-id/--user-email` 私聊入口必须 User）、`chat member list/add/remove`、`wiki space-list`。
   - 默认 **user**：`vc search/detail/recording/notes`、`vc note detail`、`vc meeting list-active`、`minutes search/get/download/apply-permission`（实测端点接受 Bot，Bot 缺 scope 时报 99991672）。
   - 默认 **bot**：`okr` 全家桶（OKR 的 user scope 通常未随默认登录域授予；`cycle list` 默认走 v2 用户周期、user/tenant 双支持，`--tenant` 查旧租户周期仅收 Tenant；例外：`okr comment create/update/delete` 必须 User，`--as bot` 报 exit 2）、`perm` 全家桶（操作用户自己的文档用 `--as user` 或显式 `--user-access-token`，**不读** `FEISHU_USER_ACCESS_TOKEN`；Bot 无权时提示改用 User）、`user info`（`--as user` 走 basic_batch，只返回姓名类字段）。
+- **默认身份 `default_as`（opt-in，`cmd/identity_default.go`）**：`config.yaml` 的 `default_as` / `FEISHU_DEFAULT_AS`，取值 `auto`（默认，以上四类行为不变）| `user`。`user` 时上述 helper 在未显式传 `--as` 时统一走 `requireDefaultAsUserToken`（`resolveRequiredUserToken` 同一 Token 链，token.json 过期自动刷新），拿不到可用 User Token 时 exit 3 并提示 `auth login` / `--as bot` / `FEISHU_DEFAULT_AS=auto`，**不回落 Bot**；`--as` 默认 bot 的命令（okr、slides/board 写、perm）同样切 User。不受影响：显式 `--as`、仅 Bot 命令（只读显式 token 的 `resolveExplicitUserToken`）、带 `ignoreDefaultAsAnnotation` 的命令（`user info`）、`event consume` 订阅 key 均不支持 user 时。dry-run 前就要身份的写命令用 `resolveOptionalUserTokenOrPreview`（预览不读凭据）。新增身份 helper 时在入口先判 `defaultAsUserApplies`。
 - **刷新失败**：refresh_token 终态错误（20026/20037/20064/20073）会在 token.json 记录 `refresh_failure` 标记，后续命令直接以 exit 3 提示重新登录，不再每次重复发起注定失败的刷新；20050 与网络错误重试一次。项目保持 fail-closed，**不会**清除 token 后静默切 Bot。
 - **审批任务查询**：`approval task query` 走 `GET /open-apis/approval/v4/tasks`，身份取当前 User Token，不再传 `user_id` query。
   `--topic` 仅接受 `todo`/`done`/`cc-unread`/`cc-read`（服务端 options 为 1/2/17/18）；`started`（topic=3）已被官方下线，CLI 前置报错并指向 `approval instance initiated`

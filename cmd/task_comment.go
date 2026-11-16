@@ -109,7 +109,13 @@ var taskCommentListCmd = &cobra.Command{
 			return err
 		}
 
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		token, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		taskGuid, guidErr := parseTaskGUIDArg(args[0])
 		if guidErr != nil {
@@ -220,7 +226,10 @@ var taskCommentGetCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		token, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 		c, err := client.GetTaskComment(commentID, token)
 		if err != nil {
 			return err

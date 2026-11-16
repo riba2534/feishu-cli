@@ -61,7 +61,13 @@ var addCommentCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		commentID, err := client.CreateComment(fileToken, fileType, text, userAccessToken)
 		if err != nil {

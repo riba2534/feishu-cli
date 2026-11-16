@@ -60,7 +60,10 @@ var listVersionCmd = &cobra.Command{
 		objType, _ := cmd.Flags().GetString("obj-type")
 		pageSize, _ := cmd.Flags().GetInt("page-size")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		versions, _, _, err := client.ListFileVersions(fileToken, objType, pageSize, "", userAccessToken)
 		if err != nil {
@@ -121,7 +124,13 @@ var createVersionCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		version, err := client.CreateFileVersion(fileToken, objType, name, userAccessToken)
 		if err != nil {
@@ -164,7 +173,10 @@ var getVersionCmd = &cobra.Command{
 		versionID := args[1]
 		objType, _ := cmd.Flags().GetString("obj-type")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		version, err := client.GetFileVersion(fileToken, versionID, objType, userAccessToken)
 		if err != nil {
@@ -224,7 +236,13 @@ var deleteVersionCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 
 		if err := client.DeleteFileVersion(fileToken, versionID, objType, userAccessToken); err != nil {
 			return err

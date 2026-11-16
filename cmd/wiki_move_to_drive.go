@@ -89,7 +89,13 @@ wiki move-docs（云盘 → 知识库）的反向操作。
 			return err
 		}
 
-		userToken := resolveOptionalUserToken(cmd)
+		userToken, err := resolveOptionalUserToken(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 		identity := "bot"
 		if userToken != "" {
 			identity = "user"

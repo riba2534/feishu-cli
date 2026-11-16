@@ -68,7 +68,10 @@ var replyMsgCmd = &cobra.Command{
 			return clierr.Usage(err)
 		}
 		replyInThread, _ := cmd.Flags().GetBool("reply-in-thread")
-		token := resolveOptionalUserToken(cmd)
+		token, err := resolveOptionalUserTokenOrPreview(cmd)
+		if err != nil {
+			return err
+		}
 
 		if dryRun, _ := cmd.Flags().GetBool("dry-run"); dryRun {
 			contentInput.dryRun = true

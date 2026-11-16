@@ -83,7 +83,11 @@ var wikiMemberAddCmd = &cobra.Command{
 			return err
 		}
 
-		if err := client.AddWikiSpaceMemberWithOptions(spaceID, memberType, memberID, role, needNotification, resolveOptionalUserToken(cmd)); err != nil {
+		userToken, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
+		if err := client.AddWikiSpaceMemberWithOptions(spaceID, memberType, memberID, role, needNotification, userToken); err != nil {
 			return err
 		}
 
@@ -114,7 +118,11 @@ var wikiMemberListCmd = &cobra.Command{
 		pageToken, _ := cmd.Flags().GetString("page-token")
 		output, _ := cmd.Flags().GetString("output")
 
-		members, nextPageToken, hasMore, err := client.ListWikiSpaceMembers(spaceID, pageSize, pageToken, resolveOptionalUserTokenWithFallback(cmd))
+		userToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
+		members, nextPageToken, hasMore, err := client.ListWikiSpaceMembers(spaceID, pageSize, pageToken, userToken)
 		if err != nil {
 			return err
 		}
@@ -190,7 +198,11 @@ var wikiMemberRemoveCmd = &cobra.Command{
 			return err
 		}
 
-		if err := client.RemoveWikiSpaceMember(spaceID, memberType, memberID, role, resolveOptionalUserToken(cmd)); err != nil {
+		userToken, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
+		if err := client.RemoveWikiSpaceMember(spaceID, memberType, memberID, role, userToken); err != nil {
 			return err
 		}
 

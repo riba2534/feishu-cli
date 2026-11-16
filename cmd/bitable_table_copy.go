@@ -311,6 +311,7 @@ func tableCopyNextCommand(cmd *cobra.Command, baseToken, taskID string) string {
 	if strings.TrimSpace(as) == "" {
 		as = "auto"
 	}
+	as = effectiveIdentityLabel(cmd, as)
 	parts = append(parts, "bitable", "table", "copy-status",
 		"--base-token", shellQuoteArg(baseToken), "--task-id", shellQuoteArg(taskID), "--as", shellQuoteArg(as))
 	return strings.Join(parts, " ")

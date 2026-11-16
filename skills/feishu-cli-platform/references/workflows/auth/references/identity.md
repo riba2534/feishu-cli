@@ -15,7 +15,27 @@
 - 显式 `--user-access-token` / `FEISHU_USER_ACCESS_TOKEN`：不把本地 token 的预检结果当作它的授权证明。
 - `--dry-run` 成功只表示本地校验与请求构造完成，不代表已访问飞书或线上有权限。
 
+## 默认身份 default_as（可选，默认 auto）
+
+`config.yaml` 的 `default_as` 或环境变量 `FEISHU_DEFAULT_AS`（环境变量优先）只接受 `auto` / `user`。先用
+`feishu-cli config get default_as`（或 `auth status -o json` 的 `default_as` 字段）确认当前取值。
+
+- `auto`（默认）：下文各表的默认身份照旧。
+- `user`：凡是支持本人身份的命令，不传 `--as` 时一律按 `--as user` 解析——写类（doc create/import、msg send 等）、
+  perm、okr、`--as` 默认 bot/auto 的命令、读类都用 `auth login` 存下的 token.json（过期自动刷新）。此时**不要**再用
+  `--user-access-token "$(feishu-cli auth token --as user)"` 或 `FEISHU_USER_ACCESS_TOKEN` 注入 Token，直接执行命令即可。
+  个别端点只收 Bot（如部分 okr 端点，User 报 99991668），在 `user` 下需对该命令显式 `--as bot`。
+- `user` 下拿不到可用 User Token（未登录、refresh_token 失效、token.json 未绑定当前 App）时退出码 3，错误以
+  「已设置默认身份 default_as=user」开头，**不会回落 Bot**：按提示 `auth login`；本次确需应用身份时对支持 `--as`
+  的命令显式 `--as bot`，没有 `--as` 的写类命令用 `FEISHU_DEFAULT_AS=auto feishu-cli ...` 单次切回。
+- 不受 `default_as` 影响：显式 `--as bot|user|auto`（始终优先）；仅 Bot / 固定 App 的命令（下表的 vc bot meeting-join 等、
+  msg merge-forward、chat create/link、msg edit/urgent、user list、dept get/children）；`user info`（User 身份只返回姓名类字段，
+  需要时显式 `--as user`）；`event consume` 所选订阅 key 都不支持 user 时。
+- `--dry-run` 仍不读凭据：预览里的 `identity` 显示为 `user`，真实执行时才解析 Token。
+
 ## 解析模式（命令没有 `--as`，或不传 `--as` 时）
+
+以下为 `default_as: auto`（默认）时的行为；`default_as: user` 见上一节。
 
 | 模式 | 典型命令 | 行为 |
 |---|---|---|

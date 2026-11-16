@@ -37,7 +37,10 @@ var getCommentCmd = &cobra.Command{
 		}
 		fileType, _ := cmd.Flags().GetString("type")
 		output, _ := cmd.Flags().GetString("output")
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		comment, err := client.GetComment(args[0], args[1], fileType, userAccessToken)
 		if err != nil {
@@ -75,7 +78,10 @@ var batchGetCommentsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		comments, err := client.BatchGetComments(args[0], fileType, ids, userAccessToken)
 		if err != nil {
@@ -172,7 +178,13 @@ var updateReplyCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 		if err := client.UpdateCommentReply(fileToken, commentID, replyID, fileType, elements, userAccessToken); err != nil {
 			if client.HasAPICode(err, 1069303) {
 				return fmt.Errorf("%w\n提示：只有回复作者身份可以修改该回复。Bot 创建的回复用同一 App 身份（默认）；用户创建的回复需传该用户的 --user-access-token", err)
@@ -279,7 +291,13 @@ var reactReplyCmd = &cobra.Command{
 			return err
 		}
 
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+
+		if err != nil {
+
+			return err
+
+		}
 		if err := client.ReactCommentReply(fileToken, fileType, replyID, emoji, action, userAccessToken); err != nil {
 			return err
 		}

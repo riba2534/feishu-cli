@@ -228,7 +228,11 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 	if _, _, errFlag := parseTableColumnWidthFlag(colWidthRaw); errFlag != nil {
 		return errFlag
 	}
-	p.userToken = resolveOptionalUserToken(cmd)
+	userToken, err := resolveOptionalUserTokenOrPreview(cmd)
+	if err != nil {
+		return err
+	}
+	p.userToken = userToken
 	p.revisionID, _ = flags.GetInt("revision-id")
 	if p.revisionID < -1 {
 		return clierr.Usagef("--revision-id 必须 >= -1（-1 表示忽略校验或自动最新，当前输入: %d）", p.revisionID)

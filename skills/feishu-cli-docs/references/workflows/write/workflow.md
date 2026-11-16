@@ -24,6 +24,8 @@
   `doc history revert`）**默认 Bot 身份**，不自动加载 `auth login` 的 token.json。Bot 必须对目标文档有编辑权限；
   编辑用户自己的文档而 Bot 不是协作者时（报 forbidden / 1770032 等），显式以本人身份写：
   `--user-access-token "$(feishu-cli auth token --as user)"`（或设置 `FEISHU_USER_ACCESS_TOKEN`）。
+  `config get default_as` 为 `user` 时写命令默认就以本人身份执行（未登录直接报错、不回落 Bot），不必注入 Token；
+  规则见 feishu-cli-platform 的身份选择。
 - `doc history list`、`doc history revert-status` 属于读类：User 优先、Bot 兜底。
 - 文档参数：`doc content-update`、`doc media-insert`、`doc history *`、`doc add/add-board/add-callout/update/delete/batch-update/table`
   与 `doc import --document-id` 都接受 docx token、`/docx/` URL 和 `/wiki/` URL（wiki 自动解析为底层 docx，底层不是 docx 时报错）。

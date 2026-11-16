@@ -251,7 +251,10 @@ func runHtmlboxCreate(cmd *cobra.Command, args []string) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	token := resolveOptionalUserToken(cmd)
+	token, err := resolveOptionalUserToken(cmd)
+	if err != nil {
+		return err
+	}
 
 	block := buildHtmlboxBlock(componentTypeID, record)
 	created, _, err := client.CreateBlock(documentID, parentID, []*larkdocx.Block{block}, index, token)
@@ -303,7 +306,10 @@ func runHtmlboxUpdate(cmd *cobra.Command, args []string) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	token := resolveOptionalUserToken(cmd)
+	token, err := resolveOptionalUserToken(cmd)
+	if err != nil {
+		return err
+	}
 
 	// 飞书 API 不支持原地更新 add_ons（PATCH 返回 1770001 invalid param），
 	// 因此走「原位置新建 + 删除旧块」（先建后删，避免中途失败丢数据）。
@@ -354,7 +360,10 @@ func runHtmlboxGet(cmd *cobra.Command, args []string) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	token := resolveOptionalUserToken(cmd)
+	token, err := resolveOptionalUserToken(cmd)
+	if err != nil {
+		return err
+	}
 
 	blk, err := client.GetBlock(documentID, blockID, token)
 	if err != nil {
@@ -421,7 +430,10 @@ func runHtmlboxDelete(cmd *cobra.Command, args []string) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	token := resolveOptionalUserToken(cmd)
+	token, err := resolveOptionalUserToken(cmd)
+	if err != nil {
+		return err
+	}
 
 	_, parentID, index, err := locateHtmlboxBlock(documentID, blockID, token)
 	if err != nil {

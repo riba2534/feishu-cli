@@ -59,7 +59,7 @@ func resolveChatToken(cmd *cobra.Command, asFlag string) (string, error) {
 		}
 		return token, nil
 	case "", "auto":
-		return resolveOptionalUserTokenWithFallback(cmd), nil
+		return resolveOptionalUserTokenWithFallback(cmd)
 	default:
 		return "", clierr.Usagef("--as 仅支持 bot|user|auto，得到 %q", asFlag)
 	}

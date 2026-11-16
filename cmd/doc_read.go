@@ -79,7 +79,10 @@ docs_ai 引擎（服务端读取，可输出 block id，对齐官方 docs +fetch
 			if err := config.Validate(); err != nil {
 				return err
 			}
-			userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+			userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+			if err != nil {
+				return err
+			}
 			documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)
 			if err != nil {
 				return err
@@ -109,7 +112,10 @@ docs_ai 引擎（服务端读取，可输出 block id，对齐官方 docs +fetch
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		userAccessToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		// 支持 docx token、/docx/ URL 与 /wiki/ URL（wiki 经 node_by_token 换出底层 docx）
 		documentID, err := resolveDocxArg(args[0], "<document_id|url>", userAccessToken)

@@ -67,7 +67,10 @@ var msgThreadMessagesCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		userToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		// 注意：不把 start/end 发给服务端——thread 容器下服务端忽略时间范围（实测），
 		// 且服务端要求秒而历史文档写的是毫秒，发过去只会制造"过滤生效了"的假象。

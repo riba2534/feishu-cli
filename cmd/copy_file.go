@@ -62,7 +62,10 @@ Bot 身份复制时自动给当前 CLI 登录用户授予副本的 full_access�
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken, err := resolveOptionalUserToken(cmd)
+		if err != nil {
+			return err
+		}
 
 		newToken, url, err := client.CopyFile(fileToken, targetFolder, name, fileType, userAccessToken)
 		if err != nil {

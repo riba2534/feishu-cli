@@ -84,7 +84,10 @@ var calendarSuggestionCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token := resolveOptionalUserTokenWithFallback(cmd)
+		token, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		req := &client.SuggestionRequest{
 			SearchStartTime:    startTime,

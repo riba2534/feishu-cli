@@ -72,7 +72,10 @@ var msgResourceDownloadCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		userToken := resolveOptionalUserTokenWithFallback(cmd)
+		userToken, err := resolveOptionalUserTokenWithFallback(cmd)
+		if err != nil {
+			return err
+		}
 
 		meta, err := client.DownloadMessageResourceWithMeta(messageID, fileKey, resourceType, outputPath, userToken, timeout)
 		if err != nil {

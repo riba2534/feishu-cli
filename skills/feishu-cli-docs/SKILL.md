@@ -44,7 +44,8 @@ allowed-tools: Bash(feishu-cli:*) Bash(./feishu-cli:*) Bash(./bin/feishu-cli:*) 
    改章节或块先 `doc read --with-ids` 拿 block id。写入前确认目标、更新模式和影响范围；先用 `--dry-run` 看请求计划（不联网、不需要凭据，
    但不校验选择器能否命中），不确定时先在测试文档上验证。
 3. 写命令默认 Bot 身份：Bot 新建的文档会自动给当前登录用户授予 `full_access`（输出 `permission_grant`）；编辑用户自己的
-   文档而 Bot 无权限时，显式 `--user-access-token "$(feishu-cli auth token --as user)"`。读命令 User 优先、Bot 兜底。
+   文档而 Bot 无权限时，显式 `--user-access-token "$(feishu-cli auth token --as user)"`；`config get default_as` 为 `user` 时
+   写命令已默认用本人身份，不必注入（见 feishu-cli-platform 的身份选择）。读命令 User 优先、Bot 兜底。
 4. 按退出码处理结果：2 = 参数或定位有歧义（选择器多处命中、方言占位无法写回、本地文件不存在），修正参数后重试；
    1 且有失败明细（`doc import` 的 `failures`、`content-update` 的 `partial_success`、本地资源 `failed`）时按明细补齐，
    不要整篇重导；10 = 危险操作缺 `--yes`（`doc delete`、`doc history revert`）。
